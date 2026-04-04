@@ -34,7 +34,6 @@ const CRM_GROUPS = [
       { name: "Elektron Jurnal", path: "/crmtayyorlovmarkaz/journal", icon: BookOpen, roles: ['ADMIN', 'TEACHER'], permission: 'journal' },
       { name: "Davomat", path: "/crmtayyorlovmarkaz/attendance", icon: ClipboardCheck, roles: ['ADMIN', 'TEACHER'], permission: 'attendance' },
       { name: "Baholash", path: "/crmtayyorlovmarkaz/assessment", icon: Star, roles: ['ADMIN', 'TEACHER'], permission: 'assessments' },
-      { name: "Kurslar", path: "/crmtayyorlovmarkaz/courses", icon: BookOpen, roles: ['ADMIN'], permission: 'courses' },
     ]
   },
   {
@@ -338,7 +337,9 @@ export default function CrmLayout() {
               >
                 <div className="relative">
                   <Bell size={20} />
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                  {notifications.some(n => !n.isRead) && (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                  )}
                 </div>
               </button>
 
@@ -381,7 +382,10 @@ export default function CrmLayout() {
                           );
                         })}
                       </div>
-                      <button className="w-full p-3 text-[10px] font-black text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors uppercase tracking-widest">
+                      <button
+                        onClick={() => { setShowNotifications(false); navigate('/crmtayyorlovmarkaz/settings'); }}
+                        className="w-full p-3 text-[10px] font-black text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors uppercase tracking-widest"
+                      >
                         Barchasini ko'rish
                       </button>
                     </motion.div>
@@ -391,11 +395,11 @@ export default function CrmLayout() {
             </div>
             <div className="flex items-center gap-3 pl-4 border-l border-zinc-200 dark:border-zinc-800">
               <div className="text-right hidden lg:block">
-                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">Admin</p>
-                <p className="text-xs text-zinc-500 mt-1">Bosh administrator</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none">{userName}</p>
+                <p className="text-xs text-zinc-500 mt-1">{userRole === 'ADMIN' ? 'Bosh administrator' : userRole === 'TEACHER' ? "O'qituvchi" : userRole === 'MANAGER' ? 'Menejer' : userRole}</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
-                A
+              <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+                {userName.charAt(0).toUpperCase()}
               </div>
             </div>
           </div>

@@ -1,75 +1,131 @@
-import React, { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, X, Users, Star, Award } from 'lucide-react';
-import { useFirestore } from '../../hooks/useFirestore';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock } from 'lucide-react';
 import ImageUpload from '../../components/ImageUpload';
+import api from '../../api/client';
+import { useToast } from '../../components/Toast';
 
 interface Teacher {
   id: string;
   name: string;
-  role: string;
-  exp: string;
-  desc: string;
-  img: string;
+  email: string;
+  phone: string;
+  role: string;      // The selected subject (mapped from meta)
+  exp: string;       // Mapped from meta
+  desc: string;      // Mapped from meta
+  img: string;       // Avatar
+  password?: string; // Only for creation/update
 }
 
 export default function CrmTeachers() {
-  const { data: teachers = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Omit<Teacher, 'id'>>('teachers');
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const { showToast } = useToast();
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
-    name: '',
-    role: '',
-    exp: '',
-    desc: '',
-    img: ''
+    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: ''
   });
 
+  const loadTeachers = async () => {
+    try {
+      const res = await api.get('/auth/users');
+      // Filter only users with role TEACHER
+      const tUsers = (res.data || []).filter((u: any) => u.role === 'TEACHER');
+      
+      const mapped = tUsers.map((u: any) => {
+        let meta: any = {};
+        try {
+          const perms = JSON.parse(u.permissions || '[]');
+          const metaObj = perms.find((p: any) => p.meta);
+          if (metaObj) meta = metaObj.meta;
+        } catch(e) {}
+        
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone || '',
+          role: meta.subject || '',
+          exp: meta.exp || '',
+          desc: meta.desc || '',
+          img: u.avatar || ''
+        };
+      });
+      setTeachers(mapped);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => { loadTeachers(); }, []);
+
   const handleSave = async () => {
-    if (!formData.name || !formData.role) {
-      alert("Ism va mutaxassislik kiritilishi shart!");
+    if (!formData.name || !formData.email) {
+      alert("Ism va email kiritilishi shart!");
       return;
     }
+    
+    // Store extra teacher logic in generic user permissions slot
+    const metaObj = {
+      meta: {
+        subject: formData.role,
+        exp: formData.exp,
+        desc: formData.desc
+      }
+    };
+    const permissions = [metaObj];
 
     try {
-      const teacherData = { ...formData } as Omit<Teacher, 'id'>;
+      const dbPayload = {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        role: 'TEACHER', // Enforce teacher role
+        avatar: formData.img,
+        permissions
+      };
+
       if (formData.id) {
-        await updateDocument(formData.id, teacherData);
+        await api.put(`/auth/users/${formData.id}`, dbPayload);
+        showToast("Ustoz muvaffaqiyatli saqlandi!");
       } else {
-        await addDocument(teacherData);
+        if (!formData.password) { alert("Yangi ustoz uchun parol shart!"); return; }
+        await api.post('/auth/users', dbPayload);
+        showToast("Yangi ustoz muvaffaqiyatli qo'shildi!");
       }
+      loadTeachers();
       closeModal();
-    } catch (error) {
-      console.error("Error saving teacher:", error);
-      alert("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+    } catch (error: any) {
+      console.error(error);
+      alert(error.response?.data?.message || "Xatolik yuz berdi");
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Haqiqatan ham bu ustozni o'chirmoqchimisiz?")) {
+    if (window.confirm("Ustozni tizimdan va bazadan butunlay o'chirmoqchimisiz?")) {
       try {
-        await deleteDocument(id);
+        await api.delete(`/auth/users/${id}`);
+        showToast("O'chirildi!");
+        loadTeachers();
       } catch (error) {
-        console.error("Error deleting teacher:", error);
-        alert("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+        showToast("Sizda ustozni o'chirish ruxsati yo'q, yoki xato yuz berdi");
       }
     }
   };
 
   const openModal = (teacher: Teacher | null = null) => {
     if (teacher) {
-      setFormData(teacher);
+      setFormData({ ...teacher, password: '' });
     } else {
-      setFormData({ name: '', role: '', exp: '', desc: '', img: '' });
+      setFormData({ name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '' });
     }
     setIsModalOpen(true);
   };
 
-  const closeModal = () => {
-    setIsModalOpen(false);
-  };
+  const closeModal = () => setIsModalOpen(false);
 
-  const filteredTeachers = (teachers || []).filter(t =>
+  const filteredTeachers = teachers.filter(t =>
     (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (t.role || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -98,6 +154,28 @@ export default function CrmTeachers() {
           <div>
             <p className="text-sm font-bold text-zinc-500">Jami ustozlar</p>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white">{(teachers || []).length}</h3>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <Award size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-zinc-500">Fanlar soni</p>
+            <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+              {new Set((teachers || []).map(t => t.role).filter(Boolean)).size}
+            </h3>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
+            <Star size={24} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-zinc-500">Tajribali (3+ yil)</p>
+            <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+              {(teachers || []).filter(t => t.exp && parseInt(t.exp) >= 3).length}
+            </h3>
           </div>
         </div>
       </div>
@@ -143,6 +221,10 @@ export default function CrmTeachers() {
                   </td>
                   <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
                     {teacher.name}
+                    <div className="text-xs font-normal text-zinc-500 mt-1 flex gap-2">
+                       {teacher.phone && <span>{teacher.phone}</span>}
+                       {teacher.email && <span>{teacher.email}</span>}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
@@ -196,37 +278,82 @@ export default function CrmTeachers() {
             </div>
 
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">F.I.O</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                  placeholder="Masalan: Aliyev Vali"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><User size={14}/> F.I.O</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+                    placeholder="Masalan: Aliyev Vali"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><Award size={14}/> Fan / Mutaxassislik</label>
+                  <input
+                    type="text"
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+                    placeholder="Matematika"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Fan / Mutaxassislik</label>
-                <input
-                  type="text"
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                  placeholder="Matematika"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><Phone size={14}/> Telefon</label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+                    placeholder="+998 90 123 45 67"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><Star size={14}/> Tajriba</label>
+                  <input
+                    type="text"
+                    value={formData.exp}
+                    onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+                    placeholder="8 yillik tajriba"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Tajriba</label>
-                <input
-                  type="text"
-                  value={formData.exp}
-                  onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                  placeholder="Masalan: 8 yillik tajriba yoki IELTS 8.5"
-                />
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-xl space-y-4">
+                 <h4 className="text-xs font-black text-blue-600 uppercase tracking-widest flex items-center justify-between">
+                    Tizimga Kirish Ma'lumotlari
+                    <span className="text-blue-500"><Lock size={14}/></span>
+                 </h4>
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <label className="block text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1">Email <span className="text-rose-500">*</span></label>
+                     <input
+                       type="email"
+                       disabled={!!formData.id} // Cannot change email after creation for now
+                       value={formData.email}
+                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                       className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white disabled:opacity-50"
+                       placeholder="ustoz@markaz.uz"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1">Parol {formData.id ? "(Faqat o'zgartirish uchun)" : <span className="text-rose-500">*</span>}</label>
+                     <input
+                       type="password"
+                       value={formData.password}
+                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                       className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
+                       placeholder={formData.id ? "Yangi parol yozing..." : "Parol kiriting"}
+                     />
+                   </div>
+                 </div>
               </div>
 
               <div>

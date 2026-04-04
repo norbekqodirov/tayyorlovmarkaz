@@ -101,7 +101,7 @@ router.put('/change-password', requireAuth, async (req, res) => {
 router.get('/users', requireAuth, async (req, res) => {
     try {
         const users = await prisma.user.findMany({
-            select: { id: true, email: true, name: true, role: true, phone: true, avatar: true, createdAt: true },
+            select: { id: true, email: true, name: true, role: true, phone: true, avatar: true, permissions: true, createdAt: true },
             orderBy: { createdAt: 'desc' }
         });
         res.json(users);

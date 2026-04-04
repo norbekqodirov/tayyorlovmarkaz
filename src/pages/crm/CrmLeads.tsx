@@ -6,6 +6,7 @@ import {
   Clock, CheckCircle2, AlertCircle, History, FileText, Send, GraduationCap
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useCrmData } from '../../hooks/useCrmData';
 import { useToast } from '../../components/Toast';
 
 interface LeadActivity {
@@ -45,6 +46,7 @@ export default function CrmLeads() {
   const { data: leads = [], addDocument, updateDocument, deleteDocument } = useFirestore<Lead>('leads');
   const { addDocument: addStudent } = useFirestore<any>('students');
   const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
+  const { courses } = useCrmData();
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -81,13 +83,17 @@ export default function CrmLeads() {
     }
 
     if (editingLead) {
-      await updateDocument(editingLead.id, formData);
+      const updateData = {
+        ...formData,
+        date: formData.date || editingLead.date,
+        activities: editingLead.activities || [],
+      };
+      await updateDocument(editingLead.id, updateData);
       if (selectedLead?.id === editingLead.id) {
-        setSelectedLead({ ...selectedLead, ...formData } as Lead);
+        setSelectedLead({ ...selectedLead, ...updateData } as Lead);
       }
     } else {
       await addDocument({
-        activities: [],
         date: new Date().toISOString(),
         ...formData as Omit<Lead, 'id' | 'activities' | 'date'>
       });
@@ -681,13 +687,16 @@ export default function CrmLeads() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs</label>
-                    <input 
-                      type="text" 
+                    <select 
                       value={formData.course}
                       onChange={(e) => setFormData({...formData, course: e.target.value})}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                      placeholder="Masalan: IELTS Foundation"
-                    />
+                    >
+                      <option value="">Kursni tanlang...</option>
+                      {courses.map((c: any) => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 

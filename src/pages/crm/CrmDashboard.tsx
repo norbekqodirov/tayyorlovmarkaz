@@ -74,14 +74,14 @@ export default function CrmDashboard() {
     });
     setCourseStats({
       total: (courses || []).length,
-      active: (courses || []).filter((c: any) => c.status === 'active').length
+      active: (courses || []).filter((c: any) => c.status === 'Active' || c.status === 'active').length
     });
 
     // Upcoming Lessons (Today's remaining lessons)
     const todayDay = new Date().getDay() || 7;
     const now = format(new Date(), 'HH:mm');
     const todayLessons = (schedule || [])
-      .filter((s: any) => s.dayOfWeek === todayDay && s.startTime >= now)
+      .filter((s: any) => (s.days || []).includes(todayDay) && s.startTime >= now)
       .sort((a: any, b: any) => (a.startTime || '').localeCompare(b.startTime || ''))
       .slice(0, 4);
     setUpcomingLessons(todayLessons);

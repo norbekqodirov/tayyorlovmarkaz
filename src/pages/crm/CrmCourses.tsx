@@ -11,7 +11,8 @@ interface Course {
   id: string;
   name: string;
   category: string;
-  duration: string; // e.g., "3 oy"
+  duration: string;          // e.g., "3 oy"
+  lessonDuration: number;    // minutes per lesson, e.g. 90
   price: number;
   description: string;
   lessonsPerWeek: number;
@@ -31,6 +32,7 @@ export default function CrmCourses() {
     name: '',
     category: 'Tillar',
     duration: '3 oy',
+    lessonDuration: 90,
     price: 0,
     description: '',
     lessonsPerWeek: 3,
@@ -51,6 +53,7 @@ export default function CrmCourses() {
           name: formData.name || '',
           category: formData.category || 'Tillar',
           duration: formData.duration || '3 oy',
+          lessonDuration: formData.lessonDuration || 90,
           price: formData.price || 0,
           description: formData.description || '',
           lessonsPerWeek: formData.lessonsPerWeek || 3,
@@ -85,6 +88,7 @@ export default function CrmCourses() {
         name: '',
         category: 'Tillar',
         duration: '3 oy',
+        lessonDuration: 90,
         price: 0,
         description: '',
         lessonsPerWeek: 3,
@@ -266,24 +270,43 @@ export default function CrmCourses() {
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Davomiyligi</label>
-                    <input 
-                      type="text" 
+                    <select
                       value={formData.duration}
                       onChange={(e) => setFormData({...formData, duration: e.target.value})}
                       className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                      placeholder="Masalan: 3 oy"
-                    />
+                    >
+                      {['1 oy', '2 oy', '3 oy', '4 oy', '5 oy', '6 oy', '8 oy', '12 oy'].map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Darslar soni (haftasiga)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
+                      min="1" max="7"
                       value={formData.lessonsPerWeek}
                       onChange={(e) => setFormData({...formData, lessonsPerWeek: Number(e.target.value)})}
                       className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars davomiyligi (daqiqa)</label>
+                    <select
+                      value={formData.lessonDuration}
+                      onChange={(e) => setFormData({...formData, lessonDuration: Number(e.target.value)})}
+                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+                    >
+                      {[45, 60, 90, 120].map(d => (
+                        <option key={d} value={d}>{d} daqiqa</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>

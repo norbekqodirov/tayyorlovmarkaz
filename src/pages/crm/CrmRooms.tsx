@@ -31,12 +31,35 @@ export default function CrmRooms() {
     status: 'Bo\'sh'
   });
 
+  const mappedRooms = (rooms || []).map((r: any) => {
+    let parsed: any = {};
+    if (r.color) {
+      try { parsed = JSON.parse(r.color); } catch(e) {}
+    }
+    return {
+      ...r,
+      type: parsed.type || 'Ma\'ruza',
+      status: parsed.status || 'Bo\'sh',
+      amenities: parsed.amenities || []
+    } as Room;
+  });
+
   const handleSave = async () => {
     try {
+      const dbPayload = {
+        name: formData.name,
+        capacity: Number(formData.capacity) || 20,
+        color: JSON.stringify({
+          type: formData.type,
+          amenities: formData.amenities,
+          status: formData.status
+        })
+      };
+
       if (editingRoom) {
-        await updateDocument(editingRoom.id, formData);
+        await updateDocument(editingRoom.id, dbPayload as any);
       } else {
-        await addDocument(formData as Omit<Room, 'id'>);
+        await addDocument(dbPayload as any);
       }
       closeModal();
     } catch (error) {
@@ -104,7 +127,7 @@ export default function CrmRooms() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {(rooms || []).map((room) => (
+        {mappedRooms.map((room) => (
           <motion.div
             key={room.id}
             layoutId={room.id}

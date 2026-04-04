@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Clock, DoorOpen, X, Trash2, Edit2, Filter, MapPin, AlertCircle, User, Users, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useCrmData } from '../../hooks/useCrmData';
 
 interface ScheduleItem {
   id: string;
@@ -36,7 +37,8 @@ export default function CrmSchedule() {
   const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<Omit<ScheduleItem, 'id'>>('schedule');
   const { data: roomsData = [], addDocument: addRoomDoc } = useFirestore<any>('rooms');
   const { data: groups = [] } = useFirestore<any>('groups');
-  const { data: teachers = [] } = useFirestore<any>('teachers');
+  const { courses, teachers: liveTeachers, getEndTime } = useCrmData();
+  const teachers = liveTeachers.length > 0 ? liveTeachers : [];
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
@@ -441,7 +443,16 @@ export default function CrmSchedule() {
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
                     <select value={formData.groupName} onChange={(e) => {
                       const g = (groups || []).find((g: any) => g.name === e.target.value);
-                      setFormData({ ...formData, groupName: e.target.value, teacher: g?.teacher || formData.teacher, room: g?.room || formData.room });
+                      const course = courses.find((c: any) => c.name === g?.subject);
+                      const duration = course?.lessonDuration || 90;
+                      const endTime = getEndTime(formData.startTime || '09:00', duration);
+                      setFormData({ 
+                        ...formData, 
+                        groupName: e.target.value, 
+                        teacher: g?.teacher || formData.teacher, 
+                        room: g?.room || formData.room,
+                        endTime 
+                      });
                     }} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
                       <option value="">Tanlang</option>
                       {(groups || []).map((g: any) => <option key={g.id} value={g.name}>{g.name}</option>)}
@@ -480,13 +491,22 @@ export default function CrmSchedule() {
                 <div className="grid grid-cols-2 gap-5">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Boshlanish</label>
-                    <input type="time" value={formData.startTime} onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                    <input type="time" value={formData.startTime} onChange={(e) => {
+                        const g = (groups || []).find((g: any) => g.name === formData.groupName);
+                        const course = courses.find((c: any) => c.name === g?.subject);
+                        const duration = course?.lessonDuration || 90;
+                        setFormData({ 
+                          ...formData, 
+                          startTime: e.target.value,
+                          endTime: e.target.value ? getEndTime(e.target.value, duration) : formData.endTime
+                        });
+                      }}
                       className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tugash</label>
-                    <input type="time" value={formData.endTime} onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" />
+                    <input type="time" value={formData.endTime} disabled
+                      className="w-full px-3 py-2 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-500 cursor-not-allowed" />
                   </div>
                 </div>
 

@@ -19,9 +19,13 @@ api.interceptors.request.use((config) => {
 // Response interceptor to handle 401 Unauthorized
 api.interceptors.response.use((response) => response, (error) => {
     if (error.response && error.response.status === 401) {
-        // Optionally redirect to login or handle unauthorized
         localStorage.removeItem('crm_token');
         localStorage.removeItem('crm_user');
+        // Redirect to login only if currently in CRM
+        if (window.location.pathname.startsWith('/crmtayyorlovmarkaz') &&
+            !window.location.pathname.includes('/login')) {
+            window.location.href = '/crmtayyorlovmarkaz/login';
+        }
     }
     return Promise.reject(error);
 });

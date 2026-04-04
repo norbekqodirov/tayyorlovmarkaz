@@ -7,6 +7,7 @@ import {
   AlertCircle, LayoutGrid, List as ListIcon, Settings
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useCrmData } from '../../hooks/useCrmData';
 
 interface Group {
   id: string;
@@ -27,14 +28,17 @@ interface Group {
 
 const DAYS = ['Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan', 'Yak'];
 const SUBJECTS = ['Matematika', 'Ingliz tili', 'Ona tili', 'Fizika', 'Kimyo', 'Biologiya', 'Tarix', 'IELTS', 'CEFR'];
-const ROOMS = ['101-xona', '102-xona', '201-xona', '202-xona', '301-xona', '302-xona'];
 
 export default function CrmGroups() {
   const { data: groups = [], addDocument, updateDocument, deleteDocument } = useFirestore<Group>('groups');
   const { data: students = [] } = useFirestore<any>('students');
-  const { data: teachers = [] } = useFirestore<any>('teachers');
-  const { data: roomsList = [] } = useFirestore<any>('rooms');
   const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<any>('schedule');
+  const { courses: liveCourses, teachers: liveTeachers, rooms: liveRooms, getEndTime } = useCrmData();
+
+  // Merge live API data with legacy useFirestore data
+  const teachers = liveTeachers.length > 0 ? liveTeachers : [];
+  const roomsList = liveRooms.length > 0 ? liveRooms : [];
+  const courseList = liveCourses.length > 0 ? liveCourses : [];
 
   const DAY_MAP: Record<string, number> = {
     'Dush': 1,
@@ -68,16 +72,24 @@ export default function CrmGroups() {
     price: 400000
   });
 
+  const selectedCourseData = courseList.find(c => c.name === formData.subject);
+
   const handleSave = async () => {
     if (!formData.name) return;
 
+    let finalTime = formData.time || '09:00 - 10:30';
+    // If time is just a start time (e.g. "09:00"), calculate the end time
+    if (finalTime.length === 5 && finalTime.includes(':')) {
+       finalTime = `${finalTime} - ${getEndTime(finalTime, selectedCourseData?.lessonDuration || 90)}`;
+    }
+
     const roomName = typeof formData.room === 'object' ? (formData.room as any).name : formData.room;
-    const [startTime, endTime] = (formData.time || '09:00 - 10:30').split(' - ');
+    const [startTime, endTime] = finalTime.split(' - ');
     const scheduleDays = (formData.days || []).map(d => DAY_MAP[d]).filter(Boolean);
 
     let groupId = formData.id;
     if (formData.id) {
-      await updateDocument(formData.id, { ...formData, room: roomName });
+      await updateDocument(formData.id, { ...formData, time: finalTime, room: roomName, students: formData.students ?? selectedGroup?.students ?? [] });
       if (selectedGroup?.id === formData.id) {
         setSelectedGroup({ ...selectedGroup, ...formData, room: roomName } as Group);
       }
@@ -567,13 +579,23 @@ export default function CrmGroups() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fan</label>
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs (Fan)</label>
                     <select
                       value={formData.subject}
-                      onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                      onChange={(e) => {
+                        const selected = courseList.find(c => c.name === e.target.value);
+                        setFormData({
+                          ...formData,
+                          subject: e.target.value,
+                          price: selected?.price || formData.price || 0,
+                        });
+                      }}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     >
-                      {SUBJECTS.map(s => (
+                      <option value="">Kursni tanlang...</option>
+                      {courseList.length > 0 ? courseList.map(c => (
+                        <option key={c.id} value={c.name}>{c.name} {c.price ? `— ${new Intl.NumberFormat('uz-UZ').format(c.price)} so'm/oy` : ''}</option>
+                      )) : SUBJECTS.map(s => (
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>
@@ -586,13 +608,13 @@ export default function CrmGroups() {
                     <select
                       value={formData.teacherId}
                       onChange={(e) => {
-                        const t = (teachers || []).find(t => t.id === e.target.value);
+                        const t = teachers.find((t: any) => t.id === e.target.value);
                         setFormData({ ...formData, teacherId: e.target.value, teacher: t?.name || '' });
                       }}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     >
                       <option value="">O'qituvchini tanlang</option>
-                      {(teachers || []).map(t => (
+                      {teachers.map((t: any) => (
                         <option key={t.id} value={t.id}>{t.name}</option>
                       ))}
                     </select>
@@ -604,13 +626,12 @@ export default function CrmGroups() {
                       onChange={(e) => setFormData({ ...formData, room: e.target.value })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     >
-                      {(roomsList || []).length > 0 ? (roomsList || []).map((r, idx) => {
-                        const name = typeof r === 'string' ? r : r.name;
-                        const key = typeof r === 'string' ? `room-list-str-${r}` : `room-list-obj-${r.id || idx}`;
+                      <option value="">Xonani tanlang</option>
+                      {roomsList.length > 0 ? roomsList.map((r: any, idx: number) => {
+                        const name = typeof r === 'string' ? r : (r.name || r.number || `Xona ${idx + 1}`);
+                        const key = typeof r === 'string' ? `r-${r}` : `r-${r.id || idx}`;
                         return <option key={key} value={name}>{name}</option>;
-                      }) : ROOMS.map(r => (
-                        <option key={`room-default-${r}`} value={r}>{r}</option>
-                      ))}
+                      }) : <option value="" disabled>Avval xona qo'shing</option>}
                     </select>
                   </div>
                 </div>
@@ -635,14 +656,30 @@ export default function CrmGroups() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Vaqt</label>
-                    <input
-                      type="text"
-                      value={formData.time}
-                      onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                      placeholder="Masalan: 14:00 - 16:00"
-                    />
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                       Boshlanish Vaqti {selectedCourseData && `(${selectedCourseData.lessonDuration} daqiqa)`}
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="time"
+                        value={(formData.time || '09:00').split(' - ')[0]}
+                        onChange={(e) => {
+                          const startTime = e.target.value;
+                          if (startTime) {
+                             const endTime = getEndTime(startTime, selectedCourseData?.lessonDuration || 90);
+                             setFormData({ ...formData, time: `${startTime} - ${endTime}` });
+                          }
+                        }}
+                        className="flex-1 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+                      />
+                      <span className="text-zinc-400 font-bold">-</span>
+                      <input
+                         type="time"
+                         value={(formData.time || '09:00 - 10:30').split(' - ')[1] || ''}
+                         disabled
+                         className="flex-1 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-500 dark:text-zinc-500 cursor-not-allowed"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Maksimal O'quvchilar</label>

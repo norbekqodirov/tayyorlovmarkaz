@@ -64,11 +64,13 @@ export default function CrmFinance() {
       amount: Number(form.amount)
     };
 
-    // If it's a student payment, update student balance
+    // If it's a student payment, update student balance and payment status
     if (newTransaction.type === 'income' && newTransaction.studentId) {
       const student = (students || []).find(s => s.id === newTransaction.studentId);
       if (student && student.id) {
-        await updateStudent(student.id, { balance: (student.balance || 0) + newTransaction.amount });
+        const newBalance = (student.balance || 0) + newTransaction.amount;
+        const newPaymentStatus = newBalance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik';
+        await updateStudent(student.id, { balance: newBalance, paymentStatus: newPaymentStatus });
       }
     }
 

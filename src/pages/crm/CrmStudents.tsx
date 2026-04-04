@@ -12,6 +12,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import Pagination from '../../components/Pagination';
 import { SkeletonTable } from '../../components/Skeleton';
 import { exportToExcel, exportToPDF } from '../../utils/export';
+import { useCrmData } from '../../hooks/useCrmData';
 
 interface Student {
   id: string;
@@ -34,6 +35,9 @@ interface Student {
 export default function CrmStudents() {
   const { data: students = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Omit<Student, 'id'>>('students');
   const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
+  const { courses: liveCourses, groups: liveGroups } = useCrmData();
+  const courseOptions = liveCourses.length > 0 ? liveCourses : [];
+  const groupOptions = liveGroups.length > 0 ? liveGroups : (groups || []);
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -74,10 +78,38 @@ export default function CrmStudents() {
     try {
       const studentData = { ...formData } as Omit<Student, 'id'>;
       if (formData.id) {
+        // Handle group change: remove from old group, add to new group
+        const oldStudent = (students || []).find((s: any) => s.id === formData.id) as any;
+        const oldGroupName = oldStudent?.group || '';
+        const newGroupName = formData.group || '';
+        if (oldGroupName !== newGroupName) {
+          // Remove from old group
+          if (oldGroupName) {
+            const oldGroup = (groups || []).find((g: any) => g.name === oldGroupName);
+            if (oldGroup) {
+              const updated = (oldGroup.students || []).filter((sid: string) => sid !== formData.id);
+              await updateGroup(oldGroup.id, { students: updated });
+            }
+          }
+          // Add to new group
+          if (newGroupName) {
+            const newGroup = (groups || []).find((g: any) => g.name === newGroupName);
+            if (newGroup && !(newGroup.students || []).includes(formData.id)) {
+              await updateGroup(newGroup.id, { students: [...(newGroup.students || []), formData.id] });
+            }
+          }
+        }
         await updateDocument(formData.id, studentData);
         showToast("O'quvchi ma'lumotlari yangilandi", 'success');
       } else {
-        await addDocument(studentData);
+        const newId = await addDocument(studentData);
+        // Add student to group's students array
+        if (formData.group && newId) {
+          const group = (groups || []).find((g: any) => g.name === formData.group);
+          if (group) {
+            await updateGroup(group.id, { students: [...(group.students || []), newId] });
+          }
+        }
         showToast("Yangi o'quvchi qo'shildi", 'success');
       }
       closeModal();
@@ -590,23 +622,35 @@ export default function CrmStudents() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs</label>
-                          <input 
-                            type="text" 
+                          <select
                             value={formData.course}
-                            onChange={(e) => setFormData({...formData, course: e.target.value})}
+                            onChange={(e) => setFormData({...formData, course: e.target.value, group: ''})}
                             className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                            placeholder="Matematika"
-                          />
+                          >
+                            <option value="">Kursni tanlang...</option>
+                            {courseOptions.map((c: any) => (
+                              <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
-                          <input 
-                            type="text" 
+                          <select
                             value={formData.group}
-                            onChange={(e) => setFormData({...formData, group: e.target.value})}
+                            onChange={(e) => {
+                              const g = groupOptions.find((g: any) => g.name === e.target.value);
+                              setFormData({...formData, group: e.target.value, balance: g?.price ? -g.price : (formData.balance || 0)});
+                            }}
                             className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                            placeholder="MAT-01"
-                          />
+                          >
+                            <option value="">Guruhni tanlang...</option>
+                            {groupOptions
+                              .filter((g: any) => !formData.course || g.subject === formData.course)
+                              .map((g: any) => (
+                                <option key={g.id} value={g.name}>{g.name} ({g.teacher || 'Ustoz yo\'q'})</option>
+                              ))
+                            }
+                          </select>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">

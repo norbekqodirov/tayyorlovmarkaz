@@ -8,39 +8,32 @@ const router = express.Router();
 
 // Map frontend collection names to Prisma model names
 const MODEL_MAP: Record<string, string> = {
-    // Direct mappings
-    'leads': 'lead',
+    // Only core system models that MUST use SQL tables
+    'users': 'user',
     'courses': 'course',
-    'enrollments': 'enrollment',
     'schedules': 'schedule',
-    'staff': 'staffMember',
-    'finance': 'transaction',
-    'transactions': 'transaction',
-    'attendance': 'attendanceRecord',
-    'assessments': 'assessment',
-    'journal': 'journalEntry',
-    'inventory': 'inventoryItem',
-    'campaigns': 'campaign',
-    'marketing': 'campaign',
-    'news': 'post',
-    'posts': 'post',
-    'content': 'post',
-    'forms': 'targetForm',
-    'settings': 'setting',
-    'notifications': 'notification',
-    'gallery': 'galleryItem',
-    'pageContent': 'pageContent',
-    'payments': 'payment',
-    'leadActivities': 'leadActivity',
-    'students': 'student',
-    'groups': 'group',
-    'rooms': 'room',
-    'tasks': 'task',
-    // Fallback collections: schedule
+    // Everything else (Leads, Students, Groups, Finance, etc.) 
+    // will fallback to GenericDocument for Firestore-like flexibility.
 };
 
-// Collections that should always use GenericDocument fallback
-const FALLBACK_COLLECTIONS = new Set([]);
+// Only allow these fields to be passed to Prisma to avoid "Unknown field" errors
+const SCHEMA_FIELDS: Record<string, string[]> = {
+    'lead': ['id', 'name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes'],
+    'student': ['id', 'name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'course', 'group', 'paymentStatus', 'balance', 'status', 'joinedDate', 'notes'],
+    'group': ['id', 'name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize'],
+    'room': ['id', 'name', 'capacity', 'color'],
+    'course': ['id', 'name', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'category', 'status', 'image'],
+    'transaction': ['id', 'type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
+    'payment': ['id', 'studentId', 'amount', 'method', 'date', 'month', 'dueDate', 'status', 'notes'],
+    'staffMember': ['id', 'name', 'role', 'email', 'phone', 'salary', 'joinedDate', 'status', 'department', 'address', 'passport', 'education', 'experience', 'photo'],
+    'attendanceRecord': ['id', 'studentId', 'groupId', 'date', 'status', 'note'],
+    'assessment': ['id', 'studentId', 'title', 'type', 'score', 'maxScore', 'date', 'subject', 'notes'],
+    'journalEntry': ['id', 'groupId', 'studentId', 'teacherId', 'date', 'topic', 'homework', 'grade', 'comment'],
+    'schedule': ['id', 'groupId', 'dayOfWeek', 'startTime', 'endTime', 'roomId'],
+    'task': ['id', 'title', 'status', 'priority', 'dueDate', 'assignedTo', 'description'],
+    'inventoryItem': ['id', 'name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
+    'post': ['id', 'title', 'content', 'author', 'status', 'tags', 'image', 'date'],
+};
 
 // Input validation rules per collection
 const VALIDATION_RULES: Record<string, { required: string[], messages: Record<string, string> }> = {
@@ -57,8 +50,8 @@ const VALIDATION_RULES: Record<string, { required: string[], messages: Record<st
         messages: { name: 'Guruh nomi kiritilishi shart', courseId: 'Kurs tanlanishi shart' }
     },
     course: {
-        required: ['title'],
-        messages: { title: 'Kurs nomi kiritilishi shart' }
+        required: ['name'],
+        messages: { name: 'Kurs nomi kiritilishi shart' }
     },
     staffMember: {
         required: ['name', 'role'],
@@ -89,16 +82,36 @@ function validateInput(modelName: string, data: any): string | null {
     return null;
 }
 
+function sanitizeForPrisma(modelName: string, data: any): any {
+    const allowed = SCHEMA_FIELDS[modelName];
+    if (!allowed) return data;
+    
+    const sanitized: any = {};
+    allowed.forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(data, field)) {
+            sanitized[field] = data[field];
+        }
+    });
+    return sanitized;
+}
+
+// Collections that store extra fields beyond their Prisma schema — always use GenericDocument
+const FORCE_GENERIC: Set<string> = new Set(['schedule']);
 
 router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
     const { collection } = req.params;
-    const modelName = MODEL_MAP[collection];
+    let modelName = MODEL_MAP[collection];
 
     if (!modelName) {
-        // Use GenericDocument fallback for unknown collections
-        (req as any).useFallback = true;
-        (req as any).modelName = collection;
-        return next();
+        // Fallback or Try to see if it exists as a prisma model directly
+        // @ts-ignore
+        if (!FORCE_GENERIC.has(collection) && prisma[collection]) {
+          modelName = collection;
+        } else {
+          (req as any).useFallback = true;
+          (req as any).modelName = collection;
+          return next();
+        }
     }
 
     // @ts-ignore
@@ -110,6 +123,12 @@ router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
 
     (req as any).useFallback = false;
     (req as any).modelName = modelName;
+
+    // Global Sanitization: strip fields not in Prisma schema (like activities, students arrays)
+    if (req.method === 'POST' || req.method === 'PUT') {
+      req.body = sanitizeForPrisma(modelName, req.body);
+    }
+    
     next();
 });
 
@@ -270,9 +289,17 @@ router.post('/:collection', async (req, res) => {
 router.put('/:collection/:id', async (req, res) => {
     try {
         if ((req as any).useFallback) {
+            // Fetch existing data and merge to prevent full replacement data loss
+            const existing = await prisma.genericDocument.findUnique({
+                where: { id: req.params.id }
+            });
+            const existingData = existing
+                ? (() => { try { return JSON.parse(existing.data); } catch { return {}; } })()
+                : {};
+            const mergedData = { ...existingData, ...req.body };
             const doc = await prisma.genericDocument.update({
                 where: { id: req.params.id },
-                data: { data: JSON.stringify(req.body) }
+                data: { data: JSON.stringify(mergedData) }
             });
             try { return res.json({ id: doc.id, ...JSON.parse(doc.data) }); }
             catch { return res.json({ id: doc.id, _raw: doc.data }); }
