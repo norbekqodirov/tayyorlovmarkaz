@@ -1,0 +1,390 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// FOYDALANUVCHILAR VA AUTENTIFIKATSIYA
+// ============================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("ADMIN") // ADMIN, TEACHER, MANAGER
+  phone     String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  taughtGroups   Group[]            @relation("TeacherGroups")
+  enrollments    Enrollment[]
+  journalEntries JournalEntry[]     @relation("TeacherJournal")
+  notifications  Notification[]
+}
+
+// ============================================
+// O'QUVCHILAR
+// ============================================
+
+model Student {
+  id          String   @id @default(uuid())
+  name        String
+  phone       String?
+  parentPhone String?
+  parentName  String?
+  email       String?
+  birthDate   String?
+  address     String?
+  photo       String?
+  status      String   @default("active") // active, graduated, left
+  source      String?  // Instagram, Telegram, etc.
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrollments       Enrollment[]
+  payments          Payment[]
+  attendanceRecords AttendanceRecord[]
+  assessments       Assessment[]
+  journalEntries    JournalEntry[]
+}
+
+// ============================================
+// KURSLAR VA GURUHLAR
+// ============================================
+
+model Course {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  price       Float    @default(0)
+  duration    String?  // "3 oy", "6 oy"
+  status      String   @default("active") // active, archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  groups Group[]
+}
+
+model Group {
+  id        String   @id @default(uuid())
+  name      String
+  courseId   String
+  course    Course   @relation(fields: [courseId], references: [id])
+  teacherId String?
+  teacher   User?    @relation("TeacherGroups", fields: [teacherId], references: [id])
+  status    String   @default("active") // active, completed, paused
+  startDate String?
+  endDate   String?
+  maxSize   Int      @default(20)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  enrollments       Enrollment[]
+  schedules         Schedule[]
+  attendanceRecords AttendanceRecord[]
+  journalEntries    JournalEntry[]
+}
+
+model Enrollment {
+  id        String   @id @default(uuid())
+  studentId String
+  groupId   String
+  student   Student  @relation(fields: [studentId], references: [id])
+  group     Group    @relation(fields: [groupId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, groupId])
+}
+
+// ============================================
+// DARS JADVALI VA XONALAR
+// ============================================
+
+model Schedule {
+  id        String @id @default(uuid())
+  groupId   String
+  group     Group  @relation(fields: [groupId], references: [id])
+  dayOfWeek Int    // 1-7 (Monday-Sunday)
+  startTime String // "14:00"
+  endTime   String // "16:00"
+  roomId    String?
+  room      Room?  @relation(fields: [roomId], references: [id])
+}
+
+model Room {
+  id        String     @id @default(uuid())
+  name      String
+  capacity  Int        @default(30)
+  color     String?    // UI uchun rang
+  schedules Schedule[]
+}
+
+// ============================================
+// DAVOMAT VA JURNAL
+// ============================================
+
+model AttendanceRecord {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id])
+  date      String   // "2026-03-22"
+  status    String   @default("present") // present, absent, late, excused
+  checkIn   String?
+  checkOut  String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, groupId, date])
+}
+
+model JournalEntry {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id])
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  teacherId String
+  teacher   User     @relation("TeacherJournal", fields: [teacherId], references: [id])
+  date      String
+  topic     String?
+  homework  String?
+  grade     Float?
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// BAHOLASH (ASSESSMENT)
+// ============================================
+
+model Assessment {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  title     String   // "Mock Test #3", "Oylik Imtihon"
+  type      String   @default("test") // test, exam, quiz, homework
+  score     Float
+  maxScore  Float    @default(100)
+  date      String
+  subject   String?
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// MOLIYA (FINANCE)
+// ============================================
+
+model Transaction {
+  id          String   @id @default(uuid())
+  type        String   // income, expense
+  amount      Float
+  category    String   // "Kurs to'lovi", "Ijara", "Oylik", etc.
+  description String?
+  date        String
+  method      String   @default("Naqd") // Naqd, Karta, Bank
+  studentId   String?
+  studentName String?
+  staffId     String?
+  staffName   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  amount    Float
+  method    String   @default("Naqd")
+  date      String
+  month     String?
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// XODIMLAR (HR/STAFF)
+// ============================================
+
+model StaffMember {
+  id         String   @id @default(uuid())
+  name       String
+  role       String   // "Direktor", "Administrator", "O'qituvchi"
+  email      String?
+  phone      String?
+  salary     Float    @default(0)
+  joinedDate String?
+  status     String   @default("Faol") // Faol, Ta'tilda, Ishdan bo'shagan
+  department String   @default("Ma'muriyat")
+  address    String?
+  passport   String?
+  education  String?
+  experience String?
+  photo      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// ============================================
+// LIDLAR (LEADS / VORONKA)
+// ============================================
+
+model Lead {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+  email     String?
+  stage     String   @default("new") // new, contacted, meeting, won, lost
+  source    String?  // Instagram, Facebook, Telegram, etc.
+  course    String?  // Qaysi kursga qiziqish
+  score     Int      @default(0) // 0-100
+  status    String   @default("warm") // hot, warm, cold
+  date      String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activities LeadActivity[]
+}
+
+model LeadActivity {
+  id      String @id @default(uuid())
+  leadId  String
+  lead    Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type    String // call, message, meeting, note
+  content String
+  date    String
+  user    String @default("Admin")
+}
+
+// ============================================
+// MARKETING
+// ============================================
+
+model Campaign {
+  id        String   @id @default(uuid())
+  name      String
+  platform  String   // Instagram, Facebook, Telegram, Google
+  budget    Float    @default(0)
+  spent     Float    @default(0)
+  leads     Int      @default(0)
+  startDate String?
+  endDate   String?
+  status    String   @default("active") // active, paused, completed
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// INVENTAR
+// ============================================
+
+model InventoryItem {
+  id          String   @id @default(uuid())
+  name        String
+  category    String   @default("Texnika") // Texnika, Mebel, O'quv qurollari
+  quantity    Int      @default(1)
+  price       Float    @default(0)
+  location    String?  // Xona nomi
+  condition   String   @default("Yaxshi") // Yaxshi, O'rtacha, Yomon
+  purchaseDate String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// KONTENT VA YANGILIKLAR (BLOG/NEWS)
+// ============================================
+
+model Post {
+  id        String   @id @default(uuid())
+  title     String
+  content   String?
+  excerpt   String?
+  imageUrl  String?
+  author    String?
+  status    String   @default("Faol") // Faol, Qoralama, Arxiv
+  category  String   @default("Yangilik") // Yangilik, Blog, E'lon
+  date      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// TARGET FORMALAR
+// ============================================
+
+model TargetForm {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  course      String?
+  url         String?  @unique // /l/formId
+  isActive    Boolean  @default(true)
+  submissions Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// SOZLAMALAR
+// ============================================
+
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+}
+
+// ============================================
+// BILDIRISHNOMALAR
+// ============================================
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String   @default("info") // info, alert, success, warning
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// GALEREYA (Landing page uchun)
+// ============================================
+
+model GalleryItem {
+  id        String   @id @default(uuid())
+  url       String
+  title     String?
+  date      String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// LANDING PAGE KONTENT (CMS)
+// ============================================
+
+model PageContent {
+  id        String   @id @default(uuid())
+  section   String   @unique // "hero", "stats", "programs", "testimonials", "cta"
+  data      String   // JSON formatda
+  updatedAt DateTime @updatedAt
+}
