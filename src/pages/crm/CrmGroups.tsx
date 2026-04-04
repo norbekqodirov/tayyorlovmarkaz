@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Search, MoreVertical, Users, Calendar, Clock, 
+import {
+  Plus, Search, MoreVertical, Users, Calendar, Clock,
   DoorOpen, BookOpen, X, Edit2, Trash2, Filter,
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
@@ -32,7 +32,7 @@ const ROOMS = ['101-xona', '102-xona', '201-xona', '202-xona', '301-xona', '302-
 export default function CrmGroups() {
   const { data: groups = [], addDocument, updateDocument, deleteDocument } = useFirestore<Group>('groups');
   const { data: students = [] } = useFirestore<any>('students');
-  const { data: staff = [] } = useFirestore<any>('staff');
+  const { data: teachers = [] } = useFirestore<any>('teachers');
   const { data: roomsList = [] } = useFirestore<any>('rooms');
   const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<any>('schedule');
 
@@ -51,7 +51,7 @@ export default function CrmGroups() {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  
+
   const [formData, setFormData] = useState<Partial<Group>>({
     name: '',
     subject: 'Matematika',
@@ -81,7 +81,7 @@ export default function CrmGroups() {
       if (selectedGroup?.id === formData.id) {
         setSelectedGroup({ ...selectedGroup, ...formData, room: roomName } as Group);
       }
-      
+
       // Update schedule
       const existingSchedule = (schedule || []).find((s: any) => s.groupId === formData.id);
       if (existingSchedule) {
@@ -130,7 +130,7 @@ export default function CrmGroups() {
   const handleDelete = async (id: string) => {
     if (window.confirm('Haqiqatan ham ushbu guruhni o\'chirmoqchimisiz?')) {
       await deleteDocument(id);
-      
+
       // Delete from schedule
       const existingSchedule = (schedule || []).find((s: any) => s.groupId === id);
       if (existingSchedule) {
@@ -178,7 +178,7 @@ export default function CrmGroups() {
   };
 
   const filteredGroups = useMemo(() => {
-    return (groups || []).filter(g => 
+    return (groups || []).filter(g =>
       (g.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (g.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (g.teacher || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -188,13 +188,9 @@ export default function CrmGroups() {
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
 
-  const teachers = useMemo(() => 
-    (staff || []).filter(s => s.role?.toLowerCase().includes('o\'qituvchi') || s.department === 'Ta\'lim')
-  , [staff]);
-
   const handleAddStudentToGroup = async () => {
     if (!selectedStudentToAdd || !selectedGroup) return;
-    
+
     if ((selectedGroup.students || []).includes(selectedStudentToAdd)) {
       alert('Ushbu o\'quvchi allaqachon guruhda bor!');
       return;
@@ -230,20 +226,20 @@ export default function CrmGroups() {
         </div>
         <div className="flex gap-3">
           <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
-            <button 
+            <button
               onClick={() => setViewMode('grid')}
               className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600' : 'text-zinc-500'}`}
             >
               <LayoutGrid size={18} />
             </button>
-            <button 
+            <button
               onClick={() => setViewMode('list')}
               className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600' : 'text-zinc-500'}`}
             >
               <ListIcon size={18} />
             </button>
           </div>
-          <button 
+          <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
           >
@@ -292,7 +288,7 @@ export default function CrmGroups() {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {(filteredGroups || []).map((group) => (
-            <motion.div 
+            <motion.div
               layout
               key={group.id}
               onClick={() => { setSelectedGroup(group); setIsDetailOpen(true); }}
@@ -304,11 +300,10 @@ export default function CrmGroups() {
                     <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight group-hover:text-blue-600 transition-colors">{group.name}</h3>
                     <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{group.subject}</p>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                    group.status === 'Faol' 
-                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                  }`}>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${group.status === 'Faol'
+                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                    }`}>
                     {group.status}
                   </span>
                 </div>
@@ -316,7 +311,7 @@ export default function CrmGroups() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
                     <Calendar size={16} className="text-blue-500" />
-                    {group.days.join(', ')}
+                    {(group.days || []).join(', ')}
                   </div>
                   <div className="flex items-center gap-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
                     <Clock size={16} className="text-blue-500" />
@@ -334,7 +329,7 @@ export default function CrmGroups() {
                     <span className="text-xs font-black text-slate-900 dark:text-white">{(group.students || []).length} / {group.maxStudents || 15}</span>
                   </div>
                   <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-blue-600 rounded-full transition-all duration-500"
                       style={{ width: `${((group.students || []).length / (group.maxStudents || 1)) * 100}%` }}
                     />
@@ -369,8 +364,8 @@ export default function CrmGroups() {
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {(filteredGroups || []).map((group) => (
-                <tr 
-                  key={group.id} 
+                <tr
+                  key={group.id}
                   onClick={() => { setSelectedGroup(group); setIsDetailOpen(true); }}
                   className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer group"
                 >
@@ -386,7 +381,7 @@ export default function CrmGroups() {
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
-                        <Calendar size={12} /> {group.days.join(', ')}
+                        <Calendar size={12} /> {(group.days || []).join(', ')}
                       </div>
                       <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
                         <Clock size={12} /> {group.time}
@@ -400,11 +395,10 @@ export default function CrmGroups() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      group.status === 'Faol' 
-                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                    }`}>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${group.status === 'Faol'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                      }`}>
                       {group.status}
                     </span>
                   </td>
@@ -429,14 +423,14 @@ export default function CrmGroups() {
       <AnimatePresence>
         {isDetailOpen && selectedGroup && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsDetailOpen(false)}
               className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -480,55 +474,55 @@ export default function CrmGroups() {
                     </div>
                   </div>
 
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">O'quvchilar Ro'yxati</h4>
-                          <button 
-                            onClick={() => setIsAddStudentModalOpen(true)}
-                            className="flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 transition-colors"
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">O'quvchilar Ro'yxati</h4>
+                      <button
+                        onClick={() => setIsAddStudentModalOpen(true)}
+                        className="flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 transition-colors"
+                      >
+                        <UserPlus size={14} />
+                        Qo'shish
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {(students || []).filter(s => (selectedGroup.students || []).includes(s.id)).map(student => (
+                        <div key={student.id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-100 dark:border-zinc-700 group/item">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-black">
+                              {(student.name || '?').charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900 dark:text-white">{student.name}</p>
+                              <p className="text-[10px] font-bold text-zinc-500">{student.phone}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveStudentFromGroup(student.id)}
+                            className="p-1.5 text-zinc-400 hover:text-rose-600 opacity-0 group-hover/item:opacity-100 transition-all"
                           >
-                            <UserPlus size={14} />
-                            Qo'shish
+                            <Trash2 size={14} />
                           </button>
                         </div>
-                        <div className="space-y-2">
-                          {(students || []).filter(s => (selectedGroup.students || []).includes(s.id)).map(student => (
-                            <div key={student.id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-100 dark:border-zinc-700 group/item">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-black">
-                                  {(student.name || '?').charAt(0)}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-bold text-slate-900 dark:text-white">{student.name}</p>
-                                  <p className="text-[10px] font-bold text-zinc-500">{student.phone}</p>
-                                </div>
-                              </div>
-                              <button 
-                                onClick={() => handleRemoveStudentFromGroup(student.id)}
-                                className="p-1.5 text-zinc-400 hover:text-rose-600 opacity-0 group-hover/item:opacity-100 transition-all"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                          {(selectedGroup.students || []).length === 0 && (
-                            <div className="text-center py-8 bg-zinc-50 dark:bg-zinc-800/30 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700">
-                              <Users size={24} className="mx-auto text-zinc-300 mb-2" />
-                              <p className="text-xs font-bold text-zinc-500">Hozircha o'quvchilar yo'q</p>
-                            </div>
-                          )}
+                      ))}
+                      {(selectedGroup.students || []).length === 0 && (
+                        <div className="text-center py-8 bg-zinc-50 dark:bg-zinc-800/30 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700">
+                          <Users size={24} className="mx-auto text-zinc-300 mb-2" />
+                          <p className="text-xs font-bold text-zinc-500">Hozircha o'quvchilar yo'q</p>
                         </div>
-                      </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-6">
-                  <button 
+                  <button
                     onClick={() => openModal(selectedGroup)}
                     className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
                   >
                     Tahrirlash
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(selectedGroup.id)}
                     className="flex-1 py-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl font-black text-sm hover:bg-rose-100 transition-all"
                   >
@@ -545,7 +539,7 @@ export default function CrmGroups() {
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -559,24 +553,24 @@ export default function CrmGroups() {
                   <X size={24} />
                 </button>
               </div>
-              
+
               <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh Nomi</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                       placeholder="Masalan: PM-101"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fan</label>
-                    <select 
+                    <select
                       value={formData.subject}
-                      onChange={(e) => setFormData({...formData, subject: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     >
                       {SUBJECTS.map(s => (
@@ -589,11 +583,11 @@ export default function CrmGroups() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'qituvchi</label>
-                    <select 
+                    <select
                       value={formData.teacherId}
                       onChange={(e) => {
                         const t = (teachers || []).find(t => t.id === e.target.value);
-                        setFormData({...formData, teacherId: e.target.value, teacher: t?.name || ''});
+                        setFormData({ ...formData, teacherId: e.target.value, teacher: t?.name || '' });
                       }}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     >
@@ -605,9 +599,9 @@ export default function CrmGroups() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Xona</label>
-                    <select 
+                    <select
                       value={formData.room}
-                      onChange={(e) => setFormData({...formData, room: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, room: e.target.value })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     >
                       {(roomsList || []).length > 0 ? (roomsList || []).map((r, idx) => {
@@ -628,11 +622,10 @@ export default function CrmGroups() {
                       <button
                         key={day}
                         onClick={() => toggleDay(day)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                          formData.days?.includes(day)
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200'
-                        }`}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${formData.days?.includes(day)
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200'
+                          }`}
                       >
                         {day}
                       </button>
@@ -643,20 +636,20 @@ export default function CrmGroups() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Vaqt</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={formData.time}
-                      onChange={(e) => setFormData({...formData, time: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, time: e.target.value })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                       placeholder="Masalan: 14:00 - 16:00"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Maksimal O'quvchilar</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       value={formData.maxStudents}
-                      onChange={(e) => setFormData({...formData, maxStudents: Number(e.target.value)})}
+                      onChange={(e) => setFormData({ ...formData, maxStudents: Number(e.target.value) })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     />
                   </div>
@@ -665,19 +658,19 @@ export default function CrmGroups() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Boshlanish Sanasi</label>
-                    <input 
-                      type="date" 
+                    <input
+                      type="date"
                       value={formData.startDate}
-                      onChange={(e) => setFormData({...formData, startDate: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Narxi (Oylik)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       value={formData.price}
-                      onChange={(e) => setFormData({...formData, price: Number(e.target.value)})}
+                      onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
                       className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     />
                   </div>
@@ -685,9 +678,9 @@ export default function CrmGroups() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
-                  <select 
+                  <select
                     value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                     className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                   >
                     <option value="Faol">Faol</option>
@@ -698,13 +691,13 @@ export default function CrmGroups() {
               </div>
 
               <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-900/50">
-                <button 
+                <button
                   onClick={closeModal}
                   className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
                 >
                   Bekor qilish
                 </button>
-                <button 
+                <button
                   onClick={handleSave}
                   className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20"
                 >
@@ -720,7 +713,7 @@ export default function CrmGroups() {
       <AnimatePresence>
         {isAddStudentModalOpen && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -733,7 +726,7 @@ export default function CrmGroups() {
               <div className="p-6 space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchini tanlang</label>
-                  <select 
+                  <select
                     value={selectedStudentToAdd}
                     onChange={(e) => setSelectedStudentToAdd(e.target.value)}
                     className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
@@ -747,7 +740,7 @@ export default function CrmGroups() {
               </div>
               <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
                 <button onClick={() => setIsAddStudentModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500">Bekor qilish</button>
-                <button 
+                <button
                   onClick={handleAddStudentToGroup}
                   className="px-6 py-2 bg-blue-600 text-white rounded-xl font-black text-sm"
                 >

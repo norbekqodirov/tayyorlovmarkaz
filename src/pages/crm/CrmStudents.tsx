@@ -1,12 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign, 
-  BookOpen, Phone, Mail, MapPin, Calendar, Clock, 
+import {
+  Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign,
+  BookOpen, Phone, Mail, MapPin, Calendar, Clock,
   ChevronRight, User, Shield, GraduationCap, FileText,
   AlertCircle, Filter, Download, MoreVertical
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import Pagination from '../../components/Pagination';
+import { SkeletonTable } from '../../components/Skeleton';
+import { exportToExcel, exportToPDF } from '../../utils/export';
 
 interface Student {
   id: string;
@@ -29,11 +34,15 @@ interface Student {
 export default function CrmStudents() {
   const { data: students = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Omit<Student, 'id'>>('students');
   const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
+  const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('Barchasi');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const itemsPerPage = 20;
   
   const [formData, setFormData] = useState<Partial<Student>>({
     name: '',
@@ -53,41 +62,53 @@ export default function CrmStudents() {
   });
 
   const handleSave = async () => {
-    if (!formData.name || !formData.phone) return;
+    if (!formData.name) {
+      showToast("O'quvchi ismi kiritilishi shart!", 'error');
+      return;
+    }
+    if (!formData.phone) {
+      showToast("Telefon raqam kiritilishi shart!", 'error');
+      return;
+    }
 
     try {
       const studentData = { ...formData } as Omit<Student, 'id'>;
       if (formData.id) {
         await updateDocument(formData.id, studentData);
+        showToast("O'quvchi ma'lumotlari yangilandi", 'success');
       } else {
         await addDocument(studentData);
+        showToast("Yangi o'quvchi qo'shildi", 'success');
       }
       closeModal();
     } catch (error) {
       console.error("Error saving student:", error);
-      alert("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+      showToast("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.", 'error');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Haqiqatan ham bu o'quvchini o'chirmoqchimisiz?")) {
-      try {
-        // Find group and remove student
-        const student = (students || []).find(s => s.id === id);
-        if (student && student.group) {
-          const group = (groups || []).find((g: any) => g.name === student.group);
-          if (group) {
-            const updatedStudents = (group.students || []).filter((sid: string) => sid !== id);
-            await updateGroup(group.id, { students: updatedStudents });
-          }
-        }
+    setDeleteConfirm({ open: true, id });
+  };
 
-        await deleteDocument(id);
-        if (selectedStudent?.id === id) setIsDetailOpen(false);
-      } catch (error) {
-        console.error("Error deleting student:", error);
-        alert("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+  const confirmDelete = async () => {
+    const id = deleteConfirm.id;
+    setDeleteConfirm({ open: false, id: '' });
+    try {
+      const student = (students || []).find(s => s.id === id);
+      if (student && student.group) {
+        const group = (groups || []).find((g: any) => g.name === student.group);
+        if (group) {
+          const updatedStudents = (group.students || []).filter((sid: string) => sid !== id);
+          await updateGroup(group.id, { students: updatedStudents });
+        }
       }
+      await deleteDocument(id);
+      if (selectedStudent?.id === id) setIsDetailOpen(false);
+      showToast("O'quvchi o'chirildi", 'success');
+    } catch (error) {
+      console.error("Error deleting student:", error);
+      showToast("O'chirishda xatolik yuz berdi.", 'error');
     }
   };
 
@@ -129,6 +150,11 @@ export default function CrmStudents() {
     });
   }, [students, searchTerm, filterStatus]);
 
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredStudents.slice(start, start + itemsPerPage);
+  }, [filteredStudents, currentPage]);
+
   const stats = {
     total: (students || []).length,
     active: (students || []).filter(s => s.status === 'Faol').length,
@@ -136,8 +162,18 @@ export default function CrmStudents() {
     totalBalance: (students || []).reduce((acc, s) => acc + (s.balance || 0), 0)
   };
 
+  if (loading) return <SkeletonTable rows={8} cols={5} />;
+
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="O'quvchini o'chirish"
+        message="Haqiqatan ham bu o'quvchini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -145,10 +181,40 @@ export default function CrmStudents() {
           <p className="text-sm font-medium text-zinc-500 mt-1">Markaz o'quvchilari, ularning natijalari va to'lovlari</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors">
-            <Download size={18} />
-            Eksport
-          </button>
+          <div className="relative group">
+            <button className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors">
+              <Download size={18} />
+              Eksport
+            </button>
+            <div className="absolute right-0 top-full mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[140px]">
+              <button onClick={() => {
+                const cols = [
+                  { header: 'Ism', key: 'name', width: 25 },
+                  { header: 'Telefon', key: 'phone', width: 15 },
+                  { header: 'Guruh', key: 'group', width: 15 },
+                  { header: 'Holat', key: 'status', width: 12 },
+                  { header: "To'lov", key: 'paymentStatus', width: 15 },
+                ];
+                exportToExcel(filteredStudents, cols, "Oqquchilar");
+                showToast("Excel fayl yuklab olindi", 'success');
+              }} className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-t-xl transition-colors">
+                Excel (.xlsx)
+              </button>
+              <button onClick={() => {
+                const cols = [
+                  { header: 'Ism', key: 'name' },
+                  { header: 'Telefon', key: 'phone' },
+                  { header: 'Guruh', key: 'group' },
+                  { header: 'Holat', key: 'status' },
+                  { header: "To'lov", key: 'paymentStatus' },
+                ];
+                exportToPDF(filteredStudents, cols, "O'quvchilar ro'yxati", "Oqquchilar");
+                showToast("PDF fayl yuklab olindi", 'success');
+              }} className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-b-xl transition-colors">
+                PDF (.pdf)
+              </button>
+            </div>
+          </div>
           <button 
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
@@ -219,7 +285,7 @@ export default function CrmStudents() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {(filteredStudents || []).map((student) => (
+              {(paginatedStudents || []).map((student) => (
                 <tr 
                   key={student.id} 
                   onClick={() => { setSelectedStudent(student); setIsDetailOpen(true); }}
@@ -290,6 +356,12 @@ export default function CrmStudents() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredStudents.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Student Detail Sidebar */}

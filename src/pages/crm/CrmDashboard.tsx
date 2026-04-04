@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, TrendingUp, Calendar, FileText, GraduationCap, Layers, ClipboardCheck, Wallet, Star, BookOpen, Package, Clock, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Calendar, FileText, GraduationCap, Layers, ClipboardCheck, Wallet, Star, BookOpen, Package, Clock, ArrowRight, Plus, Trash2, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
 import { format, subDays, parseISO, isToday, isAfter, startOfToday } from 'date-fns';
 import { uz } from 'date-fns/locale';
@@ -16,6 +16,7 @@ export default function CrmDashboard() {
   const { data: schedule = [] } = useFirestore<any>('schedule');
   const { data: courses = [] } = useFirestore<any>('courses');
   const { data: inventory = [] } = useFirestore<any>('inventory');
+  const { data: tasks = [], addDocument: addTask, updateDocument: updateTask, deleteDocument: deleteTask } = useFirestore<any>('tasks');
 
   const [stats, setStats] = useState([
     { title: "Jami O'quvchilar", value: "0", trend: "+0%", icon: GraduationCap, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/20" },
@@ -32,6 +33,8 @@ export default function CrmDashboard() {
   const [upcomingLessons, setUpcomingLessons] = useState<any[]>([]);
   const [inventoryStats, setInventoryStats] = useState({ total: 0, value: 0 });
   const [courseStats, setCourseStats] = useState({ total: 0, active: 0 });
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [isAddingTask, setIsAddingTask] = useState(false);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
 
@@ -45,16 +48,14 @@ export default function CrmDashboard() {
       ? (assessments.reduce((acc: number, curr: any) => acc + (Number(curr.score) || 0), 0) / assessments.length).toFixed(1)
       : "0";
 
-    // Calculate today's attendance
+    // Calculate today's attendance (flat AttendanceRecord model)
     const today = new Date().toISOString().split('T')[0];
     let todayPresent = 0;
     let todayTotal = 0;
-    (attendance || []).forEach((group: any) => {
-      if (group.date === today && Array.isArray(group.records)) {
-        group.records.forEach((record: any) => {
-          todayTotal++;
-          if (record.status === 'present' || record.status === 'late') todayPresent++;
-        });
+    (attendance || []).forEach((record: any) => {
+      if (record.date === today) {
+        todayTotal++;
+        if (record.status === 'present' || record.status === 'late') todayPresent++;
       }
     });
     const attendanceRate = todayTotal > 0 ? Math.round((todayPresent / todayTotal) * 100) : 0;
@@ -80,7 +81,7 @@ export default function CrmDashboard() {
     const todayDay = new Date().getDay() || 7;
     const now = format(new Date(), 'HH:mm');
     const todayLessons = (schedule || [])
-      .filter((s: any) => (s.days || []).includes(todayDay) && s.startTime >= now)
+      .filter((s: any) => s.dayOfWeek === todayDay && s.startTime >= now)
       .sort((a: any, b: any) => (a.startTime || '').localeCompare(b.startTime || ''))
       .slice(0, 4);
     setUpcomingLessons(todayLessons);
@@ -131,12 +132,10 @@ export default function CrmDashboard() {
       let present = 0;
       let total = 0;
 
-      (attendance || []).forEach((group: any) => {
-        if (group.date === dateStr && Array.isArray(group.records)) {
-          group.records.forEach((record: any) => {
-            total++;
-            if (record.status === 'present' || record.status === 'late') present++;
-          });
+      (attendance || []).forEach((record: any) => {
+        if (record.date === dateStr) {
+          total++;
+          if (record.status === 'present' || record.status === 'late') present++;
         }
       });
 
@@ -356,9 +355,9 @@ export default function CrmDashboard() {
                 <div key={student.id} className="flex items-center justify-between p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs ${idx === 0 ? 'bg-amber-100 text-amber-600' :
-                        idx === 1 ? 'bg-slate-100 text-slate-600' :
-                          idx === 2 ? 'bg-orange-100 text-orange-600' :
-                            'bg-zinc-100 text-zinc-500'
+                      idx === 1 ? 'bg-slate-100 text-slate-600' :
+                        idx === 2 ? 'bg-orange-100 text-orange-600' :
+                          'bg-zinc-100 text-zinc-500'
                       }`}>
                       {idx + 1}
                     </div>
@@ -410,33 +409,108 @@ export default function CrmDashboard() {
         </div>
       </div>
 
-      {/* Recent Activity */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">So'nggi faolliklar</h2>
-          <button className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">Barchasini ko'rish</button>
-        </div>
-        <div className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
-          {recentActivity.length > 0 ? (
-            recentActivity.map((activity) => (
-              <div key={activity.id} className="p-4 md:p-6 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold">
-                  {activity.initial}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Activity */}
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-800/30">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Clock size={20} className="text-blue-600" />
+              So'nggi faolliklar
+            </h2>
+          </div>
+          <div className="flex-1 divide-y divide-zinc-100 dark:divide-zinc-800/50 overflow-y-auto max-h-[400px]">
+            {recentActivity.length > 0 ? (
+              recentActivity.map((activity) => (
+                <div key={activity.id} className="p-4 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold shrink-0">
+                    {activity.initial}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{activity.title}</p>
+                    <p className="text-xs text-zinc-500 truncate">{activity.description}</p>
+                  </div>
+                  <div className="text-[10px] font-medium text-zinc-400 whitespace-nowrap bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">
+                    {activity.time}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{activity.title}</p>
-                  <p className="text-xs text-zinc-500 truncate">{activity.description}</p>
-                </div>
-                <div className="text-xs font-medium text-zinc-400 whitespace-nowrap bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-md">
-                  {activity.time}
-                </div>
+              ))
+            ) : (
+              <div className="p-12 text-center text-zinc-500">
+                Hozircha faolliklar yo'q
               </div>
-            ))
-          ) : (
-            <div className="p-8 text-center text-zinc-500">
-              Hozircha faolliklar yo'q
+            )}
+          </div>
+        </div>
+
+        {/* My Tasks (ToDo) */}
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-800/30">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ClipboardCheck size={20} className="text-emerald-600" />
+              Mening vazifalarim
+            </h2>
+            <button
+              onClick={() => setIsAddingTask(!isAddingTask)}
+              className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+
+          <div className="flex-1 p-0 overflow-y-auto max-h-[400px]">
+            {isAddingTask && (
+              <div className="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 border-b border-emerald-100 dark:border-emerald-900/20 flex gap-2">
+                <input
+                  type="text"
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && newTaskTitle.trim()) {
+                      addTask({ title: newTaskTitle, completed: false, createdAt: new Date().toISOString() });
+                      setNewTaskTitle('');
+                      setIsAddingTask(false);
+                    }
+                  }}
+                  autoFocus
+                  placeholder="Yangi vazifa..."
+                  className="flex-1 bg-white dark:bg-zinc-800 border border-emerald-200 dark:border-emerald-800 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white"
+                />
+              </div>
+            )}
+
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
+              {tasks.length > 0 ? (
+                tasks.map((task: any) => (
+                  <div key={task.id} className="p-4 flex items-center justify-between group hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => updateTask(task.id, { ...task, completed: !task.completed })}
+                        className={`transition-colors ${task.completed ? 'text-emerald-500' : 'text-zinc-300 hover:text-emerald-500'}`}
+                      >
+                        {task.completed ? <CheckCircle2 size={22} /> : <Circle size={22} />}
+                      </button>
+                      <span className={`text-sm font-medium transition-all ${task.completed ? 'text-zinc-400 line-through' : 'text-slate-900 dark:text-white'}`}>
+                        {task.title}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="p-2 text-zinc-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="py-12 text-center text-zinc-400">
+                  <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <ClipboardCheck size={24} />
+                  </div>
+                  <p className="text-sm font-bold">Vazifalar yo'q</p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

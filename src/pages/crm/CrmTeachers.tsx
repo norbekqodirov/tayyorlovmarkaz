@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Search, Edit2, Trash2, X, Users, Star, Award } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import ImageUpload from '../../components/ImageUpload';
 
 interface Teacher {
   id: string;
@@ -15,7 +16,7 @@ export default function CrmTeachers() {
   const { data: teachers = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Omit<Teacher, 'id'>>('teachers');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const [formData, setFormData] = useState<Partial<Teacher>>({
     name: '',
     role: '',
@@ -68,7 +69,7 @@ export default function CrmTeachers() {
     setIsModalOpen(false);
   };
 
-  const filteredTeachers = (teachers || []).filter(t => 
+  const filteredTeachers = (teachers || []).filter(t =>
     (t.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (t.role || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -80,7 +81,7 @@ export default function CrmTeachers() {
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Ustozlar</h1>
           <p className="text-sm text-zinc-500 mt-1">Markaz o'qituvchilarini boshqarish</p>
         </div>
-        <button 
+        <button
           onClick={() => openModal()}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors shadow-sm"
         >
@@ -105,7 +106,7 @@ export default function CrmTeachers() {
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-            <input 
+            <input
               type="text"
               placeholder="Ism yoki fan bo'yicha qidirish..."
               value={searchTerm}
@@ -132,7 +133,7 @@ export default function CrmTeachers() {
                   <td className="px-6 py-4">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800">
                       {(teacher.img && teacher.name) ? (
-                        <img src={teacher.img} alt={teacher.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={teacher.img.startsWith('/') ? teacher.img : teacher.img} alt={teacher.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-zinc-400">
                           <Users size={16} />
@@ -153,13 +154,13 @@ export default function CrmTeachers() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button 
+                      <button
                         onClick={() => openModal(teacher)}
                         className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                       >
                         <Edit2 size={16} />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDelete(teacher.id)}
                         className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                       >
@@ -193,25 +194,25 @@ export default function CrmTeachers() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">F.I.O</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                   placeholder="Masalan: Aliyev Vali"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Fan / Mutaxassislik</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                   className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                   placeholder="Matematika"
                 />
@@ -219,10 +220,10 @@ export default function CrmTeachers() {
 
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Tajriba</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={formData.exp}
-                  onChange={(e) => setFormData({...formData, exp: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
                   className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
                   placeholder="Masalan: 8 yillik tajriba yoki IELTS 8.5"
                 />
@@ -230,35 +231,30 @@ export default function CrmTeachers() {
 
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Qisqacha ma'lumot</label>
-                <textarea 
+                <textarea
                   value={formData.desc}
-                  onChange={(e) => setFormData({...formData, desc: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, desc: e.target.value })}
                   rows={3}
                   className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white resize-none"
                   placeholder="Ustoz haqida qisqacha ma'lumot..."
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Rasm URL</label>
-                <input 
-                  type="text" 
-                  value={formData.img}
-                  onChange={(e) => setFormData({...formData, img: e.target.value})}
-                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                  placeholder="https://..."
-                />
-              </div>
+              <ImageUpload
+                value={formData.img || ''}
+                onChange={(url) => setFormData({ ...formData, img: url })}
+                label="Rasm"
+              />
             </div>
-            
+
             <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-950/50">
-              <button 
+              <button
                 onClick={closeModal}
                 className="px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition-colors"
               >
                 Bekor qilish
               </button>
-              <button 
+              <button
                 onClick={handleSave}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
               >

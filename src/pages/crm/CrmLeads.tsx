@@ -6,6 +6,7 @@ import {
   Clock, CheckCircle2, AlertCircle, History, FileText, Send, GraduationCap
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
 
 interface LeadActivity {
   id: string;

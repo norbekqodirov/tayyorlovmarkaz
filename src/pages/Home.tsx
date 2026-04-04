@@ -5,8 +5,27 @@ import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
 
 export default function Home() {
-  const { data: firestoreGallery } = useFirestore<any>('gallery');
-  const { data: firestoreNews } = useFirestore<any>('news');
+  const { data: firestoreGallery = [] } = useFirestore<any>('gallery');
+  const { data: firestoreNews = [] } = useFirestore<any>('news');
+  const { data: pageDocs = [] } = useFirestore<any>('pageContent');
+
+  const [landingData, setLandingData] = useState({
+    heroTitle: 'Farzandingiz kelajagini biz bilan quring',
+    heroSubtitle: 'Prezident maktablari va nufuzli oliygohlarga kafolatlangan tayyorgarlik. Zamonaviy metodika va kuchli ustozlar jamoasi.',
+    stat1Value: '95%', stat1Label: 'Prezident maktablariga qabul',
+    stat2Value: '500+', stat2Label: 'Muvaffaqiyatli bitiruvchilar',
+    stat3Value: '4 oy', stat3Label: "O'rtacha tayyorgarlik vaqti",
+    stat4Value: '100%', stat4Label: "Sifat nazorati va kafolat"
+  });
+
+  useEffect(() => {
+    if (pageDocs && pageDocs.length > 0) {
+      const homeInfo = pageDocs.find((doc: any) => doc.id === 'home');
+      if (homeInfo) {
+        setLandingData(prev => ({ ...prev, ...homeInfo }));
+      }
+    }
+  }, [pageDocs]);
 
   const [galleryItems, setGalleryItems] = useState([
     { img: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=80&w=2070&auto=format&fit=crop", title: "Ochiq eshiklar kuni", date: "15 Oktabr, 2024" },
@@ -75,10 +94,12 @@ export default function Home() {
           transition={{ delay: 0.1, duration: 0.6 }}
           className="text-6xl md:text-8xl font-black tracking-tighter leading-[1.1] mb-6"
         >
-          Farzandingiz kelajagini <br className="hidden md:block" />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">
-            biz bilan quring
-          </span>
+          {landingData.heroTitle.split(' ').map((word, i, arr) => {
+            if (i >= arr.length - 2) {
+              return <span key={i} className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">{word} </span>
+            }
+            return <span key={i}>{word} </span>
+          })}
         </motion.h1>
 
         <motion.p
@@ -87,8 +108,7 @@ export default function Home() {
           transition={{ delay: 0.2, duration: 0.6 }}
           className="text-lg md:text-2xl max-w-2xl text-zinc-600 dark:text-zinc-400 font-medium mb-10"
         >
-          Prezident maktablari va nufuzli oliygohlarga kafolatlangan tayyorgarlik.
-          Zamonaviy metodika va kuchli ustozlar jamoasi.
+          {landingData.heroSubtitle}
         </motion.p>
 
         <motion.div
@@ -111,20 +131,20 @@ export default function Home() {
         <div className="max-w-[1400px] mx-auto px-4 md:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 divide-x divide-zinc-200 dark:divide-zinc-800">
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-blue-600 dark:text-blue-500 mb-2">95%</h3>
-              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">Prezident maktablariga qabul</p>
+              <h3 className="text-4xl md:text-5xl font-black text-blue-600 dark:text-blue-500 mb-2">{landingData.stat1Value}</h3>
+              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat1Label}</p>
             </div>
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">500+</h3>
-              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">Muvaffaqiyatli bitiruvchilar</p>
+              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat2Value}</h3>
+              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat2Label}</p>
             </div>
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">4 <span className="text-2xl">oy</span></h3>
-              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">O'rtacha tayyorgarlik vaqti</p>
+              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat3Value}</h3>
+              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat3Label}</p>
             </div>
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">100%</h3>
-              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">Sifat nazorati va kafolat</p>
+              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat4Value}</h3>
+              <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat4Label}</p>
             </div>
           </div>
         </div>

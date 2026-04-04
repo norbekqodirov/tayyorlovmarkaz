@@ -15,3 +15,42 @@ body {
 .dark body {
   @apply bg-[#0A0A0A] text-white;
 }
+
+/* Base Utilities */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Toast Animation */
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Mobile Responsive Fixes */
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Modal Constraints */
+  .fixed.inset-0 > div > .bg-white,
+  .fixed.inset-0 > div > .bg-zinc-900,
+  .fixed.inset-0 > .bg-white,
+  .fixed.inset-0 > .bg-zinc-900 {
+    width: 95% !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+    margin: 0 auto;
+  }
+}

@@ -19,6 +19,7 @@ model User {
   role      String   @default("ADMIN") // ADMIN, TEACHER, MANAGER
   phone     String?
   avatar    String?
+  permissions String? @default("[]") // JSON array of permissions
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -76,9 +77,9 @@ model Group {
   id        String   @id @default(uuid())
   name      String
   courseId   String
-  course    Course   @relation(fields: [courseId], references: [id])
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   teacherId String?
-  teacher   User?    @relation("TeacherGroups", fields: [teacherId], references: [id])
+  teacher   User?    @relation("TeacherGroups", fields: [teacherId], references: [id], onDelete: SetNull)
   status    String   @default("active") // active, completed, paused
   startDate String?
   endDate   String?
@@ -96,10 +97,10 @@ model Enrollment {
   id        String   @id @default(uuid())
   studentId String
   groupId   String
-  student   Student  @relation(fields: [studentId], references: [id])
-  group     Group    @relation(fields: [groupId], references: [id])
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId])
@@ -112,7 +113,7 @@ model Enrollment {
 model Schedule {
   id        String @id @default(uuid())
   groupId   String
-  group     Group  @relation(fields: [groupId], references: [id])
+  group     Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
   dayOfWeek Int    // 1-7 (Monday-Sunday)
   startTime String // "14:00"
   endTime   String // "16:00"
@@ -135,9 +136,9 @@ model Room {
 model AttendanceRecord {
   id        String   @id @default(uuid())
   studentId String
-  student   Student  @relation(fields: [studentId], references: [id])
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   groupId   String
-  group     Group    @relation(fields: [groupId], references: [id])
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   date      String   // "2026-03-22"
   status    String   @default("present") // present, absent, late, excused
   checkIn   String?
@@ -151,11 +152,11 @@ model AttendanceRecord {
 model JournalEntry {
   id        String   @id @default(uuid())
   groupId   String
-  group     Group    @relation(fields: [groupId], references: [id])
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   studentId String
-  student   Student  @relation(fields: [studentId], references: [id])
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   teacherId String
-  teacher   User     @relation("TeacherJournal", fields: [teacherId], references: [id])
+  teacher   User     @relation("TeacherJournal", fields: [teacherId], references: [id], onDelete: Cascade)
   date      String
   topic     String?
   homework  String?
@@ -171,7 +172,7 @@ model JournalEntry {
 model Assessment {
   id        String   @id @default(uuid())
   studentId String
-  student   Student  @relation(fields: [studentId], references: [id])
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   title     String   // "Mock Test #3", "Oylik Imtihon"
   type      String   @default("test") // test, exam, quiz, homework
   score     Float
@@ -205,11 +206,13 @@ model Transaction {
 model Payment {
   id        String   @id @default(uuid())
   studentId String
-  student   Student  @relation(fields: [studentId], references: [id])
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   amount    Float
   method    String   @default("Naqd")
   date      String
   month     String?
+  dueDate   String?
+  status    String   @default("paid") // paid, pending, overdue
   notes     String?
   createdAt DateTime @default(now())
 }
@@ -357,7 +360,7 @@ model Setting {
 model Notification {
   id        String   @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   message   String
   type      String   @default("info") // info, alert, success, warning
@@ -388,3 +391,31 @@ model PageContent {
   data      String   // JSON formatda
   updatedAt DateTime @updatedAt
 }
+
+// ============================================
+// DYNAMIC DOCUMENTS (CMS / Fallback)
+// ============================================
+
+model GenericDocument {
+  id         String   @id @default(uuid())
+  collection String   // "teachers", "schedule", etc
+  data       String   // JSON payload
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([collection])
+}
+
+// ============================================
+// VAZIFALAR (ToDo)
+// ============================================
+
+model Task {
+  id        String   @id @default(uuid())
+  title     String
+  completed Boolean  @default(false)
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+

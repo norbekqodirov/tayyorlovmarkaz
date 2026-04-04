@@ -4,9 +4,10 @@ import { Navigate, useLocation } from 'react-router-dom';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  allowedRoles?: string[];
 }
 
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
@@ -15,7 +16,12 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     const token = localStorage.getItem('crm_token');
     const userData = localStorage.getItem('crm_user');
     if (token && userData) {
-      setUser(JSON.parse(userData));
+      try {
+        setUser(JSON.parse(userData));
+      } catch {
+        localStorage.removeItem('crm_token');
+        localStorage.removeItem('crm_user');
+      }
     }
     setLoading(false);
   }, []);
@@ -30,6 +36,11 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (!user) {
     return <Navigate to="/crmtayyorlovmarkaz/login" state={{ from: location }} replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    // Redirect to a safe page if unauthorized
+    return <Navigate to="/crmtayyorlovmarkaz" replace />;
   }
 
   return <>{children}</>;

@@ -4,6 +4,8 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import crudRoutes from './routes/crud.js';
+import uploadRoutes from './routes/upload.js';
+import path from 'path';
 
 dotenv.config();
 
@@ -23,8 +25,12 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'API is running successfully!', timestamp: new Date().toISOString() });
 });
 
+// Static files (uploaded images)
+app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+
 // Routers
 app.use('/api/auth', authRoutes);
+app.use('/api/upload', uploadRoutes);
 app.use('/api', crudRoutes);
 
 app.listen(PORT, () => {

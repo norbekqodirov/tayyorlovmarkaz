@@ -33,6 +33,8 @@ import CrmJournal from './pages/crm/CrmJournal';
 import CrmBI from './pages/crm/CrmBI';
 import CrmCourses from './pages/crm/CrmCourses';
 import CrmInventory from './pages/crm/CrmInventory';
+import CrmUsers from './pages/crm/CrmUsers';
+import StudentPortal from './pages/crm/StudentPortal';
 
 export default function App() {
   return (
@@ -54,8 +56,8 @@ export default function App() {
 
         {/* CRM Routes */}
         <Route path="/crmtayyorlovmarkaz/login" element={<CrmLogin />} />
-        <Route 
-          path="/crmtayyorlovmarkaz" 
+        <Route
+          path="/crmtayyorlovmarkaz"
           element={
             <ProtectedRoute>
               <CrmLayout />
@@ -63,24 +65,26 @@ export default function App() {
           }
         >
           <Route index element={<CrmDashboard />} />
-          <Route path="marketing" element={<CrmMarketing />} />
-          <Route path="leads" element={<CrmLeads />} />
-          <Route path="students" element={<CrmStudents />} />
-          <Route path="groups" element={<CrmGroups />} />
-          <Route path="schedule" element={<CrmSchedule />} />
-          <Route path="journal" element={<CrmJournal />} />
-          <Route path="attendance" element={<CrmAttendance />} />
-          <Route path="assessment" element={<CrmAssessment />} />
-          <Route path="rooms" element={<CrmRooms />} />
-          <Route path="staff" element={<CrmStaff />} />
-          <Route path="teachers" element={<CrmTeachers />} />
-          <Route path="finance" element={<CrmFinance />} />
-          <Route path="bi" element={<CrmBI />} />
-          <Route path="courses" element={<CrmCourses />} />
-          <Route path="inventory" element={<CrmInventory />} />
-          <Route path="content" element={<CrmContent />} />
-          <Route path="forms" element={<CrmForms />} />
-          <Route path="settings" element={<CrmSettings />} />
+          <Route path="marketing" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmMarketing /></ProtectedRoute>} />
+          <Route path="leads" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmLeads /></ProtectedRoute>} />
+          <Route path="students" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER']}><CrmStudents /></ProtectedRoute>} />
+          <Route path="groups" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><CrmGroups /></ProtectedRoute>} />
+          <Route path="schedule" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']}><CrmSchedule /></ProtectedRoute>} />
+          <Route path="journal" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER']}><CrmJournal /></ProtectedRoute>} />
+          <Route path="attendance" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER']}><CrmAttendance /></ProtectedRoute>} />
+          <Route path="assessment" element={<ProtectedRoute allowedRoles={['ADMIN', 'TEACHER']}><CrmAssessment /></ProtectedRoute>} />
+          <Route path="rooms" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmRooms /></ProtectedRoute>} />
+          <Route path="staff" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaff /></ProtectedRoute>} />
+          <Route path="teachers" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTeachers /></ProtectedRoute>} />
+          <Route path="finance" element={<ProtectedRoute allowedRoles={['ADMIN', 'STUDENT']}><CrmFinance /></ProtectedRoute>} />
+          <Route path="bi" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmBI /></ProtectedRoute>} />
+          <Route path="courses" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmCourses /></ProtectedRoute>} />
+          <Route path="inventory" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
+          <Route path="content" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
+          <Route path="forms" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmForms /></ProtectedRoute>} />
+          <Route path="settings" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
+          <Route path="users" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
+          <Route path="portal" element={<ProtectedRoute allowedRoles={['STUDENT', 'ADMIN', 'TEACHER']}><StudentPortal /></ProtectedRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

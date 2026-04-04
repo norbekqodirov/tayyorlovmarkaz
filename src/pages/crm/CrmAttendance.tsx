@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Search, Calendar as CalendarIcon, Users, ChevronLeft, ChevronRight, Save, Filter, AlertCircle, Clock } from 'lucide-react';
+import { Check, X, Search, Calendar as CalendarIcon, Users, ChevronLeft, ChevronRight, Save, Filter, AlertCircle, Clock, Download } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import { exportToExcel } from '../../utils/export';
 
 interface Student {
   id: string;
