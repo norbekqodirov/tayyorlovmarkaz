@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export default function GlobalSearch({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
     const [query, setQuery] = useState('');
+    const [selectedIndex, setSelectedIndex] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
 
@@ -13,29 +14,6 @@ export default function GlobalSearch({ isOpen, onClose }: { isOpen: boolean, onC
     const { data: leads = [] } = useFirestore<any>('leads');
     const { data: teachers = [] } = useFirestore<any>('teachers');
     const { data: courses = [] } = useFirestore<any>('courses');
-
-    useEffect(() => {
-        if (isOpen) {
-            setTimeout(() => inputRef.current?.focus(), 100);
-        } else {
-            setQuery('');
-        }
-    }, [isOpen]);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                if (isOpen) onClose();
-                else {
-                    // Trigger handled in CrmLayout instead, but we can do it here if mounted globally
-                }
-            }
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, onClose]);
 
     const results = React.useMemo(() => {
         if (!query.trim()) return [];
@@ -61,6 +39,51 @@ export default function GlobalSearch({ isOpen, onClose }: { isOpen: boolean, onC
 
         return matches.slice(0, 8); // top 8
     }, [query, students, leads, teachers, courses]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                if (isOpen) onClose();
+            }
+            if (e.key === 'Escape') onClose();
+            
+            if (isOpen) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSelectedIndex(prev => {
+                        const maxIndex = Math.max(0, results.length - 1);
+                        return prev < maxIndex ? prev + 1 : prev;
+                    });
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (results.length > 0 && results[selectedIndex]) {
+                        navigate(results[selectedIndex].path);
+                        onClose();
+                    }
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose, results, selectedIndex, navigate]);
+
+    useEffect(() => {
+        setSelectedIndex(0);
+    }, [query]);
+
+    useEffect(() => {
+        if (isOpen) {
+            setTimeout(() => inputRef.current?.focus(), 100);
+        } else {
+            setQuery('');
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -107,7 +130,11 @@ export default function GlobalSearch({ isOpen, onClose }: { isOpen: boolean, onC
                                                 navigate(item.path);
                                                 onClose();
                                             }}
-                                            className="w-full flex items-center justify-between p-4 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group text-left"
+                                            className={`w-full flex items-center justify-between p-4 rounded-xl transition-colors group text-left ${
+                                                i === selectedIndex 
+                                                ? 'bg-zinc-100 dark:bg-zinc-800' 
+                                                : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                                            }`}
                                         >
                                             <div className="flex items-center gap-4">
                                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.type === 'student' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' :

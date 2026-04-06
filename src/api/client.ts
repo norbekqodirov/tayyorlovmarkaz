@@ -19,13 +19,8 @@ api.interceptors.request.use((config) => {
 // Response interceptor to handle 401 Unauthorized
 api.interceptors.response.use((response) => response, (error) => {
     if (error.response && error.response.status === 401) {
-        localStorage.removeItem('crm_token');
-        localStorage.removeItem('crm_user');
-        // Redirect to login only if currently in CRM
-        if (window.location.pathname.startsWith('/crmtayyorlovmarkaz') &&
-            !window.location.pathname.includes('/login')) {
-            window.location.href = '/crmtayyorlovmarkaz/login';
-        }
+        // Dispatch custom event for React Router to handle
+        window.dispatchEvent(new Event('auth-unauthorized'));
     }
     return Promise.reject(error);
 });

@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ImageUpload from '../../components/ImageUpload';
 import api from '../../api/client';
 import { useToast } from '../../components/Toast';
+import { useFirestore } from '../../hooks/useFirestore';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
 
 interface Teacher {
   id: string;
@@ -19,8 +24,13 @@ interface Teacher {
 export default function CrmTeachers() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const { showToast } = useToast();
+  
+  const { data: groups = [] } = useFirestore<any>('groups');
+  const { data: students = [] } = useFirestore<any>('students');
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
     name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: ''
@@ -137,13 +147,12 @@ export default function CrmTeachers() {
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Ustozlar</h1>
           <p className="text-sm text-zinc-500 mt-1">Markaz o'qituvchilarini boshqarish</p>
         </div>
-        <button
+        <Button
           onClick={() => openModal()}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors shadow-sm"
+          leftIcon={<Plus size={18} />}
         >
-          <Plus size={18} />
           Yangi ustoz
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -207,14 +216,18 @@ export default function CrmTeachers() {
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {filteredTeachers.map((teacher) => (
-                <tr key={teacher.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                <tr 
+                  key={teacher.id} 
+                  onClick={() => { setSelectedTeacher(teacher); setIsDetailOpen(true); }}
+                  className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer group"
+                >
                   <td className="px-6 py-4">
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800">
                       {(teacher.img && teacher.name) ? (
                         <img src={teacher.img.startsWith('/') ? teacher.img : teacher.img} alt={teacher.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-zinc-400">
-                          <Users size={16} />
+                           <Users size={16} />
                         </div>
                       )}
                     </div>
@@ -228,23 +241,23 @@ export default function CrmTeachers() {
                   </td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                      {teacher.role}
+                      {teacher.role || 'Noma\'lum'}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">
-                    {teacher.exp}
+                    {teacher.exp || '0'}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        onClick={() => openModal(teacher)}
+                        onClick={(e) => { e.stopPropagation(); openModal(teacher); }}
                         className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                       >
                         <Edit2 size={16} />
                       </button>
                       <button
-                        onClick={() => handleDelete(teacher.id)}
-                        className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(teacher.id); }}
+                        className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -264,133 +277,218 @@ export default function CrmTeachers() {
         </div>
       </div>
 
+      {/* Detail KPI Sidebar */}
+      <AnimatePresence>
+        {isDetailOpen && selectedTeacher && (
+           <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDetailOpen(false)}
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              className="fixed right-0 top-0 h-full w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl z-50 overflow-y-auto border-l border-zinc-200 dark:border-zinc-800"
+            >
+              {(() => {
+                 const teacherGroups = (groups || []).filter((g: any) => g.teacher === selectedTeacher.name);
+                 const studentIds = new Set<string>();
+                 teacherGroups.forEach((g: any) => (g.students || []).forEach((s: string) => studentIds.add(s)));
+                 const activeStudentsCount = studentIds.size;
+                 
+                 // Estimated KPI Logic: Assumes fixed proportion per student e.g 150000 UZS or based on group prices
+                 let totalEstRevenue = 0;
+                 teacherGroups.forEach((g: any) => {
+                    const price = g.price || 0;
+                    totalEstRevenue += price * (g.students || []).length;
+                 });
+                 // Teacher KPI = 40% of generated revenue (Example metric)
+                 const estimatedSalary = totalEstRevenue * 0.4;
+                 
+                 return (
+                  <div className="p-6 space-y-8">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">O'qituvchi KPI Dashboard</h2>
+                      <button onClick={() => setIsDetailOpen(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors">
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col items-center text-center space-y-4">
+                      <div className="w-24 h-24 rounded-full overflow-hidden bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center text-3xl font-black shadow-xl shadow-blue-600/20 border-4 border-white dark:border-zinc-800">
+                        {selectedTeacher.img ? (
+                          <img src={selectedTeacher.img.startsWith('/') ? selectedTeacher.img : selectedTeacher.img} alt={selectedTeacher.name} className="w-full h-full object-cover" />
+                        ) : (selectedTeacher.name || '?').charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-black text-slate-900 dark:text-white">{selectedTeacher.name}</h3>
+                        <p className="text-sm font-bold text-blue-600 uppercase tracking-widest mt-1">{selectedTeacher.role || 'Fan tanlanmagan'}</p>
+                      </div>
+                    </div>
+
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+                        <div className="flex items-center gap-2 mb-2">
+                           <Users size={16} className="text-emerald-600" />
+                           <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Faol O'quvchilar</p>
+                        </div>
+                        <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400">
+                          {activeStudentsCount}
+                        </p>
+                      </div>
+                      <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-2xl border border-blue-100 dark:border-blue-800/30">
+                        <div className="flex items-center gap-2 mb-2">
+                           <BookOpen size={16} className="text-blue-600" />
+                           <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Guruhlar</p>
+                        </div>
+                        <p className="text-2xl font-black text-blue-700 dark:text-blue-400">
+                          {teacherGroups.length}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Financial Estimation KPI */}
+                    <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-6 rounded-3xl text-white shadow-lg shadow-purple-500/20 relative overflow-hidden">
+                       <div className="absolute -right-4 -top-4 opacity-10"><Calculator size={100} /></div>
+                       <div className="relative z-10">
+                         <div className="flex items-center gap-2 mb-1">
+                            <TrendingUp size={16} className="text-indigo-200" />
+                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Taxminiy Oylik KPI (40% Stavka)</p>
+                         </div>
+                         <h2 className="text-3xl font-black tracking-tight">{new Intl.NumberFormat('uz-UZ').format(estimatedSalary)} UZS</h2>
+                         <p className="text-xs font-medium text-indigo-200 mt-2">Guruhlar tushumidan olingan ulush</p>
+                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em] border-b border-zinc-100 dark:border-zinc-800 pb-2">Ma'lumotlar</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
+                          <Phone size={16} className="text-zinc-400" />
+                          {selectedTeacher.phone || 'Kiritilmagan'}
+                        </div>
+                        <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
+                          <Mail size={16} className="text-zinc-400" />
+                          {selectedTeacher.email || 'Kiritilmagan'}
+                        </div>
+                        <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
+                          <Star size={16} className="text-zinc-400" />
+                          Tajriba: {selectedTeacher.exp || 'Noma\'lum'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                      <Button 
+                        variant="primary"
+                        onClick={() => openModal(selectedTeacher)}
+                        className="flex-1 text-sm font-black"
+                      >
+                        Tahrirlash
+                      </Button>
+                      <Button 
+                        variant="danger"
+                        onClick={() => { setIsDetailOpen(false); handleDelete(selectedTeacher.id); }}
+                        className="flex-1 text-sm font-black"
+                      >
+                        O'chirish
+                      </Button>
+                    </div>
+                  </div>
+                 );
+              })()}
+            </motion.div>
+           </>
+        )}
+      </AnimatePresence>
+
       {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-zinc-200 dark:border-zinc-800">
-            <div className="flex justify-between items-center p-6 border-b border-zinc-200 dark:border-zinc-800">
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white">
-                {formData.id ? "Ustozni tahrirlash" : "Yangi ustoz"}
-              </h3>
-              <button onClick={closeModal} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-                <X size={20} />
-              </button>
-            </div>
+      <Modal 
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={formData.id ? "Ustozni Tahrirlash" : "Yangi Ustoz Qo'shish"}
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="F.I.O"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Masalan: Aliyev Vali"
+            />
+            <Input
+              label="Fan / Mutaxassislik"
+              value={formData.role}
+              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              placeholder="Masalan: Matematika"
+            />
+          </div>
 
-            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><User size={14}/> F.I.O</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                    placeholder="Masalan: Aliyev Vali"
-                  />
-                </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Telefon"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="+998 90 123 45 67"
+            />
+            <Input
+              label="Tajriba"
+              value={formData.exp}
+              onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
+              placeholder="3 yillik tajriba"
+            />
+          </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><Award size={14}/> Fan / Mutaxassislik</label>
-                  <input
-                    type="text"
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                    placeholder="Matematika"
-                  />
-                </div>
-              </div>
+          <div className="p-5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl space-y-4">
+             <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5">
+                <Lock size={12}/> Tizimga Kirish Ma'lumotlari
+             </h4>
+             <div className="grid grid-cols-2 gap-4">
+               <Input
+                 type="email"
+                 label="Email"
+                 disabled={!!formData.id}
+                 value={formData.email}
+                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                 placeholder="ustoz@markaz.uz"
+               />
+               <Input
+                 type="password"
+                 label={formData.id ? "Yangi parol yozing" : "Parol kiriting *"}
+                 value={formData.password}
+                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+               />
+             </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><Phone size={14}/> Telefon</label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                    placeholder="+998 90 123 45 67"
-                  />
-                </div>
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Qisqacha ma'lumot</label>
+            <textarea
+              value={formData.desc}
+              onChange={(e) => setFormData({ ...formData, desc: e.target.value })}
+              rows={3}
+              className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white resize-none"
+              placeholder="Ustoz haqida qisqacha ma'lumot..."
+            />
+          </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5"><Star size={14}/> Tajriba</label>
-                  <input
-                    type="text"
-                    value={formData.exp}
-                    onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                    placeholder="8 yillik tajriba"
-                  />
-                </div>
-              </div>
+          <ImageUpload
+            value={formData.img || ''}
+            onChange={(url) => setFormData({ ...formData, img: url })}
+            label="Avatar"
+          />
 
-              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-xl space-y-4">
-                 <h4 className="text-xs font-black text-blue-600 uppercase tracking-widest flex items-center justify-between">
-                    Tizimga Kirish Ma'lumotlari
-                    <span className="text-blue-500"><Lock size={14}/></span>
-                 </h4>
-                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                     <label className="block text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1">Email <span className="text-rose-500">*</span></label>
-                     <input
-                       type="email"
-                       disabled={!!formData.id} // Cannot change email after creation for now
-                       value={formData.email}
-                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                       className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white disabled:opacity-50"
-                       placeholder="ustoz@markaz.uz"
-                     />
-                   </div>
-                   <div>
-                     <label className="block text-[10px] font-bold text-blue-800 dark:text-blue-300 mb-1">Parol {formData.id ? "(Faqat o'zgartirish uchun)" : <span className="text-rose-500">*</span>}</label>
-                     <input
-                       type="password"
-                       value={formData.password}
-                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                       className="w-full px-3 py-2 bg-white dark:bg-zinc-950 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white"
-                       placeholder={formData.id ? "Yangi parol yozing..." : "Parol kiriting"}
-                     />
-                   </div>
-                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Qisqacha ma'lumot</label>
-                <textarea
-                  value={formData.desc}
-                  onChange={(e) => setFormData({ ...formData, desc: e.target.value })}
-                  rows={3}
-                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white resize-none"
-                  placeholder="Ustoz haqida qisqacha ma'lumot..."
-                />
-              </div>
-
-              <ImageUpload
-                value={formData.img || ''}
-                onChange={(url) => setFormData({ ...formData, img: url })}
-                label="Rasm"
-              />
-            </div>
-
-            <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-950/50">
-              <button
-                onClick={closeModal}
-                className="px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl transition-colors"
-              >
-                Bekor qilish
-              </button>
-              <button
-                onClick={handleSave}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
-              >
-                Saqlash
-              </button>
-            </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={closeModal}>Bekor qilish</Button>
+            <Button onClick={handleSave}>Saqlash</Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

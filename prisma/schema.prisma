@@ -61,14 +61,18 @@ model Student {
 // ============================================
 
 model Course {
-  id          String   @id @default(uuid())
-  title       String
-  description String?
-  price       Float    @default(0)
-  duration    String?  // "3 oy", "6 oy"
-  status      String   @default("active") // active, archived
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(uuid())
+  name           String   // used by frontend
+  title          String?  // alias/display title
+  category       String?  @default("Boshqa")
+  description    String?
+  price          Float    @default(0)
+  duration       String?  // "3 oy", "6 oy"
+  lessonsPerWeek Int?     @default(3)
+  lessonDuration Int?     @default(90)  // minutes
+  status         String   @default("Active") // Active, Draft, Archived
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   groups Group[]
 }

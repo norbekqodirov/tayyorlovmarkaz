@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Clock, DoorOpen, X, Trash2, Edit2, Filter, MapPin, AlertCircle, User, Users, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
 
 interface ScheduleItem {
   id: string;
@@ -191,9 +194,9 @@ export default function CrmSchedule() {
           <p className="text-zinc-500 text-sm font-medium">Xonalar kesimida darslarni rejalashtirish</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleAddRoom} className="flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
-            <MapPin size={14} /> Xona Qo'shish
-          </button>
+          <Button variant="secondary" onClick={handleAddRoom} leftIcon={<MapPin size={14} />} size="sm" className="hidden md:flex">
+            Xona Qo'shish
+          </Button>
           <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
             <button onClick={() => setViewMode('rooms')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${viewMode === 'rooms' ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-500'}`}>
               Xonalar
@@ -202,9 +205,9 @@ export default function CrmSchedule() {
               Kunlar
             </button>
           </div>
-          <button onClick={() => openModal()} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-blue-600/20">
-            <Plus size={18} /> Dars Qo'shish
-          </button>
+          <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
+            Dars Qo'shish
+          </Button>
         </div>
       </div>
 
@@ -406,136 +409,122 @@ export default function CrmSchedule() {
             <p className="text-lg font-black text-slate-900 dark:text-white">{daySchedule.length} <span className="text-xs font-bold text-zinc-400">dars</span></p>
           </div>
         </div>
-      </div>
-
-      {/* Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {editingItem ? 'Darsni Tahrirlash' : "Yangi Dars Qo'shish"}
-                </h3>
-                <button onClick={closeModal} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors"><X size={24} /></button>
+      </div>      {/* Modal */}
+      <Modal 
+        isOpen={isModalOpen} 
+        onClose={closeModal} 
+        title={editingItem ? 'Darsni Tahrirlash' : "Yangi Dars Qo'shish"}
+        width="2xl"
+      >
+        <div className="space-y-6">
+          {conflicts.length > 0 && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800 rounded-xl flex items-start gap-2">
+              <AlertCircle className="text-rose-600 mt-0.5 shrink-0" size={16} />
+              <div>
+                <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">Ziddiyatlar</p>
+                <ul className="text-xs font-bold text-rose-700 dark:text-rose-400 list-disc list-inside">
+                  {conflicts.map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
               </div>
+            </div>
+          )}
 
-              <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-                {conflicts.length > 0 && (
-                  <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800 rounded-xl flex items-start gap-2">
-                    <AlertCircle className="text-rose-600 mt-0.5 shrink-0" size={16} />
-                    <div>
-                      <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">Ziddiyatlar</p>
-                      <ul className="text-xs font-bold text-rose-700 dark:text-rose-400 list-disc list-inside">
-                        {conflicts.map((c, i) => <li key={i}>{c}</li>)}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
-                    <select value={formData.groupName} onChange={(e) => {
-                      const g = (groups || []).find((g: any) => g.name === e.target.value);
-                      const course = courses.find((c: any) => c.name === g?.subject);
-                      const duration = course?.lessonDuration || 90;
-                      const endTime = getEndTime(formData.startTime || '09:00', duration);
-                      setFormData({ 
-                        ...formData, 
-                        groupName: e.target.value, 
-                        teacher: g?.teacher || formData.teacher, 
-                        room: g?.room || formData.room,
-                        endTime 
-                      });
-                    }} className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
-                      <option value="">Tanlang</option>
-                      {(groups || []).map((g: any) => <option key={g.id} value={g.name}>{g.name}</option>)}
-                      {!(groups || []).length && formData.groupName && <option value={formData.groupName}>{formData.groupName}</option>}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'qituvchi</label>
-                    <select value={formData.teacher} onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
-                      <option value="">Tanlang</option>
-                      {(teachers || []).map((t: any) => <option key={t.id} value={t.name}>{t.name}</option>)}
-                      {!(teachers || []).length && formData.teacher && <option value={formData.teacher}>{formData.teacher}</option>}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Xona</label>
-                    <select value={formData.room} onChange={(e) => setFormData({ ...formData, room: e.target.value })}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
-                      {rooms.map((r: any) => <option key={r.id || r.name} value={getRoomName(r)}>{getRoomName(r)}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Rang</label>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {COLORS.map(c => (
-                        <button key={c} onClick={() => setFormData({ ...formData, color: c })} className={`w-7 h-7 rounded-full ${c} ${formData.color === c ? 'ring-2 ring-offset-2 ring-zinc-400' : ''} transition-all`} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-5">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Boshlanish</label>
-                    <input type="time" value={formData.startTime} onChange={(e) => {
-                        const g = (groups || []).find((g: any) => g.name === formData.groupName);
-                        const course = courses.find((c: any) => c.name === g?.subject);
-                        const duration = course?.lessonDuration || 90;
-                        setFormData({ 
-                          ...formData, 
-                          startTime: e.target.value,
-                          endTime: e.target.value ? getEndTime(e.target.value, duration) : formData.endTime
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tugash</label>
-                    <input type="time" value={formData.endTime} disabled
-                      className="w-full px-3 py-2 bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold text-zinc-500 cursor-not-allowed" />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kunlar</label>
-                  <div className="flex flex-wrap gap-2">
-                    {DAYS.map(day => (
-                      <button key={day.id} onClick={() => toggleDay(day.id)} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${formData.days?.includes(day.id) ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                        }`}>{day.name}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
-                {editingItem ? (
-                  <button onClick={() => handleDelete(editingItem.id)} className="flex items-center gap-2 text-rose-600 font-bold text-sm hover:text-rose-700">
-                    <Trash2 size={16} /> O'chirish
-                  </button>
-                ) : <div />}
-                <div className="flex gap-3">
-                  <button onClick={closeModal} className="px-5 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">Bekor qilish</button>
-                  <button onClick={handleSave} className="px-7 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20">Saqlash</button>
-                </div>
-              </div>
-            </motion.div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Guruh</label>
+              <select value={formData.groupName} onChange={(e) => {
+                const g = (groups || []).find((g: any) => g.name === e.target.value);
+                const course = courses.find((c: any) => c.name === g?.subject);
+                const duration = course?.lessonDuration || 90;
+                const endTime = getEndTime(formData.startTime || '09:00', duration);
+                setFormData({ 
+                  ...formData, 
+                  groupName: e.target.value, 
+                  teacher: g?.teacher || formData.teacher, 
+                  room: g?.room || formData.room,
+                  endTime 
+                });
+              }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Tanlang</option>
+                {(groups || []).map((g: any) => <option key={g.id} value={g.name}>{g.name}</option>)}
+                {!(groups || []).length && formData.groupName && <option value={formData.groupName}>{formData.groupName}</option>}
+              </select>
+            </div>
+            
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">O'qituvchi</label>
+              <select value={formData.teacher} onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Tanlang</option>
+                {(teachers || []).map((t: any) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                {!(teachers || []).length && formData.teacher && <option value={formData.teacher}>{formData.teacher}</option>}
+              </select>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Xona</label>
+              <select value={formData.room} onChange={(e) => setFormData({ ...formData, room: e.target.value })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500">
+                {rooms.map((r: any) => <option key={r.id || r.name} value={getRoomName(r)}>{getRoomName(r)}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Rang</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {COLORS.map(c => (
+                  <button key={c} onClick={() => setFormData({ ...formData, color: c })} className={`w-7 h-7 rounded-full ${c} ${formData.color === c ? 'ring-2 ring-offset-2 ring-zinc-400' : ''} transition-all`} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Boshlanish</label>
+              <input type="time" value={formData.startTime} onChange={(e) => {
+                  const g = (groups || []).find((g: any) => g.name === formData.groupName);
+                  const course = courses.find((c: any) => c.name === g?.subject);
+                  const duration = course?.lessonDuration || 90;
+                  setFormData({ 
+                    ...formData, 
+                    startTime: e.target.value,
+                    endTime: e.target.value ? getEndTime(e.target.value, duration) : formData.endTime
+                  });
+                }}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Tugash</label>
+              <input type="time" value={formData.endTime} disabled
+                className="w-full bg-zinc-100 dark:bg-zinc-800/20 border border-zinc-200 dark:border-zinc-700 text-zinc-500 text-sm rounded-xl px-4 py-2.5 cursor-not-allowed" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Kunlar</label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS.map(day => (
+                <button key={day.id} onClick={() => toggleDay(day.id)} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${formData.days?.includes(day.id) ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                  }`}>{day.name}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center pt-4 border-t border-zinc-100 dark:border-zinc-800/50 mt-6">
+            {editingItem ? (
+              <Button variant="danger" onClick={() => handleDelete(editingItem.id)} leftIcon={<Trash2 size={16} />}>
+                O'chirish
+              </Button>
+            ) : <div />}
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={closeModal}>Bekor qilish</Button>
+              <Button onClick={handleSave}>Saqlash</Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

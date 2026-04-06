@@ -295,15 +295,14 @@ export default function CrmCourses() {
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars davomiyligi (daqiqa)</label>
-                    <select
+                    <input
+                      type="number"
+                      min="15" max="300"
                       value={formData.lessonDuration}
                       onChange={(e) => setFormData({...formData, lessonDuration: Number(e.target.value)})}
                       className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      {[45, 60, 90, 120].map(d => (
-                        <option key={d} value={d}>{d} daqiqa</option>
-                      ))}
-                    </select>
+                      placeholder="Masalan: 90"
+                    />
                   </div>
                 </div>
 

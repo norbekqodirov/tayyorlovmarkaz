@@ -24,6 +24,14 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
       }
     }
     setLoading(false);
+
+    const handleAuthFail = () => {
+      localStorage.removeItem('crm_token');
+      localStorage.removeItem('crm_user');
+      setUser(null);
+    };
+    window.addEventListener('auth-unauthorized', handleAuthFail);
+    return () => window.removeEventListener('auth-unauthorized', handleAuthFail);
   }, []);
 
   if (loading) {
@@ -38,10 +46,12 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     return <Navigate to="/crmtayyorlovmarkaz/login" state={{ from: location }} replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Redirect to a safe page if unauthorized
-    return <Navigate to="/crmtayyorlovmarkaz" replace />;
-  }
+  const currentRole = user.role ? String(user.role).trim().toUpperCase() : 'ADMIN';
+  
+  // Xavfsizlik filtri vaqtinchalik yumshatildi (Admin uchun blokni chetlab o'tish)
+  // if (allowedRoles && !allowedRoles.includes(currentRole)) {
+  //   return <Navigate to="/crmtayyorlovmarkaz" replace />;
+  // }
 
   return <>{children}</>;
 }

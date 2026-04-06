@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 
-export function useFirestore<T>(collectionName: string, queryConstraints: any[] = []) {
+export function useFirestore<T>(collectionName: string) {
   const [data, setData] = useState<(T & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -22,7 +22,7 @@ export function useFirestore<T>(collectionName: string, queryConstraints: any[] 
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, JSON.stringify(queryConstraints)]);
+  }, [fetchData]);
 
   const addDocument = async (documentData: any) => {
     try {

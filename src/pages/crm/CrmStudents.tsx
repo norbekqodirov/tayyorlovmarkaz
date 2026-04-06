@@ -11,7 +11,11 @@ import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import Pagination from '../../components/Pagination';
 import { SkeletonTable } from '../../components/Skeleton';
-import { exportToExcel, exportToPDF } from '../../utils/export';
+import { EmptyState, ErrorState } from '../../components/States';
+import { Input } from '../../components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { exportToExcel, exportToPDF, exportCertificateToPDF } from '../../utils/export';
 import { useCrmData } from '../../hooks/useCrmData';
 
 interface Student {
@@ -27,13 +31,13 @@ interface Student {
   group: string;
   paymentStatus: 'Tolov qilingan' | 'Qarzdorlik' | 'Kutilmoqda';
   balance: number;
-  status: 'Faol' | 'Muzlatilgan' | 'Tark etgan';
+  status: 'Faol' | 'Muzlatilgan' | 'Tark etgan' | 'Bitiruvchi';
   joinedDate: string;
   notes: string;
 }
 
 export default function CrmStudents() {
-  const { data: students = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Omit<Student, 'id'>>('students');
+  const { data: students = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
   const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
   const { courses: liveCourses, groups: liveGroups } = useCrmData();
   const courseOptions = liveCourses.length > 0 ? liveCourses : [];
@@ -194,6 +198,7 @@ export default function CrmStudents() {
     totalBalance: (students || []).reduce((acc, s) => acc + (s.balance || 0), 0)
   };
 
+  if (error) return <ErrorState message="Sinxronizatsiyada xatolik yuz berdi" onRetry={refetch} />;
   if (loading) return <SkeletonTable rows={8} cols={5} />;
 
   return (
@@ -209,10 +214,10 @@ export default function CrmStudents() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">O'quvchilar Boshqaruvi</h1>
-          <p className="text-sm font-medium text-zinc-500 mt-1">Markaz o'quvchilari, ularning natijalari va to'lovlari</p>
+          <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">O'quvchilar Boshqaruvi</h1>
+          <p className="text-xs text-zinc-400 mt-0.5">Markaz o'quvchilari, ularning natijalari va to'lovlari</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <div className="relative group">
             <button className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors">
               <Download size={18} />
@@ -258,27 +263,27 @@ export default function CrmStudents() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Jami O\'quvchilar', value: stats.total, icon: Users, color: 'blue' },
-          { label: 'Faol O\'quvchilar', value: stats.active, icon: GraduationCap, color: 'emerald' },
-          { label: 'Qarzdorlar', value: stats.debtors, icon: AlertCircle, color: 'rose' },
-          { label: 'Umumiy Balans', value: new Intl.NumberFormat('uz-UZ').format(stats.totalBalance) + ' so\'m', icon: DollarSign, color: 'amber' }
+          { label: 'Jami O\'quvchilar', value: stats.total, icon: Users, bg: 'bg-blue-50 dark:bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
+          { label: 'Faol O\'quvchilar', value: stats.active, icon: GraduationCap, bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'Qarzdorlar', value: stats.debtors, icon: AlertCircle, bg: 'bg-rose-50 dark:bg-rose-500/10', text: 'text-rose-600 dark:text-rose-400' },
+          { label: 'Umumiy Balans', value: new Intl.NumberFormat('uz-UZ').format(stats.totalBalance) + ' so\'m', icon: DollarSign, bg: 'bg-amber-50 dark:bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400' }
         ].map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <div className={`p-2.5 rounded-xl bg-${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600 dark:text-${stat.color}-400`}>
-                <stat.icon size={20} />
-              </div>
+          <div key={i} className="bg-white dark:bg-[#111118] p-4 rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.text}`}>
+              <stat.icon size={18} strokeWidth={2.5} />
             </div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{stat.label}</p>
-            <h3 className="text-xl font-black text-slate-900 dark:text-white mt-1">{stat.value}</h3>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest truncate">{stat.label}</p>
+              <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5 truncate">{stat.value}</p>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Filters and Table */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col md:flex-row justify-between gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
@@ -300,6 +305,7 @@ export default function CrmStudents() {
               <option value="Faol">Faol</option>
               <option value="Muzlatilgan">Muzlatilgan</option>
               <option value="Tark etgan">Tark etgan</option>
+              <option value="Bitiruvchi">Bitiruvchi</option>
             </select>
           </div>
         </div>
@@ -317,7 +323,19 @@ export default function CrmStudents() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {(paginatedStudents || []).map((student) => (
+              {(paginatedStudents || []).length === 0 ? (
+                <tr>
+                  <td colSpan={6}>
+                    <EmptyState 
+                      title={searchTerm || filterStatus !== 'Barchasi' ? "Hech narsa topilmadi" : "O'quvchilar yo'q"} 
+                      message={searchTerm || filterStatus !== 'Barchasi' ? "Qidiruv shartiga mos o'quvchi topilmadi." : "Hali ro'yxatda o'quvchi mavjud emas."} 
+                      actionLabel={!searchTerm && filterStatus === 'Barchasi' ? "+ O'quvchi qo'shish" : undefined}
+                      onAction={() => openModal()}
+                    />
+                  </td>
+                </tr>
+              ) : (
+              (paginatedStudents || []).map((student) => (
                 <tr 
                   key={student.id} 
                   onClick={() => { setSelectedStudent(student); setIsDetailOpen(true); }}
@@ -362,6 +380,8 @@ export default function CrmStudents() {
                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                         : student.status === 'Muzlatilgan'
                         ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+                        : student.status === 'Bitiruvchi'
+                        ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
                         : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
                     }`}>
                       {student.status}
@@ -384,7 +404,7 @@ export default function CrmStudents() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>
@@ -499,19 +519,33 @@ export default function CrmStudents() {
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-6">
-                  <button 
-                    onClick={() => openModal(selectedStudent)}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
-                  >
-                    Tahrirlash
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(selectedStudent.id)}
-                    className="flex-1 py-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl font-black text-sm hover:bg-rose-100 transition-all"
-                  >
-                    O'chirish
-                  </button>
+                <div className="flex flex-col gap-3 pt-6">
+                  {(selectedStudent.status === 'Bitiruvchi' || selectedStudent.status === 'Faol') && (
+                    <Button 
+                      variant="secondary" 
+                      onClick={() => exportCertificateToPDF(selectedStudent)}
+                      className="w-full text-sm font-black"
+                      leftIcon={<Download size={16} />}
+                    >
+                      Sertifikat Yuklash
+                    </Button>
+                  )}
+                  <div className="flex gap-3">
+                    <Button 
+                      variant="primary"
+                      onClick={() => openModal(selectedStudent)}
+                      className="flex-1 text-sm font-black"
+                    >
+                      Tahrirlash
+                    </Button>
+                    <Button 
+                      variant="danger"
+                      onClick={() => handleDelete(selectedStudent.id)}
+                      className="flex-1 text-sm font-black"
+                    >
+                      O'chirish
+                    </Button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -520,213 +554,163 @@ export default function CrmStudents() {
       </AnimatePresence>
 
       {/* Add/Edit Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {formData.id ? 'O\'quvchini Tahrirlash' : 'Yangi O\'quvchi Qo\'shish'}
-                </h3>
-                <button onClick={closeModal} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                  <X size={24} />
-                </button>
+      <Modal 
+        isOpen={isModalOpen} 
+        onClose={closeModal} 
+        title={formData.id ? 'O\'quvchini Tahrirlash' : 'Yangi O\'quvchi Qo\'shish'}
+        width="2xl"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Personal Info */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Shaxsiy Ma'lumotlar</h4>
+              <div className="space-y-3">
+                <Input 
+                  label="F.I.O"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  placeholder="Aliyev Vali"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input 
+                    label="Telefon"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    placeholder="+998 90 123 45 67"
+                  />
+                  <Input 
+                    type="date"
+                    label="Tug'ilgan sana"
+                    value={formData.birthDate}
+                    onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
+                  />
+                </div>
+                <Input 
+                  label="Manzil"
+                  value={formData.address}
+                  onChange={(e) => setFormData({...formData, address: e.target.value})}
+                  placeholder="Toshkent sh., Chilonzor tumani"
+                />
               </div>
-              
-              <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Personal Info */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Shaxsiy Ma'lumotlar</h4>
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">F.I.O</label>
-                        <input 
-                          type="text" 
-                          value={formData.name}
-                          onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          placeholder="Aliyev Vali"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefon</label>
-                          <input 
-                            type="text" 
-                            value={formData.phone}
-                            onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                            className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                            placeholder="+998 90 123 45 67"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tug'ilgan sana</label>
-                          <input 
-                            type="date" 
-                            value={formData.birthDate}
-                            onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
-                            className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Manzil</label>
-                        <input 
-                          type="text" 
-                          value={formData.address}
-                          onChange={(e) => setFormData({...formData, address: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          placeholder="Toshkent sh., Chilonzor tumani"
-                        />
-                      </div>
-                    </div>
-                  </div>
+            </div>
 
-                  {/* Parent Info */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Ota-ona Ma'lumotlari</h4>
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ota yoki ona ismi</label>
-                        <input 
-                          type="text" 
-                          value={formData.parentName}
-                          onChange={(e) => setFormData({...formData, parentName: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          placeholder="Aliyev G'ani"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ota-ona telefoni</label>
-                        <input 
-                          type="text" 
-                          value={formData.parentPhone}
-                          onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          placeholder="+998 90 111 22 33"
-                        />
-                      </div>
-                    </div>
-                  </div>
+            {/* Parent Info */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Ota-ona Ma'lumotlari</h4>
+              <div className="space-y-3">
+                <Input 
+                  label="Ota yoki ona ismi"
+                  value={formData.parentName}
+                  onChange={(e) => setFormData({...formData, parentName: e.target.value})}
+                  placeholder="Aliyev G'ani"
+                />
+                <Input 
+                  label="Ota-ona telefoni"
+                  value={formData.parentPhone}
+                  onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
+                  placeholder="+998 90 111 22 33"
+                />
+              </div>
+            </div>
 
-                  {/* Study Info */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">O'qish Ma'lumotlari</h4>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs</label>
-                          <select
-                            value={formData.course}
-                            onChange={(e) => setFormData({...formData, course: e.target.value, group: ''})}
-                            className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          >
-                            <option value="">Kursni tanlang...</option>
-                            {courseOptions.map((c: any) => (
-                              <option key={c.id} value={c.name}>{c.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
-                          <select
-                            value={formData.group}
-                            onChange={(e) => {
-                              const g = groupOptions.find((g: any) => g.name === e.target.value);
-                              setFormData({...formData, group: e.target.value, balance: g?.price ? -g.price : (formData.balance || 0)});
-                            }}
-                            className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          >
-                            <option value="">Guruhni tanlang...</option>
-                            {groupOptions
-                              .filter((g: any) => !formData.course || g.subject === formData.course)
-                              .map((g: any) => (
-                                <option key={g.id} value={g.name}>{g.name} ({g.teacher || 'Ustoz yo\'q'})</option>
-                              ))
-                            }
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
-                          <select 
-                            value={formData.status}
-                            onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                            className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          >
-                            <option value="Faol">Faol</option>
-                            <option value="Muzlatilgan">Muzlatilgan</option>
-                            <option value="Tark etgan">Tark etgan</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov Holati</label>
-                          <select 
-                            value={formData.paymentStatus}
-                            onChange={(e) => setFormData({...formData, paymentStatus: e.target.value as any})}
-                            className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                          >
-                            <option value="Tolov qilingan">To'lov qilingan</option>
-                            <option value="Qarzdorlik">Qarzdorlik</option>
-                            <option value="Kutilmoqda">Kutilmoqda</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
+            {/* Study Info */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">O'qish Ma'lumotlari</h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5 flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Kurs</label>
+                    <select
+                      value={formData.course}
+                      onChange={(e) => setFormData({...formData, course: e.target.value, group: ''})}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+                    >
+                      <option value="">Kursni tanlang...</option>
+                      {courseOptions.map((c: any) => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Financial & Notes */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Moliya va Eslatmalar</h4>
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Balans (UZS)</label>
-                        <input 
-                          type="number" 
-                          value={formData.balance}
-                          onChange={(e) => setFormData({...formData, balance: Number(e.target.value)})}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Eslatma</label>
-                        <textarea 
-                          value={formData.notes}
-                          onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white min-h-[100px]"
-                          placeholder="Qo'shimcha ma'lumotlar..."
-                        />
-                      </div>
-                    </div>
+                  <div className="space-y-1.5 flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Guruh</label>
+                    <select
+                      value={formData.group}
+                      onChange={(e) => {
+                        const g = groupOptions.find((g: any) => g.name === e.target.value);
+                        setFormData({...formData, group: e.target.value, balance: g?.price ? -g.price : (formData.balance || 0)});
+                      }}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+                    >
+                      <option value="">Guruhni tanlang...</option>
+                      {groupOptions
+                        .filter((g: any) => !formData.course || g.subject === formData.course)
+                        .map((g: any) => (
+                          <option key={g.id} value={g.name}>{g.name} ({g.teacher || 'Ustoz yo\'q'})</option>
+                        ))
+                      }
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5 flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>
+                    <select 
+                      value={formData.status}
+                      onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+                    >
+                      <option value="Faol">Faol</option>
+                      <option value="Muzlatilgan">Muzlatilgan</option>
+                      <option value="Tark etgan">Tark etgan</option>
+                      <option value="Bitiruvchi">Bitiruvchi</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5 flex flex-col gap-1.5">
+                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">To'lov Holati</label>
+                    <select 
+                      value={formData.paymentStatus}
+                      onChange={(e) => setFormData({...formData, paymentStatus: e.target.value as any})}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+                    >
+                      <option value="Tolov qilingan">To'lov qilingan</option>
+                      <option value="Qarzdorlik">Qarzdorlik</option>
+                      <option value="Kutilmoqda">Kutilmoqda</option>
+                    </select>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-900/50">
-                <button 
-                  onClick={closeModal}
-                  className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Bekor qilish
-                </button>
-                <button 
-                  onClick={handleSave}
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20"
-                >
-                  Saqlash
-                </button>
+            {/* Financial & Notes */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Moliya va Eslatmalar</h4>
+              <div className="space-y-3">
+                <Input 
+                  type="number"
+                  label="Balans (UZS)"
+                  value={formData.balance}
+                  onChange={(e) => setFormData({...formData, balance: Number(e.target.value)})}
+                />
+                <div className="space-y-1.5 flex flex-col gap-1.5">
+                  <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Eslatma</label>
+                  <textarea 
+                    value={formData.notes}
+                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium min-h-[100px] resize-y"
+                    placeholder="Qo'shimcha ma'lumotlar..."
+                  />
+                </div>
               </div>
-            </motion.div>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={closeModal} type="button">Bekor qilish</Button>
+            <Button variant="primary" onClick={handleSave} type="button" leftIcon={<Check size={18} />}>Saqlash</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -12,7 +12,10 @@ import {
 } from 'recharts';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
-import { exportToExcel, exportToPDF } from '../../utils/export';
+import { exportToExcel, exportToPDF, exportReceiptToPDF } from '../../utils/export';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
 
 interface Transaction {
   id: string;
@@ -143,13 +146,12 @@ export default function CrmFinance() {
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Moliya Boshqaruvi</h1>
           <p className="text-sm font-medium text-zinc-500 mt-1">O'quv markazining barcha moliyaviy oqimlari nazorati</p>
         </div>
-        <button 
+        <Button 
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
+          leftIcon={<Plus size={18} />}
         >
-          <Plus size={18} />
           Yangi Tranzaksiya
-        </button>
+        </Button>
       </div>
 
       {/* Stats Cards */}
@@ -271,19 +273,17 @@ export default function CrmFinance() {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-              <input 
-                type="text" 
+            <div className="flex-1 md:w-64">
+              <Input
+                leftIcon={<Search size={18} />}
                 placeholder="Qidirish..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               />
             </div>
-            <button className="p-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl hover:bg-zinc-200 transition-colors">
+            <Button variant="secondary" className="!px-3 flex items-center justify-center">
               <Download size={18} />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -427,14 +427,23 @@ export default function CrmFinance() {
                   </div>
                 </div>
 
-                <div className="pt-6">
-                  <button 
-                    onClick={() => handleDelete(selectedTransaction.id)}
-                    className="w-full py-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-2xl font-black text-sm hover:bg-rose-100 transition-all flex items-center justify-center gap-2"
+                <div className="pt-6 space-y-3">
+                  <Button 
+                    variant="secondary"
+                    onClick={() => exportReceiptToPDF(selectedTransaction)}
+                    className="w-full py-4 text-sm font-black"
+                    leftIcon={<Download size={18} />}
                   >
-                    <Trash2 size={18} />
+                    Chekni Yuklash (PDF)
+                  </Button>
+                  <Button 
+                    variant="danger"
+                    onClick={() => handleDelete(selectedTransaction.id)}
+                    className="w-full py-4 text-sm"
+                    leftIcon={<Trash2 size={18} />}
+                  >
                     Tranzaksiyani o'chirish
-                  </button>
+                  </Button>
                 </div>
               </div>
             </motion.div>
@@ -443,164 +452,134 @@ export default function CrmFinance() {
       </AnimatePresence>
 
       {/* Add Transaction Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-zinc-200 dark:border-zinc-800"
+      {/* Add Transaction Modal */}
+      <Modal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title="Yangi Tranzaksiya"
+        width="md"
+      >
+        <div className="space-y-5">
+          <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
+            <button 
+              onClick={() => setForm({...form, type: 'income', category: INCOME_CATEGORIES[0]})}
+              className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${form.type === 'income' ? 'bg-white dark:bg-zinc-700 shadow-sm text-emerald-600' : 'text-zinc-500'}`}
             >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Yangi Tranzaksiya</h3>
-                <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                  <X size={24} />
-                </button>
-              </div>
-              
-              <div className="p-6 space-y-5">
-                <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
-                  <button 
-                    onClick={() => setForm({...form, type: 'income', category: INCOME_CATEGORIES[0]})}
-                    className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${form.type === 'income' ? 'bg-white dark:bg-zinc-700 shadow-sm text-emerald-600' : 'text-zinc-500'}`}
-                  >
-                    Kirim
-                  </button>
-                  <button 
-                    onClick={() => setForm({...form, type: 'expense', category: EXPENSE_CATEGORIES[0]})}
-                    className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${form.type === 'expense' ? 'bg-white dark:bg-zinc-700 shadow-sm text-rose-600' : 'text-zinc-500'}`}
-                  >
-                    Chiqim
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Summa (UZS)</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                    <input 
-                      type="number" 
-                      value={form.amount || ''}
-                      onChange={(e) => setForm({...form, amount: Number(e.target.value)})}
-                      className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
-                  <select 
-                    value={form.category}
-                    onChange={(e) => setForm({...form, category: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                  >
-                    {(form.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {form.type === 'income' && form.category === 'Kurs to\'lovi' && (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</label>
-                    <select 
-                      value={form.studentId}
-                      onChange={(e) => {
-                        const student = (students || []).find(s => s.id === e.target.value);
-                        setForm({...form, studentId: e.target.value, studentName: student?.name || '', description: student ? `${student.name} (Kurs to'lovi)` : ''});
-                      }}
-                      className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      <option value="">O'quvchini tanlang</option>
-                      {(students || []).map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {form.type === 'expense' && form.category === 'Oylik' && (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Xodim / O'qituvchi</label>
-                    <select 
-                      value={form.staffId}
-                      onChange={(e) => {
-                        const allStaff = [...(staff || []), ...(teachers || [])];
-                        const member = allStaff.find(s => s.id.toString() === e.target.value.toString());
-                        setForm({...form, staffId: e.target.value, staffName: member?.name || '', description: member ? `${member.name} uchun ish haqi` : ''});
-                      }}
-                      className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      <option value="">Xodimni tanlang</option>
-                      <optgroup label="O'qituvchilar">
-                        {(teachers || []).map(t => (
-                          <option key={t.id} value={t.id}>{t.name} ({t.role})</option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Xodimlar">
-                        {(staff || []).map(s => (
-                          <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
-                        ))}
-                      </optgroup>
-                    </select>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>
-                  <textarea 
-                    value={form.description}
-                    onChange={(e) => setForm({...form, description: e.target.value})}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white min-h-[80px]"
-                    placeholder="Batafsil ma'lumot..."
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sana</label>
-                    <input 
-                      type="date" 
-                      value={form.date}
-                      onChange={(e) => setForm({...form, date: e.target.value})}
-                      className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov turi</label>
-                    <select 
-                      value={form.method}
-                      onChange={(e) => setForm({...form, method: e.target.value as any})}
-                      className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      <option value="Karta">Karta</option>
-                      <option value="Naqd">Naqd</option>
-                      <option value="Bank">Bank</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-900/50">
-                <button 
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Bekor qilish
-                </button>
-                <button 
-                  onClick={handleSave}
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20"
-                >
-                  Saqlash
-                </button>
-              </div>
-            </motion.div>
+              Kirim
+            </button>
+            <button 
+              onClick={() => setForm({...form, type: 'expense', category: EXPENSE_CATEGORIES[0]})}
+              className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${form.type === 'expense' ? 'bg-white dark:bg-zinc-700 shadow-sm text-rose-600' : 'text-zinc-500'}`}
+            >
+              Chiqim
+            </button>
           </div>
-        )}
-      </AnimatePresence>
+
+          <Input
+            type="number"
+            label="Summa (UZS)"
+            leftIcon={<DollarSign size={18} />}
+            value={form.amount || ''}
+            onChange={(e) => setForm({...form, amount: Number(e.target.value)})}
+            placeholder="0"
+          />
+
+          <div className="space-y-1.5 flex flex-col w-full">
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
+            <select 
+              value={form.category}
+              onChange={(e) => setForm({...form, category: e.target.value})}
+              className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {(form.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {form.type === 'income' && form.category === 'Kurs to\'lovi' && (
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</label>
+              <select 
+                value={form.studentId}
+                onChange={(e) => {
+                  const student = (students || []).find(s => s.id === e.target.value);
+                  setForm({...form, studentId: e.target.value, studentName: student?.name || '', description: student ? `${student.name} (Kurs to'lovi)` : ''});
+                }}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">O'quvchini tanlang</option>
+                {(students || []).map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {form.type === 'expense' && form.category === 'Oylik' && (
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Xodim / O'qituvchi</label>
+              <select 
+                value={form.staffId}
+                onChange={(e) => {
+                  const allStaff = [...(staff || []), ...(teachers || [])];
+                  const member = allStaff.find(s => s.id.toString() === e.target.value.toString());
+                  setForm({...form, staffId: e.target.value, staffName: member?.name || '', description: member ? `${member.name} uchun ish haqi` : ''});
+                }}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Xodimni tanlang</option>
+                <optgroup label="O'qituvchilar">
+                  {(teachers || []).map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.role})</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Xodimlar">
+                  {(staff || []).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-1.5 flex flex-col w-full">
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>
+            <textarea 
+              value={form.description}
+              onChange={(e) => setForm({...form, description: e.target.value})}
+              className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+              placeholder="Batafsil ma'lumot..."
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input 
+              type="date"
+              label="Sana"
+              value={form.date}
+              onChange={(e) => setForm({...form, date: e.target.value})}
+            />
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov turi</label>
+              <select 
+                value={form.method}
+                onChange={(e) => setForm({...form, method: e.target.value as any})}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="Karta">Karta</option>
+                <option value="Naqd">Naqd</option>
+                <option value="Bank">Bank</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Bekor qilish</Button>
+            <Button onClick={handleSave}>Saqlash</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
