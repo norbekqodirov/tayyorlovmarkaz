@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Upload, X, Image as ImageIcon, Loader2 } from 'lucide-react';
 import api from '../api/client';
+import { useToast } from './Toast';
 
 interface ImageUploadProps {
     value: string;
@@ -13,14 +14,15 @@ export default function ImageUpload({ value, onChange, label = 'Rasm', className
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
     const [dragOver, setDragOver] = useState(false);
+    const { showToast } = useToast();
 
     const handleUpload = async (file: File) => {
         if (!file.type.startsWith('image/')) {
-            alert('Faqat rasm fayllari ruxsat etilgan!');
+            showToast('Faqat rasm fayllari ruxsat etilgan!', 'error');
             return;
         }
         if (file.size > 10 * 1024 * 1024) {
-            alert('Fayl hajmi 10MB dan oshmasligi kerak!');
+            showToast('Fayl hajmi 10MB dan oshmasligi kerak!', 'error');
             return;
         }
         setUploading(true);
@@ -33,7 +35,7 @@ export default function ImageUpload({ value, onChange, label = 'Rasm', className
             onChange(res.data.url);
         } catch (err) {
             console.error('Upload error:', err);
-            alert('Rasm yuklashda xatolik yuz berdi!');
+            showToast('Rasm yuklashda xatolik yuz berdi!', 'error');
         } finally {
             setUploading(false);
         }

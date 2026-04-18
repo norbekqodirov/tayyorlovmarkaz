@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import crudRoutes from './routes/crud.js';
 import uploadRoutes from './routes/upload.js';
+import analyticsRoutes from './routes/analytics.js';
 import path from 'path';
 
 dotenv.config();
@@ -21,7 +22,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Public health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', message: 'API is running successfully!', timestamp: new Date().toISOString() });
 });
 
@@ -31,6 +32,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')
 // Routers
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api', crudRoutes);
 
 app.listen(PORT, () => {

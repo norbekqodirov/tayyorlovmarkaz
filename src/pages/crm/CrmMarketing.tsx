@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, Megaphone, Target, TrendingUp, DollarSign, X, Edit2, Trash2, PieChart, ExternalLink, Zap, Key, Activity, Bot, Share2, Globe, Send } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface Campaign {
   id?: string;
@@ -48,6 +49,7 @@ export default function CrmMarketing() {
   const [isAutoModal, setIsAutoModal] = useState(false);
   const [editingCamp, setEditingCamp] = useState<Campaign | null>(null);
   const [editingAuto, setEditingAuto] = useState<Automation | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; type: 'camp' | 'auto'; id: string }>({ open: false, type: 'camp', id: '' });
 
   const [campForm, setCampForm] = useState<Partial<Campaign>>({
     name: '', platform: 'Instagram', budget: 0, spent: 0, leads: 0, conversions: 0, status: 'Faol',
@@ -90,8 +92,25 @@ export default function CrmMarketing() {
     } catch (e) { showToast('Xatolik', 'error'); }
   };
 
+  const confirmDelete = async () => {
+    try {
+      if (deleteConfirm.type === 'camp') await delCampaign(deleteConfirm.id);
+      else await delAuto(deleteConfirm.id);
+      showToast('O\'chirildi', 'success');
+    } catch { showToast('Xatolik', 'error'); }
+    setDeleteConfirm({ open: false, type: 'camp', id: '' });
+  };
+
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="O'chirishni tasdiqlash"
+        message="Haqiqatan ham o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, type: 'camp', id: '' })}
+      />
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-6">
         <div>
@@ -179,7 +198,7 @@ export default function CrmMarketing() {
                         <td className="px-6 py-4 text-right">
                            <div className="flex justify-end gap-2">
                              <button onClick={() => { setEditingCamp(c); setCampForm(c); setIsCampModal(true); }} className="p-2 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16}/></button>
-                             <button onClick={() => { if(window.confirm('Ochirishni xohlaysizmi?')) delCampaign(c.id!); }} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
+                             <button onClick={() => setDeleteConfirm({ open: true, type: 'camp', id: c.id! })} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
                            </div>
                         </td>
                       </tr>
@@ -324,7 +343,7 @@ export default function CrmMarketing() {
 
                      <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/50 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => { setEditingAuto(a); setAutoForm(a); setIsAutoModal(true); }} className="text-xs font-bold text-blue-500 hover:text-blue-600 transition-colors">Tahrirlash</button>
-                        <button onClick={() => { if(window.confirm('Ochirasizmi?')) delAuto(a.id!); }} className="text-xs font-bold text-rose-500 hover:text-rose-600 transition-colors ml-2">O'chirish</button>
+                        <button onClick={() => setDeleteConfirm({ open: true, type: 'auto', id: a.id! })} className="text-xs font-bold text-rose-500 hover:text-rose-600 transition-colors ml-2">O'chirish</button>
                      </div>
                   </div>
                 ))}

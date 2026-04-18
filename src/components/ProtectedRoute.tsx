@@ -1,13 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-
 interface ProtectedRouteProps {
-  children: React.ReactNode;
+  children: ReactNode;
   allowedRoles?: string[];
+  requiredPermission?: string;
 }
 
-export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
+function parsePermissions(user: any): string[] {
+  if (!user?.permissions) return [];
+  if (Array.isArray(user.permissions)) return user.permissions;
+  try { return JSON.parse(user.permissions); } catch { return []; }
+}
+
+function canAccess(user: any, allowedRoles?: string[], requiredPermission?: string): boolean {
+  if (!user) return false;
+  // ADMIN always has full access
+  if (String(user.role).toUpperCase() === 'ADMIN') return true;
+
+  const perms = parsePermissions(user);
+
+  // If user has a custom permissions array, use it
+  if (perms.length > 0) {
+    if (requiredPermission) return perms.includes(requiredPermission);
+    // No required permission = admin-only route
+    return false;
+  }
+
+  // No custom permissions → fall back to role-based check
+  if (allowedRoles) {
+    return allowedRoles.includes(String(user.role).trim().toUpperCase());
+  }
+
+  return false;
+}
+
+export default function ProtectedRoute({ children, allowedRoles, requiredPermission }: ProtectedRouteProps) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
@@ -37,7 +65,7 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -46,12 +74,10 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     return <Navigate to="/crmtayyorlovmarkaz/login" state={{ from: location }} replace />;
   }
 
-  const currentRole = user.role ? String(user.role).trim().toUpperCase() : 'ADMIN';
-  
-  // Xavfsizlik filtri vaqtinchalik yumshatildi (Admin uchun blokni chetlab o'tish)
-  // if (allowedRoles && !allowedRoles.includes(currentRole)) {
-  //   return <Navigate to="/crmtayyorlovmarkaz" replace />;
-  // }
+  // Route protection: only check when allowedRoles or requiredPermission is given
+  if ((allowedRoles || requiredPermission) && !canAccess(user, allowedRoles, requiredPermission)) {
+    return <Navigate to="/crmtayyorlovmarkaz" replace />;
+  }
 
   return <>{children}</>;
 }

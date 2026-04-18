@@ -1,42 +1,63 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, Users, FileText, Link as LinkIcon, LogOut, Menu, X,
   Settings, GraduationCap, Presentation, Wallet, Calendar, DoorOpen,
   Layers, Megaphone, Star, BookOpen, Plus, Bell, BarChart2, Package,
-  Search, UserCircle, ChevronDown,
+  Search, UserCircle, ChevronDown, ChevronRight,
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
-  PanelLeftClose, PanelLeftOpen, Sun, Moon
+  PanelLeftClose, PanelLeftOpen, Sun, Moon,
+  CheckSquare, Activity,
+  ArrowUpRight, Target, Users2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
 import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Module definitions ────────────────────────────────────────────────────
-const MODULES = [
+type NavItem = {
+  name: string;
+  path: string;
+  icon: any;
+  permission: string | undefined;
+  end?: boolean;
+};
+type NavSection = { title?: string; links: NavItem[] };
+type NavModule = {
+  id: string; label: string; icon: any;
+  accent: string; gradient: string; color: string;
+  activeBg: string; activeNavBg: string;
+  sections: NavSection[];
+};
+
+// permission: undefined = admin-only; string = requires that permission ID
+const MODULES: NavModule[] = [
   {
     id: 'education',
     label: "Ta'lim",
     icon: GraduationCap,
-    color: 'text-blue-600',
-    bg: 'bg-blue-50 dark:bg-blue-500/10',
+    accent: '#3b82f6',
+    gradient: 'from-blue-500 to-indigo-600',
+    color: 'text-blue-500',
     activeBg: 'bg-blue-600',
+    activeNavBg: 'bg-blue-600',
     sections: [
       {
         links: [
-          { name: 'Dashboard',       path: '/crmtayyorlovmarkaz',             icon: LayoutDashboard, end: true },
-          { name: "Mening Portalim", path: '/crmtayyorlovmarkaz/portal',      icon: UserCircle      },
+          { name: 'Dashboard',       path: '/crmtayyorlovmarkaz',            icon: LayoutDashboard, end: true, permission: 'dashboard' },
+          { name: "Mening Portalim", path: '/crmtayyorlovmarkaz/portal',     icon: UserCircle,                permission: 'dashboard' },
         ],
       },
       {
-        title: "O'quv jarayon",
+        title: "O'quv Jarayon",
         links: [
-          { name: "O'quvchilar",     path: '/crmtayyorlovmarkaz/students',    icon: GraduationCap   },
-          { name: 'Guruhlar',        path: '/crmtayyorlovmarkaz/groups',      icon: Layers          },
-          { name: 'Kurslar',         path: '/crmtayyorlovmarkaz/courses',     icon: BookOpen        },
-          { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',    icon: Calendar        },
-          { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',     icon: ClipboardCheck  },
-          { name: 'Baholash',        path: '/crmtayyorlovmarkaz/assessment',  icon: Star            },
+          { name: "O'quvchilar",     path: '/crmtayyorlovmarkaz/students',   icon: GraduationCap,  permission: 'students'   },
+          { name: 'Guruhlar',        path: '/crmtayyorlovmarkaz/groups',     icon: Layers,         permission: 'groups'     },
+          { name: 'Kurslar',         path: '/crmtayyorlovmarkaz/courses',    icon: BookOpen,       permission: 'courses'    },
+          { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',   icon: Calendar,       permission: 'schedule'   },
+          { name: 'Davomat',         path: '/crmtayyorlovmarkaz/attendance', icon: CheckSquare,    permission: 'attendance' },
+          { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',    icon: ClipboardCheck, permission: 'journal'    },
+          { name: 'Baholash',        path: '/crmtayyorlovmarkaz/assessment', icon: Star,           permission: 'assessments'},
         ],
       },
     ],
@@ -45,15 +66,17 @@ const MODULES = [
     id: 'marketing',
     label: 'Marketing',
     icon: Megaphone,
-    color: 'text-violet-600',
-    bg: 'bg-violet-50 dark:bg-violet-500/10',
+    accent: '#8b5cf6',
+    gradient: 'from-violet-500 to-purple-600',
+    color: 'text-violet-500',
     activeBg: 'bg-violet-600',
+    activeNavBg: 'bg-violet-600',
     sections: [
       {
         links: [
-          { name: 'Lidlar (Voronka)', path: '/crmtayyorlovmarkaz/leads',     icon: TrendingUp },
-          { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon   },
-          { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing', icon: Megaphone  },
+          { name: 'Lidlar (Voronka)', path: '/crmtayyorlovmarkaz/leads',     icon: TrendingUp, permission: 'leads'        },
+          { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon,   permission: 'target_forms' },
+          { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing', icon: Megaphone,  permission: 'marketing'    },
         ],
       },
     ],
@@ -62,14 +85,16 @@ const MODULES = [
     id: 'hr',
     label: 'HR',
     icon: UserCog,
-    color: 'text-emerald-600',
-    bg: 'bg-emerald-50 dark:bg-emerald-500/10',
+    accent: '#10b981',
+    gradient: 'from-emerald-500 to-teal-600',
+    color: 'text-emerald-500',
     activeBg: 'bg-emerald-600',
+    activeNavBg: 'bg-emerald-600',
     sections: [
       {
         links: [
-          { name: 'Ustozlar', path: '/crmtayyorlovmarkaz/teachers', icon: Presentation },
-          { name: 'Xodimlar', path: '/crmtayyorlovmarkaz/staff',    icon: Users         },
+          { name: 'Ustozlar', path: '/crmtayyorlovmarkaz/teachers', icon: Presentation, permission: undefined },
+          { name: 'Xodimlar', path: '/crmtayyorlovmarkaz/staff',    icon: Users,        permission: undefined },
         ],
       },
     ],
@@ -78,28 +103,32 @@ const MODULES = [
     id: 'finance',
     label: 'Moliya',
     icon: CreditCard,
-    color: 'text-green-600',
-    bg: 'bg-green-50 dark:bg-green-500/10',
+    accent: '#22c55e',
+    gradient: 'from-green-500 to-emerald-600',
+    color: 'text-green-500',
     activeBg: 'bg-green-600',
+    activeNavBg: 'bg-green-600',
     sections: [
       {
         links: [
-          { name: 'Moliya', path: '/crmtayyorlovmarkaz/finance', icon: Wallet },
+          { name: 'Moliya', path: '/crmtayyorlovmarkaz/finance', icon: Wallet, permission: 'finance' },
         ],
       },
     ],
   },
   {
     id: 'analytics',
-    label: 'BI',
+    label: 'Analitika',
     icon: BarChart2,
-    color: 'text-indigo-600',
-    bg: 'bg-indigo-50 dark:bg-indigo-500/10',
+    accent: '#6366f1',
+    gradient: 'from-indigo-500 to-blue-600',
+    color: 'text-indigo-500',
     activeBg: 'bg-indigo-600',
+    activeNavBg: 'bg-indigo-600',
     sections: [
       {
         links: [
-          { name: 'BI Analitika', path: '/crmtayyorlovmarkaz/bi', icon: BarChart2 },
+          { name: 'BI Analitika', path: '/crmtayyorlovmarkaz/bi', icon: BarChart2, permission: 'bi' },
         ],
       },
     ],
@@ -108,30 +137,31 @@ const MODULES = [
     id: 'management',
     label: 'Boshqaruv',
     icon: Settings,
-    color: 'text-zinc-600',
-    bg: 'bg-zinc-100 dark:bg-white/5',
-    activeBg: 'bg-zinc-700',
+    accent: '#94a3b8',
+    gradient: 'from-slate-500 to-zinc-600',
+    color: 'text-slate-400',
+    activeBg: 'bg-zinc-600',
+    activeNavBg: 'bg-zinc-600',
     sections: [
       {
         title: 'Resurslar',
         links: [
-          { name: 'Xonalar',    path: '/crmtayyorlovmarkaz/rooms',     icon: DoorOpen },
-          { name: 'Inventar',   path: '/crmtayyorlovmarkaz/inventory', icon: Package  },
-          { name: 'Materiallar',path: '/crmtayyorlovmarkaz/content',   icon: FileText },
+          { name: 'Xonalar',     path: '/crmtayyorlovmarkaz/rooms',     icon: DoorOpen, permission: 'rooms'     },
+          { name: 'Inventar',    path: '/crmtayyorlovmarkaz/inventory', icon: Package,  permission: 'inventory' },
+          { name: 'Materiallar', path: '/crmtayyorlovmarkaz/content',   icon: FileText, permission: 'content'   },
         ],
       },
       {
         title: 'Tizim',
         links: [
-          { name: 'Foydalanuvchilar', path: '/crmtayyorlovmarkaz/users',     icon: Users   },
-          { name: 'Sozlamalar',       path: '/crmtayyorlovmarkaz/settings',  icon: Settings},
+          { name: 'Foydalanuvchilar', path: '/crmtayyorlovmarkaz/users',    icon: Users,    permission: 'users'    },
+          { name: 'Sozlamalar',       path: '/crmtayyorlovmarkaz/settings', icon: Settings, permission: 'settings' },
         ],
       },
     ],
   },
 ];
 
-// Detect active module based on URL
 function detectModule(pathname: string): string {
   if (pathname.includes('/leads') || pathname.includes('/forms') || pathname.includes('/marketing'))
     return 'marketing';
@@ -146,21 +176,56 @@ function detectModule(pathname: string): string {
   return 'education';
 }
 
+function getPageTitle(pathname: string): string {
+  const map: Record<string, string> = {
+    '/crmtayyorlovmarkaz': 'Dashboard',
+    '/crmtayyorlovmarkaz/students': "O'quvchilar",
+    '/crmtayyorlovmarkaz/groups': 'Guruhlar',
+    '/crmtayyorlovmarkaz/courses': 'Kurslar',
+    '/crmtayyorlovmarkaz/schedule': 'Dars Jadvali',
+    '/crmtayyorlovmarkaz/attendance': 'Davomat',
+    '/crmtayyorlovmarkaz/journal': 'Elektron Jurnal',
+    '/crmtayyorlovmarkaz/assessment': 'Baholash',
+    '/crmtayyorlovmarkaz/leads': 'Lidlar',
+    '/crmtayyorlovmarkaz/forms': 'Target Formalar',
+    '/crmtayyorlovmarkaz/marketing': 'Marketing',
+    '/crmtayyorlovmarkaz/teachers': 'Ustozlar',
+    '/crmtayyorlovmarkaz/staff': 'Xodimlar',
+    '/crmtayyorlovmarkaz/finance': 'Moliya',
+    '/crmtayyorlovmarkaz/bi': 'BI Analitika',
+    '/crmtayyorlovmarkaz/rooms': 'Xonalar',
+    '/crmtayyorlovmarkaz/inventory': 'Inventar',
+    '/crmtayyorlovmarkaz/content': 'Materiallar',
+    '/crmtayyorlovmarkaz/users': 'Foydalanuvchilar',
+    '/crmtayyorlovmarkaz/settings': 'Sozlamalar',
+    '/crmtayyorlovmarkaz/portal': 'Mening Portalim',
+  };
+  return map[pathname] || 'Dashboard';
+}
+
 export default function CrmLayout() {
   const [activeModuleId, setActiveModuleId] = useState('education');
-  const [isRightPanelHidden, setIsRightPanelHidden] = useState(false); // hide right panel → icon-only rail
+  const [isRightPanelHidden, setIsRightPanelHidden] = useState(false);
   const [isMobileOpen, setIsMobileOpen]     = useState(false);
   const [isSearchOpen, setIsSearchOpen]     = useState(false);
   const [showQuickActions, setShowQuickActions]   = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu]           = useState(false);
+  const [currentTime, setCurrentTime]             = useState(new Date());
 
   const navigate  = useNavigate();
   const location  = useLocation();
 
-  const [notifications,   setNotifications]  = useState<any[]>([]);
+  const [notifications,   setNotifications]   = useState<any[]>([]);
   const [userName,        setUserName]        = useState('Admin');
   const [userRole,        setUserRole]        = useState('ADMIN');
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+
+  // Clock
+  useEffect(() => {
+    const t = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // Auto-switch module on route change
   useEffect(() => {
@@ -174,6 +239,13 @@ export default function CrmLayout() {
         const u = JSON.parse(raw);
         setUserName(u.name || 'Admin');
         setUserRole(u.role || 'ADMIN');
+        // Parse permissions (stored as JSON string in DB)
+        if (u.permissions) {
+          const perms = Array.isArray(u.permissions)
+            ? u.permissions
+            : JSON.parse(u.permissions);
+          setUserPermissions(Array.isArray(perms) ? perms : []);
+        }
       }
     } catch { }
   }, []);
@@ -182,7 +254,7 @@ export default function CrmLayout() {
     try {
       const api = (await import('../api/client')).default;
       const res = await api.get('/notifications');
-      setNotifications(Array.isArray(res.data) ? res.data.slice(0, 5) : []);
+      setNotifications(Array.isArray(res.data) ? res.data.slice(0, 8) : []);
     } catch { setNotifications([]); }
   }, []);
 
@@ -195,6 +267,11 @@ export default function CrmLayout() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setIsSearchOpen(true); }
+      if (e.key === 'Escape') {
+        setShowQuickActions(false);
+        setShowNotifications(false);
+        setShowUserMenu(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -206,27 +283,61 @@ export default function CrmLayout() {
     navigate('/crmtayyorlovmarkaz/login');
   };
 
-  const activeModule = MODULES.find(m => m.id === activeModuleId) || MODULES[0];
+  // ── Permission filtering ─────────────────────────────────────────────────
+  const isAdmin = userRole === 'ADMIN';
+
+  const canSeeLink = (permission: string | undefined): boolean => {
+    if (isAdmin) return true;
+    if (permission === undefined) return false; // admin-only links
+    if (userPermissions.length === 0) return false; // no permissions assigned
+    return userPermissions.includes(permission);
+  };
+
+  const visibleModules = MODULES.map(mod => ({
+    ...mod,
+    sections: mod.sections
+      .map(sec => ({ ...sec, links: sec.links.filter(l => canSeeLink(l.permission)) }))
+      .filter(sec => sec.links.length > 0),
+  })).filter(mod => mod.sections.length > 0);
+
+  const activeModule = visibleModules.find(m => m.id === activeModuleId)
+    || visibleModules[0]
+    || MODULES[0];
   const unreadCount  = notifications.filter(n => !n.isRead).length;
   const { resolvedTheme, toggle: toggleTheme } = useTheme();
+  const pageTitle = getPageTitle(location.pathname);
+
+  const timeStr = currentTime.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = currentTime.toLocaleDateString('uz-UZ', { weekday: 'short', day: 'numeric', month: 'short' });
+
+  const allQuickActions = [
+    { label: 'Yangi Lid',       icon: Target,        path: '/crmtayyorlovmarkaz/leads',    color: 'text-violet-500', permission: 'leads'    },
+    { label: "Yangi O'quvchi",  icon: GraduationCap, path: '/crmtayyorlovmarkaz/students', color: 'text-blue-500',   permission: 'students' },
+    { label: 'Yangi To\'lov',   icon: Wallet,        path: '/crmtayyorlovmarkaz/finance',  color: 'text-green-500',  permission: 'finance'  },
+    { label: 'Yangi Guruh',     icon: Users2,        path: '/crmtayyorlovmarkaz/groups',   color: 'text-indigo-500', permission: 'groups'   },
+    { label: 'Dars Jadvali',    icon: Calendar,      path: '/crmtayyorlovmarkaz/schedule', color: 'text-amber-500',  permission: 'schedule' },
+  ];
+  const quickActions = allQuickActions.filter(a => canSeeLink(a.permission));
 
   // ────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#f1f2f4] dark:bg-[#0a0a0f] flex font-sans">
+    <div className="min-h-screen bg-[#f0f2f5] dark:bg-[#09090f] flex font-sans">
 
-      {/* ════════════════ SIDEBAR ════════════════ */}
+      {/* ════════════════ DESKTOP SIDEBAR ════════════════ */}
       <aside className="hidden md:flex h-screen sticky top-0 z-40 shrink-0">
 
-        {/* ── Left rail: module icons ── */}
-        <div className="flex flex-col w-[48px] bg-[#1e1e2e] border-r border-white/[0.06] h-full shrink-0">
+        {/* ── Left rail ── */}
+        <div className="flex flex-col w-[56px] bg-[#13131f] h-full shrink-0 shadow-xl">
           {/* Logo */}
-          <div className="flex items-center justify-center h-[52px] border-b border-white/[0.06] shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white text-[11px] font-black shadow-sm">T</div>
+          <div className="flex items-center justify-center h-[56px] shrink-0 border-b border-white/[0.05]">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[12px] font-black shadow-lg shadow-blue-500/30">
+              T
+            </div>
           </div>
 
           {/* Module icons */}
-          <div className="flex flex-col items-center gap-0.5 py-2 flex-1">
-            {MODULES.map(mod => {
+          <div className="flex flex-col items-center gap-1 py-3 flex-1 overflow-y-auto scrollbar-hide">
+            {visibleModules.map(mod => {
               const Icon = mod.icon;
               const isActive = mod.id === activeModuleId;
               return (
@@ -234,88 +345,108 @@ export default function CrmLayout() {
                   key={mod.id}
                   onClick={() => {
                     setActiveModuleId(mod.id);
-                    // Navigate to first link of module
                     const firstLink = mod.sections[0]?.links[0];
                     if (firstLink) navigate(firstLink.path);
                     setIsRightPanelHidden(false);
                   }}
                   title={mod.label}
-                  className={`relative group w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-150 ${
+                  className={`relative group w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${
                     isActive
-                      ? 'bg-white/10 text-white'
-                      : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'
+                      ? 'bg-white/10 shadow-inner'
+                      : 'text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300'
                   }`}
                 >
-                  <Icon size={16} strokeWidth={isActive ? 2.5 : 1.8} />
-                  {/* Active indicator */}
+                  <Icon
+                    size={18}
+                    strokeWidth={isActive ? 2.5 : 1.8}
+                    className={isActive ? mod.color : 'text-zinc-500'}
+                  />
+                  {/* Active bar */}
                   {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-500 rounded-r-full" />
+                    <motion.span
+                      layoutId="rail-indicator"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full"
+                      style={{ backgroundColor: mod.accent }}
+                    />
                   )}
                   {/* Tooltip */}
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-[#2a2a3e] text-white text-[10px] font-bold rounded-lg shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                  <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-[#1e1e30] border border-white/10 text-white text-[10px] font-bold rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                     {mod.label}
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 rotate-45 bg-[#1e1e30] border-l border-b border-white/10" />
                   </div>
                 </button>
               );
             })}
           </div>
 
-          {/* User avatar + logout */}
-          <div className="flex flex-col items-center gap-1 py-2 border-t border-white/[0.06] shrink-0">
+          {/* Bottom actions */}
+          <div className="flex flex-col items-center gap-1.5 py-3 border-t border-white/[0.05] shrink-0">
+            <button
+              onClick={toggleTheme}
+              title={resolvedTheme === 'dark' ? 'Kunduzgi rejim' : 'Tungi rejim'}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-all"
+            >
+              {resolvedTheme === 'dark' ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
+            </button>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              title={userName}
-              className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center text-white font-black text-[10px] hover:ring-2 hover:ring-white/20 transition-all"
+              className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-[11px] hover:ring-2 hover:ring-blue-400/30 transition-all shadow-sm"
             >
               {userName.charAt(0).toUpperCase()}
             </button>
           </div>
         </div>
 
-        {/* ── Right panel: contextual links ── */}
+        {/* ── Right panel ── */}
         <AnimatePresence initial={false}>
           {!isRightPanelHidden && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 162, opacity: 1 }}
+              animate={{ width: 196, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
-              className="flex flex-col bg-white dark:bg-[#111118] border-r border-zinc-200/70 dark:border-white/[0.05] h-full overflow-hidden shrink-0"
+              transition={{ duration: 0.18, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="flex flex-col bg-white dark:bg-[#0f0f1a] border-r border-zinc-200/60 dark:border-white/[0.04] h-full overflow-hidden shrink-0 shadow-sm"
             >
               {/* Panel header */}
-              <div className="flex items-center justify-between h-[52px] px-3 border-b border-zinc-200/70 dark:border-white/[0.05] shrink-0">
-                <span className={`text-[11px] font-black uppercase tracking-widest ${activeModule.color}`}>
-                  {activeModule.label}
-                </span>
+              <div className="flex items-center justify-between h-[56px] px-3.5 border-b border-zinc-200/60 dark:border-white/[0.04] shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className={`w-1.5 h-4 rounded-full bg-gradient-to-b ${activeModule.gradient}`} />
+                  <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-900 dark:text-white">
+                    {activeModule.label}
+                  </span>
+                </div>
                 <button
                   onClick={() => setIsRightPanelHidden(true)}
                   className="p-1 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-white/5 transition-all"
-                  title="Panelni yopish"
                 >
-                  <PanelLeftClose size={13} strokeWidth={2} />
+                  <PanelLeftClose size={12} strokeWidth={2} />
                 </button>
               </div>
 
               {/* Search */}
-              <div className="px-2 py-2 shrink-0">
+              <div className="px-2.5 py-2.5 shrink-0">
                 <button
                   onClick={() => setIsSearchOpen(true)}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200/60 dark:hover:bg-white/10 rounded-lg text-zinc-400 transition-all"
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-white/[0.04] hover:bg-zinc-200/60 dark:hover:bg-white/[0.07] rounded-xl text-zinc-400 transition-all border border-zinc-200/60 dark:border-white/[0.04]"
                 >
                   <Search size={11} />
                   <span className="text-[10px] flex-1 text-left">Qidirish...</span>
-                  <kbd className="text-[8px] font-black bg-white dark:bg-white/10 px-1 py-0.5 rounded text-zinc-400">⌘K</kbd>
+                  <kbd className="text-[8px] font-black bg-white dark:bg-white/10 px-1.5 py-0.5 rounded-md text-zinc-400 border border-zinc-200 dark:border-white/10">⌘K</kbd>
                 </button>
               </div>
 
-              {/* Nav links */}
-              <nav className="flex-1 overflow-y-auto scrollbar-hide px-2 pb-2 space-y-3">
+              {/* Nav */}
+              <nav className="flex-1 overflow-y-auto scrollbar-hide px-2.5 pb-3 space-y-4">
                 {activeModule.sections.map((section, si) => (
                   <div key={si}>
                     {section.title && (
-                      <p className="px-1.5 mb-1 text-[9px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.14em]">
-                        {section.title}
-                      </p>
+                      <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                        <div className={`h-px flex-1 bg-gradient-to-r ${activeModule.gradient} opacity-20`} />
+                        <p className="text-[9px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-[0.16em] shrink-0">
+                          {section.title}
+                        </p>
+                        <div className={`h-px flex-1 bg-gradient-to-l ${activeModule.gradient} opacity-20`} />
+                      </div>
                     )}
                     <div className="space-y-0.5">
                       {section.links.map(link => {
@@ -326,15 +457,20 @@ export default function CrmLayout() {
                             to={link.path}
                             end={link.end}
                             className={({ isActive }) =>
-                              `flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12px] transition-all duration-100 ${
+                              `group flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] transition-all duration-100 ${
                                 isActive
-                                  ? 'bg-blue-600 text-white font-semibold shadow-sm'
+                                  ? `${activeModule.activeNavBg} text-white font-semibold shadow-sm`
                                   : 'text-zinc-500 dark:text-zinc-400 font-medium hover:bg-zinc-100 dark:hover:bg-white/[0.05] hover:text-slate-900 dark:hover:text-white'
                               }`
                             }
                           >
-                            <Icon size={13} strokeWidth={2} className="shrink-0" />
-                            <span className="truncate">{link.name}</span>
+                            {({ isActive }) => (
+                              <>
+                                <Icon size={13} strokeWidth={2} className="shrink-0" />
+                                <span className="truncate flex-1">{link.name}</span>
+                                {isActive && <ChevronRight size={10} className="opacity-60 shrink-0" />}
+                              </>
+                            )}
                           </NavLink>
                         );
                       })}
@@ -342,16 +478,29 @@ export default function CrmLayout() {
                   </div>
                 ))}
               </nav>
+
+              {/* Bottom info */}
+              <div className="px-3 py-2.5 border-t border-zinc-200/60 dark:border-white/[0.04] shrink-0">
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-zinc-50 dark:bg-white/[0.03]">
+                  <div className={`w-6 h-6 rounded-lg bg-gradient-to-br ${activeModule.gradient} flex items-center justify-center shrink-0`}>
+                    <span className="text-white text-[9px] font-black">{userName.charAt(0)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{userName}</p>
+                    <p className="text-[9px] text-zinc-400">{userRole}</p>
+                  </div>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Show panel button (when hidden) */}
         {isRightPanelHidden && (
-          <div className="flex items-start pt-[52px] bg-white dark:bg-[#111118] border-r border-zinc-200/70 dark:border-white/[0.05]">
+          <div className="flex items-start pt-[56px] bg-white dark:bg-[#0f0f1a] border-r border-zinc-200/60 dark:border-white/[0.04]">
             <button
               onClick={() => setIsRightPanelHidden(false)}
-              className="m-1 p-1 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-white/5 transition-all"
+              className="m-1.5 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-white/5 transition-all"
               title="Panelni ochish"
             >
               <PanelLeftOpen size={13} strokeWidth={2} />
@@ -361,53 +510,92 @@ export default function CrmLayout() {
       </aside>
 
       {/* ════════════════ MOBILE HEADER ════════════════ */}
-      <div className="md:hidden fixed top-0 left-0 right-0 bg-white dark:bg-[#111118] border-b border-zinc-200/70 dark:border-white/[0.05] flex items-center justify-between px-4 z-50 h-14">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-white text-[11px] font-black">T</div>
+      <div className="md:hidden fixed top-0 left-0 right-0 bg-white/90 dark:bg-[#0f0f1a]/95 backdrop-blur-xl border-b border-zinc-200/60 dark:border-white/[0.04] flex items-center justify-between px-4 z-50 h-14 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[11px] font-black shadow-sm">T</div>
           <span className="text-sm font-black text-slate-900 dark:text-white">Tayyorlov CRM</span>
         </div>
-        <button onClick={() => setIsMobileOpen(!isMobileOpen)} className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-white/10 flex items-center justify-center">
-          {isMobileOpen ? <X size={16} /> : <Menu size={16} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIsSearchOpen(true)} className="w-8 h-8 rounded-xl bg-zinc-100 dark:bg-white/5 flex items-center justify-center text-zinc-500">
+            <Search size={15} />
+          </button>
+          <button onClick={() => setIsMobileOpen(!isMobileOpen)} className="w-8 h-8 rounded-xl bg-zinc-100 dark:bg-white/10 flex items-center justify-center text-zinc-600 dark:text-zinc-300">
+            {isMobileOpen ? <X size={16} /> : <Menu size={16} />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile menu */}
       <AnimatePresence>
         {isMobileOpen && (
-          <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.15 }}
-            className="md:hidden fixed inset-0 top-14 bg-white dark:bg-[#111118] z-40 flex flex-col overflow-hidden">
-            {/* Module tabs */}
-            <div className="flex overflow-x-auto gap-1 p-3 border-b border-zinc-100 dark:border-white/5 scrollbar-hide">
-              {MODULES.map(mod => {
+          <motion.div
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            transition={{ duration: 0.15 }}
+            className="md:hidden fixed inset-0 top-14 bg-white dark:bg-[#0f0f1a] z-40 flex flex-col overflow-hidden"
+          >
+            <div className="flex overflow-x-auto gap-1.5 p-3 border-b border-zinc-100 dark:border-white/[0.04] scrollbar-hide">
+              {visibleModules.map(mod => {
                 const Icon = mod.icon;
                 return (
-                  <button key={mod.id} onClick={() => setActiveModuleId(mod.id)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold shrink-0 whitespace-nowrap transition-all ${mod.id === activeModuleId ? 'bg-blue-600 text-white shadow-sm' : 'bg-zinc-100 dark:bg-white/5 text-zinc-500'}`}>
+                  <button
+                    key={mod.id}
+                    onClick={() => setActiveModuleId(mod.id)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold shrink-0 whitespace-nowrap transition-all ${
+                      mod.id === activeModuleId
+                        ? `bg-gradient-to-r ${mod.gradient} text-white shadow-sm`
+                        : 'bg-zinc-100 dark:bg-white/5 text-zinc-500'
+                    }`}
+                  >
                     <Icon size={13} strokeWidth={2} />
                     {mod.label}
                   </button>
                 );
               })}
             </div>
-            <nav className="flex-1 px-3 py-2 overflow-y-auto space-y-3">
+            <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-4">
               {activeModule.sections.map((section, si) => (
                 <div key={si}>
-                  {section.title && <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest px-1 mb-1">{section.title}</p>}
+                  {section.title && (
+                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest px-1 mb-2">{section.title}</p>
+                  )}
                   {section.links.map(link => {
                     const Icon = link.icon;
                     return (
-                      <NavLink key={link.path} to={link.path} end={link.end} onClick={() => setIsMobileOpen(false)}
-                        className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive ? 'bg-blue-600 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5'}`}>
-                        <Icon size={15} strokeWidth={2} />{link.name}
+                      <NavLink
+                        key={link.path}
+                        to={link.path}
+                        end={link.end}
+                        onClick={() => setIsMobileOpen(false)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all mb-1 ${
+                            isActive
+                              ? `bg-gradient-to-r ${activeModule.gradient} text-white shadow-md`
+                              : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-white/5'
+                          }`
+                        }
+                      >
+                        <Icon size={16} strokeWidth={2} />{link.name}
                       </NavLink>
                     );
                   })}
                 </div>
               ))}
             </nav>
-            <div className="p-3 border-t border-zinc-100 dark:border-white/5">
-              <button onClick={handleLogout} className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10">
-                <LogOut size={15} /> Chiqish
+            <div className="p-3 border-t border-zinc-100 dark:border-white/[0.04] flex gap-2">
+              <button
+                onClick={toggleTheme}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-white/5"
+              >
+                {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                {resolvedTheme === 'dark' ? 'Kunduz' : 'Tun'}
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10"
+              >
+                <LogOut size={16} /> Chiqish
               </button>
             </div>
           </motion.div>
@@ -417,41 +605,68 @@ export default function CrmLayout() {
       {/* ════════════════ MAIN ════════════════ */}
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
 
-        {/* Top header */}
-        <header className="hidden md:flex items-center justify-between px-5 bg-white dark:bg-[#111118] border-b border-zinc-200/70 dark:border-white/[0.05] h-[52px] shrink-0 z-30">
-          <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
-            {new Date().toLocaleDateString('uz-UZ', { weekday: 'long', day: 'numeric', month: 'long' })}
+        {/* ── Top header ── */}
+        <header className="hidden md:flex items-center justify-between px-5 bg-white/80 dark:bg-[#0f0f1a]/90 backdrop-blur-xl border-b border-zinc-200/60 dark:border-white/[0.04] h-[56px] shrink-0 z-30">
+          {/* Left: breadcrumb + page title */}
+          <div className="flex items-center gap-2">
+            <div className={`w-6 h-6 rounded-lg bg-gradient-to-br ${activeModule.gradient} flex items-center justify-center shadow-sm`}>
+              <activeModule.icon size={12} strokeWidth={2.5} className="text-white" />
+            </div>
+            <div className="flex items-center gap-1 text-[11px] text-zinc-400">
+              <span className="font-medium">{activeModule.label}</span>
+              <ChevronRight size={10} />
+              <span className="font-bold text-slate-900 dark:text-white">{pageTitle}</span>
+            </div>
           </div>
 
+          {/* Right: actions */}
           <div className="flex items-center gap-1.5">
+
+            {/* Clock */}
+            <div className="hidden lg:flex flex-col items-end mr-2">
+              <span className="text-[13px] font-black text-slate-900 dark:text-white tabular-nums">{timeStr}</span>
+              <span className="text-[9px] text-zinc-400 font-medium capitalize">{dateStr}</span>
+            </div>
+
             {/* Search */}
-            <button onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-2 px-2.5 py-1.5 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200/60 dark:hover:bg-white/10 rounded-lg text-zinc-400 transition-all">
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-zinc-100 dark:bg-white/[0.04] hover:bg-zinc-200/60 dark:hover:bg-white/[0.07] rounded-xl text-zinc-400 transition-all border border-zinc-200/60 dark:border-white/[0.04]"
+            >
               <Search size={12} />
-              <span className="text-[11px] text-zinc-400">Qidirish</span>
-              <kbd className="text-[8px] font-black bg-white dark:bg-white/10 text-zinc-400 px-1 py-0.5 rounded shadow-sm ml-0.5">⌘K</kbd>
+              <span className="text-[11px]">Qidirish</span>
+              <kbd className="text-[8px] font-black bg-white dark:bg-white/10 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-200 dark:border-white/10 ml-0.5">⌘K</kbd>
             </button>
 
             {/* Quick add */}
             <div className="relative">
-              <button onClick={() => setShowQuickActions(!showQuickActions)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-all active:scale-95 shadow-sm shadow-blue-500/20">
+              <button
+                onClick={() => { setShowQuickActions(!showQuickActions); setShowNotifications(false); setShowUserMenu(false); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-[11px] font-bold transition-all active:scale-95 shadow-md shadow-blue-500/20"
+              >
                 <Plus size={12} strokeWidth={3} /> Yangi
               </button>
               <AnimatePresence>
                 {showQuickActions && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowQuickActions(false)} />
-                    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.1 }}
-                      className="absolute right-0 top-full mt-1.5 w-44 bg-white dark:bg-[#1a1a24] rounded-xl p-1.5 border border-zinc-200/80 dark:border-white/10 shadow-lg z-20">
-                      {[
-                        { label: 'Yangi Lid',       icon: TrendingUp,    path: '/crmtayyorlovmarkaz/leads'    },
-                        { label: "Yangi O'quvchi",  icon: GraduationCap, path: '/crmtayyorlovmarkaz/students' },
-                        { label: 'Yangi Guruh',     icon: Layers,        path: '/crmtayyorlovmarkaz/groups'   },
-                      ].map(item => (
-                        <button key={item.label} onClick={() => { navigate(item.path); setShowQuickActions(false); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-white/5 rounded-lg transition-all">
-                          <item.icon size={12} className="text-blue-600 shrink-0" /> {item.label}
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                      transition={{ duration: 0.1 }}
+                      className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#1a1a28] rounded-2xl p-2 border border-zinc-200/60 dark:border-white/10 shadow-xl z-20"
+                    >
+                      <p className="px-3 py-1.5 text-[9px] font-black text-zinc-400 uppercase tracking-widest">Tez harakatlar</p>
+                      {quickActions.map(item => (
+                        <button
+                          key={item.label}
+                          onClick={() => { navigate(item.path); setShowQuickActions(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-white/[0.05] rounded-xl transition-all"
+                        >
+                          <item.icon size={13} className={`${item.color} shrink-0`} />
+                          {item.label}
+                          <ArrowUpRight size={10} className="ml-auto text-zinc-400" />
                         </button>
                       ))}
                     </motion.div>
@@ -460,45 +675,61 @@ export default function CrmLayout() {
               </AnimatePresence>
             </div>
 
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              title={resolvedTheme === 'dark' ? "Kunduzgi rejim" : "Tungi rejim"}
-              className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 flex items-center justify-center text-zinc-500 dark:text-zinc-400 transition-all"
-            >
-              {resolvedTheme === 'dark'
-                ? <Sun size={14} strokeWidth={2} />
-                : <Moon size={14} strokeWidth={2} />}
-            </button>
+            <div className="w-px h-5 bg-zinc-200 dark:bg-white/10 mx-0.5" />
 
-            <div className="h-4 w-px bg-zinc-200 dark:bg-white/10 mx-0.5" />
-
-            {/* Notifications */}
+            {/* Activity / notifications */}
             <div className="relative">
-              <button onClick={() => setShowNotifications(!showNotifications)}
-                className="relative w-8 h-8 rounded-lg bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 flex items-center justify-center text-zinc-500 transition-all">
+              <button
+                onClick={() => { setShowNotifications(!showNotifications); setShowQuickActions(false); setShowUserMenu(false); }}
+                className="relative w-8 h-8 rounded-xl bg-zinc-100 dark:bg-white/[0.04] hover:bg-zinc-200 dark:hover:bg-white/[0.08] flex items-center justify-center text-zinc-500 transition-all border border-zinc-200/60 dark:border-white/[0.04]"
+              >
                 <Bell size={14} strokeWidth={2} />
-                {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-white dark:border-[#111118]" />}
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-[#0f0f1a] animate-pulse" />
+                )}
               </button>
               <AnimatePresence>
                 {showNotifications && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowNotifications(false)} />
-                    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.1 }}
-                      className="absolute right-0 top-full mt-1.5 w-68 bg-white dark:bg-[#1a1a24] rounded-xl border border-zinc-200/80 dark:border-white/10 shadow-lg z-20 overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-zinc-100 dark:border-white/[0.06] flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">Bildirishnomalar</span>
-                        {unreadCount > 0 && <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-600 rounded-full text-[9px] font-black">{unreadCount}</span>}
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                      transition={{ duration: 0.1 }}
+                      className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-[#1a1a28] rounded-2xl border border-zinc-200/60 dark:border-white/10 shadow-xl z-20 overflow-hidden"
+                    >
+                      <div className="px-4 py-3 border-b border-zinc-100 dark:border-white/[0.05] flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Activity size={13} className="text-blue-500" />
+                          <span className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-widest">Bildirishnomalar</span>
+                        </div>
+                        {unreadCount > 0 && (
+                          <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-full text-[9px] font-black">{unreadCount} yangi</span>
+                        )}
                       </div>
-                      <div className="max-h-56 overflow-y-auto">
-                        {notifications.length === 0
-                          ? <div className="py-8 text-center text-[11px] text-zinc-400">Bildirishnomalar yo'q</div>
-                          : notifications.map(n => (
-                            <div key={n.id} className={`px-4 py-3 border-b border-zinc-50 dark:border-white/[0.03] ${!n.isRead ? 'bg-blue-50/30 dark:bg-blue-500/5' : ''}`}>
-                              <p className="text-[11px] font-bold text-slate-900 dark:text-white line-clamp-1">{n.title}</p>
-                              <p className="text-[10px] text-zinc-400 mt-0.5 line-clamp-1">{n.message}</p>
+                      <div className="max-h-64 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <div className="py-10 text-center">
+                            <Bell size={28} className="text-zinc-300 dark:text-zinc-700 mx-auto mb-2" />
+                            <p className="text-[11px] text-zinc-400">Hozircha bildirishnomalar yo'q</p>
+                          </div>
+                        ) : (
+                          notifications.map(n => (
+                            <div
+                              key={n.id}
+                              className={`px-4 py-3 border-b border-zinc-50 dark:border-white/[0.03] hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors ${!n.isRead ? 'bg-blue-50/40 dark:bg-blue-500/[0.04]' : ''}`}
+                            >
+                              <div className="flex items-start gap-2">
+                                {!n.isRead && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />}
+                                <div>
+                                  <p className="text-[11px] font-bold text-slate-900 dark:text-white line-clamp-1">{n.title}</p>
+                                  <p className="text-[10px] text-zinc-400 mt-0.5 line-clamp-2">{n.message}</p>
+                                </div>
+                              </div>
                             </div>
-                          ))}
+                          ))
+                        )}
                       </div>
                     </motion.div>
                   </>
@@ -506,34 +737,61 @@ export default function CrmLayout() {
               </AnimatePresence>
             </div>
 
-            {/* Avatar */}
+            {/* User menu */}
             <div className="relative">
-              <button onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-white/5 transition-all">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-700 to-slate-900 dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-white font-black text-[9px] shadow-sm">
+              <button
+                onClick={() => { setShowUserMenu(!showUserMenu); setShowQuickActions(false); setShowNotifications(false); }}
+                className="flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-xl hover:bg-zinc-100 dark:hover:bg-white/[0.05] transition-all"
+              >
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-[10px] shadow-sm">
                   {userName.charAt(0).toUpperCase()}
                 </div>
-                <span className="text-[11px] font-bold text-slate-900 dark:text-white hidden lg:block">{userName}</span>
+                <div className="hidden lg:block text-left">
+                  <p className="text-[11px] font-bold text-slate-900 dark:text-white leading-none">{userName}</p>
+                  <p className="text-[9px] text-zinc-400 leading-none mt-0.5">{userRole}</p>
+                </div>
                 <ChevronDown size={10} className="text-zinc-400 hidden lg:block" />
               </button>
               <AnimatePresence>
                 {showUserMenu && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowUserMenu(false)} />
-                    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.1 }}
-                      className="absolute right-0 top-full mt-1.5 w-40 bg-white dark:bg-[#1a1a24] rounded-xl p-1.5 border border-zinc-200/80 dark:border-white/10 shadow-lg z-20">
-                      <div className="px-3 py-2 border-b border-zinc-100 dark:border-white/[0.06] mb-1">
-                        <p className="text-[11px] font-bold text-slate-900 dark:text-white">{userName}</p>
-                        <p className="text-[9px] text-zinc-400">{userRole}</p>
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                      transition={{ duration: 0.1 }}
+                      className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-[#1a1a28] rounded-2xl p-2 border border-zinc-200/60 dark:border-white/10 shadow-xl z-20"
+                    >
+                      <div className="px-3 py-2.5 mb-1.5">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-sm mb-2">
+                          {userName.charAt(0).toUpperCase()}
+                        </div>
+                        <p className="text-[12px] font-bold text-slate-900 dark:text-white">{userName}</p>
+                        <p className="text-[10px] text-zinc-400">{userRole}</p>
                       </div>
-                      <button onClick={() => { navigate('/crmtayyorlovmarkaz/settings'); setShowUserMenu(false); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-white/5 rounded-lg transition-all">
-                        <Settings size={11} /> Sozlamalar
-                      </button>
-                      <button onClick={handleLogout}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all">
-                        <LogOut size={11} /> Chiqish
-                      </button>
+                      <div className="border-t border-zinc-100 dark:border-white/[0.05] pt-1.5 space-y-0.5">
+                        <button
+                          onClick={() => { navigate('/crmtayyorlovmarkaz/portal'); setShowUserMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-white/5 rounded-xl transition-all"
+                        >
+                          <UserCircle size={13} className="text-blue-500" /> Profilim
+                        </button>
+                        <button
+                          onClick={() => { navigate('/crmtayyorlovmarkaz/settings'); setShowUserMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-white/5 rounded-xl transition-all"
+                        >
+                          <Settings size={13} className="text-zinc-500" /> Sozlamalar
+                        </button>
+                        <div className="border-t border-zinc-100 dark:border-white/[0.05] mt-1 pt-1">
+                          <button
+                            onClick={handleLogout}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-all"
+                          >
+                            <LogOut size={13} /> Chiqish
+                          </button>
+                        </div>
+                      </div>
                     </motion.div>
                   </>
                 )}
@@ -543,11 +801,12 @@ export default function CrmLayout() {
         </header>
 
         {/* Page content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#f1f2f4] dark:bg-[#0a0a0f] mt-14 md:mt-0">
+        <div className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#f0f2f5] dark:bg-[#09090f] mt-14 md:mt-0 scroll-smooth">
           <Outlet />
         </div>
       </main>
 
+      {/* Global search */}
       <GlobalSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </div>
   );

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400;1,14..32,500&display=swap');
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
@@ -7,43 +7,81 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
+/* ─── Base ─── */
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
-  @apply bg-[#F4F4F0] text-zinc-900 transition-colors duration-300;
+  @apply bg-[#f0f2f5] text-zinc-900 transition-colors duration-300;
   font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .dark body {
-  @apply bg-[#0A0A0A] text-white;
+  @apply bg-[#09090f] text-white;
 }
 
-/* Base Utilities */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 99px; }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Toast Animation */
+/* ─── Smooth scrolling ─── */
+html { scroll-behavior: smooth; }
+
+/* ─── Toast Animations ─── */
 @keyframes slide-in {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from { transform: translateX(calc(100% + 24px)); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
 }
-.animate-slide-in {
-  animation: slide-in 0.3s ease-out;
+@keyframes slide-out {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(calc(100% + 24px)); opacity: 0; }
+}
+.animate-slide-in  { animation: slide-in  0.32s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.animate-slide-out { animation: slide-out 0.24s ease-in forwards; }
+
+/* ─── Page fade-in ─── */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter { animation: page-in 0.28s ease forwards; }
+
+/* ─── Gradient text ─── */
+.gradient-text {
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-/* Mobile Responsive Fixes */
+/* ─── Glass card ─── */
+.glass-card {
+  @apply bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl border border-white/60 dark:border-white/[0.06] rounded-2xl;
+}
+
+/* ─── Stat card hover ─── */
+.stat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,0.15);
+}
+.dark .stat-card:hover { box-shadow: 0 12px 40px -8px rgba(0,0,0,0.5); }
+
+/* ─── Input focus ring ─── */
+input:focus, select:focus, textarea:focus { outline: none; }
+
+/* ─── Table mobile ─── */
 @media (max-width: 768px) {
-  table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* Modal Constraints */
+  table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
   .fixed.inset-0 > div > .bg-white,
   .fixed.inset-0 > div > .bg-zinc-900,
   .fixed.inset-0 > .bg-white,
@@ -54,3 +92,60 @@ body {
     margin: 0 auto;
   }
 }
+
+/* ─── Recharts overrides ─── */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line { stroke-opacity: 0.04 !important; }
+.recharts-tooltip-wrapper { filter: drop-shadow(0 4px 24px rgba(0,0,0,0.12)); }
+
+/* ─── Number animation ─── */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.count-animate { animation: count-up 0.4s ease forwards; }
+
+/* ─── Pulse dot ─── */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+  70%  { transform: scale(1);    box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
+.pulse-ring { animation: pulse-ring 2s infinite; }
+
+/* ─── Card hover lift ─── */
+.card-hover {
+  transition: box-shadow 0.22s ease, transform 0.22s ease;
+}
+.card-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 32px -8px rgba(0,0,0,0.12);
+}
+.dark .card-hover:hover { box-shadow: 0 8px 32px -8px rgba(0,0,0,0.4); }
+
+/* ─── Button active feedback ─── */
+button:active:not(:disabled) { transform: scale(0.97); }
+
+/* ─── Shimmer loading ─── */
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to   { background-position: 400px 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.5s infinite;
+}
+.dark .shimmer {
+  background: linear-gradient(90deg, #1e1e2a 25%, #252535 50%, #1e1e2a 75%);
+  background-size: 800px 100%;
+}
+
+/* ─── Focus visible ─── */
+:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 6px; }
+
+/* ─── Nav link transition ─── */
+nav a { transition: all 0.12s ease; }
+
+/* ─── Modal backdrop ─── */
+.modal-backdrop { backdrop-filter: blur(6px); }

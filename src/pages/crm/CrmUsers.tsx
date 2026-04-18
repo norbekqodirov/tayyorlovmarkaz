@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Users, Plus, Edit2, Trash2, Shield, X, Eye, EyeOff,
@@ -6,6 +6,8 @@ import {
     Lock, Mail, Phone, User, Search, ChevronDown
 } from 'lucide-react';
 import api from '../../api/client';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 // ─── Permission Definitions ──────────────────────────────────────────
 const ALL_PERMISSIONS = [
@@ -105,6 +107,8 @@ export default function CrmUsers() {
     const [saving, setSaving] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState('');
     const [expandedGroups, setExpandedGroups] = useState<string[]>(PERMISSION_GROUPS);
+    const { showToast } = useToast();
+    const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; user: CrmUser | null }>({ open: false, user: null });
 
     const loadUsers = useCallback(async () => {
         try {
@@ -177,8 +181,8 @@ export default function CrmUsers() {
     };
 
     const handleSave = async () => {
-        if (!form.name || !form.email) return alert("Ism va email kiritilishi shart!");
-        if (!editingUser && !form.password) return alert("Yangi foydalanuvchi uchun parol kiritilishi shart!");
+        if (!form.name || !form.email) { showToast("Ism va email kiritilishi shart!", 'error'); return; }
+        if (!editingUser && !form.password) { showToast("Yangi foydalanuvchi uchun parol kiritilishi shart!", 'error'); return; }
         setSaving(true);
         try {
             const payload = {
@@ -196,19 +200,26 @@ export default function CrmUsers() {
             }
             await loadUsers();
             setIsModalOpen(false);
+            showToast(editingUser ? 'Foydalanuvchi yangilandi' : 'Foydalanuvchi qo\'shildi', 'success');
         } catch (e: any) {
-            alert(e?.response?.data?.message || "Xatolik yuz berdi!");
+            showToast(e?.response?.data?.message || "Xatolik yuz berdi!", 'error');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleDelete = async (user: CrmUser) => {
-        if (!window.confirm(`"${user.name}" ni o'chirishni tasdiqlaysizmi?`)) return;
+    const handleDelete = (user: CrmUser) => {
+        setDeleteConfirm({ open: true, user });
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteConfirm.user) return;
         try {
-            await api.delete(`/auth/users/${user.id}`);
+            await api.delete(`/auth/users/${deleteConfirm.user.id}`);
             await loadUsers();
-        } catch { alert("O'chirishda xatolik!"); }
+            showToast('Foydalanuvchi o\'chirildi', 'success');
+        } catch { showToast("O'chirishda xatolik!", 'error'); }
+        setDeleteConfirm({ open: false, user: null });
     };
 
     const filteredUsers = users.filter(u =>
@@ -226,6 +237,14 @@ export default function CrmUsers() {
 
     return (
         <div className="space-y-6">
+            <ConfirmDialog
+                isOpen={deleteConfirm.open}
+                title="Foydalanuvchini o'chirish"
+                message={`"${deleteConfirm.user?.name}" ni o'chirishni tasdiqlaysizmi?`}
+                confirmText="Ha, o'chirish"
+                onConfirm={confirmDelete}
+                onCancel={() => setDeleteConfirm({ open: false, user: null })}
+            />
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>

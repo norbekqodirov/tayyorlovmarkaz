@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign,
-  BookOpen, Phone, Mail, MapPin, Calendar, Clock,
-  ChevronRight, User, Shield, GraduationCap, FileText,
-  AlertCircle, Filter, Download, MoreVertical
+  BookOpen, Phone, Mail, MapPin, Calendar,
+  User, GraduationCap,
+  AlertCircle, Download, Send, ExternalLink, Copy
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
@@ -48,7 +48,11 @@ export default function CrmStudents() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('Barchasi');
+  const [filterCourse, setFilterCourse] = useState<string>('Barchasi');
+  const [filterGroup, setFilterGroup] = useState<string>('Barchasi');
+  const [filterPayment, setFilterPayment] = useState<string>('Barchasi');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const itemsPerPage = 20;
   
@@ -181,10 +185,12 @@ export default function CrmStudents() {
       const matchesSearch = (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (s.phone || '').includes(searchTerm) ||
                           (s.group || '').toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesFilter = filterStatus === 'Barchasi' || s.status === filterStatus;
-      return matchesSearch && matchesFilter;
+      const matchesStatus = filterStatus === 'Barchasi' || s.status === filterStatus;
+      const matchesCourse = filterCourse === 'Barchasi' || s.course === filterCourse;
+      const matchesPayment = filterPayment === 'Barchasi' || s.paymentStatus === filterPayment;
+      return matchesSearch && matchesStatus && matchesCourse && matchesPayment;
     });
-  }, [students, searchTerm, filterStatus]);
+  }, [students, searchTerm, filterStatus, filterCourse, filterPayment]);
 
   const paginatedStudents = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -265,18 +271,22 @@ export default function CrmStudents() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Jami O\'quvchilar', value: stats.total, icon: Users, bg: 'bg-blue-50 dark:bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
-          { label: 'Faol O\'quvchilar', value: stats.active, icon: GraduationCap, bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400' },
-          { label: 'Qarzdorlar', value: stats.debtors, icon: AlertCircle, bg: 'bg-rose-50 dark:bg-rose-500/10', text: 'text-rose-600 dark:text-rose-400' },
-          { label: 'Umumiy Balans', value: new Intl.NumberFormat('uz-UZ').format(stats.totalBalance) + ' so\'m', icon: DollarSign, bg: 'bg-amber-50 dark:bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400' }
+          { label: 'Jami O\'quvchilar', value: stats.total, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatdagi jami' },
+          { label: 'Faol O\'quvchilar', value: stats.active, icon: GraduationCap, gradient: 'from-emerald-500 to-teal-600', sub: 'Hozir o\'qiyotgan' },
+          { label: 'Qarzdorlar', value: stats.debtors, icon: AlertCircle, gradient: 'from-rose-500 to-red-600', sub: 'To\'lov qilmagan' },
+          { label: 'Umumiy Balans', value: new Intl.NumberFormat('uz-UZ').format(stats.totalBalance), icon: DollarSign, gradient: 'from-amber-500 to-orange-600', sub: 'so\'m' }
         ].map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-[#111118] p-4 rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.text}`}>
-              <stat.icon size={18} strokeWidth={2.5} />
+          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
+            <div className="relative flex items-start justify-between">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
+                <stat.icon size={17} strokeWidth={2.5} />
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest truncate">{stat.label}</p>
-              <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5 truncate">{stat.value}</p>
+            <div className="relative mt-3">
+              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
+              <p className="text-xl font-black text-white mt-0.5 truncate">{stat.value}</p>
+              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
             </div>
           </div>
         ))}
@@ -284,48 +294,101 @@ export default function CrmStudents() {
 
       {/* Filters and Table */}
       <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col md:flex-row justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-            <input 
-              type="text"
-              placeholder="Ism, telefon yoki guruh bo'yicha qidirish..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-            />
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+              <input
+                type="text"
+                placeholder="Ism, telefon yoki guruh bo'yicha qidirish..."
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              />
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <select
+                value={filterStatus}
+                onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="Barchasi">Barcha holatlar</option>
+                <option value="Faol">Faol</option>
+                <option value="Muzlatilgan">Muzlatilgan</option>
+                <option value="Tark etgan">Tark etgan</option>
+                <option value="Bitiruvchi">Bitiruvchi</option>
+              </select>
+              <select
+                value={filterCourse}
+                onChange={(e) => { setFilterCourse(e.target.value); setCurrentPage(1); }}
+                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="Barchasi">Barcha kurslar</option>
+                {courseOptions.map((c: any) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              <select
+                value={filterPayment}
+                onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1); }}
+                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="Barchasi">Barcha to'lovlar</option>
+                <option value="Tolov qilingan">To'lov qilingan</option>
+                <option value="Qarzdorlik">Qarzdorlik</option>
+                <option value="Kutilmoqda">Kutilmoqda</option>
+              </select>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`${selectedIds.size} ta o'quvchini o'chirasizmi?`)) return;
+                    for (const id of selectedIds) await deleteDocument(id);
+                    setSelectedIds(new Set());
+                    showToast(`${selectedIds.size} ta o'quvchi o'chirildi`, 'success');
+                  }}
+                  className="px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-black hover:bg-rose-700 transition-colors"
+                >
+                  <Trash2 size={16} className="inline mr-1.5" />
+                  {selectedIds.size} ta o'chirish
+                </button>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2">
-            <select 
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-            >
-              <option value="Barchasi">Barcha holatlar</option>
-              <option value="Faol">Faol</option>
-              <option value="Muzlatilgan">Muzlatilgan</option>
-              <option value="Tark etgan">Tark etgan</option>
-              <option value="Bitiruvchi">Bitiruvchi</option>
-            </select>
-          </div>
+          {filteredStudents.length > 0 && (
+            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+              {filteredStudents.length} ta o'quvchi topildi
+            </p>
+          )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-zinc-50 dark:bg-zinc-800/50">
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs va Guruh</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov Holati</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Balans</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
+                <th className="px-4 py-4 w-10">
+                  <input
+                    type="checkbox"
+                    checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedIds.has(s.id))}
+                    onChange={(e) => {
+                      const next = new Set(selectedIds);
+                      paginatedStudents.forEach(s => e.target.checked ? next.add(s.id) : next.delete(s.id));
+                      setSelectedIds(next);
+                    }}
+                    className="rounded"
+                  />
+                </th>
+                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</th>
+                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs va Guruh</th>
+                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov Holati</th>
+                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Balans</th>
+                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
+                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {(paginatedStudents || []).length === 0 ? (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <EmptyState 
                       title={searchTerm || filterStatus !== 'Barchasi' ? "Hech narsa topilmadi" : "O'quvchilar yo'q"} 
                       message={searchTerm || filterStatus !== 'Barchasi' ? "Qidiruv shartiga mos o'quvchi topilmadi." : "Hali ro'yxatda o'quvchi mavjud emas."} 
@@ -336,12 +399,24 @@ export default function CrmStudents() {
                 </tr>
               ) : (
               (paginatedStudents || []).map((student) => (
-                <tr 
-                  key={student.id} 
+                <tr
+                  key={student.id}
                   onClick={() => { setSelectedStudent(student); setIsDetailOpen(true); }}
-                  className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer group"
+                  className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer group ${selectedIds.has(student.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
                 >
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(student.id)}
+                      onChange={(e) => {
+                        const next = new Set(selectedIds);
+                        e.target.checked ? next.add(student.id) : next.delete(student.id);
+                        setSelectedIds(next);
+                      }}
+                      className="rounded"
+                    />
+                  </td>
+                  <td className="px-4 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
                         {(student.name || '?').charAt(0)}
@@ -352,13 +427,13 @@ export default function CrmStudents() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     <div className="flex flex-col">
                       <span className="text-sm font-bold text-slate-900 dark:text-white">{student.course}</span>
                       <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{student.group}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
                       student.paymentStatus === 'Tolov qilingan' 
                         ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
@@ -374,9 +449,9 @@ export default function CrmStudents() {
                       {new Intl.NumberFormat('uz-UZ').format(student.balance)}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-4">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      student.status === 'Faol' 
+                      student.status === 'Faol'
                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                         : student.status === 'Muzlatilgan'
                         ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
@@ -387,7 +462,7 @@ export default function CrmStudents() {
                       {student.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-4 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={(e) => { e.stopPropagation(); openModal(student); }}
@@ -447,7 +522,11 @@ export default function CrmStudents() {
                   </div>
                   <div>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white">{selectedStudent.name}</h3>
-                    <p className="text-sm font-bold text-zinc-500 uppercase tracking-widest mt-1">{selectedStudent.group}</p>
+                    <div className="flex items-center justify-center gap-2 mt-1">
+                      <p className="text-sm font-bold text-zinc-500 uppercase tracking-widest">{selectedStudent.group}</p>
+                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                      <p className="text-[10px] font-black text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md">ID: {selectedStudent.id}</p>
+                    </div>
                   </div>
                 </div>
 
@@ -520,16 +599,46 @@ export default function CrmStudents() {
                 </div>
 
                 <div className="flex flex-col gap-3 pt-6">
-                  {(selectedStudent.status === 'Bitiruvchi' || selectedStudent.status === 'Faol') && (
+                  <div className="grid grid-cols-2 gap-3">
                     <Button 
                       variant="secondary" 
-                      onClick={() => exportCertificateToPDF(selectedStudent)}
-                      className="w-full text-sm font-black"
-                      leftIcon={<Download size={16} />}
+                      onClick={() => showToast(`SMS va Telegram orqali xabarnoma ${selectedStudent.name} ga yuborildi!`, 'success')}
+                      className="w-full text-xs font-black"
+                      leftIcon={<Send size={14} />}
                     >
-                      Sertifikat Yuklash
+                      Xabar yuborish
                     </Button>
-                  )}
+                    {(selectedStudent.status === 'Bitiruvchi' || selectedStudent.status === 'Faol') && (
+                      <Button 
+                        variant="secondary" 
+                        onClick={() => exportCertificateToPDF(selectedStudent)}
+                        className="w-full text-xs font-black"
+                        leftIcon={<Download size={14} />}
+                      >
+                        Sertifikat
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <Button 
+                      variant="secondary" 
+                      onClick={() => window.open(`/portal/${selectedStudent.id}`, '_blank')}
+                      className="w-full text-sm font-black bg-blue-50 dark:bg-blue-900/20 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40"
+                      leftIcon={<ExternalLink size={16} />}
+                    >
+                      Talaba Portali
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/portal/${selectedStudent.id}`);
+                        showToast('Havola nusxalandi!', 'success');
+                      }}
+                      className="text-sm font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-800"
+                    >
+                      <Copy size={16} />
+                    </Button>
+                  </div>
                   <div className="flex gap-3">
                     <Button 
                       variant="primary"

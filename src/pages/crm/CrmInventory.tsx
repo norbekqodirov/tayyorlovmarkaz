@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Search, Edit2, Trash2, Package, 
+import {
+  Plus, Search, Edit2, Trash2, Package,
   Tag, MapPin, Calendar, DollarSign,
   X, Save, CheckCircle2, AlertCircle,
-  Hash, Info, MoreVertical
+  Hash, Info, MoreVertical, Download
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import { exportToExcel } from '../../utils/export';
 
 interface InventoryItem {
   id: string;
@@ -25,10 +28,12 @@ const LOCATIONS = ['Reception', '1-xona', '2-xona', '3-xona', '4-xona', 'Oshxona
 
 export default function CrmInventory() {
   const { data: items = [], addDocument, updateDocument, deleteDocument } = useFirestore<InventoryItem>('inventory');
+  const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('Barchasi');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   const [formData, setFormData] = useState<Partial<InventoryItem>>({
     name: '',
@@ -42,8 +47,8 @@ export default function CrmInventory() {
   });
 
   const handleSave = async () => {
-    if (!formData.name || !formData.price) {
-      alert('Iltimos, jihoz nomi va narxini kiriting!');
+    if (!formData.name) {
+      showToast('Iltimos, jihoz nomini kiriting!', 'error');
       return;
     }
 
@@ -52,13 +57,18 @@ export default function CrmInventory() {
     } else {
       await addDocument(formData as Omit<InventoryItem, 'id'>);
     }
+    showToast(editingItem ? 'Jihoz yangilandi' : 'Jihoz qo\'shildi', 'success');
     closeModal();
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Ushbu jihozni o\'chirmoqchimisiz?')) {
-      await deleteDocument(id);
-    }
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    await deleteDocument(deleteConfirm.id);
+    showToast('Jihoz o\'chirildi', 'success');
+    setDeleteConfirm({ open: false, id: '' });
   };
 
   const openModal = (item: InventoryItem | null = null) => {
@@ -101,17 +111,41 @@ export default function CrmInventory() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Jihozni o'chirish"
+        message="Haqiqatan ham bu jihozni o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Inventarizatsiya</h1>
           <p className="text-zinc-500 text-sm font-medium">O'quv markazi jihozlari va aktivlari boshqaruvi</p>
         </div>
-        <div className="flex gap-3">
-          <div className="px-6 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Umumiy qiymat</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{formatMoney(totalValue)}</p>
-          </div>
-          <button 
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportToExcel(filteredItems.map(i => ({
+              ...i,
+              price: i.price ? Number(i.price).toLocaleString() + " so'm" : '',
+              totalValue: i.price && i.quantity ? (Number(i.price) * Number(i.quantity)).toLocaleString() + " so'm" : '',
+            })), [
+              { header: 'Jihoz nomi', key: 'name', width: 25 },
+              { header: 'Kategoriya', key: 'category', width: 15 },
+              { header: 'Joylashuv', key: 'location', width: 15 },
+              { header: 'Soni', key: 'quantity', width: 8 },
+              { header: 'Narxi', key: 'price', width: 18 },
+              { header: 'Umumiy qiymat', key: 'totalValue', width: 18 },
+              { header: 'Holat', key: 'status', width: 12 },
+              { header: 'Sotib olingan', key: 'purchaseDate', width: 15 },
+            ], 'Inventar')}
+            className="p-2.5 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
+            title="Excel yuklab olish"
+          >
+            <Download size={16} />
+          </button>
+          <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
           >
@@ -119,6 +153,30 @@ export default function CrmInventory() {
             Yangi Jihoz
           </button>
         </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Jami Jihoz', value: safeItems.length, icon: Package, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
+          { label: 'Umumiy Qiymat', value: new Intl.NumberFormat('uz-UZ').format(totalValue), icon: DollarSign, gradient: 'from-emerald-500 to-teal-600', sub: 'so\'m' },
+          { label: 'Yaxshi Holatda', value: safeItems.filter(i => i.status === 'Yaxshi').length, icon: CheckCircle2, gradient: 'from-violet-500 to-purple-600', sub: 'Ishlaydigan' },
+          { label: 'Ta\'mirda', value: safeItems.filter(i => i.status === 'Ta\'mirda' || i.status === 'Eskirgan').length, icon: AlertCircle, gradient: 'from-amber-500 to-orange-600', sub: 'Diqqat kerak' }
+        ].map((stat, i) => (
+          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
+            <div className="relative flex items-start justify-between">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
+                <stat.icon size={17} strokeWidth={2.5} />
+              </div>
+            </div>
+            <div className="relative mt-3">
+              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
+              <p className="text-xl font-black text-white mt-0.5 truncate">{stat.value}</p>
+              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Save, User, Lock, Bell, Globe, Database, Download, HardDrive } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import api from '../../api/client';
@@ -69,7 +69,7 @@ export default function CrmSettings() {
         } else {
           await addSetting({ id: 'profile', ...profileData });
         }
-        alert("Profil ma'lumotlari saqlandi!");
+        showToast("Profil ma'lumotlari saqlandi!", 'success');
       } else if (activeTab === 'site') {
         const siteExists = settingsDocs.some(doc => doc.id === 'site');
         if (siteExists) {
@@ -77,18 +77,18 @@ export default function CrmSettings() {
         } else {
           await addSetting({ id: 'site', ...siteData });
         }
-        alert("Sayt ma'lumotlari saqlandi!");
+        showToast("Sayt ma'lumotlari saqlandi!", 'success');
       } else if (activeTab === 'security') {
         if (!securityData.currentPassword) {
-          alert("Joriy parolni kiriting!");
+          showToast("Joriy parolni kiriting!", 'error');
           return;
         }
         if (securityData.newPassword !== securityData.confirmPassword) {
-          alert("Yangi parollar mos tushmadi!");
+          showToast("Yangi parollar mos tushmadi!", 'error');
           return;
         }
         if (securityData.newPassword.length < 6) {
-          alert("Parol kamida 6 ta belgidan iborat bo'lishi kerak!");
+          showToast("Parol kamida 6 ta belgidan iborat bo'lishi kerak!", 'error');
           return;
         }
         try {
@@ -96,10 +96,10 @@ export default function CrmSettings() {
             currentPassword: securityData.currentPassword,
             newPassword: securityData.newPassword
           });
-          alert("Parol muvaffaqiyatli o'zgartirildi!");
+          showToast("Parol muvaffaqiyatli o'zgartirildi!", 'success');
           setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '' });
         } catch (err: any) {
-          alert(err.response?.data?.message || "Parolni o'zgartirishda xatolik yuz berdi!");
+          showToast(err.response?.data?.message || "Parolni o'zgartirishda xatolik yuz berdi!", 'error');
           return;
         }
       } else if (activeTab === 'landing') {
@@ -109,11 +109,11 @@ export default function CrmSettings() {
         } else {
           await addPage({ id: 'home', ...landingData });
         }
-        alert("Bosh sahifa ma'lumotlari saqlandi!");
+        showToast("Bosh sahifa ma'lumotlari saqlandi!", 'success');
       }
     } catch (error) {
       console.error("Error saving settings:", error);
-      alert("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
     }
   };
   return (

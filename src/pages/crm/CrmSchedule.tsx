@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Clock, DoorOpen, X, Trash2, Edit2, Filter, MapPin, AlertCircle, User, Users, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
@@ -43,8 +45,11 @@ export default function CrmSchedule() {
   const { courses, teachers: liveTeachers, getEndTime } = useCrmData();
   const teachers = liveTeachers.length > 0 ? liveTeachers : [];
 
+  const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [conflictConfirm, setConflictConfirm] = useState<{ open: boolean; data: Partial<ScheduleItem> | null }>({ open: false, data: null });
   const [selectedDay, setSelectedDay] = useState(() => {
     const today = new Date().getDay();
     return today === 0 ? 7 : today;
@@ -117,32 +122,45 @@ export default function CrmSchedule() {
     if (isModalOpen) setConflicts(checkConflicts(formData, editingItem?.id));
   }, [formData, isModalOpen, editingItem]);
 
-  const handleSave = async () => {
-    if (!formData.groupName || !formData.teacher || !formData.room || !formData.days?.length) {
-      alert("Iltimos, barcha maydonlarni to'ldiring!"); return;
-    }
-    const roomName = typeof formData.room === 'object' ? (formData.room as any).name : formData.room;
-    const cc = checkConflicts({ ...formData, room: roomName }, editingItem?.id);
-    if (cc.length > 0 && !window.confirm(`Ziddiyatlar:\n${cc.join('\n')}\n\nDavom etsinmi?`)) return;
-    const group = (groups || []).find((g: any) => g.name === formData.groupName);
+  const doSave = async (data: Partial<ScheduleItem>) => {
+    const roomName = typeof data.room === 'object' ? (data.room as any).name : data.room;
+    const group = (groups || []).find((g: any) => g.name === data.groupName);
     try {
       if (editingItem) {
-        await updateSchedule(editingItem.id, { ...formData, room: roomName, groupId: group?.id || editingItem.groupId } as any);
+        await updateSchedule(editingItem.id, { ...data, room: roomName, groupId: group?.id || editingItem.groupId } as any);
       } else {
         await addSchedule({
-          groupId: group?.id || 'g' + Date.now(), groupName: formData.groupName || '', teacher: formData.teacher || '',
-          room: roomName || '', startTime: formData.startTime || '09:00', endTime: formData.endTime || '10:30',
-          days: formData.days || [], color: formData.color || COLORS[0]
+          groupId: group?.id || 'g' + Date.now(), groupName: data.groupName || '', teacher: data.teacher || '',
+          room: roomName || '', startTime: data.startTime || '09:00', endTime: data.endTime || '10:30',
+          days: data.days || [], color: data.color || COLORS[0]
         });
       }
       closeModal();
-    } catch { alert("Xatolik yuz berdi!"); }
+      showToast('Dars jadvali saqlandi', 'success');
+    } catch { showToast("Xatolik yuz berdi!", 'error'); }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Darsni o'chirmoqchimisiz?")) {
-      try { await deleteSchedule(id); closeModal(); } catch { alert("Xatolik!"); }
+  const handleSave = async () => {
+    if (!formData.groupName || !formData.teacher || !formData.room || !formData.days?.length) {
+      showToast("Iltimos, barcha maydonlarni to'ldiring!", 'error'); return;
     }
+    const roomName = typeof formData.room === 'object' ? (formData.room as any).name : formData.room;
+    const cc = checkConflicts({ ...formData, room: roomName }, editingItem?.id);
+    if (cc.length > 0) {
+      setConflictConfirm({ open: true, data: formData });
+      return;
+    }
+    await doSave(formData);
+  };
+
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    try { await deleteSchedule(deleteConfirm.id); closeModal(); showToast("Dars o'chirildi", 'success'); }
+    catch { showToast("Xatolik!", 'error'); }
+    setDeleteConfirm({ open: false, id: '' });
   };
 
   const openModal = (item: ScheduleItem | null = null) => {
@@ -165,11 +183,18 @@ export default function CrmSchedule() {
     setFormData({ ...formData, days: cur.includes(dayId) ? cur.filter(d => d !== dayId) : [...cur, dayId] });
   };
 
-  const handleAddRoom = async () => {
-    const name = window.prompt('Yangi xona nomini kiriting:');
+  const [roomInput, setRoomInput] = useState('');
+  const [roomModalOpen, setRoomModalOpen] = useState(false);
+
+  const handleAddRoom = () => { setRoomInput(''); setRoomModalOpen(true); };
+
+  const confirmAddRoom = async () => {
+    const name = roomInput.trim();
     if (name && !rooms.some((r: any) => r.name === name)) {
-      try { await addRoomDoc({ name, capacity: 30 }); } catch { alert("Xatolik!"); }
+      try { await addRoomDoc({ name, capacity: 30 }); showToast('Xona qo\'shildi', 'success'); }
+      catch { showToast("Xatolik!", 'error'); }
     }
+    setRoomModalOpen(false);
   };
 
   // Calculate position for schedule blocks
@@ -187,6 +212,42 @@ export default function CrmSchedule() {
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Darsni o'chirish"
+        message="Haqiqatan ham ushbu darsni o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
+      <ConfirmDialog
+        isOpen={conflictConfirm.open}
+        title="Ziddiyat aniqlandi"
+        message={`Jadvalda ziddiyatlar mavjud:\n${conflicts.join('\n')}\n\nBaribir davom etsinmi?`}
+        confirmText="Ha, davom etish"
+        onConfirm={async () => { setConflictConfirm({ open: false, data: null }); if (conflictConfirm.data) await doSave(conflictConfirm.data); }}
+        onCancel={() => setConflictConfirm({ open: false, data: null })}
+      />
+      {roomModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-zinc-200 dark:border-zinc-700 space-y-4">
+            <h3 className="text-base font-black text-slate-900 dark:text-white">Yangi xona qo'shish</h3>
+            <input
+              type="text"
+              value={roomInput}
+              onChange={(e) => setRoomInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmAddRoom()}
+              placeholder="Xona nomi (masalan: 101-xona)"
+              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setRoomModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">Bekor</button>
+              <button onClick={confirmAddRoom} className="px-4 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors">Qo'shish</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 shrink-0">
         <div>

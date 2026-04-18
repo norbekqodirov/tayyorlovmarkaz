@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { exportToExcel, exportToPDF } from '../../utils/export';
 import ImageUpload from '../../components/ImageUpload';
 import api from '../../api/client';
 import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { useFirestore } from '../../hooks/useFirestore';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -25,12 +27,16 @@ export default function CrmTeachers() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isPayrollOpen, setIsPayrollOpen] = useState(false);
+  const [payrollRate, setPayrollRate] = useState<number>(40);
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const { showToast } = useToast();
   
   const { data: groups = [] } = useFirestore<any>('groups');
   const { data: students = [] } = useFirestore<any>('students');
+  const { addDocument: addFinance } = useFirestore<any>('finance');
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
     name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: ''
@@ -71,7 +77,7 @@ export default function CrmTeachers() {
 
   const handleSave = async () => {
     if (!formData.name || !formData.email) {
-      alert("Ism va email kiritilishi shart!");
+      showToast("Ism va email kiritilishi shart!", 'error');
       return;
     }
     
@@ -100,7 +106,7 @@ export default function CrmTeachers() {
         await api.put(`/auth/users/${formData.id}`, dbPayload);
         showToast("Ustoz muvaffaqiyatli saqlandi!");
       } else {
-        if (!formData.password) { alert("Yangi ustoz uchun parol shart!"); return; }
+        if (!formData.password) { showToast("Yangi ustoz uchun parol shart!", 'error'); return; }
         await api.post('/auth/users', dbPayload);
         showToast("Yangi ustoz muvaffaqiyatli qo'shildi!");
       }
@@ -108,20 +114,23 @@ export default function CrmTeachers() {
       closeModal();
     } catch (error: any) {
       console.error(error);
-      alert(error.response?.data?.message || "Xatolik yuz berdi");
+      showToast(error.response?.data?.message || "Xatolik yuz berdi", 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Ustozni tizimdan va bazadan butunlay o'chirmoqchimisiz?")) {
-      try {
-        await api.delete(`/auth/users/${id}`);
-        showToast("O'chirildi!");
-        loadTeachers();
-      } catch (error) {
-        showToast("Sizda ustozni o'chirish ruxsati yo'q, yoki xato yuz berdi");
-      }
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await api.delete(`/auth/users/${deleteConfirm.id}`);
+      showToast("O'chirildi!", 'success');
+      loadTeachers();
+    } catch (error) {
+      showToast("Sizda ustozni o'chirish ruxsati yo'q, yoki xato yuz berdi", 'error');
     }
+    setDeleteConfirm({ open: false, id: '' });
   };
 
   const openModal = (teacher: Teacher | null = null) => {
@@ -142,6 +151,14 @@ export default function CrmTeachers() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Ustozni o'chirish"
+        message="Ustozni tizimdan va bazadan butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Ustozlar</h1>
@@ -155,43 +172,31 @@ export default function CrmTeachers() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-            <Users size={24} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {[
+          { label: 'Jami Ustozlar', value: (teachers || []).length, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
+          { label: 'Fanlar Soni', value: new Set((teachers || []).map(t => t.role).filter(Boolean)).size, icon: Award, gradient: 'from-emerald-500 to-teal-600', sub: 'Unikal fanlar' },
+          { label: 'Tajribali (3+ yil)', value: (teachers || []).filter(t => t.exp && parseInt(t.exp) >= 3).length, icon: Star, gradient: 'from-violet-500 to-purple-600', sub: '3 yildan ko\'p' }
+        ].map((stat, i) => (
+          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-5 shadow-lg text-white relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
+            <div className="relative flex items-start justify-between">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
+                <stat.icon size={20} strokeWidth={2.5} />
+              </div>
+            </div>
+            <div className="relative mt-4">
+              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
+              <p className="text-3xl font-black text-white mt-1">{stat.value}</p>
+              <p className="text-[11px] text-white/60 mt-0.5">{stat.sub}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-bold text-zinc-500">Jami ustozlar</p>
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white">{(teachers || []).length}</h3>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-            <Award size={24} />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-zinc-500">Fanlar soni</p>
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-              {new Set((teachers || []).map(t => t.role).filter(Boolean)).size}
-            </h3>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-            <Star size={24} />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-zinc-500">Tajribali (3+ yil)</p>
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-              {(teachers || []).filter(t => t.exp && parseInt(t.exp) >= 3).length}
-            </h3>
-          </div>
-        </div>
+        ))}
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <div className="relative max-w-md">
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+          <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
             <input
               type="text"
@@ -200,6 +205,28 @@ export default function CrmTeachers() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => exportToExcel(filteredTeachers, [
+              { header: 'Ism', key: 'name', width: 25 },
+              { header: 'Email', key: 'email', width: 25 },
+              { header: 'Telefon', key: 'phone', width: 15 },
+              { header: "Fan/Yo'nalish", key: 'role', width: 20 },
+              { header: 'Tajriba', key: 'exp', width: 12 },
+            ], 'Oqituvchilar')}
+              className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all" title="Excel">
+              <Download size={16} />
+            </button>
+            <button onClick={() => exportToPDF(filteredTeachers, [
+              { header: 'Ism', key: 'name', width: 25 },
+              { header: 'Email', key: 'email', width: 25 },
+              { header: 'Telefon', key: 'phone', width: 15 },
+              { header: "Fan/Yo'nalish", key: 'role', width: 20 },
+              { header: 'Tajriba', key: 'exp', width: 12 },
+            ], "O'qituvchilar Ro'yxati", 'Oqituvchilar')}
+              className="p-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-all" title="PDF">
+              <Download size={16} />
+            </button>
           </div>
         </div>
 
@@ -385,6 +412,16 @@ export default function CrmTeachers() {
 
                     <div className="flex gap-3 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                       <Button 
+                        variant="secondary"
+                        onClick={() => { setIsPayrollOpen(true); }}
+                        className="flex-1 text-sm font-black bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20"
+                      >
+                        Oylik Hisoblash
+                      </Button>
+                    </div>
+
+                    <div className="flex gap-3 pt-3">
+                      <Button 
                         variant="primary"
                         onClick={() => openModal(selectedTeacher)}
                         className="flex-1 text-sm font-black"
@@ -406,6 +443,71 @@ export default function CrmTeachers() {
            </>
         )}
       </AnimatePresence>
+
+      {/* Payroll Modal */}
+      {selectedTeacher && (
+        <Modal 
+          isOpen={isPayrollOpen}
+          onClose={() => setIsPayrollOpen(false)}
+          title="Oylik to'lash (Avto-hisoblash)"
+        >
+          <div className="space-y-6">
+            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50 rounded-2xl">
+              {(() => {
+                const teacherGroups = (groups || []).filter((g: any) => g.teacher === selectedTeacher.name);
+                let totalEstRevenue = 0;
+                teacherGroups.forEach((g: any) => {
+                  const p = Number(g.price) || 0;
+                  totalEstRevenue += p * (g.students || []).length;
+                });
+                const finalSalary = totalEstRevenue * (payrollRate / 100);
+
+                const handlePay = async () => {
+                  try {
+                    await addFinance({
+                      type: 'expense',
+                      amount: finalSalary,
+                      category: 'Oylik',
+                      description: `${selectedTeacher.name} ga ${payrollRate}% lik stavka asosida oylik to'lovi`,
+                      date: new Date().toISOString().split('T')[0],
+                      method: 'Karta',
+                      staffId: selectedTeacher.id,
+                      staffName: selectedTeacher.name
+                    });
+                    showToast("Oylik to'lovi finance bo'limiga muvaffaqiyatli qo'shildi!", 'success');
+                    setIsPayrollOpen(false);
+                    setIsDetailOpen(false);
+                  } catch (e) {
+                    showToast("Xatolik yuz berdi", 'error');
+                  }
+                };
+
+                return (
+                  <div className="space-y-4">
+                     <div className="flex justify-between items-center text-sm font-bold text-slate-700 dark:text-zinc-300">
+                       <span>Teacher Guruhlari (Revenue)</span>
+                       <span>{new Intl.NumberFormat('uz-UZ').format(totalEstRevenue)} so'm</span>
+                     </div>
+                     <div className="flex items-center gap-4">
+                       <Input 
+                         type="number" 
+                         label="Stavka Foizi (%)" 
+                         value={payrollRate} 
+                         onChange={(e) => setPayrollRate(Number(e.target.value))} 
+                       />
+                     </div>
+                     <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
+                       <span className="text-sm font-black text-emerald-800 dark:text-emerald-400">To'lanadigan Summa:</span>
+                       <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{new Intl.NumberFormat('uz-UZ').format(finalSalary)} so'm</span>
+                     </div>
+                     <Button className="w-full mt-4" onClick={handlePay}>Moliya bo'limiga yozib to'lash</Button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal */}
       <Modal 

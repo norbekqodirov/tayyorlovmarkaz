@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Target, Users, Award, BookOpen, CheckCircle2, Calendar, ImageIcon } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';

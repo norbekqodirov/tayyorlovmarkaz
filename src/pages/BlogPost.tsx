@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ArrowLeft, Calendar, User, Share2 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useFirestore } from '../hooks/useFirestore';
+import { useToast } from '../components/Toast';
 
 export default function BlogPost() {
   const { id } = useParams();
   const { data: news } = useFirestore<any>('news');
+  const { showToast } = useToast();
   const [post, setPost] = useState<any>(null);
 
   useEffect(() => {
@@ -131,7 +133,7 @@ export default function BlogPost() {
               });
             } else {
               navigator.clipboard.writeText(window.location.href);
-              alert('Link nusxalandi!');
+              showToast('Link nusxalandi!', 'success');
             }
           }}
           className="flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl text-sm font-bold transition-colors"

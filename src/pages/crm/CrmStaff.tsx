@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, MoreVertical, User, Mail, Phone, Briefcase, DollarSign, X, Edit2, Trash2, ShieldCheck, Clock } from 'lucide-react';
+import { Plus, Search, MoreVertical, User, Mail, Phone, Briefcase, DollarSign, X, Edit2, Trash2, ShieldCheck, Clock, Users, Building2 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import api from '../../api/client';
 
 interface StaffMember {
@@ -27,8 +29,11 @@ interface StaffMember {
 
 export default function CrmStaff() {
   const { data: staff = [], loading, error, addDocument, updateDocument, deleteDocument } = useFirestore<StaffMember>('staff');
+  const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [deleteSubConfirm, setDeleteSubConfirm] = useState<{ open: boolean; type: string; index: number }>({ open: false, type: '', index: -1 });
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isSubModalOpen, setIsSubModalOpen] = useState<{ type: string; isOpen: boolean }>({ type: '', isOpen: false });
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'salary' | 'tasks' | 'reviews' | 'docs'>('overview');
@@ -55,6 +60,7 @@ export default function CrmStaff() {
     try {
       if (editingMember) {
         await updateDocument(editingMember.id, formData);
+        showToast('Xodim ma\'lumotlari yangilandi', 'success');
       } else {
         await addDocument({
           salaryHistory: [],
@@ -64,23 +70,28 @@ export default function CrmStaff() {
           documents: [],
           ...formData
         } as any);
+        showToast('Yangi xodim qo\'shildi', 'success');
       }
       closeModal();
     } catch (error) {
       console.error("Error saving staff:", error);
-      alert("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Haqiqatan ham ushbu xodimni o\'chirmoqchimisiz?')) {
-      try {
-        await deleteDocument(id);
-      } catch (error) {
-        console.error("Error deleting staff:", error);
-        alert("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
-      }
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteDocument(deleteConfirm.id);
+      showToast('Xodim o\'chirildi', 'success');
+    } catch (error) {
+      console.error("Error deleting staff:", error);
+      showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
     }
+    setDeleteConfirm({ open: false, id: '' });
   };
 
   const openModal = (member: StaffMember | null = null) => {
@@ -140,9 +151,14 @@ export default function CrmStaff() {
     setIsSubModalOpen({ type, isOpen: true });
   };
 
-  const handleDeleteSubItem = async (type: string, index: number) => {
-    if (!selectedMember || !window.confirm('Haqiqatan ham ushbu ma\'lumotni o\'chirmoqchimisiz?')) return;
+  const handleDeleteSubItem = (type: string, index: number) => {
+    if (!selectedMember) return;
+    setDeleteSubConfirm({ open: true, type, index });
+  };
 
+  const confirmDeleteSubItem = async () => {
+    if (!selectedMember) return;
+    const { type, index } = deleteSubConfirm;
     const updatedMember = { ...selectedMember };
     const key = type === 'salary' ? 'salaryHistory' : type === 'docs' ? 'documents' : type === 'reviews' ? 'performanceReviews' : type;
     const items = [...((updatedMember as any)[key] || [])];
@@ -152,10 +168,12 @@ export default function CrmStaff() {
     try {
       await updateDocument(selectedMember.id, { [key]: items });
       setSelectedMember(updatedMember);
+      showToast('Ma\'lumot o\'chirildi', 'success');
     } catch (error) {
       console.error("Error deleting sub item:", error);
-      alert("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
     }
+    setDeleteSubConfirm({ open: false, type: '', index: -1 });
   };
 
   const saveSubItem = async () => {
@@ -200,9 +218,10 @@ export default function CrmStaff() {
       setSelectedMember(updatedMember);
       setIsSubModalOpen({ type: '', isOpen: false });
       setEditingSubItemIndex(null);
+      showToast('Ma\'lumot saqlandi', 'success');
     } catch (error) {
       console.error("Error saving sub item:", error);
-      alert("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
     }
   };
 
@@ -215,6 +234,22 @@ export default function CrmStaff() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Xodimni o'chirish"
+        message="Haqiqatan ham ushbu xodimni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
+      <ConfirmDialog
+        isOpen={deleteSubConfirm.open}
+        title="Ma'lumotni o'chirish"
+        message="Haqiqatan ham ushbu ma'lumotni o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDeleteSubItem}
+        onCancel={() => setDeleteSubConfirm({ open: false, type: '', index: -1 })}
+      />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Xodimlar Boshqaruvi (HR)</h1>
@@ -229,29 +264,27 @@ export default function CrmStaff() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Jami Xodimlar</p>
-          <h3 className="text-3xl font-black text-slate-900 dark:text-white">{safeStaff.length}</h3>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Oylik Fond</p>
-          <h3 className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
-            {new Intl.NumberFormat('uz-UZ', { style: 'currency', currency: 'UZS', maximumFractionDigits: 0 }).format(safeStaff.reduce((acc, s) => acc + (Number(s.salary) || 0), 0))}
-          </h3>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Faol Xodimlar</p>
-          <h3 className="text-3xl font-black text-blue-600 dark:text-blue-400">
-            {safeStaff.filter(s => s.status === 'Faol').length}
-          </h3>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Bo'limlar</p>
-          <h3 className="text-3xl font-black text-purple-600 dark:text-purple-400">
-            {new Set((safeStaff || []).map(s => s.department)).size}
-          </h3>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Jami Xodimlar', value: safeStaff.length, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
+          { label: 'Oylik Fond', value: new Intl.NumberFormat('uz-UZ').format(safeStaff.reduce((acc, s) => acc + (Number(s.salary) || 0), 0)), icon: DollarSign, gradient: 'from-emerald-500 to-teal-600', sub: 'so\'m / oy' },
+          { label: 'Faol Xodimlar', value: safeStaff.filter(s => s.status === 'Faol').length, icon: ShieldCheck, gradient: 'from-violet-500 to-purple-600', sub: 'Ishlayotgan' },
+          { label: 'Bo\'limlar', value: new Set((safeStaff || []).map(s => s.department)).size, icon: Building2, gradient: 'from-amber-500 to-orange-600', sub: 'Unikal bo\'lim' }
+        ].map((stat, i) => (
+          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
+            <div className="relative flex items-start justify-between">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
+                <stat.icon size={17} strokeWidth={2.5} />
+              </div>
+            </div>
+            <div className="relative mt-3">
+              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
+              <p className="text-xl font-black text-white mt-0.5 truncate">{stat.value}</p>
+              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">

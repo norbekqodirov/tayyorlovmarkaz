@@ -1,13 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Search, Filter, Plus, MoreVertical, Phone, Mail, X, Edit2, Trash2, 
-  MessageSquare, Calendar, User, Target, TrendingUp, ChevronRight, 
-  Clock, CheckCircle2, AlertCircle, History, FileText, Send, GraduationCap, Check
+import {
+  Search, Filter, Plus, Phone, Mail, X, Edit2, Trash2,
+  MessageSquare, Calendar, User, Target, TrendingUp,
+  Clock, CheckCircle2, History, FileText, Send, GraduationCap, Check, Download, AlertCircle
 } from 'lucide-react';
+import { exportToExcel, exportToPDF } from '../../utils/export';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
 import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -50,6 +52,8 @@ export default function CrmLeads() {
   const { addDocument: addStudent } = useFirestore<any>('students');
   const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
   const { courses } = useCrmData();
+  const { showToast } = useToast();
+  const noteInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -58,6 +62,7 @@ export default function CrmLeads() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   const [formData, setFormData] = useState<Partial<Lead>>({
     name: '',
@@ -81,7 +86,7 @@ export default function CrmLeads() {
 
   const handleSave = async () => {
     if (!formData.name || !formData.phone) {
-      alert('Ism va telefon raqami majburiy!');
+      showToast('Ism va telefon raqami majburiy!', 'error');
       return;
     }
 
@@ -104,11 +109,15 @@ export default function CrmLeads() {
     closeModal();
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Ushbu lidni o\'chirmoqchimisiz?')) {
-      await deleteDocument(id);
-      setIsDetailOpen(false);
-    }
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    await deleteDocument(deleteConfirm.id);
+    setDeleteConfirm({ open: false, id: '' });
+    setIsDetailOpen(false);
+    showToast('Lid o\'chirildi', 'success');
   };
 
   const openModal = (lead: Lead | null = null) => {
@@ -137,11 +146,11 @@ export default function CrmLeads() {
     setEditingLead(null);
   };
 
-  const handleDragStart = (e: React.DragEvent, id: string) => {
+  const handleDragStart = (e: any, id: string) => {
     e.dataTransfer.setData('leadId', id);
   };
 
-  const handleDrop = async (e: React.DragEvent, stageId: any) => {
+  const handleDrop = async (e: any, stageId: any) => {
     e.preventDefault();
     const leadId = e.dataTransfer.getData('leadId');
     await updateDocument(leadId, { stage: stageId });
@@ -167,7 +176,7 @@ export default function CrmLeads() {
 
   const handleConvertToStudent = async (lead: Lead) => {
     if (!selectedGroupId) {
-      alert('Iltimos, guruhni tanlang!');
+      showToast('Iltimos, guruhni tanlang!', 'error');
       return;
     }
 
@@ -198,7 +207,7 @@ export default function CrmLeads() {
     // Mark lead as won
     await updateDocument(lead.id, { stage: 'won' });
     
-    alert(`${lead.name} muvaffaqiyatli o'quvchilar ro'yxatiga va guruhga qo'shildi!`);
+    showToast(`${lead.name} o'quvchilar ro'yxatiga va guruhga qo'shildi!`, 'success');
     setIsConvertModalOpen(false);
     setIsDetailOpen(false);
     setSelectedGroupId('');
@@ -214,6 +223,14 @@ export default function CrmLeads() {
 
   return (
     <div className="space-y-6 h-full flex flex-col">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Lidni o'chirish"
+        message="Haqiqatan ham bu lidni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Lidlar Boshqaruvi</h1>
@@ -246,44 +263,26 @@ export default function CrmLeads() {
 
       {/* Analytics Mini Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center">
-            <Target size={20} />
+        {[
+          { label: 'Jami Lidlar', value: (leads || []).length, icon: Target, gradient: 'from-blue-500 to-indigo-600', sub: 'Hammasi' },
+          { label: 'Issiq (Hot)', value: (leads || []).filter(l => l.status === 'hot').length, icon: TrendingUp, gradient: 'from-rose-500 to-red-600', sub: 'Yuqori potensial' },
+          { label: 'Yutilgan', value: (leads || []).filter(l => l.stage === 'won').length, icon: CheckCircle2, gradient: 'from-emerald-500 to-teal-600', sub: 'Muvaffaqiyatli' },
+          { label: 'Konversiya', value: `${(leads || []).length > 0 ? Math.round(((leads || []).filter(l => l.stage === 'won').length / (leads || []).length) * 100) : 0}%`, icon: Clock, gradient: 'from-amber-500 to-orange-600', sub: 'Won / Jami' }
+        ].map((stat, i) => (
+          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
+            <div className="relative flex items-start justify-between">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
+                <stat.icon size={17} strokeWidth={2.5} />
+              </div>
+            </div>
+            <div className="relative mt-3">
+              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
+              <p className="text-xl font-black text-white mt-0.5">{stat.value}</p>
+              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jami</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">{(leads || []).length}</p>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center">
-            <TrendingUp size={20} />
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Issiq (Hot)</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">{(leads || []).filter(l => l.status === 'hot').length}</p>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center">
-            <CheckCircle2 size={20} />
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Yutilgan</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">{(leads || []).filter(l => l.stage === 'won').length}</p>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center">
-            <Clock size={20} />
-          </div>
-          <div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Konversiya</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">
-              {(leads || []).length > 0 ? Math.round(((leads || []).filter(l => l.stage === 'won').length / (leads || []).length) * 100) : 0}%
-            </p>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* Search and Filters */}
@@ -301,6 +300,40 @@ export default function CrmLeads() {
         <button className="flex items-center gap-2 px-6 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
           <Filter size={18} />
           Filtrlar
+        </button>
+        <button
+          onClick={() => exportToExcel(filteredLeads, [
+            { header: 'Ism', key: 'name', width: 25 },
+            { header: 'Telefon', key: 'phone', width: 15 },
+            { header: 'Email', key: 'email', width: 25 },
+            { header: 'Bosqich', key: 'stage', width: 15 },
+            { header: 'Manba', key: 'source', width: 15 },
+            { header: 'Ball', key: 'score', width: 10 },
+            { header: 'Holat', key: 'status', width: 12 },
+            { header: 'Kurs', key: 'course', width: 20 },
+            { header: 'Sana', key: 'createdAt', width: 15 },
+          ], 'Lidlar')}
+          className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
+          title="Excel yuklab olish"
+        >
+          <Download size={16} />
+        </button>
+        <button
+          onClick={() => exportToPDF(filteredLeads, [
+            { header: 'Ism', key: 'name', width: 25 },
+            { header: 'Telefon', key: 'phone', width: 15 },
+            { header: 'Email', key: 'email', width: 25 },
+            { header: 'Bosqich', key: 'stage', width: 15 },
+            { header: 'Manba', key: 'source', width: 15 },
+            { header: 'Ball', key: 'score', width: 10 },
+            { header: 'Holat', key: 'status', width: 12 },
+            { header: 'Kurs', key: 'course', width: 20 },
+            { header: 'Sana', key: 'createdAt', width: 15 },
+          ], "Lidlar Ro'yxati", 'Lidlar')}
+          className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all"
+          title="PDF yuklab olish"
+        >
+          <Download size={16} />
         </button>
       </div>
 
@@ -326,26 +359,43 @@ export default function CrmLeads() {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                  {filteredLeads.filter(l => l.stage === stage.id).map((lead) => (
-                    <motion.div 
-                      key={lead.id} 
-                      layoutId={lead.id}
-                      draggable
-                      onDragStartCapture={(e) => handleDragStart(e as any, lead.id)}
-                      onClick={() => { setSelectedLead(lead); setIsDetailOpen(true); }}
-                      className="bg-white dark:bg-zinc-800 p-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing hover:border-blue-500 dark:hover:border-blue-500 transition-all group relative overflow-hidden"
-                    >
-                      <div className={`absolute top-0 left-0 w-1 h-full ${stage.color}`}></div>
-                      
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h4 className="font-black text-sm text-slate-900 dark:text-white tracking-tight">{lead.name}</h4>
-                          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">{lead.course}</p>
+                  {filteredLeads.filter(l => l.stage === stage.id).map((lead) => {
+                    const leadDate = new Date(lead.date || new Date().toISOString()).getTime();
+                    const daysOld = Math.floor((new Date().getTime() - leadDate) / (1000 * 60 * 60 * 24));
+                    const pending = lead.stage !== 'won' && lead.stage !== 'lost';
+                    const isStale = pending && daysOld >= 7;
+                    const needsFollowUp = pending && daysOld >= 3 && daysOld < 7;
+                    
+                    const ringClass = isStale 
+                      ? 'ring-2 ring-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)] border-transparent' 
+                      : needsFollowUp 
+                        ? 'ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] border-transparent' 
+                        : 'hover:border-blue-500 dark:hover:border-blue-500';
+
+                    return (
+                      <motion.div 
+                        key={lead.id} 
+                        layoutId={lead.id}
+                        draggable
+                        onDragStartCapture={(e) => handleDragStart(e as any, lead.id)}
+                        onClick={() => { setSelectedLead(lead); setIsDetailOpen(true); }}
+                        className={`bg-white dark:bg-zinc-800 p-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing transition-all group relative overflow-hidden ${ringClass}`}
+                      >
+                        <div className={`absolute top-0 left-0 w-1 h-full ${stage.color}`}></div>
+                        
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h4 className="font-black text-sm text-slate-900 dark:text-white tracking-tight">{lead.name}</h4>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{lead.course}</p>
+                              {isStale && <span className="flex items-center gap-1 text-[9px] font-black text-rose-500 uppercase tracking-widest"><AlertCircle size={10}/> O'lik Lid</span>}
+                              {needsFollowUp && <span className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase tracking-widest"><Clock size={10}/> Qayta aloqa</span>}
+                            </div>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${getStatusColor(lead.status)}`}>
+                            {lead.status}
+                          </span>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${getStatusColor(lead.status)}`}>
-                          {lead.status}
-                        </span>
-                      </div>
 
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
@@ -369,19 +419,20 @@ export default function CrmLeads() {
                         </div>
                       </div>
                     </motion.div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+    )}
 
-      {/* List View */}
-      {view === 'list' && (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+    {/* List View */}
+    {view === 'list' && (
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 font-black uppercase tracking-widest text-[10px]">
                 <tr>
                   <th className="px-6 py-4">Lid</th>
@@ -567,18 +618,27 @@ export default function CrmLeads() {
 
               <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
                 <div className="flex gap-3">
-                  <input 
-                    type="text" 
+                  <input
+                    ref={noteInputRef}
+                    type="text"
                     placeholder="Eslatma yozish..."
                     className="flex-1 px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        addActivity(selectedLead.id, 'note', (e.target as HTMLInputElement).value);
-                        (e.target as HTMLInputElement).value = '';
+                      if (e.key === 'Enter' && noteInputRef.current?.value) {
+                        addActivity(selectedLead.id, 'note', noteInputRef.current.value);
+                        noteInputRef.current.value = '';
                       }
                     }}
                   />
-                  <button className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black text-sm shadow-lg shadow-blue-600/20">
+                  <button
+                    onClick={() => {
+                      if (noteInputRef.current?.value) {
+                        addActivity(selectedLead.id, 'note', noteInputRef.current.value);
+                        noteInputRef.current.value = '';
+                      }
+                    }}
+                    className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black text-sm shadow-lg shadow-blue-600/20"
+                  >
                     Saqlash
                   </button>
                 </div>

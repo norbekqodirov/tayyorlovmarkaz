@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Plus, Edit2, Trash2, Image as ImageIcon, FileText, X } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 export default function CrmContent() {
   const [activeTab, setActiveTab] = useState('news');
+  const { showToast } = useToast();
 
   const { documents: news, addDocument: addNews, updateDocument: updateNews, deleteDocument: deleteNews } = useFirestore<any>('news');
   const { documents: gallery, addDocument: addGallery, updateDocument: updateGallery, deleteDocument: deleteGallery } = useFirestore<any>('gallery');
@@ -11,6 +14,7 @@ export default function CrmContent() {
   const [isNewsModalOpen, setIsNewsModalOpen] = useState(false);
   const [isGalleryModalOpen, setIsGalleryModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; type: 'news' | 'gallery'; id: string }>({ open: false, type: 'news', id: '' });
   
   const [newsForm, setNewsForm] = useState({ title: '', excerpt: '', content: '', imageUrl: '', status: 'Faol' });
   const [galleryForm, setGalleryForm] = useState({ url: '', title: '', date: '' });
@@ -63,7 +67,7 @@ export default function CrmContent() {
       closeModals();
     } catch (error) {
       console.error('Error saving news:', error);
-      alert('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+      showToast('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.', 'error');
     }
   };
 
@@ -77,34 +81,42 @@ export default function CrmContent() {
       closeModals();
     } catch (error) {
       console.error('Error saving gallery:', error);
-      alert('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+      showToast('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.', 'error');
     }
   };
 
-  const handleDeleteNews = async (id: string) => {
-    if (confirm("Haqiqatan ham bu yangilikni o'chirmoqchimisiz?")) {
-      try {
-        await deleteNews(id);
-      } catch (error) {
-        console.error('Error deleting news:', error);
-        alert('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
-      }
-    }
+  const handleDeleteNews = (id: string) => {
+    setDeleteConfirm({ open: true, type: 'news', id });
   };
 
-  const handleDeleteGallery = async (id: string) => {
-    if (confirm("Haqiqatan ham bu rasmni o'chirmoqchimisiz?")) {
-      try {
-        await deleteGallery(id);
-      } catch (error) {
-        console.error('Error deleting gallery:', error);
-        alert('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+  const handleDeleteGallery = (id: string) => {
+    setDeleteConfirm({ open: true, type: 'gallery', id });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      if (deleteConfirm.type === 'news') {
+        await deleteNews(deleteConfirm.id);
+      } else {
+        await deleteGallery(deleteConfirm.id);
       }
+      showToast('O\'chirildi', 'success');
+    } catch (error) {
+      showToast('Xatolik yuz berdi.', 'error');
     }
+    setDeleteConfirm({ open: false, type: 'news', id: '' });
   };
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title={deleteConfirm.type === 'news' ? "Yangilikni o'chirish" : "Rasmni o'chirish"}
+        message={deleteConfirm.type === 'news' ? "Haqiqatan ham bu yangilikni o'chirmoqchimisiz?" : "Haqiqatan ham bu rasmni o'chirmoqchimisiz?"}
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, type: 'news', id: '' })}
+      />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Kontent Boshqaruvi</h1>
         <button 

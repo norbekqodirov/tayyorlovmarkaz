@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link as LinkIcon, Copy, ExternalLink, Plus, BarChart2, Edit2, Trash2, X } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface Form {
   id: string;
@@ -13,9 +15,11 @@ interface Form {
 
 export default function CrmForms() {
   const { documents: forms, addDocument, updateDocument, deleteDocument } = useFirestore<Form>('forms');
+  const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
   const [formData, setFormData] = useState<Partial<Form>>({ name: '', url: '', status: 'Faol' });
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   const openModal = (form: Form | null = null) => {
     if (form) {
@@ -45,31 +49,43 @@ export default function CrmForms() {
         };
         await addDocument(newForm as Omit<Form, 'id'>);
       }
+      showToast(editingForm ? 'Forma yangilandi' : 'Forma qo\'shildi', 'success');
       closeModal();
     } catch (error) {
       console.error('Error saving form:', error);
-      alert('Formani saqlashda xatolik yuz berdi.');
+      showToast('Formani saqlashda xatolik yuz berdi.', 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Haqiqatan ham bu formani o'chirmoqchimisiz?")) {
-      try {
-        await deleteDocument(id);
-      } catch (error) {
-        console.error('Error deleting form:', error);
-        alert('Formani o\'chirishda xatolik yuz berdi.');
-      }
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteDocument(deleteConfirm.id);
+      showToast('Forma o\'chirildi', 'success');
+    } catch (error) {
+      showToast('Formani o\'chirishda xatolik yuz berdi.', 'error');
     }
+    setDeleteConfirm({ open: false, id: '' });
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert("Nusxa olindi!");
+    showToast('Nusxa olindi!', 'success');
   };
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Formani o'chirish"
+        message="Haqiqatan ham bu formani o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Target Formalar</h1>
         <button onClick={() => openModal()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm">

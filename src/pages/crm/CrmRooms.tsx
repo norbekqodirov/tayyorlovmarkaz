@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, DoorOpen, Users, Monitor, Wifi, Wind, X, Edit2, Trash2, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, DoorOpen, Users, Monitor, Wifi, Wind, X, Edit2, Trash2, CheckCircle2, Download } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
+import { exportToExcel } from '../../utils/export';
 
 interface Room {
   id: string;
@@ -21,8 +24,10 @@ const AMENITIES = [
 
 export default function CrmRooms() {
   const { data: rooms = [], addDocument, updateDocument, deleteDocument } = useFirestore<Room>('rooms');
+  const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [formData, setFormData] = useState<Partial<Room>>({
     name: '',
     capacity: 20,
@@ -61,22 +66,26 @@ export default function CrmRooms() {
       } else {
         await addDocument(dbPayload as any);
       }
+      showToast(editingRoom ? 'Xona yangilandi' : 'Xona qo\'shildi', 'success');
       closeModal();
     } catch (error) {
       console.error('Error saving room:', error);
-      alert('Xonani saqlashda xatolik yuz berdi.');
+      showToast('Xonani saqlashda xatolik yuz berdi.', 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Haqiqatan ham ushbu xonani o\'chirmoqchimisiz?')) {
-      try {
-        await deleteDocument(id);
-      } catch (error) {
-        console.error('Error deleting room:', error);
-        alert('Xonani o\'chirishda xatolik yuz berdi.');
-      }
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteDocument(deleteConfirm.id);
+      showToast('Xona o\'chirildi', 'success');
+    } catch (error) {
+      showToast('Xonani o\'chirishda xatolik yuz berdi.', 'error');
     }
+    setDeleteConfirm({ open: false, id: '' });
   };
 
   const openModal = (room: Room | null = null) => {
@@ -112,18 +121,44 @@ export default function CrmRooms() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Xonani o'chirish"
+        message="Haqiqatan ham ushbu xonani o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Xonalar Boshqaruvi</h1>
           <p className="text-zinc-500 text-sm font-medium">O'quv markazi xonalari va ularning jihozlanishi</p>
         </div>
-        <button 
-          onClick={() => openModal()}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
-        >
-          <Plus size={20} />
-          Yangi Xona
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportToExcel(mappedRooms.map(r => ({
+              ...r,
+              amenities: Array.isArray(r.amenities) ? r.amenities.join(', ') : '',
+            })), [
+              { header: 'Xona nomi', key: 'name', width: 20 },
+              { header: "Sig'imi", key: 'capacity', width: 10 },
+              { header: 'Turi', key: 'type', width: 15 },
+              { header: 'Jihozlar', key: 'amenities', width: 30 },
+              { header: 'Holat', key: 'status', width: 12 },
+            ], 'Xonalar')}
+            className="p-2.5 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
+            title="Excel yuklab olish"
+          >
+            <Download size={16} />
+          </button>
+          <button
+            onClick={() => openModal()}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
+          >
+            <Plus size={20} />
+            Yangi Xona
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

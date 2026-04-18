@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
+import { useToast } from '../components/Toast';
 
 export default function LeadForm() {
   const { formId } = useParams();
   const navigate = useNavigate();
   const { documents: forms, updateDocument: updateForm } = useFirestore<any>('forms');
   const { addDocument: addLead } = useFirestore<any>('leads');
+  const { showToast } = useToast();
   const [formName, setFormName] = useState('Ro\'yxatdan o\'tish');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [currentForm, setCurrentForm] = useState<any>(null);
@@ -30,7 +32,7 @@ export default function LeadForm() {
     }
   }, [formId, forms]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
     try {
@@ -52,7 +54,7 @@ export default function LeadForm() {
       setIsSubmitted(true);
     } catch (error) {
       console.error("Error submitting form:", error);
-      alert("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.");
+      showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
     }
   };
 

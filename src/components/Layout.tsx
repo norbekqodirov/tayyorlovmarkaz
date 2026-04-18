@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, Link, useLocation } from 'react-router-dom';
 import { Moon, Sun, Menu, X, ArrowUpRight, GraduationCap } from 'lucide-react';
 import { motion } from 'framer-motion';

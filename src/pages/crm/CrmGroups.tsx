@@ -1,13 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, MoreVertical, Users, Calendar, Clock,
-  DoorOpen, BookOpen, X, Edit2, Trash2, Filter,
+  DoorOpen, BookOpen, X, Edit2, Trash2, Filter, Download,
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
 } from 'lucide-react';
+import { exportToExcel } from '../../utils/export';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
+import { useToast } from '../../components/Toast';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
@@ -38,6 +41,7 @@ export default function CrmGroups() {
   const { data: students = [] } = useFirestore<any>('students');
   const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<any>('schedule');
   const { courses: liveCourses, teachers: liveTeachers, rooms: liveRooms, getEndTime } = useCrmData();
+  const { showToast } = useToast();
 
   // Merge live API data with legacy useFirestore data
   const teachers = liveTeachers.length > 0 ? liveTeachers : [];
@@ -59,6 +63,7 @@ export default function CrmGroups() {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   const [formData, setFormData] = useState<Partial<Group>>({
     name: '',
@@ -143,18 +148,18 @@ export default function CrmGroups() {
     closeModal();
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Haqiqatan ham ushbu guruhni o\'chirmoqchimisiz?')) {
-      await deleteDocument(id);
+  const handleDelete = (id: string) => {
+    setDeleteConfirm({ open: true, id });
+  };
 
-      // Delete from schedule
-      const existingSchedule = (schedule || []).find((s: any) => s.groupId === id);
-      if (existingSchedule) {
-        await deleteSchedule(existingSchedule.id);
-      }
-
-      if (selectedGroup?.id === id) setIsDetailOpen(false);
-    }
+  const confirmDelete = async () => {
+    const id = deleteConfirm.id;
+    setDeleteConfirm({ open: false, id: '' });
+    await deleteDocument(id);
+    const existingSchedule = (schedule || []).find((s: any) => s.groupId === id);
+    if (existingSchedule) await deleteSchedule(existingSchedule.id);
+    if (selectedGroup?.id === id) setIsDetailOpen(false);
+    showToast('Guruh o\'chirildi', 'success');
   };
 
   const openModal = (group: Group | null = null) => {
@@ -208,12 +213,12 @@ export default function CrmGroups() {
     if (!selectedStudentToAdd || !selectedGroup) return;
 
     if ((selectedGroup.students || []).includes(selectedStudentToAdd)) {
-      alert('Ushbu o\'quvchi allaqachon guruhda bor!');
+      showToast('Ushbu o\'quvchi allaqachon guruhda bor!', 'error');
       return;
     }
 
     if ((selectedGroup.students || []).length >= (selectedGroup.maxStudents || 15)) {
-      alert('Guruhda joy qolmagan!');
+      showToast('Guruhda joy qolmagan!', 'error');
       return;
     }
 
@@ -225,15 +230,23 @@ export default function CrmGroups() {
   };
 
   const handleRemoveStudentFromGroup = async (studentId: string) => {
-    if (!selectedGroup || !window.confirm('O\'quvchini guruhdan chetlatmoqchimisiz?')) return;
-
+    if (!selectedGroup) return;
     const updatedStudents = (selectedGroup.students || []).filter(id => id !== studentId);
     await updateDocument(selectedGroup.id, { students: updatedStudents });
     setSelectedGroup({ ...selectedGroup, students: updatedStudents });
+    showToast('O\'quvchi guruhdan chiqarildi', 'success');
   };
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Guruhni o'chirish"
+        message="Haqiqatan ham bu guruhni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -267,16 +280,22 @@ export default function CrmGroups() {
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { label: 'Jami Guruhlar', value: (groups || []).length, icon: Users, color: 'blue' },
-          { label: 'Faol Guruhlar', value: (groups || []).filter(g => g.status === 'Faol').length, icon: CheckCircle2, color: 'emerald' },
-          { label: 'O\'rtacha To\'lish', value: (groups || []).length > 0 ? Math.round((groups || []).reduce((acc, g) => acc + ((g.students?.length || 0) / (g.maxStudents || 1) * 100), 0) / (groups || []).length) + '%' : '0%', icon: GraduationCap, color: 'amber' }
+          { label: 'Jami Guruhlar', value: (groups || []).length, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
+          { label: 'Faol Guruhlar', value: (groups || []).filter(g => g.status === 'Faol').length, icon: CheckCircle2, gradient: 'from-emerald-500 to-teal-600', sub: 'Hozir o\'qiyotgan' },
+          { label: 'O\'rtacha To\'lish', value: (groups || []).length > 0 ? Math.round((groups || []).reduce((acc, g) => acc + ((g.students?.length || 0) / (g.maxStudents || 1) * 100), 0) / (groups || []).length) + '%' : '0%', icon: GraduationCap, gradient: 'from-amber-500 to-orange-600', sub: 'O\'rin band' }
         ].map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-            <div className={`w-10 h-10 rounded-xl bg-${stat.color}-50 dark:bg-${stat.color}-900/20 text-${stat.color}-600 dark:text-${stat.color}-400 flex items-center justify-center mb-3`}>
-              <stat.icon size={20} />
+          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-5 shadow-lg text-white relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
+            <div className="relative flex items-start justify-between">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
+                <stat.icon size={18} strokeWidth={2.5} />
+              </div>
             </div>
-            <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{stat.label}</p>
-            <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stat.value}</h3>
+            <div className="relative mt-3">
+              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
+              <p className="text-2xl font-black text-white mt-1">{stat.value}</p>
+              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
+            </div>
           </div>
         ))}
       </div>
@@ -294,6 +313,30 @@ export default function CrmGroups() {
         <Button variant="secondary" leftIcon={<Filter size={18} />}>
           Filtrlar
         </Button>
+        <button onClick={() => {
+          const exportData = filteredGroups.map(g => ({
+            ...g,
+            daysStr: Array.isArray(g.days) ? g.days.join(', ') : '',
+            studentCount: Array.isArray(g.students) ? g.students.length : 0,
+            price: g.price ? Number(g.price).toLocaleString() + ' UZS' : '',
+          }));
+          exportToExcel(exportData, [
+            { header: 'Guruh nomi', key: 'name', width: 25 },
+            { header: "Fan", key: 'subject', width: 20 },
+            { header: "O'qituvchi", key: 'teacher', width: 20 },
+            { header: 'Xona', key: 'room', width: 12 },
+            { header: 'Kunlar', key: 'daysStr', width: 18 },
+            { header: 'Vaqt', key: 'time', width: 12 },
+            { header: "O'quvchilar", key: 'studentCount', width: 12 },
+            { header: "Sig'im", key: 'maxStudents', width: 10 },
+            { header: 'Holat', key: 'status', width: 12 },
+            { header: 'Narx', key: 'price', width: 15 },
+            { header: 'Boshlanish', key: 'startDate', width: 15 },
+          ], 'Guruhlar');
+        }}
+          className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all" title="Excel yuklab olish">
+          <Download size={16} />
+        </button>
       </div>
 
       {/* Content */}
@@ -336,16 +379,49 @@ export default function CrmGroups() {
                 </div>
 
                 <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  <div className="flex items-center justify-between mb-2">
+                  {/* Capacity with color coding and full badge */}
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchilar</span>
-                    <span className="text-xs font-black text-slate-900 dark:text-white">{(group.students || []).length} / {group.maxStudents || 15}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-xs font-black ${
+                        (group.students || []).length >= (group.maxStudents || 15) ? 'text-rose-600' :
+                        (group.students || []).length >= (group.maxStudents || 15) * 0.8 ? 'text-amber-600' :
+                        'text-slate-900 dark:text-white'
+                      }`}>{(group.students || []).length} / {group.maxStudents || 15}</span>
+                      {(group.students || []).length >= (group.maxStudents || 15) && (
+                        <span className="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded text-[9px] font-black uppercase">To'ldi!</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-600 rounded-full transition-all duration-500"
-                      style={{ width: `${((group.students || []).length / (group.maxStudents || 1)) * 100}%` }}
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        (group.students || []).length >= (group.maxStudents || 15) ? 'bg-rose-500' :
+                        (group.students || []).length >= (group.maxStudents || 15) * 0.8 ? 'bg-amber-500' :
+                        'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(100, ((group.students || []).length / (group.maxStudents || 1)) * 100)}%` }}
                     />
                   </div>
+
+                  {/* Lesson progress based on start/end date */}
+                  {group.startDate && group.endDate && (() => {
+                    const start = new Date(group.startDate).getTime();
+                    const end = new Date(group.endDate).getTime();
+                    const now = Date.now();
+                    const progress = Math.min(100, Math.max(0, Math.round(((now - start) / (end - start)) * 100)));
+                    return (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Dars Progressi</span>
+                          <span className="text-[10px] font-black text-blue-600">{progress}%</span>
+                        </div>
+                        <div className="w-full h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-between pt-2">

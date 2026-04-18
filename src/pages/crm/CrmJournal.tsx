@@ -1,12 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Check, X, Clock, ChevronLeft, ChevronRight, Save,
-  Users, Search, Download, Printer, MessageSquare, ClipboardCheck
+  Users, Search, Download, Printer, MessageSquare, ClipboardCheck,
+  BookOpen, HomeIcon, TrendingUp, Star
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { uz } from 'date-fns/locale';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useToast } from '../../components/Toast';
+
+interface LessonTopic {
+  id: string;
+  groupId: string;
+  date: string;
+  topic: string;
+  homework: string;
+}
 
 interface Student { id: string; name: string; group: string; }
 interface AttendanceRecord { studentId: string; status: 'present' | 'absent' | 'late'; note?: string; }
@@ -27,10 +37,12 @@ const GRADE_STYLES: Record<number, string> = {
 };
 
 export default function CrmJournal() {
-  const { documents: groups = [] } = useFirestore<any>('groups');
-  const { documents: students = [] } = useFirestore<Student>('students');
-  const { documents: attendanceDocs = [], addDocument: addAttendance, updateDocument: updateAttendance } = useFirestore<GroupAttendance>('attendance');
-  const { documents: assessmentDocs = [], addDocument: addAssessment, updateDocument: updateAssessment, deleteDocument: deleteAssessment } = useFirestore<Assessment>('assessments');
+  const { data: groups = [] } = useFirestore<any>('groups');
+  const { data: students = [] } = useFirestore<Student>('students');
+  const { data: attendanceDocs = [], addDocument: addAttendance, updateDocument: updateAttendance } = useFirestore<GroupAttendance>('attendance');
+  const { data: assessmentDocs = [], addDocument: addAssessment, updateDocument: updateAssessment, deleteDocument: deleteAssessment } = useFirestore<Assessment>('assessments');
+  const { data: lessonTopicDocs = [], addDocument: addLessonTopic, updateDocument: updateLessonTopic } = useFirestore<LessonTopic>('lessonTopics');
+  const { showToast } = useToast();
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedGroup, setSelectedGroup] = useState('');
@@ -40,9 +52,28 @@ export default function CrmJournal() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [noteModal, setNoteModal] = useState<{ studentId: string; date: string; text: string } | null>(null);
+  const [topicModal, setTopicModal] = useState<{ date: string; topic: string; homework: string; existingId?: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<'grid' | 'stats'>('grid');
 
   useEffect(() => { setAttendanceData(attendanceDocs); }, [attendanceDocs]);
   useEffect(() => { setAssessmentData(assessmentDocs); }, [assessmentDocs]);
+
+  const getLessonTopic = useCallback((date: Date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return lessonTopicDocs.find(t => t.groupId === groupKey && t.date === dateStr);
+  }, [lessonTopicDocs]);
+
+  const saveLessonTopic = async () => {
+    if (!topicModal) return;
+    const { date, topic, homework, existingId } = topicModal;
+    const payload = { groupId: groupKey, date, topic, homework };
+    try {
+      if (existingId) { await updateLessonTopic(existingId, payload as any); }
+      else { await addLessonTopic(payload as any); }
+      showToast('Dars mavzusi saqlandi ✓', 'success');
+      setTopicModal(null);
+    } catch { showToast('Xatolik!', 'error'); }
+  };
 
   // ── Filtered days based on group schedule ──
   const daysInMonth = useMemo(() => {
@@ -184,6 +215,22 @@ export default function CrmJournal() {
 
   const monthLabel = format(currentDate, 'MMMM yyyy', { locale: uz });
 
+  // ── Per-student grade ranking ──
+  const studentRankings = useMemo(() => {
+    return filteredStudents.map(student => {
+      const grades = daysInMonth.map(d => getGrade(student.id, d)).filter(g => g > 0);
+      const avg = grades.length > 0 ? (grades.reduce((a, b) => a + b, 0) / grades.length) : 0;
+      const max = grades.length > 0 ? Math.max(...grades) : 0;
+      const min = grades.length > 0 ? Math.min(...grades) : 0;
+      const stats = getStudentStats(student.id);
+      return { ...student, grades, avg, max, min, ...stats };
+    }).sort((a, b) => {
+      const scoreA = (Number(a.avg) * 0.6) + ((Number(a.pct) || 0) * 0.004);
+      const scoreB = (Number(b.avg) * 0.6) + ((Number(b.pct) || 0) * 0.004);
+      return scoreB - scoreA;
+    });
+  }, [filteredStudents, daysInMonth, assessmentData, attendanceData]);
+
   return (
     <div className="flex flex-col h-full space-y-4 print:space-y-0">
 
@@ -216,6 +263,18 @@ export default function CrmJournal() {
               {isSaving ? 'Saqlanmoqda...' : 'Saqlash'}
             </button>
           </div>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex bg-zinc-100 dark:bg-white/5 p-1 rounded-xl w-fit mb-3">
+          {([['grid', 'Jurnal Jadvali'], ['stats', 'O\'quvchi Reytingi']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setActiveTab(key)}
+              className={`px-4 py-1.5 text-xs font-black rounded-lg transition-all ${
+                activeTab === key ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-white'
+              }`}>
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Controls row */}
@@ -299,7 +358,7 @@ export default function CrmJournal() {
         </div>
       </div>
 
-      {/* ── Table ── */}
+      {/* ── Table or Stats ── */}
       {!selectedGroup ? (
         <div className="flex-1 flex flex-col items-center justify-center bg-white dark:bg-[#111118] rounded-xl border border-zinc-200/80 dark:border-white/[0.05] py-24">
           <div className="w-14 h-14 rounded-xl bg-zinc-100 dark:bg-white/5 flex items-center justify-center text-zinc-300 dark:text-zinc-600 mb-4">
@@ -307,6 +366,78 @@ export default function CrmJournal() {
           </div>
           <p className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-1">Guruhni tanlang</p>
           <p className="text-xs text-zinc-400">Jurnal ko'rish uchun yuqoridan guruh tanlang</p>
+        </div>
+      ) : activeTab === 'stats' ? (
+        /* ── Student Rankings / Stats Panel ── */
+        <div className="bg-white dark:bg-[#111118] rounded-xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-zinc-100 dark:border-white/5">
+            <h3 className="font-black text-slate-900 dark:text-white text-sm">O'quvchi Reytingi — {monthLabel}</h3>
+            <p className="text-xs text-zinc-400 mt-0.5">Davomat (40%) + O'rtacha baho (60%) asosida tartiblab chiqarilgan</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-zinc-50 dark:bg-white/[0.02]">
+                  {['#', 'O\'quvchi', 'Jami dars', 'Davomat %', 'O\'rt. Baho', 'Eng yuqori', 'Eng past', 'Holat'].map(h => (
+                    <th key={h} className="px-4 py-3.5 text-[10px] font-black text-zinc-500 uppercase tracking-widest whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-white/[0.03]">
+                {studentRankings.map((s, rank) => (
+                  <tr key={s.id} className="hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black ${
+                        rank === 0 ? 'bg-amber-100 text-amber-600' :
+                        rank === 1 ? 'bg-zinc-100 text-zinc-600' :
+                        rank === 2 ? 'bg-orange-100 text-orange-600' :
+                        'bg-zinc-50 dark:bg-white/5 text-zinc-400'
+                      }`}>
+                        {rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : rank + 1}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-900/30 dark:to-blue-900/10 flex items-center justify-center text-[10px] font-black text-blue-600">
+                          {s.name?.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">{s.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3"><span className="font-bold text-sm text-zinc-700 dark:text-zinc-300">{daysInMonth.length}</span></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden min-w-[50px]">
+                          <div className={`h-full rounded-full ${
+                            (s.pct ?? 0) >= 80 ? 'bg-emerald-500' : (s.pct ?? 0) >= 60 ? 'bg-amber-500' : 'bg-rose-500'
+                          }`} style={{ width: `${s.pct ?? 0}%` }} />
+                        </div>
+                        <span className={`text-xs font-black ${
+                          (s.pct ?? 0) >= 80 ? 'text-emerald-600' : (s.pct ?? 0) >= 60 ? 'text-amber-600' : 'text-rose-600'
+                        }`}>{s.pct ?? 0}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-sm font-black ${
+                        Number(s.avg) >= 4 ? 'text-emerald-600' : Number(s.avg) >= 3 ? 'text-blue-600' : Number(s.avg) > 0 ? 'text-amber-600' : 'text-zinc-400'
+                      }`}>{Number(s.avg) > 0 ? Number(s.avg).toFixed(1) : '—'}</span>
+                    </td>
+                    <td className="px-4 py-3"><span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{s.max > 0 ? s.max : '—'}</span></td>
+                    <td className="px-4 py-3"><span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{s.min > 0 ? s.min : '—'}</span></td>
+                    <td className="px-4 py-3">
+                      {Number(s.avg) >= 4.5 && Number(s.pct) >= 90 ? (
+                        <span className="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-lg text-[10px] font-black">⭐ A'lochilar</span>
+                      ) : Number(s.pct) > 0 && Number(s.pct) < 60 ? (
+                        <span className="px-2.5 py-1 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded-lg text-[10px] font-black">⚠️ Kuzatuv</span>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg text-[10px] font-black">Faol</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="flex-1 overflow-hidden bg-white dark:bg-[#111118] rounded-xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm print:rounded-none print:border-0 print:shadow-none">
@@ -482,6 +613,59 @@ export default function CrmJournal() {
           </div>
         </div>
       )}
+
+      {/* ── Lesson Topic Modal ── */}
+      <AnimatePresence>
+        {topicModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-md bg-white dark:bg-[#1a1a24] rounded-2xl border border-zinc-200/80 dark:border-white/10 shadow-2xl overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-white/[0.06]">
+                <div className="flex items-center gap-2">
+                  <BookOpen size={16} className="text-violet-600" />
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">Dars Mavzusi — {topicModal.date}</h3>
+                </div>
+                <button onClick={() => setTopicModal(null)} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-white"><X size={16} /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5"><BookOpen size={10} />Dars Mavzusi</label>
+                  <textarea
+                    value={topicModal.topic}
+                    onChange={e => setTopicModal({ ...topicModal, topic: e.target.value })}
+                    placeholder="Bugunga dars mavzusini yozing..."
+                    rows={3}
+                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white rounded-xl border border-zinc-200 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1.5"><HomeIcon size={10} />Uy Vazifasi</label>
+                  <textarea
+                    value={topicModal.homework}
+                    onChange={e => setTopicModal({ ...topicModal, homework: e.target.value })}
+                    placeholder="Bugungi uy vazifasini yozing..."
+                    rows={2}
+                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white rounded-xl border border-zinc-200 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 px-5 pb-5">
+                <button onClick={() => setTopicModal(null)} className="flex-1 py-2.5 text-xs font-bold text-zinc-500 bg-zinc-100 dark:bg-white/5 rounded-xl hover:bg-zinc-200 dark:hover:bg-white/10 transition-all">
+                  Bekor
+                </button>
+                <button onClick={saveLessonTopic} className="flex-1 py-2.5 text-xs font-black text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-all">
+                  Saqlash
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── Legend ── */}
       {selectedGroup && (
