@@ -16,8 +16,6 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api': {
@@ -27,6 +25,22 @@ export default defineConfig(({ mode }) => {
         '/uploads': {
           target: 'http://localhost:3001',
           changeOrigin: true,
+        },
+      },
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: false,
+      chunkSizeWarningLimit: 1500,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-ui': ['framer-motion', 'lucide-react'],
+            'vendor-charts': ['recharts'],
+            'vendor-utils': ['axios', 'date-fns'],
+            'vendor-pdf': ['jspdf', 'jspdf-autotable', 'xlsx'],
+          },
         },
       },
     },

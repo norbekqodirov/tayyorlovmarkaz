@@ -1,15 +1,18 @@
 {
-  "name": "react-example",
+  "name": "tayyorlovmarkaz-crm",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"npm run server\" \"npm run dev\"",
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "concurrently \"npm run server\" \"vite --port=3000 --host=0.0.0.0\"",
     "server": "tsx watch server/index.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "start": "npm run build && npm run start:prod",
+    "start:prod": "NODE_ENV=production tsx server/index.ts",
+    "db:push": "prisma db push",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -30,7 +33,6 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
     "multer": "^2.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -38,7 +40,6 @@
     "react-router-dom": "^7.13.1",
     "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",
-    "vite": "^6.2.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

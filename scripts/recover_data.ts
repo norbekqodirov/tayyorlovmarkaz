@@ -5,10 +5,10 @@ async function run() {
   console.log('--- Checking for orphaned Prisma data ---');
   
   const models = [
-    { name: 'Group', get: prisma.group.findMany, type: 'groups' },
-    { name: 'Student', get: prisma.student.findMany, type: 'students' },
-    { name: 'Room', get: prisma.room.findMany, type: 'rooms' },
-    { name: 'Lead', get: prisma.lead.findMany, type: 'leads' }
+    { name: 'Group', get: () => prisma.group.findMany(), type: 'groups' },
+    { name: 'Student', get: () => prisma.student.findMany(), type: 'students' },
+    { name: 'Room', get: () => prisma.room.findMany(), type: 'rooms' },
+    { name: 'Lead', get: () => prisma.lead.findMany(), type: 'leads' }
   ];
 
   for (const model of models) {
