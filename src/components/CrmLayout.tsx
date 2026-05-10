@@ -45,7 +45,6 @@ const MODULES: NavModule[] = [
       {
         links: [
           { name: 'Dashboard',       path: '/crmtayyorlovmarkaz',            icon: LayoutDashboard, end: true, permission: 'dashboard' },
-          { name: "Mening Portalim", path: '/crmtayyorlovmarkaz/portal',     icon: UserCircle,                permission: 'dashboard' },
         ],
       },
       {
@@ -55,9 +54,7 @@ const MODULES: NavModule[] = [
           { name: 'Guruhlar',        path: '/crmtayyorlovmarkaz/groups',     icon: Layers,         permission: 'groups'     },
           { name: 'Kurslar',         path: '/crmtayyorlovmarkaz/courses',    icon: BookOpen,       permission: 'courses'    },
           { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',   icon: Calendar,       permission: 'schedule'   },
-          { name: 'Davomat',         path: '/crmtayyorlovmarkaz/attendance', icon: CheckSquare,    permission: 'attendance' },
           { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',    icon: ClipboardCheck, permission: 'journal'    },
-          { name: 'Baholash',        path: '/crmtayyorlovmarkaz/assessment', icon: Star,           permission: 'assessments'},
         ],
       },
     ],
@@ -183,9 +180,7 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/groups': 'Guruhlar',
     '/crmtayyorlovmarkaz/courses': 'Kurslar',
     '/crmtayyorlovmarkaz/schedule': 'Dars Jadvali',
-    '/crmtayyorlovmarkaz/attendance': 'Davomat',
     '/crmtayyorlovmarkaz/journal': 'Elektron Jurnal',
-    '/crmtayyorlovmarkaz/assessment': 'Baholash',
     '/crmtayyorlovmarkaz/leads': 'Lidlar',
     '/crmtayyorlovmarkaz/forms': 'Target Formalar',
     '/crmtayyorlovmarkaz/marketing': 'Marketing',

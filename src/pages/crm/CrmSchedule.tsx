@@ -1,14 +1,16 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Clock, DoorOpen, X, Trash2, Edit2, Filter, MapPin, AlertCircle, User, Users, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
+import {
+  Plus, Clock, Trash2, AlertCircle, DoorOpen,
+  Calendar, BookOpen, User, Check, X as XIcon
+} from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 
+// ─── Types & Constants ────────────────────────────────────────────────────────
 interface ScheduleItem {
   id: string;
   groupId: string;
@@ -31,557 +33,467 @@ const DAYS = [
   { id: 7, name: 'Yakshanba', short: 'Ya' },
 ];
 
-const COLORS = [
-  'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500', 'bg-indigo-500', 'bg-cyan-500', 'bg-pink-500', 'bg-teal-500'
+const COLOR_OPTIONS = [
+  { bg: 'bg-blue-500',   hex: '#3b82f6' },
+  { bg: 'bg-emerald-500',hex: '#10b981' },
+  { bg: 'bg-violet-500', hex: '#8b5cf6' },
+  { bg: 'bg-amber-500',  hex: '#f59e0b' },
+  { bg: 'bg-rose-500',   hex: '#f43f5e' },
+  { bg: 'bg-cyan-500',   hex: '#06b6d4' },
+  { bg: 'bg-orange-500', hex: '#f97316' },
+  { bg: 'bg-pink-500',   hex: '#ec4899' },
 ];
 
-const DEFAULT_START = 9;
-const DEFAULT_END = 18;
+// Grid: 07:00 – 20:00, each hour = 1 column = CELL_W px wide
+const GRID_START_H = 7;
+const GRID_END_H   = 20;
+const HOUR_COUNT   = GRID_END_H - GRID_START_H; // 13
+const CELL_W       = 80; // px per hour column
 
+const timeToFraction = (t: string): number => {
+  const [h, m] = t.split(':').map(Number);
+  return (h + m / 60 - GRID_START_H) / HOUR_COUNT;
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function CrmSchedule() {
-  const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<Omit<ScheduleItem, 'id'>>('schedule');
+  const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } =
+    useFirestore<Omit<ScheduleItem, 'id'>>('schedule');
   const { data: roomsData = [], addDocument: addRoomDoc } = useFirestore<any>('rooms');
   const { data: groups = [] } = useFirestore<any>('groups');
   const { courses, teachers: liveTeachers, getEndTime } = useCrmData();
-  const teachers = liveTeachers.length > 0 ? liveTeachers : [];
-
   const { showToast } = useToast();
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const todayReal = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
+  const [selectedDay, setSelectedDay] = useState(todayReal);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: '' });
   const [conflictConfirm, setConflictConfirm] = useState<{ open: boolean; data: Partial<ScheduleItem> | null }>({ open: false, data: null });
-  const [selectedDay, setSelectedDay] = useState(() => {
-    const today = new Date().getDay();
-    return today === 0 ? 7 : today;
-  });
-  const [viewMode, setViewMode] = useState<'rooms' | 'days'>('rooms');
   const [conflicts, setConflicts] = useState<string[]>([]);
+  const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const [roomInput, setRoomInput] = useState('');
 
-  const [formData, setFormData] = useState<Partial<ScheduleItem>>({
-    groupName: '', teacher: '', room: '', startTime: '09:00', endTime: '10:30', days: [], color: COLORS[0]
+  const defaultForm = (): Partial<ScheduleItem> => ({
+    groupName: '', teacher: '', room: '', startTime: '09:00', endTime: '10:30',
+    days: [selectedDay], color: 'bg-blue-500',
   });
+  const [formData, setFormData] = useState<Partial<ScheduleItem>>(defaultForm());
 
-  // Room list
+  // ── Derived ────────────────────────────────────────────────────────────────
   const rooms = useMemo(() => {
-    const safe = roomsData || [];
-    if (safe.length > 0) return safe;
-    return [{ id: 'r1', name: '101-xona' }, { id: 'r2', name: '102-xona' }, { id: 'r3', name: '103-xona' }];
+    if ((roomsData || []).length > 0) return roomsData;
+    return [{ id: 'r1', name: '101-xona' }, { id: 'r2', name: '102-xona' }];
   }, [roomsData]);
+  const getRoomName = (r: any) => typeof r === 'string' ? r : r?.name || '';
 
-  const timeToMinutes = (time: string) => {
-    const [h, m] = time.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  // Dynamic time range: default 9-18, expand if needed
-  const { startHour, endHour, totalSlots } = useMemo(() => {
-    let minH = DEFAULT_START;
-    let maxH = DEFAULT_END;
-    (schedule || []).forEach(item => {
-      const sH = parseInt(item.startTime?.split(':')[0] || '9');
-      const eH = parseInt(item.endTime?.split(':')[0] || '10');
-      const eM = parseInt(item.endTime?.split(':')[1] || '0');
-      if (sH < minH) minH = sH;
-      if (eH + (eM > 0 ? 1 : 0) > maxH) maxH = eH + (eM > 0 ? 1 : 0);
-    });
-    return { startHour: minH, endHour: maxH, totalSlots: maxH - minH };
-  }, [schedule]);
-
-  const timeSlots = useMemo(() =>
-    Array.from({ length: totalSlots }, (_, i) => {
-      const h = startHour + i;
-      return `${h.toString().padStart(2, '0')}:00`;
-    }),
-    [startHour, totalSlots]);
-
-  // Items for the selected day
+  // All groups that have at least one lesson on the selected day
   const daySchedule = useMemo(() =>
-    (schedule || []).filter(item => (item.days || []).includes(selectedDay)),
-    [schedule, selectedDay]);
+    (schedule || []).filter(s => (s.days || []).includes(selectedDay)),
+    [schedule, selectedDay]
+  );
 
-  // Conflict checker
-  const checkConflicts = (item: Partial<ScheduleItem>, excludeId?: string) => {
-    const newC: string[] = [];
-    const s = timeToMinutes(item.startTime || '00:00');
-    const e = timeToMinutes(item.endTime || '00:00');
+  // Rows = unique groups that appear in the full schedule (so the grid is consistent)
+  const gridGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ name: string; teacher: string }> = [];
+    (schedule || []).forEach(s => {
+      if (!seen.has(s.groupName)) {
+        seen.add(s.groupName);
+        result.push({ name: s.groupName, teacher: s.teacher });
+      }
+    });
+    // Also add groups from the groups collection that have no schedule yet
+    (groups || []).forEach((g: any) => {
+      if (!seen.has(g.name)) {
+        seen.add(g.name);
+        result.push({ name: g.name, teacher: g.teacher || '' });
+      }
+    });
+    return result;
+  }, [schedule, groups]);
+
+  // ── Conflict helper ────────────────────────────────────────────────────────
+  const checkConflicts = (item: Partial<ScheduleItem>, excludeId?: string): string[] => {
+    const result: string[] = [];
+    const tS = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const s = tS(item.startTime || '00:00');
+    const e = tS(item.endTime   || '00:00');
     (schedule || []).forEach(ex => {
       if (ex.id === excludeId) return;
       if (!item.days?.some(d => (ex.days || []).includes(d))) return;
-      const es = timeToMinutes(ex.startTime || '00:00');
-      const ee = timeToMinutes(ex.endTime || '00:00');
+      const es = tS(ex.startTime || '00:00');
+      const ee = tS(ex.endTime   || '00:00');
       if (s < ee && e > es) {
-        const rm = typeof ex.room === 'object' ? (ex.room as any).name : ex.room;
-        if (rm === item.room) newC.push(`Xona band: ${rm} (${ex.groupName})`);
-        if (ex.teacher === item.teacher) newC.push(`O'qituvchi band: ${ex.teacher} (${ex.groupName})`);
+        const rm = getRoomName(ex.room);
+        if (rm === item.room) result.push(`Xona band: ${rm} (${ex.groupName})`);
+        if (ex.teacher === item.teacher) result.push(`O'qituvchi band: ${ex.teacher}`);
       }
     });
-    return newC;
+    return result;
   };
-
   useEffect(() => {
     if (isModalOpen) setConflicts(checkConflicts(formData, editingItem?.id));
-  }, [formData, isModalOpen, editingItem]);
+  }, [formData, isModalOpen]);
 
+  // ── CRUD ───────────────────────────────────────────────────────────────────
   const doSave = async (data: Partial<ScheduleItem>) => {
-    const roomName = typeof data.room === 'object' ? (data.room as any).name : data.room;
+    const roomName = getRoomName(data.room);
     const group = (groups || []).find((g: any) => g.name === data.groupName);
     try {
       if (editingItem) {
         await updateSchedule(editingItem.id, { ...data, room: roomName, groupId: group?.id || editingItem.groupId } as any);
       } else {
-        await addSchedule({
-          groupId: group?.id || 'g' + Date.now(), groupName: data.groupName || '', teacher: data.teacher || '',
-          room: roomName || '', startTime: data.startTime || '09:00', endTime: data.endTime || '10:30',
-          days: data.days || [], color: data.color || COLORS[0]
-        });
+        await addSchedule({ groupId: group?.id || 'g' + Date.now(), groupName: data.groupName || '', teacher: data.teacher || '', room: roomName || '', startTime: data.startTime || '09:00', endTime: data.endTime || '10:30', days: data.days || [], color: data.color || 'bg-blue-500' });
       }
       closeModal();
-      showToast('Dars jadvali saqlandi', 'success');
-    } catch { showToast("Xatolik yuz berdi!", 'error'); }
+      showToast('Dars saqlandi', 'success');
+    } catch { showToast('Xatolik!', 'error'); }
   };
 
   const handleSave = async () => {
     if (!formData.groupName || !formData.teacher || !formData.room || !formData.days?.length) {
-      showToast("Iltimos, barcha maydonlarni to'ldiring!", 'error'); return;
+      showToast("Barcha maydonlarni to'ldiring!", 'error'); return;
     }
-    const roomName = typeof formData.room === 'object' ? (formData.room as any).name : formData.room;
-    const cc = checkConflicts({ ...formData, room: roomName }, editingItem?.id);
-    if (cc.length > 0) {
-      setConflictConfirm({ open: true, data: formData });
-      return;
-    }
+    const cc = checkConflicts(formData, editingItem?.id);
+    if (cc.length > 0) { setConflictConfirm({ open: true, data: formData }); return; }
     await doSave(formData);
-  };
-
-  const handleDelete = (id: string) => {
-    setDeleteConfirm({ open: true, id });
-  };
-
-  const confirmDelete = async () => {
-    try { await deleteSchedule(deleteConfirm.id); closeModal(); showToast("Dars o'chirildi", 'success'); }
-    catch { showToast("Xatolik!", 'error'); }
-    setDeleteConfirm({ open: false, id: '' });
   };
 
   const openModal = (item: ScheduleItem | null = null) => {
     if (item) {
       setEditingItem(item);
-      setFormData({ ...item, room: typeof item.room === 'object' ? (item.room as any).name : (item.room || '') });
+      setFormData({ ...item, room: getRoomName(item.room) });
     } else {
       setEditingItem(null);
-      setFormData({
-        groupName: (groups || [])[0]?.name || '', teacher: (groups || [])[0]?.teacher || (teachers || [])[0]?.name || '',
-        room: rooms[0]?.name || '', startTime: '09:00', endTime: '10:30', days: [selectedDay],
-        color: COLORS[Math.floor(Math.random() * COLORS.length)]
-      });
+      const fg = (groups || [])[0];
+      setFormData({ ...defaultForm(), groupName: fg?.name || '', teacher: fg?.teacher || liveTeachers[0]?.name || '', room: getRoomName(rooms[0]) });
     }
+    setConflicts([]);
     setIsModalOpen(true);
   };
   const closeModal = () => { setIsModalOpen(false); setEditingItem(null); setConflicts([]); };
-  const toggleDay = (dayId: number) => {
+  const toggleDay = (id: number) => {
     const cur = formData.days || [];
-    setFormData({ ...formData, days: cur.includes(dayId) ? cur.filter(d => d !== dayId) : [...cur, dayId] });
+    setFormData({ ...formData, days: cur.includes(id) ? cur.filter(d => d !== id) : [...cur, id] });
   };
 
-  const [roomInput, setRoomInput] = useState('');
-  const [roomModalOpen, setRoomModalOpen] = useState(false);
-
-  const handleAddRoom = () => { setRoomInput(''); setRoomModalOpen(true); };
-
-  const confirmAddRoom = async () => {
+  async function addRoomAndClose() {
     const name = roomInput.trim();
-    if (name && !rooms.some((r: any) => r.name === name)) {
-      try { await addRoomDoc({ name, capacity: 30 }); showToast('Xona qo\'shildi', 'success'); }
-      catch { showToast("Xatolik!", 'error'); }
+    if (name && !rooms.some((r: any) => getRoomName(r) === name)) {
+      try { await addRoomDoc({ name, capacity: 30 }); showToast("Xona qo'shildi", 'success'); }
+      catch { showToast('Xatolik!', 'error'); }
     }
     setRoomModalOpen(false);
-  };
+  }
 
-  // Calculate position for schedule blocks
-  const getBlockStyle = (item: ScheduleItem) => {
-    const sMin = timeToMinutes(item.startTime) - startHour * 60;
-    const eMin = timeToMinutes(item.endTime) - startHour * 60;
-    const totalMin = totalSlots * 60;
-    return {
-      top: `${(sMin / totalMin) * 100}%`,
-      height: `${((eMin - sMin) / totalMin) * 100}%`,
-    };
-  };
+  // ── Hour labels ────────────────────────────────────────────────────────────
+  const hours = Array.from({ length: HOUR_COUNT }, (_, i) => GRID_START_H + i);
 
-  const getRoomName = (r: any) => typeof r === 'string' ? r : r?.name || '';
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+    <div className="flex flex-col gap-4">
+      {/* ─ Dialogs ─ */}
       <ConfirmDialog
         isOpen={deleteConfirm.open}
         title="Darsni o'chirish"
         message="Haqiqatan ham ushbu darsni o'chirmoqchimisiz?"
-        confirmText="Ha, o'chirish"
-        onConfirm={confirmDelete}
+        confirmText="O'chirish"
+        onConfirm={async () => {
+          try { await deleteSchedule(deleteConfirm.id); showToast("O'chirildi", 'success'); closeModal(); }
+          catch { showToast('Xatolik!', 'error'); }
+          setDeleteConfirm({ open: false, id: '' });
+        }}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
       />
       <ConfirmDialog
         isOpen={conflictConfirm.open}
         title="Ziddiyat aniqlandi"
-        message={`Jadvalda ziddiyatlar mavjud:\n${conflicts.join('\n')}\n\nBaribir davom etsinmi?`}
-        confirmText="Ha, davom etish"
+        message={`${conflicts.join('\n')}\n\nBaribir saqlashni xohlaysizmi?`}
+        confirmText="Saqlash"
         onConfirm={async () => { setConflictConfirm({ open: false, data: null }); if (conflictConfirm.data) await doSave(conflictConfirm.data); }}
         onCancel={() => setConflictConfirm({ open: false, data: null })}
       />
-      {roomModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-zinc-200 dark:border-zinc-700 space-y-4">
-            <h3 className="text-base font-black text-slate-900 dark:text-white">Yangi xona qo'shish</h3>
-            <input
-              type="text"
-              value={roomInput}
-              onChange={(e) => setRoomInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && confirmAddRoom()}
-              placeholder="Xona nomi (masalan: 101-xona)"
-              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-              autoFocus
-            />
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setRoomModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">Bekor</button>
-              <button onClick={confirmAddRoom} className="px-4 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors">Qo'shish</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 shrink-0">
+      <AnimatePresence>
+        {roomModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+              className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-zinc-200 dark:border-zinc-700 space-y-4">
+              <h3 className="text-base font-black text-slate-900 dark:text-white">Yangi xona qo'shish</h3>
+              <input type="text" value={roomInput} onChange={e => setRoomInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRoomAndClose()}
+                placeholder="Masalan: 201-xona" autoFocus
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setRoomModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500 hover:text-zinc-700 transition-colors">Bekor</button>
+                <button onClick={addRoomAndClose} className="px-4 py-2 text-sm font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors">Qo'shish</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─ Header ─ */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Dars Jadvali</h1>
-          <p className="text-zinc-500 text-sm font-medium">Xonalar kesimida darslarni rejalashtirish</p>
+          <p className="text-xs text-zinc-400 mt-0.5 font-medium">Haftalik dars dasturini boshqaring</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={handleAddRoom} leftIcon={<MapPin size={14} />} size="sm" className="hidden md:flex">
-            Xona Qo'shish
-          </Button>
-          <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
-            <button onClick={() => setViewMode('rooms')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${viewMode === 'rooms' ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-500'}`}>
-              Xonalar
-            </button>
-            <button onClick={() => setViewMode('days')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${viewMode === 'days' ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-500'}`}>
-              Kunlar
-            </button>
-          </div>
-          <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
-            Dars Qo'shish
-          </Button>
+          <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all shadow-sm">
+            <DoorOpen size={14} /> Xona Qo'shish
+          </button>
+          <button onClick={() => openModal()}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-lg shadow-blue-600/25 transition-all">
+            <Plus size={16} /> Dars Qo'shish
+          </button>
         </div>
       </div>
 
-      {/* Day Selector Tabs */}
-      <div className="flex items-center gap-1 mb-3 bg-white dark:bg-zinc-900 p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shrink-0">
+      {/* ─ Stats ─ */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: 'Bugun', value: (schedule || []).filter(s => (s.days || []).includes(todayReal)).length, unit: 'dars', icon: <Calendar size={18} />, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-500/10' },
+          { label: 'Jami darslar', value: (schedule || []).length, unit: 'ta', icon: <BookOpen size={18} />, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+          { label: 'Xonalar', value: rooms.length, unit: 'ta', icon: <DoorOpen size={18} />, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-500/10' },
+        ].map(({ label, value, unit, icon, color, bg }) => (
+          <div key={label} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+            <div className={`w-10 h-10 rounded-xl ${bg} ${color} flex items-center justify-center flex-shrink-0`}>{icon}</div>
+            <div>
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{label}</p>
+              <p className="text-lg font-black text-slate-900 dark:text-white">{value} <span className="text-xs font-bold text-zinc-400">{unit}</span></p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ─ Day Tabs ─ */}
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1 flex gap-1 shadow-sm">
         {DAYS.map(day => {
-          const isToday = (new Date().getDay() || 7) === day.id;
-          const count = (schedule || []).filter(s => (s.days || []).includes(day.id)).length;
+          const isToday = todayReal === day.id;
+          const isSelected = selectedDay === day.id;
+          const cnt = (schedule || []).filter(s => (s.days || []).includes(day.id)).length;
           return (
-            <button
-              key={day.id}
-              onClick={() => setSelectedDay(day.id)}
-              className={`flex-1 py-2 px-1 rounded-lg text-xs font-black transition-all relative ${selectedDay === day.id
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                : isToday
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                  : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                }`}
-            >
-              <span className="block">{day.short}</span>
-              {count > 0 && (
-                <span className={`inline-block mt-0.5 text-[9px] font-black px-1.5 py-0.5 rounded-full ${selectedDay === day.id ? 'bg-white/20 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                  }`}>
-                  {count}
-                </span>
+            <button key={day.id} onClick={() => setSelectedDay(day.id)}
+              className={`flex-1 py-2.5 px-1 rounded-xl text-center transition-all ${isSelected ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : isToday ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+              <span className="block text-xs font-black">{day.short}</span>
+              {cnt > 0 && (
+                <span className={`text-[9px] font-black px-1.5 rounded-full ${isSelected ? 'text-blue-200' : 'text-zinc-400'}`}>{cnt}</span>
               )}
-              {isToday && selectedDay !== day.id && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-blue-500 rounded-full" />
-              )}
+              {isToday && !isSelected && <span className="block w-1 h-1 bg-blue-500 rounded-full mx-auto mt-0.5" />}
             </button>
           );
         })}
       </div>
 
-      {/* ======= ROOM VIEW: Rooms as columns ======= */}
-      {viewMode === 'rooms' && (
-        <div className="flex-1 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col min-h-0">
-          <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
-            <div className="min-w-[700px] flex flex-col flex-1 min-h-0">
-              {/* Room Headers */}
-              <div className="flex border-b border-zinc-200 dark:border-zinc-800 shrink-0">
-                <div className="w-14 shrink-0 bg-zinc-50 dark:bg-zinc-800/50 border-r border-zinc-200 dark:border-zinc-800 p-2 flex items-center justify-center">
-                  <Clock size={14} className="text-zinc-400" />
-                </div>
-                {rooms.map((room: any) => (
-                  <div key={room.id || room.name} className="flex-1 p-2.5 text-center border-r border-zinc-200 dark:border-zinc-800 last:border-r-0 bg-zinc-50 dark:bg-zinc-800/50">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <DoorOpen size={12} className="text-zinc-400" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{getRoomName(room)}</span>
-                    </div>
-                  </div>
-                ))}
+      {/* ─ Transposed Grid: Groups (rows) × Hours (columns) ─ */}
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <div style={{ minWidth: CELL_W * HOUR_COUNT + 200 }}>
+
+            {/* Hour header row */}
+            <div className="flex border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/40">
+              {/* Group column header */}
+              <div className="w-48 flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 px-4 py-3 flex items-center">
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Guruhlar</span>
               </div>
-
-              {/* Time Grid Body */}
-              <div className="flex flex-1 overflow-y-auto min-h-0 relative">
-                {/* Time column */}
-                <div className="w-14 shrink-0 border-r border-zinc-200 dark:border-zinc-800 relative">
-                  {timeSlots.map((time, idx) => (
-                    <div
-                      key={time}
-                      className="border-b border-zinc-100 dark:border-zinc-800/50 flex items-start justify-center pt-1"
-                      style={{ height: `${100 / totalSlots}%` }}
-                    >
-                      <span className="text-[10px] font-black text-zinc-400">{time}</span>
-                    </div>
-                  ))}
+              {/* Hour columns */}
+              {hours.map(h => (
+                <div key={h} style={{ width: CELL_W }} className="flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 px-2 py-3 text-center">
+                  <span className="text-[11px] font-black text-blue-500 tabular-nums">{h.toString().padStart(2, '0')}:00</span>
                 </div>
+              ))}
+            </div>
 
-                {/* Room columns */}
-                {rooms.map((room: any) => {
-                  const roomName = getRoomName(room);
-                  const roomItems = daySchedule.filter(s => {
-                    const sRoom = typeof s.room === 'object' ? (s.room as any).name : s.room;
-                    return sRoom === roomName;
-                  });
-                  return (
-                    <div key={room.id || room.name} className="flex-1 border-r border-zinc-200 dark:border-zinc-800 last:border-r-0 relative">
-                      {/* Hour lines */}
-                      {timeSlots.map((time) => (
-                        <div key={time} className="border-b border-zinc-100 dark:border-zinc-800/50" style={{ height: `${100 / totalSlots}%` }} />
+            {/* Group rows */}
+            {gridGroups.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center text-center">
+                <Calendar size={40} className="text-zinc-200 dark:text-zinc-700 mb-3" />
+                <p className="text-sm font-black text-zinc-400">Hali darslar qo'shilmagan</p>
+                <button onClick={() => openModal()}
+                  className="mt-3 text-xs font-black text-blue-500 hover:text-blue-600 transition-colors flex items-center gap-1">
+                  <Plus size={14} /> Dars qo'shish
+                </button>
+              </div>
+            ) : (
+              gridGroups.map((grp, rowIdx) => {
+                const rowItems = daySchedule.filter(s => s.groupName === grp.name);
+                const totalGridPx = CELL_W * HOUR_COUNT;
+
+                return (
+                  <div key={grp.name}
+                    className={`flex border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 ${rowIdx % 2 === 0 ? '' : 'bg-zinc-50/30 dark:bg-zinc-800/10'}`}
+                    style={{ height: 64 }}>
+
+                    {/* Group label */}
+                    <div className="w-48 flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 px-4 flex flex-col justify-center">
+                      <span className="text-xs font-black text-slate-800 dark:text-zinc-200 truncate">{grp.name}</span>
+                      {grp.teacher && (
+                        <span className="text-[10px] font-medium text-zinc-400 flex items-center gap-1 mt-0.5 truncate">
+                          <User size={9} /> {grp.teacher}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Time columns */}
+                    <div className="relative flex-1" style={{ height: 64 }}>
+                      {/* Vertical hour‑line ticks */}
+                      {hours.map(h => (
+                        <div key={h}
+                          className="absolute top-0 bottom-0 border-r border-zinc-100 dark:border-zinc-800"
+                          style={{ left: (h - GRID_START_H) * CELL_W, width: CELL_W }} />
                       ))}
-                      {/* Schedule blocks */}
-                      {roomItems.map(item => {
-                        const style = getBlockStyle(item);
+
+                      {/* Lesson blocks */}
+                      {rowItems.map(item => {
+                        const hexColor = COLOR_OPTIONS.find(c => c.bg === item.color)?.hex || '#3b82f6';
+                        const leftFrac = Math.max(timeToFraction(item.startTime), 0);
+                        const rightFrac = Math.min(timeToFraction(item.endTime), 1);
+                        const leftPx  = leftFrac  * totalGridPx;
+                        const widthPx = Math.max((rightFrac - leftFrac) * totalGridPx - 4, 30);
+
                         return (
                           <motion.div
                             key={item.id}
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             onClick={() => openModal(item)}
-                            className={`absolute left-1 right-1 ${item.color} text-white rounded-lg cursor-pointer z-10 hover:z-20 hover:scale-[1.02] transition-transform overflow-hidden shadow-md border border-white/20`}
-                            style={{ top: style.top, height: style.height, minHeight: '28px' }}
+                            title={`${item.groupName} | ${item.startTime} – ${item.endTime} | ${getRoomName(item.room)}`}
+                            className="absolute top-2 bottom-2 rounded-xl cursor-pointer flex items-center px-3 gap-2 overflow-hidden hover:brightness-95 transition-all shadow-md"
+                            style={{
+                              left: leftPx + 2,
+                              width: widthPx,
+                              background: `${hexColor}18`,
+                              borderLeft: `3px solid ${hexColor}`,
+                            }}
                           >
-                            <div className="px-2 py-1 flex flex-col justify-center h-full gap-0.5">
-                              <p className="text-[11px] font-black leading-tight truncate">{item.groupName}</p>
-                              <div className="flex items-center gap-1 opacity-80">
-                                <User size={9} />
-                                <span className="text-[9px] font-bold truncate">{item.teacher}</span>
-                              </div>
-                              <div className="flex items-center gap-1 opacity-70">
-                                <Clock size={8} />
-                                <span className="text-[8px] font-bold">{item.startTime}–{item.endTime}</span>
-                              </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[11px] font-black text-slate-800 dark:text-white truncate leading-tight">{item.groupName}</span>
+                              <span className="text-[9px] font-bold truncate" style={{ color: hexColor }}>
+                                {item.startTime}–{item.endTime} · {getRoomName(item.room)}
+                              </span>
                             </div>
                           </motion.div>
                         );
                       })}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======= DAYS VIEW: Days as columns (classic) ======= */}
-      {viewMode === 'days' && (
-        <div className="flex-1 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col min-h-0">
-          <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
-            <div className="min-w-[900px] flex flex-col flex-1 min-h-0">
-              {/* Day Headers */}
-              <div className="flex border-b border-zinc-200 dark:border-zinc-800 shrink-0">
-                <div className="w-14 shrink-0 bg-zinc-50 dark:bg-zinc-800/50 border-r border-zinc-200 dark:border-zinc-800 p-2 flex items-center justify-center">
-                  <Clock size={14} className="text-zinc-400" />
-                </div>
-                {DAYS.map((day) => (
-                  <div key={day.id} className={`flex-1 p-2.5 text-center border-r border-zinc-200 dark:border-zinc-800 last:border-r-0 ${(new Date().getDay() || 7) === day.id ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-zinc-50 dark:bg-zinc-800/50'
-                    }`}>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{day.name}</span>
                   </div>
-                ))}
-              </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
 
-              {/* Time Grid Body */}
-              <div className="flex flex-1 overflow-y-auto min-h-0 relative">
-                <div className="w-14 shrink-0 border-r border-zinc-200 dark:border-zinc-800 relative">
-                  {timeSlots.map((time) => (
-                    <div key={time} className="border-b border-zinc-100 dark:border-zinc-800/50 flex items-start justify-center pt-1" style={{ height: `${100 / totalSlots}%` }}>
-                      <span className="text-[10px] font-black text-zinc-400">{time}</span>
-                    </div>
-                  ))}
-                </div>
-                {DAYS.map((day) => {
-                  const dayItems = (schedule || []).filter(s => (s.days || []).includes(day.id));
-                  return (
-                    <div key={day.id} className="flex-1 border-r border-zinc-200 dark:border-zinc-800 last:border-r-0 relative">
-                      {timeSlots.map((time) => (
-                        <div key={time} className="border-b border-zinc-100 dark:border-zinc-800/50" style={{ height: `${100 / totalSlots}%` }} />
-                      ))}
-                      {dayItems.map(item => {
-                        const style = getBlockStyle(item);
-                        return (
-                          <motion.div
-                            key={item.id}
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            onClick={() => openModal(item)}
-                            className={`absolute left-0.5 right-0.5 ${item.color} text-white rounded-lg cursor-pointer z-10 hover:z-20 hover:scale-[1.02] transition-transform overflow-hidden shadow-md border border-white/20`}
-                            style={{ top: style.top, height: style.height, minHeight: '24px' }}
-                          >
-                            <div className="px-1.5 py-0.5 flex flex-col justify-center h-full">
-                              <p className="text-[10px] font-black leading-tight truncate">{item.groupName}</p>
-                              <span className="text-[8px] font-bold opacity-70 truncate">{typeof item.room === 'object' ? (item.room as any).name : item.room}</span>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3 mt-3 shrink-0">
-        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center"><Clock size={18} /></div>
-          <div>
-            <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Bugun</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">{(schedule || []).filter(s => (s.days || []).includes(new Date().getDay() || 7)).length} <span className="text-xs font-bold text-zinc-400">dars</span></p>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 flex items-center justify-center"><MapPin size={18} /></div>
-          <div>
-            <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Xonalar</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">{rooms.length} <span className="text-xs font-bold text-zinc-400">ta</span></p>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3 shadow-sm">
-          <div className="w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/30 text-purple-600 flex items-center justify-center"><Users size={18} /></div>
-          <div>
-            <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Tanlangan kun</p>
-            <p className="text-lg font-black text-slate-900 dark:text-white">{daySchedule.length} <span className="text-xs font-bold text-zinc-400">dars</span></p>
-          </div>
-        </div>
-      </div>      {/* Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={closeModal} 
-        title={editingItem ? 'Darsni Tahrirlash' : "Yangi Dars Qo'shish"}
-        width="2xl"
-      >
-        <div className="space-y-6">
+      {/* ─ Add/Edit Modal ─ */}
+      <Modal isOpen={isModalOpen} onClose={closeModal} title={editingItem ? 'Darsni tahrirlash' : "Yangi dars qo'shish"} width="lg">
+        <div className="space-y-5">
           {conflicts.length > 0 && (
-            <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800 rounded-xl flex items-start gap-2">
-              <AlertCircle className="text-rose-600 mt-0.5 shrink-0" size={16} />
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-2">
+              <AlertCircle className="text-amber-500 mt-0.5 shrink-0" size={16} />
               <div>
-                <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">Ziddiyatlar</p>
-                <ul className="text-xs font-bold text-rose-700 dark:text-rose-400 list-disc list-inside">
-                  {conflicts.map((c, i) => <li key={i}>{c}</li>)}
-                </ul>
+                <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Ziddiyat!</p>
+                {conflicts.map((c, i) => <p key={i} className="text-xs font-medium text-amber-700 dark:text-amber-400">{c}</p>)}
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5 flex flex-col w-full">
-              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Guruh</label>
-              <select value={formData.groupName} onChange={(e) => {
+          {/* Group */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
+            <select value={formData.groupName}
+              onChange={e => {
                 const g = (groups || []).find((g: any) => g.name === e.target.value);
                 const course = courses.find((c: any) => c.name === g?.subject);
-                const duration = course?.lessonDuration || 90;
-                const endTime = getEndTime(formData.startTime || '09:00', duration);
-                setFormData({ 
-                  ...formData, 
-                  groupName: e.target.value, 
-                  teacher: g?.teacher || formData.teacher, 
-                  room: g?.room || formData.room,
-                  endTime 
-                });
-              }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Tanlang</option>
-                {(groups || []).map((g: any) => <option key={g.id} value={g.name}>{g.name}</option>)}
-                {!(groups || []).length && formData.groupName && <option value={formData.groupName}>{formData.groupName}</option>}
-              </select>
-            </div>
-            
-            <div className="space-y-1.5 flex flex-col w-full">
-              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">O'qituvchi</label>
-              <select value={formData.teacher} onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
-                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Tanlang</option>
-                {(teachers || []).map((t: any) => <option key={t.id} value={t.name}>{t.name}</option>)}
-                {!(teachers || []).length && formData.teacher && <option value={formData.teacher}>{formData.teacher}</option>}
-              </select>
-            </div>
+                const et = getEndTime(formData.startTime || '09:00', course?.lessonDuration || 90);
+                setFormData({ ...formData, groupName: e.target.value, teacher: g?.teacher || formData.teacher, room: getRoomName(g?.room) || formData.room, endTime: et });
+              }}
+              className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Guruhni tanlang...</option>
+              {(groups || []).map((g: any) => <option key={g.id} value={g.name}>{g.name}</option>)}
+            </select>
           </div>
 
+          {/* Teacher + Room */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5 flex flex-col w-full">
-              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Xona</label>
-              <select value={formData.room} onChange={(e) => setFormData({ ...formData, room: e.target.value })}
-                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500">
-                {rooms.map((r: any) => <option key={r.id || r.name} value={getRoomName(r)}>{getRoomName(r)}</option>)}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">O'qituvchi</label>
+              <select value={formData.teacher} onChange={e => setFormData({ ...formData, teacher: e.target.value })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Tanlang...</option>
+                {liveTeachers.map((t: any) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                {!liveTeachers.length && formData.teacher && <option value={formData.teacher}>{formData.teacher}</option>}
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Rang</label>
-              <div className="flex gap-1.5 flex-wrap">
-                {COLORS.map(c => (
-                  <button key={c} onClick={() => setFormData({ ...formData, color: c })} className={`w-7 h-7 rounded-full ${c} ${formData.color === c ? 'ring-2 ring-offset-2 ring-zinc-400' : ''} transition-all`} />
-                ))}
-              </div>
+              <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Xona</label>
+              <select value={formData.room} onChange={e => setFormData({ ...formData, room: e.target.value })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                {rooms.map((r: any) => <option key={r.id || r.name} value={getRoomName(r)}>{getRoomName(r)}</option>)}
+              </select>
             </div>
           </div>
 
+          {/* Time */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5 flex flex-col w-full">
-              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Boshlanish</label>
-              <input type="time" value={formData.startTime} onChange={(e) => {
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Boshlanish</label>
+              <input type="time" value={formData.startTime}
+                onChange={e => {
                   const g = (groups || []).find((g: any) => g.name === formData.groupName);
                   const course = courses.find((c: any) => c.name === g?.subject);
-                  const duration = course?.lessonDuration || 90;
-                  setFormData({ 
-                    ...formData, 
-                    startTime: e.target.value,
-                    endTime: e.target.value ? getEndTime(e.target.value, duration) : formData.endTime
-                  });
+                  setFormData({ ...formData, startTime: e.target.value, endTime: getEndTime(e.target.value, course?.lessonDuration || 90) });
                 }}
-                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500" />
+                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-            <div className="space-y-1.5 flex flex-col w-full">
-              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Tugash</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Tugash (avto)</label>
               <input type="time" value={formData.endTime} disabled
-                className="w-full bg-zinc-100 dark:bg-zinc-800/20 border border-zinc-200 dark:border-zinc-700 text-zinc-500 text-sm rounded-xl px-4 py-2.5 cursor-not-allowed" />
+                className="w-full bg-zinc-100 dark:bg-zinc-800/30 border border-zinc-200 dark:border-zinc-700 text-zinc-400 text-sm rounded-xl px-4 py-2.5 cursor-not-allowed" />
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-2">Kunlar</label>
+          {/* Days */}
+          <div className="space-y-2">
+            <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Dars kunlari</label>
             <div className="flex flex-wrap gap-2">
-              {DAYS.map(day => (
-                <button key={day.id} onClick={() => toggleDay(day.id)} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${formData.days?.includes(day.id) ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                  }`}>{day.name}</button>
+              {DAYS.map(day => {
+                const active = formData.days?.includes(day.id);
+                return (
+                  <button key={day.id} onClick={() => toggleDay(day.id)}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black transition-all ${active ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}>
+                    {active && <Check size={10} />}
+                    {day.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Color */}
+          <div className="space-y-2">
+            <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Rang</label>
+            <div className="flex gap-2 flex-wrap">
+              {COLOR_OPTIONS.map(c => (
+                <button key={c.bg} onClick={() => setFormData({ ...formData, color: c.bg })}
+                  className={`w-7 h-7 rounded-full ${c.bg} transition-all ${formData.color === c.bg ? 'ring-2 ring-offset-2 dark:ring-offset-zinc-900 ring-zinc-500 scale-110' : 'hover:scale-110'}`} />
               ))}
             </div>
           </div>
 
-          <div className="flex justify-between items-center pt-4 border-t border-zinc-100 dark:border-zinc-800/50 mt-6">
+          {/* Footer */}
+          <div className="flex justify-between items-center pt-4 border-t border-zinc-100 dark:border-zinc-800">
             {editingItem ? (
-              <Button variant="danger" onClick={() => handleDelete(editingItem.id)} leftIcon={<Trash2 size={16} />}>
-                O'chirish
-              </Button>
+              <button onClick={() => setDeleteConfirm({ open: true, id: editingItem.id })}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-black text-rose-600 bg-rose-50 dark:bg-rose-900/20 rounded-xl hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors">
+                <Trash2 size={14} /> O'chirish
+              </button>
             ) : <div />}
             <div className="flex gap-3">
-              <Button variant="ghost" onClick={closeModal}>Bekor qilish</Button>
-              <Button onClick={handleSave}>Saqlash</Button>
+              <button onClick={closeModal} className="px-4 py-2 text-xs font-black text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">Bekor</button>
+              <button onClick={handleSave} className="px-6 py-2 text-xs font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm shadow-blue-600/25 transition-colors">Saqlash</button>
             </div>
           </div>
         </div>

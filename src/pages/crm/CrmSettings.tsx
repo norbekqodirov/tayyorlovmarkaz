@@ -11,12 +11,12 @@ export default function CrmSettings() {
   const [systemStats, setSystemStats] = useState<any>(null);
   const [backupLoading, setBackupLoading] = useState(false);
   const { documents: pageDocs, updateDocument: updatePage, addDocument: addPage } = useFirestore<any>('pageContent');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [profileData, setProfileData] = useState({
-    firstName: 'Admin',
-    lastName: 'Adminov',
-    email: 'admin@tayyorlov.uz',
-    phone: '+998 90 123 45 67'
+    name: '',
+    phone: '',
+    email: '',
   });
 
   const [siteData, setSiteData] = useState({
@@ -42,12 +42,24 @@ export default function CrmSettings() {
     stat4Value: '100%', stat4Label: "Sifat nazorati va kafolat"
   });
 
+  // Load current user profile from /auth/me
+  useEffect(() => {
+    api.get('/auth/me').then(res => {
+      const user = res.data;
+      setCurrentUser(user);
+      const nameParts = (user.name || '').split(' ');
+      setProfileData({
+        name: user.name || '',
+        phone: user.phone || '',
+        email: user.email || '',
+      });
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (settingsDocs.length > 0) {
-      const profileInfo = settingsDocs.find((doc) => doc.id === 'profile');
-      if (profileInfo) setProfileData(profileInfo);
-      const siteInfo = settingsDocs.find((doc) => doc.id === 'site');
-      if (siteInfo) setSiteData(siteInfo);
+      const siteInfo = settingsDocs.find((doc: any) => doc.key === 'site' || doc.id === 'site');
+      if (siteInfo) setSiteData(prev => ({ ...prev, ...siteInfo }));
     }
   }, [settingsDocs]);
 
@@ -63,11 +75,15 @@ export default function CrmSettings() {
   const handleSave = async () => {
     try {
       if (activeTab === 'profile') {
-        const profileExists = settingsDocs.some(doc => doc.id === 'profile');
-        if (profileExists) {
-          await updateSetting('profile', profileData);
-        } else {
-          await addSetting({ id: 'profile', ...profileData });
+        if (currentUser?.id) {
+          await api.put(`/auth/users/${currentUser.id}`, {
+            name: profileData.name,
+            phone: profileData.phone,
+            email: profileData.email,
+          });
+          // Update cached user in localStorage
+          const stored = JSON.parse(localStorage.getItem('crm_user') || '{}');
+          localStorage.setItem('crm_user', JSON.stringify({ ...stored, name: profileData.name, phone: profileData.phone, email: profileData.email }));
         }
         showToast("Profil ma'lumotlari saqlandi!", 'success');
       } else if (activeTab === 'site') {
@@ -185,35 +201,28 @@ export default function CrmSettings() {
               <div className="space-y-5">
                 <div className="flex items-center gap-6">
                   <div className="w-20 h-20 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 text-2xl font-black border-2 border-dashed border-zinc-300 dark:border-zinc-700">
-                    {profileData.firstName.charAt(0)}
+                    {(profileData.name || 'A').charAt(0)}
                   </div>
                   <div>
-                    <button className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-slate-900 dark:text-white text-sm font-bold rounded-lg transition-colors">
-                      Rasm yuklash
-                    </button>
-                    <p className="text-xs text-zinc-500 mt-2">Tavsiya etilgan o'lcham: 400x400px</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{profileData.name || 'Administrator'}</p>
+                    <p className="text-xs text-zinc-500">{profileData.phone || profileData.email || ''}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Ism</label>
-                    <input type="text" value={profileData.firstName} onChange={(e) => setProfileData({ ...profileData, firstName: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">To'liq ism</label>
+                    <input type="text" value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Familiya</label>
-                    <input type="text" value={profileData.lastName} onChange={(e) => setProfileData({ ...profileData, lastName: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Telefon raqam</label>
+                    <input type="tel" value={profileData.phone} onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Email</label>
                   <input type="email" value={profileData.email} onChange={(e) => setProfileData({ ...profileData, email: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Telefon raqam</label>
-                  <input type="tel" value={profileData.phone} onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                 </div>
               </div>
             </>

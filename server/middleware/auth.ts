@@ -3,75 +3,83 @@ import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-    console.error('XATO: JWT_SECRET muhit o\'zgaruvchisi o\'rnatilmagan! .env faylini tekshiring.');
+    console.error('[AUTH] ⚠ JWT_SECRET muhit o\'zgaruvchisi o\'rnatilmagan!');
 }
+
+// Role hierarchy levels
+const ROLE_LEVEL: Record<string, number> = {
+    TEACHER:     1,
+    MANAGER:     2,
+    ADMIN:       3,
+    SUPER_ADMIN: 4,
+};
 
 export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ message: "Avtorizatsiya tokeni topilmadi" });
     }
-
     const token = authHeader.split(' ')[1];
     try {
         const secret = JWT_SECRET || 'fallback-secret-key-for-local';
         const payload = jwt.verify(token, secret);
         (req as any).user = payload;
         next();
-    } catch (err) {
-        return res.status(401).json({ message: "Token yaroqsiz yoki eskirgan" });
+    } catch {
+        return res.status(401).json({ message: "Token yaroqsiz yoki muddati tugagan" });
     }
 };
 
-// Role-based authorization middleware
-const COLLECTION_ROLES: Record<string, string[]> = {
-    leads: ['ADMIN', 'MANAGER'],
-    students: ['ADMIN', 'TEACHER', 'MANAGER'],
-    groups: ['ADMIN', 'TEACHER', 'MANAGER'],
-    courses: ['ADMIN', 'MANAGER'],
-    schedule: ['ADMIN', 'TEACHER', 'MANAGER'],
-    schedules: ['ADMIN', 'TEACHER', 'MANAGER'],
-    attendance: ['ADMIN', 'TEACHER', 'MANAGER'],
-    assessments: ['ADMIN', 'TEACHER'],
-    journal: ['ADMIN', 'TEACHER'],
-    finance: ['ADMIN', 'MANAGER'],
-    transactions: ['ADMIN', 'MANAGER'],
-    payments: ['ADMIN', 'MANAGER'],
-    staff: ['ADMIN', 'MANAGER'],
-    staffMembers: ['ADMIN', 'MANAGER'],
-    inventory: ['ADMIN'],
-    rooms: ['ADMIN', 'MANAGER'],
-    campaigns: ['ADMIN', 'MANAGER'],
-    marketing: ['ADMIN', 'MANAGER'],
-    forms: ['ADMIN', 'MANAGER'],
-    content: ['ADMIN'],
-    news: ['ADMIN'],
-    posts: ['ADMIN'],
-    settings: ['ADMIN'],
-    notifications: ['ADMIN', 'TEACHER', 'MANAGER', 'STUDENT'],
-    gallery: ['ADMIN'],
-    pageContent: ['ADMIN'],
-    tasks: ['ADMIN', 'TEACHER', 'MANAGER'],
-    users: ['ADMIN'],
-    enrollments: ['ADMIN', 'TEACHER', 'MANAGER'],
-    leadActivities: ['ADMIN', 'MANAGER'],
-    bi: ['ADMIN', 'MANAGER'],
+// Collection → minimum role level required to write
+const COLLECTION_WRITE_LEVEL: Record<string, number> = {
+    leads:         2, // MANAGER+
+    students:      2,
+    groups:        2,
+    courses:       2,
+    schedule:      2,
+    schedules:     2,
+    attendance:    1, // TEACHER+
+    assessments:   1,
+    journal:       1,
+    finance:       2,
+    transactions:  2,
+    payments:      2,
+    staff:         2,
+    staffMembers:  2,
+    inventory:     3, // ADMIN+
+    rooms:         2,
+    campaigns:     2,
+    marketing:     2,
+    forms:         3,
+    content:       3,
+    news:          3,
+    posts:         3,
+    settings:      4, // SUPER_ADMIN only
+    notifications: 1,
+    gallery:       3,
+    pageContent:   3,
+    tasks:         1,
+    users:         3,
+    enrollments:   2,
+    leadActivities:2,
+    bi:            2,
 };
 
 export const requireRole = (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ message: "Avtorizatsiya talab qilinadi" });
 
-    // ADMIN always has access
-    if (user.role === 'ADMIN') return next();
+    // SUPER_ADMIN always has access to everything
+    if (user.role === 'SUPER_ADMIN') return next();
 
-    const collection = req.params.collection;
-    const allowedRoles = COLLECTION_ROLES[collection];
-
-    // GET requests are more permissive
+    // GET requests: only require authentication (already done), allow all roles
     if (req.method === 'GET') return next();
 
-    if (allowedRoles && !allowedRoles.includes(user.role)) {
+    const collection = req.params.collection;
+    const requiredLevel = COLLECTION_WRITE_LEVEL[collection] || 3;
+    const userLevel = ROLE_LEVEL[user.role] || 0;
+
+    if (userLevel < requiredLevel) {
         return res.status(403).json({ message: "Sizda bu amalni bajarish uchun ruxsat yo'q" });
     }
 

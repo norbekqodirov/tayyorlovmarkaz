@@ -36,6 +36,16 @@ const PERMISSION_GROUPS = [...new Set(ALL_PERMISSIONS.map(p => p.group))];
 // ─── Role Templates ───────────────────────────────────────────────────
 const ROLE_TEMPLATES = [
     {
+        id: 'SUPER_ADMIN',
+        label: 'Super Admin',
+        description: "Barcha tizim va foydalanuvchilarga to'liq nazorat",
+        icon: Shield,
+        color: 'text-amber-600',
+        bg: 'bg-amber-100 dark:bg-amber-900/30',
+        border: 'border-amber-300 dark:border-amber-700',
+        permissions: ALL_PERMISSIONS.map(p => p.id),
+    },
+    {
         id: 'ADMIN',
         label: 'Administrator',
         description: "Tizimning barcha qisimlariga to'liq ruxsat",
@@ -79,11 +89,12 @@ const ROLE_TEMPLATES = [
 
 interface CrmUser {
     id: string;
-    email: string;
+    email?: string;
     name: string;
     role: string;
     phone?: string;
     permissions?: string;
+    isActive?: boolean;
     createdAt?: string;
 }
 
@@ -95,6 +106,7 @@ const EMPTY_FORM = {
     role: 'TEACHER',
     permissions: [] as string[],
 };
+
 
 export default function CrmUsers() {
     const [users, setUsers] = useState<CrmUser[]>([]);
@@ -181,18 +193,20 @@ export default function CrmUsers() {
     };
 
     const handleSave = async () => {
-        if (!form.name || !form.email) { showToast("Ism va email kiritilishi shart!", 'error'); return; }
+        if (!form.name) { showToast("Ism kiritilishi shart!", 'error'); return; }
+        if (!form.phone) { showToast("Telefon raqam kiritilishi shart (tizimga kirish uchun ishlatiladi)!", 'error'); return; }
         if (!editingUser && !form.password) { showToast("Yangi foydalanuvchi uchun parol kiritilishi shart!", 'error'); return; }
         setSaving(true);
         try {
             const payload = {
                 name: form.name,
-                email: form.email,
+                email: form.email || null,
                 phone: form.phone,
                 role: form.role,
                 permissions: form.permissions,
                 ...(form.password ? { password: form.password } : {}),
             };
+
             if (editingUser) {
                 await api.put(`/auth/users/${editingUser.id}`, payload);
             } else {
@@ -224,8 +238,10 @@ export default function CrmUsers() {
 
     const filteredUsers = users.filter(u =>
         u.name.toLowerCase().includes(search.toLowerCase()) ||
-        u.email.toLowerCase().includes(search.toLowerCase())
+        (u.phone || '').includes(search) ||
+        (u.email || '').toLowerCase().includes(search.toLowerCase())
     );
+
 
     const getRoleInfo = (role: string) => {
         return ROLE_TEMPLATES.find(t => t.id === role) || ROLE_TEMPLATES[3];
@@ -458,19 +474,19 @@ export default function CrmUsers() {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest mb-1.5">Email (Login) *</label>
+                                        <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest mb-1.5">Telefon (Login) *</label>
                                         <div className="relative">
-                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                                             <input
-                                                type="email"
-                                                value={form.email}
-                                                onChange={e => setForm({ ...form, email: e.target.value })}
-                                                disabled={!!editingUser}
-                                                placeholder="example@email.com"
-                                                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white disabled:opacity-50"
+                                                type="tel"
+                                                value={form.phone}
+                                                onChange={e => setForm({ ...form, phone: e.target.value })}
+                                                placeholder="+998 90 000 00 00"
+                                                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
                                             />
                                         </div>
                                     </div>
+
                                     <div>
                                         <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest mb-1.5">
                                             Parol {editingUser ? '(o\'zgartirmoqchi bo\'lsangiz)' : '*'}

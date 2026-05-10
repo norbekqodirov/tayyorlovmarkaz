@@ -28,19 +28,16 @@ const CrmStudents   = React.lazy(() => import('./pages/crm/CrmStudents'));
 const CrmTeachers   = React.lazy(() => import('./pages/crm/CrmTeachers'));
 const CrmFinance    = React.lazy(() => import('./pages/crm/CrmFinance'));
 const CrmGroups     = React.lazy(() => import('./pages/crm/CrmGroups'));
+const CrmGroupDetail= React.lazy(() => import('./pages/crm/CrmGroupDetail'));
+const CrmJournal    = React.lazy(() => import('./pages/crm/CrmJournal'));
 const CrmSchedule   = React.lazy(() => import('./pages/crm/CrmSchedule'));
-const CrmAttendance = React.lazy(() => import('./pages/crm/CrmAttendance'));
 const CrmRooms      = React.lazy(() => import('./pages/crm/CrmRooms'));
 const CrmMarketing  = React.lazy(() => import('./pages/crm/CrmMarketing'));
 const CrmStaff      = React.lazy(() => import('./pages/crm/CrmStaff'));
-const CrmAssessment = React.lazy(() => import('./pages/crm/CrmAssessment'));
-const CrmJournal    = React.lazy(() => import('./pages/crm/CrmJournal'));
 const CrmBI         = React.lazy(() => import('./pages/crm/CrmBI'));
 const CrmCourses    = React.lazy(() => import('./pages/crm/CrmCourses'));
 const CrmInventory  = React.lazy(() => import('./pages/crm/CrmInventory'));
 const CrmUsers      = React.lazy(() => import('./pages/crm/CrmUsers'));
-const StudentPortal = React.lazy(() => import('./pages/portal/StudentPortal'));
-
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -72,7 +69,6 @@ export default function App() {
             </Route>
 
             <Route path="/l/:formId" element={<LeadForm />} />
-            <Route path="/portal/:id" element={<StudentPortal />} />
 
             {/* CRM Routes */}
             <Route path="/crmtayyorlovmarkaz/login" element={<CrmLogin />} />
@@ -84,18 +80,16 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              {/* Dashboard & Portal — all authenticated users */}
+              {/* Dashboard — all authenticated users */}
               <Route index element={<CrmDashboard />} />
-              <Route path="portal" element={<StudentPortal />} />
 
               {/* Ta'lim */}
               <Route path="students"   element={<ProtectedRoute requiredPermission="students"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudents /></ProtectedRoute>} />
               <Route path="groups"     element={<ProtectedRoute requiredPermission="groups"     allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroups /></ProtectedRoute>} />
+              <Route path="groups/:id" element={<ProtectedRoute requiredPermission="groups"     allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroupDetail /></ProtectedRoute>} />
               <Route path="courses"    element={<ProtectedRoute requiredPermission="courses"    allowedRoles={['ADMIN','MANAGER']}><CrmCourses /></ProtectedRoute>} />
               <Route path="schedule"   element={<ProtectedRoute requiredPermission="schedule"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmSchedule /></ProtectedRoute>} />
-              <Route path="attendance" element={<ProtectedRoute requiredPermission="attendance" allowedRoles={['ADMIN','TEACHER']}><CrmAttendance /></ProtectedRoute>} />
               <Route path="journal"    element={<ProtectedRoute requiredPermission="journal"    allowedRoles={['ADMIN','TEACHER']}><CrmJournal /></ProtectedRoute>} />
-              <Route path="assessment" element={<ProtectedRoute requiredPermission="assessments" allowedRoles={['ADMIN','TEACHER']}><CrmAssessment /></ProtectedRoute>} />
 
               {/* Marketing */}
               <Route path="leads"     element={<ProtectedRoute requiredPermission="leads"       allowedRoles={['ADMIN','MANAGER']}><CrmLeads /></ProtectedRoute>} />

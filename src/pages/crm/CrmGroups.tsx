@@ -6,6 +6,7 @@ import {
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { exportToExcel } from '../../utils/export';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
@@ -37,6 +38,7 @@ const DAYS = ['Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan', 'Yak'];
 const SUBJECTS = ['Matematika', 'Ingliz tili', 'Ona tili', 'Fizika', 'Kimyo', 'Biologiya', 'Tarix', 'IELTS', 'CEFR'];
 
 export default function CrmGroups() {
+  const navigate = useNavigate();
   const { data: groups = [], addDocument, updateDocument, deleteDocument } = useFirestore<Group>('groups');
   const { data: students = [] } = useFirestore<any>('students');
   const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<any>('schedule');
@@ -340,288 +342,96 @@ export default function CrmGroups() {
       </div>
 
       {/* Content */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {(filteredGroups || []).map((group) => (
-            <motion.div
-              layout
-              key={group.id}
-              onClick={() => { setSelectedGroup(group); setIsDetailOpen(true); }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md transition-all cursor-pointer group overflow-hidden"
-            >
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight group-hover:text-blue-600 transition-colors">{group.name}</h3>
-                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">{group.subject}</p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${group.status === 'Faol'
-                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                    }`}>
-                    {group.status}
-                  </span>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
-                    <Calendar size={16} className="text-blue-500" />
-                    {(group.days || []).join(', ')}
-                  </div>
-                  <div className="flex items-center gap-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
-                    <Clock size={16} className="text-blue-500" />
-                    {group.time}
-                  </div>
-                  <div className="flex items-center gap-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
-                    <DoorOpen size={16} className="text-blue-500" />
-                    {typeof group.room === 'object' ? (group.room as any).name : group.room}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  {/* Capacity with color coding and full badge */}
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchilar</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`text-xs font-black ${
-                        (group.students || []).length >= (group.maxStudents || 15) ? 'text-rose-600' :
-                        (group.students || []).length >= (group.maxStudents || 15) * 0.8 ? 'text-amber-600' :
-                        'text-slate-900 dark:text-white'
-                      }`}>{(group.students || []).length} / {group.maxStudents || 15}</span>
-                      {(group.students || []).length >= (group.maxStudents || 15) && (
-                        <span className="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-900/30 text-rose-600 rounded text-[9px] font-black uppercase">To'ldi!</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        (group.students || []).length >= (group.maxStudents || 15) ? 'bg-rose-500' :
-                        (group.students || []).length >= (group.maxStudents || 15) * 0.8 ? 'bg-amber-500' :
-                        'bg-emerald-500'
-                      }`}
-                      style={{ width: `${Math.min(100, ((group.students || []).length / (group.maxStudents || 1)) * 100)}%` }}
-                    />
-                  </div>
-
-                  {/* Lesson progress based on start/end date */}
-                  {group.startDate && group.endDate && (() => {
-                    const start = new Date(group.startDate).getTime();
-                    const end = new Date(group.endDate).getTime();
-                    const now = Date.now();
-                    const progress = Math.min(100, Math.max(0, Math.round(((now - start) / (end - start)) * 100)));
-                    return (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Dars Progressi</span>
-                          <span className="text-[10px] font-black text-blue-600">{progress}%</span>
-                        </div>
-                        <div className="w-full h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progress}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-xs font-black text-zinc-600 dark:text-zinc-400">
-                      {(group.teacher || '?').charAt(0)}
-                    </div>
-                    <span className="text-xs font-bold text-zinc-500">{group.teacher}</span>
-                  </div>
-                  <ChevronRight size={18} className="text-zinc-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-          <table className="w-full text-left border-collapse">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>
-              <tr className="bg-zinc-50 dark:bg-zinc-800/50">
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fan va Ustoz</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Vaqt va Xona</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchilar</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
+              <tr className="bg-zinc-50/50 dark:bg-zinc-800/30">
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">T/R</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Nomi</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Narx</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars vaqti</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'qituvchilar</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars kunlari</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'tilganlik ko'rsatkichi</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Boshlanish sanasi</th>
+                <th className="px-5 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {(filteredGroups || []).map((group) => (
+              {(filteredGroups || []).map((group, idx) => {
+                const count = (group.students || []).length;
+                const max = group.maxStudents || 15;
+                // calculate fake progress for now
+                const _start = new Date(group.startDate).getTime();
+                const _now = Date.now();
+                const _end = group.endDate ? new Date(group.endDate).getTime() : _start + 90 * 24 * 60 * 60 * 1000;
+                const progressPct = Math.min(100, Math.max(0, Math.round(((_now - _start) / (_end - _start)) * 100)));
+                const passedLessons = Math.round((progressPct / 100) * 36);
+
+                return (
                 <tr
                   key={group.id}
-                  onClick={() => { setSelectedGroup(group); setIsDetailOpen(true); }}
+                  onClick={() => navigate(`/crmtayyorlovmarkaz/groups/${group.id}`)}
                   className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors cursor-pointer group"
                 >
-                  <td className="px-6 py-4">
-                    <span className="font-black text-slate-900 dark:text-white tracking-tight">{group.name}</span>
+                  <td className="px-5 py-4 text-sm font-bold text-zinc-400">
+                    {idx + 1}.
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-slate-900 dark:text-white">{group.subject}</span>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{group.teacher}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
-                        <Calendar size={12} /> {(group.days || []).join(', ')}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
-                        <Clock size={12} /> {group.time}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-2">
-                      <Users size={14} className="text-zinc-400" />
-                      <span className="text-sm font-black text-slate-900 dark:text-white">{(group.students?.length || 0)} / {group.maxStudents}</span>
+                       <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 cursor-pointer hover:underline">{group.name}</span>
+                       <span className="text-xs font-bold text-slate-800 dark:text-zinc-200">[{max}]</span>
+                       <span className="text-xs font-bold text-blue-500">[{count}]</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${group.status === 'Faol'
-                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                      }`}>
-                      {group.status}
-                    </span>
+                  <td className="px-5 py-4 text-sm font-bold text-slate-700 dark:text-zinc-300">
+                    {new Intl.NumberFormat('uz-UZ').format(group.price)} so'm
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-zinc-300">
+                    {group.time}
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-700 dark:text-zinc-300">{group.subject}</span>
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">[{typeof group.room === 'object' ? (group.room as any).name : group.room}]</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                    {group.teacher}
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="flex gap-1.5 flex-wrap w-fit">
+                      {(group.days || []).map(d => (
+                         <span key={d} className="px-2 py-1 rounded bg-emerald-500 text-white text-[10px] font-bold">{d}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 min-w-[150px]">
+                    <div className="w-full flex items-center justify-between border border-amber-400 p-0.5 rounded-full overflow-hidden relative h-5">
+                       <div className="absolute left-0 top-0 h-full bg-amber-400 rounded-full" style={{ width: `${progressPct}%` }}></div>
+                       <span className="relative w-full text-center text-[10px] font-black text-slate-800 z-10 block">{passedLessons} - {progressPct}%</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-zinc-300">
+                    {group.startDate}
+                  </td>
+                  <td className="px-5 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors">
-                        <Edit2 size={16} />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors">
-                        <Trash2 size={16} />
+                      <button onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors border border-blue-100 dark:border-blue-800">
+                        <MoreVertical size={16} />
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
-      )}
+      </div>
 
-      {/* Group Detail Sidebar */}
-      <AnimatePresence>
-        {isDetailOpen && selectedGroup && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsDetailOpen(false)}
-              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
-            />
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              className="fixed right-0 top-0 h-full w-full max-w-lg bg-white dark:bg-zinc-900 shadow-2xl z-50 overflow-y-auto border-l border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="p-6 space-y-8">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Guruh Tafsilotlari</h2>
-                  <button onClick={() => setIsDetailOpen(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors">
-                    <X size={20} />
-                  </button>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="text-3xl font-black text-slate-900 dark:text-white">{selectedGroup.name}</h3>
-                      <p className="text-sm font-bold text-blue-600 uppercase tracking-widest mt-1">{selectedGroup.subject}</p>
-                    </div>
-                    <span className="px-4 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full text-xs font-black uppercase tracking-widest">
-                      {selectedGroup.status}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">O'qituvchi</p>
-                      <p className="text-sm font-black text-slate-900 dark:text-white">{selectedGroup.teacher}</p>
-                    </div>
-                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Xona</p>
-                      <p className="text-sm font-black text-slate-900 dark:text-white">{typeof selectedGroup.room === 'object' ? (selectedGroup.room as any).name : selectedGroup.room}</p>
-                    </div>
-                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Narxi</p>
-                      <p className="text-sm font-black text-emerald-600">{new Intl.NumberFormat('uz-UZ').format(selectedGroup.price)} so'm</p>
-                    </div>
-                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Davomiyligi</p>
-                      <p className="text-sm font-black text-slate-900 dark:text-white">{selectedGroup.startDate} - {selectedGroup.endDate || '...'}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">O'quvchilar Ro'yxati</h4>
-                      <button
-                        onClick={() => setIsAddStudentModalOpen(true)}
-                        className="flex items-center gap-1.5 text-xs font-black text-blue-600 hover:text-blue-700 transition-colors"
-                      >
-                        <UserPlus size={14} />
-                        Qo'shish
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {(students || []).filter(s => (selectedGroup.students || []).includes(s.id)).map(student => (
-                        <div key={student.id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-100 dark:border-zinc-700 group/item">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-black">
-                              {(student.name || '?').charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold text-slate-900 dark:text-white">{student.name}</p>
-                              <p className="text-[10px] font-bold text-zinc-500">{student.phone}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleRemoveStudentFromGroup(student.id)}
-                            className="p-1.5 text-zinc-400 hover:text-rose-600 opacity-0 group-hover/item:opacity-100 transition-all"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                      {(selectedGroup.students || []).length === 0 && (
-                        <div className="text-center py-8 bg-zinc-50 dark:bg-zinc-800/30 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700">
-                          <Users size={24} className="mx-auto text-zinc-300 mb-2" />
-                          <p className="text-xs font-bold text-zinc-500">Hozircha o'quvchilar yo'q</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-6">
-                  <button
-                    onClick={() => openModal(selectedGroup)}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
-                  >
-                    Tahrirlash
-                  </button>
-                  <button
-                    onClick={() => handleDelete(selectedGroup.id)}
-                    className="flex-1 py-3 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl font-black text-sm hover:bg-rose-100 transition-all"
-                  >
-                    O'chirish
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Group Detail modal removed since it is now handled by CrmGroupDetail route */}
 
       {/* Add/Edit Modal */}
       <Modal 

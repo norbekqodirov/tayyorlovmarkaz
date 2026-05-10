@@ -9,32 +9,67 @@ import { requireAuth } from '../middleware/auth.js';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-for-local';
 if (!process.env.JWT_SECRET) {
-    console.warn('[AUTH] OGOHLANTIRISH: JWT_SECRET muhit o\'zgaruvchisi o\'rnatilmagan!');
+    console.warn('[AUTH] ⚠ JWT_SECRET o\'rnatilmagan! .env faylini tekshiring.');
 }
 
-// Login route
+// ─── Role hierarchy (higher index = more powerful) ───────────────────────────
+const ROLE_LEVEL: Record<string, number> = {
+    TEACHER: 1,
+    MANAGER: 2,
+    ADMIN: 3,
+    SUPER_ADMIN: 4,
+};
+const isSuperAdmin = (role: string) => role === 'SUPER_ADMIN';
+const isAdminOrAbove = (role: string) => (ROLE_LEVEL[role] || 0) >= 3;
+
+// ─── Normalize phone number ───────────────────────────────────────────────────
+function normalizePhone(raw: string): string {
+    return raw.replace(/\s/g, '').trim();
+}
+
+// ─── POST /auth/login  (phone + password) ────────────────────────────────────
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { phone, password } = req.body;
 
-        // Asosiy adminni tekshirish
-        let user = await prisma.user.findUnique({ where: { email } });
+        if (!phone || !password) {
+            return res.status(400).json({ message: "Telefon raqam va parol kiritilishi shart" });
+        }
 
-        // Agar umuman admin bo'lmasa, uni yaratamiz (Faqatgina admin@tayyorlovmarkaz.uz uchun)
-        if (!user && email === 'admin@tayyorlovmarkaz.uz' && password === 'Admin2026!') {
-            const hashedPassword = await bcrypt.hash(password, 10);
-            user = await prisma.user.create({
-                data: {
-                    email,
-                    password: hashedPassword,
-                    name: 'Bosh Administrator',
-                    role: 'ADMIN'
-                }
-            });
+        const normalizedPhone = normalizePhone(phone);
+
+        // Try to find user by phone
+        let user = await prisma.user.findUnique({ where: { phone: normalizedPhone } });
+
+        // Fallback: first-boot auto-create super admin if DB is empty
+        if (!user) {
+            const count = await prisma.user.count();
+            if (count === 0 && normalizedPhone === '+998937525592' && password === 'nn1122') {
+                const hashedPassword = await bcrypt.hash(password, 12);
+                user = await prisma.user.create({
+                    data: {
+                        phone: normalizedPhone,
+                        password: hashedPassword,
+                        name: 'Bosh Administrator',
+                        role: 'SUPER_ADMIN',
+                        isActive: true,
+                        permissions: JSON.stringify([
+                            'dashboard', 'students', 'groups', 'courses', 'schedule', 'journal',
+                            'leads', 'finance', 'staff', 'marketing', 'analytics', 'settings',
+                            'users', 'backup', 'rooms', 'inventory', 'content', 'target_forms'
+                        ]),
+                    } as any,
+                });
+            }
         }
 
         if (!user) {
-            return res.status(404).json({ message: "Bunday foydalanuvchi topilmadi" });
+            return res.status(404).json({ message: "Bu telefon raqam tizimda ro'yxatdan o'tmagan" });
+        }
+
+        // Check active status
+        if ((user as any).isActive === false) {
+            return res.status(403).json({ message: "Hisobingiz bloklangan. Administrator bilan bog'laning." });
         }
 
         const isValid = await bcrypt.compare(password, user.password);
@@ -42,39 +77,54 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ message: "Parol noto'g'ri" });
         }
 
-        const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign(
+            { id: user.id, role: user.role, phone: user.phone },
+            JWT_SECRET,
+            { expiresIn: '30d' }
+        );
 
         res.json({
             token,
-            user: { id: user.id, email: user.email, name: user.name, role: user.role, permissions: (user as any).permissions }
+            user: {
+                id: user.id,
+                phone: user.phone,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                avatar: user.avatar,
+                permissions: (user as any).permissions,
+            }
         });
     } catch (error) {
+        console.error('[AUTH] Login error:', error);
         res.status(500).json({ message: "Server xatosi", error: String(error) });
     }
 });
 
-// User profiling get info
+// ─── GET /auth/me ────────────────────────────────────────────────────────────
 router.get('/me', async (req, res) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: "To'liq emas!" });
+    if (!authHeader) return res.status(401).json({ message: "Token topilmadi" });
     try {
-        const token = authHeader.split(" ")[1];
+        const token = authHeader.split(' ')[1];
         const payload: any = jwt.verify(token, JWT_SECRET);
         const user = await prisma.user.findUnique({ where: { id: payload.id } });
-        if (!user) return res.status(404).json({ message: "Topilmadi" });
-
-        res.json({ id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone, permissions: (user as any).permissions });
-    } catch (e) {
-        res.status(401).json({ message: "Noto'g'ri token" });
+        if (!user) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+        res.json({
+            id: user.id, phone: user.phone, email: user.email,
+            name: user.name, role: user.role, avatar: user.avatar,
+            permissions: (user as any).permissions
+        });
+    } catch {
+        res.status(401).json({ message: "Token yaroqsiz" });
     }
 });
 
-// Change password
+// ─── PUT /auth/change-password ───────────────────────────────────────────────
 router.put('/change-password', requireAuth, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
         const userId = (req as any).user?.id;
-        if (!userId) return res.status(401).json({ message: "Foydalanuvchi topilmadi" });
         if (!currentPassword || !newPassword) return res.status(400).json({ message: "Joriy va yangi parol kiritilishi shart" });
         if (newPassword.length < 6) return res.status(400).json({ message: "Yangi parol kamida 6 ta belgidan iborat bo'lishi kerak" });
 
@@ -84,24 +134,28 @@ router.put('/change-password', requireAuth, async (req, res) => {
         const isValid = await bcrypt.compare(currentPassword, user.password);
         if (!isValid) return res.status(401).json({ message: "Joriy parol noto'g'ri" });
 
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
         await prisma.user.update({ where: { id: userId }, data: { password: hashedPassword } });
-
         res.json({ message: "Parol muvaffaqiyatli o'zgartirildi" });
-    } catch (error) {
+    } catch {
         res.status(500).json({ message: "Server xatosi" });
     }
 });
 
-// ------------------------------------------
-// USER MANAGEMENT (Admin only)
-// ------------------------------------------
+// ─── USER MANAGEMENT ─────────────────────────────────────────────────────────
 
-// GET all users
+// GET all users (admin+)
 router.get('/users', requireAuth, async (req, res) => {
     try {
+        const requester = (req as any).user;
+        if (!isAdminOrAbove(requester.role)) {
+            return res.status(403).json({ message: "Ruxsat yo'q" });
+        }
         const users = await prisma.user.findMany({
-            select: { id: true, email: true, name: true, role: true, phone: true, avatar: true, permissions: true, createdAt: true },
+            select: {
+                id: true, email: true, phone: true, name: true, role: true,
+                avatar: true, permissions: true, isActive: true, createdAt: true
+            } as any,
             orderBy: { createdAt: 'desc' }
         });
         res.json(users);
@@ -110,26 +164,50 @@ router.get('/users', requireAuth, async (req, res) => {
     }
 });
 
-// POST create user
+// POST create user (admin+; only SUPER_ADMIN can create SUPER_ADMIN)
 router.post('/users', requireAuth, async (req, res) => {
     try {
-        const { email, password, name, role, phone, permissions } = req.body;
-        const existing = await prisma.user.findUnique({ where: { email } });
-        if (existing) return res.status(409).json({ message: "Bu email allaqachon mavjud" });
-        const hashedPassword = await bcrypt.hash(password || '123456', 10);
+        const requester = (req as any).user;
+        if (!isAdminOrAbove(requester.role)) {
+            return res.status(403).json({ message: "Foydalanuvchi yaratish uchun ruxsat yo'q" });
+        }
+
+        const { phone, email, password, name, role, permissions } = req.body;
+
+        if (!phone) return res.status(400).json({ message: "Telefon raqam kiritilishi shart" });
+        if (!name)  return res.status(400).json({ message: "Ism kiritilishi shart" });
+
+        const targetRole = role || 'MANAGER';
+
+        // Only SUPER_ADMIN can create another SUPER_ADMIN
+        if (targetRole === 'SUPER_ADMIN' && !isSuperAdmin(requester.role)) {
+            return res.status(403).json({ message: "Faqat Super Admin boshqa Super Admin yarata oladi" });
+        }
+
+        const normalizedPhone = normalizePhone(phone);
+        const existing = await prisma.user.findUnique({ where: { phone: normalizedPhone } });
+        if (existing) return res.status(409).json({ message: "Bu telefon raqam allaqachon mavjud" });
+
+        const hashedPassword = await bcrypt.hash(password || '123456', 12);
         const user = await prisma.user.create({
             data: {
-                email,
+                phone: normalizedPhone,
+                email: email || null,
                 password: hashedPassword,
                 name,
-                role: role || 'ADMIN',
-                phone,
-                permissions: JSON.stringify(permissions || [])
-            } as any
+                role: targetRole,
+                isActive: true,
+                permissions: JSON.stringify(permissions || []),
+            } as any,
         });
-        res.json({ id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone, permissions: (user as any).permissions });
+
+        res.json({
+            id: user.id, phone: user.phone, email: user.email,
+            name: user.name, role: user.role,
+            permissions: (user as any).permissions
+        });
     } catch (error) {
-        console.error("User creation error:", error);
+        console.error('[AUTH] Create user error:', error);
         res.status(500).json({ message: String(error) });
     }
 });
@@ -137,23 +215,57 @@ router.post('/users', requireAuth, async (req, res) => {
 // PUT update user
 router.put('/users/:id', requireAuth, async (req, res) => {
     try {
-        const { name, role, phone, permissions, password } = req.body;
-        const updateData: any = { name, role, phone, permissions: JSON.stringify(permissions || []) };
-        if (password) updateData.password = await bcrypt.hash(password, 10);
-        const user = await prisma.user.update({
-            where: { id: req.params.id },
-            data: updateData
-        });
-        res.json({ id: user.id, email: user.email, name: user.name, role: user.role, phone: user.phone, permissions: (user as any).permissions });
+        const requester = (req as any).user;
+        if (!isAdminOrAbove(requester.role)) {
+            return res.status(403).json({ message: "Ruxsat yo'q" });
+        }
+
+        const { name, role, phone, email, permissions, password, isActive } = req.body;
+        const targetRole = role;
+
+        // Only SUPER_ADMIN can assign SUPER_ADMIN role
+        if (targetRole === 'SUPER_ADMIN' && !isSuperAdmin(requester.role)) {
+            return res.status(403).json({ message: "Faqat Super Admin bu roʻlni berishi mumkin" });
+        }
+
+        const updateData: any = {
+            name,
+            role: targetRole,
+            email: email || null,
+            isActive: isActive !== undefined ? isActive : true,
+            permissions: JSON.stringify(permissions || []),
+        };
+        if (phone) updateData.phone = normalizePhone(phone);
+        if (password) updateData.password = await bcrypt.hash(password, 12);
+
+        const user = await prisma.user.update({ where: { id: req.params.id }, data: updateData });
+        res.json({ id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role });
     } catch (error) {
-        console.error("User update error:", error);
         res.status(500).json({ message: String(error) });
     }
 });
 
-// DELETE user
+// DELETE user (cannot delete SUPER_ADMIN unless you are SUPER_ADMIN)
 router.delete('/users/:id', requireAuth, async (req, res) => {
     try {
+        const requester = (req as any).user;
+        if (!isAdminOrAbove(requester.role)) {
+            return res.status(403).json({ message: "Ruxsat yo'q" });
+        }
+
+        const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+        if (!target) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+
+        // Cannot delete yourself
+        if (target.id === requester.id) {
+            return res.status(400).json({ message: "O'z hisobingizni o'chira olmaysiz" });
+        }
+
+        // Only SUPER_ADMIN can delete another SUPER_ADMIN
+        if (isSuperAdmin(target.role) && !isSuperAdmin(requester.role)) {
+            return res.status(403).json({ message: "Super Admin hisobini o'chirish uchun ruxsat yo'q" });
+        }
+
         await prisma.user.delete({ where: { id: req.params.id } });
         res.json({ success: true });
     } catch (error) {
@@ -161,33 +273,25 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
     }
 });
 
-// ------------------------------------------
-// BACKUP (Admin only)
-// ------------------------------------------
-
-// GET backup - download database file
+// ─── BACKUP (SUPER_ADMIN only) ────────────────────────────────────────────────
 router.get('/backup', requireAuth, async (req, res) => {
     try {
         const user = (req as any).user;
-        if (user.role !== 'ADMIN') return res.status(403).json({ message: "Faqat admin backup olishi mumkin" });
-
-        const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
-        if (!fs.existsSync(dbPath)) {
-            return res.status(404).json({ message: "Ma'lumotlar bazasi topilmadi" });
+        if (!isSuperAdmin(user.role) && !isAdminOrAbove(user.role)) {
+            return res.status(403).json({ message: "Faqat admin backup olishi mumkin" });
         }
-
+        const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
+        if (!fs.existsSync(dbPath)) return res.status(404).json({ message: "Ma'lumotlar bazasi topilmadi" });
         const filename = `tayyorlov-backup-${new Date().toISOString().slice(0, 10)}.db`;
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Type', 'application/octet-stream');
-
-        const readStream = fs.createReadStream(dbPath);
-        readStream.pipe(res);
-    } catch (error) {
-        res.status(500).json({ message: "Backup olishda xatolik yuz berdi" });
+        fs.createReadStream(dbPath).pipe(res);
+    } catch {
+        res.status(500).json({ message: "Backup olishda xatolik" });
     }
 });
 
-// GET stats - system statistics
+// ─── SYSTEM STATS ─────────────────────────────────────────────────────────────
 router.get('/stats', requireAuth, async (req, res) => {
     try {
         const [students, groups, leads, users, payments] = await Promise.all([
@@ -197,15 +301,10 @@ router.get('/stats', requireAuth, async (req, res) => {
             prisma.user.count(),
             prisma.payment.count(),
         ]);
-
         const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
         const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
-
-        res.json({
-            students, groups, leads, users, payments,
-            dbSize: (dbSize / 1024 / 1024).toFixed(2) + ' MB',
-        });
-    } catch (error) {
+        res.json({ students, groups, leads, users, payments, dbSize: (dbSize / 1024 / 1024).toFixed(2) + ' MB' });
+    } catch {
         res.status(500).json({ message: "Statistika olishda xatolik" });
     }
 });
