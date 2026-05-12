@@ -49,7 +49,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'post': ['title', 'content', 'excerpt', 'imageUrl', 'author', 'status', 'category', 'date'],
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
     'task': ['title', 'completed', 'userId'],
-    'targetForm': ['title', 'description', 'course', 'url', 'isActive'],
+    'targetForm': ['title', 'name', 'description', 'course', 'url', 'isActive', 'status'],
 };
 
 // Status normalizers: convert Uzbek UI values to English DB values
@@ -78,6 +78,16 @@ function normalizeData(modelName: string, data: any): any {
         if (data.price !== undefined) data.price = Number(data.price) || 0;
         if (data.lessonsPerWeek !== undefined) data.lessonsPerWeek = Number(data.lessonsPerWeek) || 3;
         if (data.lessonDuration !== undefined) data.lessonDuration = Number(data.lessonDuration) || 90;
+    }
+    if (modelName === 'targetForm') {
+        if (data.name !== undefined && data.title === undefined) {
+            data.title = data.name;
+            delete data.name;
+        }
+        if (data.status !== undefined && data.isActive === undefined) {
+            data.isActive = data.status === 'Faol';
+            delete data.status;
+        }
     }
     if (modelName === 'transaction') {
         if (data.amount !== undefined) data.amount = Number(data.amount) || 0;

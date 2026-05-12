@@ -6,11 +6,29 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface Form {
   id: string;
-  name: string;
+  title?: string;
+  name?: string;
   url: string;
-  views: number;
-  conversions: number;
-  status: 'Faol' | 'To\'xtatilgan';
+  views?: number;
+  conversions?: number;
+  submissions?: number;
+  isActive?: boolean;
+  status?: string;
+}
+
+interface FormData {
+  title: string;
+  url: string;
+  status: 'Faol' | "To'xtatilgan";
+}
+
+function getFormTitle(form: Form): string {
+  return form.title || form.name || '';
+}
+
+function getFormStatus(form: Form): string {
+  if (form.status) return form.status;
+  return form.isActive !== false ? 'Faol' : "To'xtatilgan";
 }
 
 export default function CrmForms() {
@@ -18,16 +36,16 @@ export default function CrmForms() {
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
-  const [formData, setFormData] = useState<Partial<Form>>({ name: '', url: '', status: 'Faol' });
+  const [formData, setFormData] = useState<FormData>({ title: '', url: '', status: 'Faol' });
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   const openModal = (form: Form | null = null) => {
     if (form) {
       setEditingForm(form);
-      setFormData({ name: form.name, url: form.url, status: form.status });
+      setFormData({ title: getFormTitle(form), url: form.url || '', status: getFormStatus(form) as any });
     } else {
       setEditingForm(null);
-      setFormData({ name: '', url: `${window.location.origin}/l/`, status: 'Faol' });
+      setFormData({ title: '', url: `${window.location.origin}/l/`, status: 'Faol' });
     }
     setIsModalOpen(true);
   };
@@ -42,12 +60,8 @@ export default function CrmForms() {
       if (editingForm) {
         await updateDocument(editingForm.id, formData);
       } else {
-        const newForm = {
-          ...formData,
-          views: 0,
-          conversions: 0
-        };
-        await addDocument(newForm as Omit<Form, 'id'>);
+        const newForm = { ...formData, submissions: 0 };
+        await addDocument(newForm as any);
       }
       showToast(editingForm ? 'Forma yangilandi' : 'Forma qo\'shildi', 'success');
       closeModal();
@@ -103,9 +117,9 @@ export default function CrmForms() {
                   <LinkIcon size={20} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white line-clamp-1">{form.name}</h3>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1 inline-block ${form.status === 'Faol' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'}`}>
-                    {form.status}
+                  <h3 className="font-bold text-slate-900 dark:text-white line-clamp-1">{getFormTitle(form)}</h3>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1 inline-block ${getFormStatus(form) === 'Faol' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+                    {getFormStatus(form)}
                   </span>
                 </div>
               </div>
@@ -133,14 +147,11 @@ export default function CrmForms() {
             <div className="grid grid-cols-2 gap-4 mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
               <div>
                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Ko'rishlar</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">{form.views}</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">{form.views ?? 0}</p>
               </div>
               <div>
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Konversiya (Lidlar)</p>
-                <div className="flex items-baseline gap-2">
-                  <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">{form.conversions}</p>
-                  <span className="text-xs font-bold text-zinc-400">({((form.conversions / form.views) * 100).toFixed(1)}%)</span>
-                </div>
+                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Yuborishlar</p>
+                <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">{form.submissions ?? form.conversions ?? 0}</p>
               </div>
             </div>
             
@@ -165,10 +176,10 @@ export default function CrmForms() {
             <div className="p-4 space-y-4">
               <div>
                 <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Forma nomi</label>
-                <input 
-                  type="text" 
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({...formData, title: e.target.value})}
                   className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
                   placeholder="Masalan: Instagram Target - Kuzgi qabul"
                 />
@@ -185,7 +196,7 @@ export default function CrmForms() {
               </div>
               <div>
                 <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Holat</label>
-                <select 
+                <select
                   value={formData.status}
                   onChange={(e) => setFormData({...formData, status: e.target.value as any})}
                   className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
