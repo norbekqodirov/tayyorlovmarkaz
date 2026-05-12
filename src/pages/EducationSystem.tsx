@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Target, Brain, LineChart, ShieldCheck, ArrowUpRight, BookOpen, Award, CheckCircle2, Clock, Users, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

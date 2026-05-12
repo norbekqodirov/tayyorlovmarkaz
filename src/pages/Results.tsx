@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Star, ArrowUpRight } from 'lucide-react';
 
 export default function Results() {

@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { MapPin, Phone, Mail, Clock, ArrowUpRight } from 'lucide-react';
 import { useState } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
