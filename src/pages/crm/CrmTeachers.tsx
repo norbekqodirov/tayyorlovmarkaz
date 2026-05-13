@@ -16,11 +16,12 @@ interface Teacher {
   name: string;
   email: string;
   phone: string;
-  role: string;      // The selected subject (mapped from meta)
-  exp: string;       // Mapped from meta
-  desc: string;      // Mapped from meta
-  img: string;       // Avatar
-  password?: string; // Only for creation/update
+  role: string;         // The selected subject (mapped from meta)
+  exp: string;          // Mapped from meta
+  desc: string;         // Mapped from meta
+  img: string;          // Avatar
+  salaryPercent: number; // % of group revenue as salary
+  password?: string;    // Only for creation/update
 }
 
 export default function CrmTeachers() {
@@ -39,7 +40,7 @@ export default function CrmTeachers() {
   const { addDocument: addFinance } = useFirestore<any>('finance');
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
-    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: ''
+    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40
   });
 
   const loadTeachers = async () => {
@@ -64,7 +65,8 @@ export default function CrmTeachers() {
           role: meta.subject || '',
           exp: meta.exp || '',
           desc: meta.desc || '',
-          img: u.avatar || ''
+          img: u.avatar || '',
+          salaryPercent: meta.salaryPercent ?? 40,
         };
       });
       setTeachers(mapped);
@@ -86,7 +88,8 @@ export default function CrmTeachers() {
       meta: {
         subject: formData.role,
         exp: formData.exp,
-        desc: formData.desc
+        desc: formData.desc,
+        salaryPercent: formData.salaryPercent ?? 40,
       }
     };
     const permissions = [metaObj];
@@ -137,7 +140,7 @@ export default function CrmTeachers() {
     if (teacher) {
       setFormData({ ...teacher, password: '' });
     } else {
-      setFormData({ name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '' });
+      setFormData({ name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40 });
     }
     setIsModalOpen(true);
   };
@@ -333,8 +336,8 @@ export default function CrmTeachers() {
                     const price = g.price || 0;
                     totalEstRevenue += price * (g.students || []).length;
                  });
-                 // Teacher KPI = 40% of generated revenue (Example metric)
-                 const estimatedSalary = totalEstRevenue * 0.4;
+                 const pct = (selectedTeacher.salaryPercent ?? 40) / 100;
+                 const estimatedSalary = totalEstRevenue * pct;
                  
                  return (
                   <div className="p-6 space-y-8">
@@ -385,7 +388,7 @@ export default function CrmTeachers() {
                        <div className="relative z-10">
                          <div className="flex items-center gap-2 mb-1">
                             <TrendingUp size={16} className="text-indigo-200" />
-                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Taxminiy Oylik KPI (40% Stavka)</p>
+                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Taxminiy Oylik KPI ({selectedTeacher.salaryPercent ?? 40}% Stavka)</p>
                          </div>
                          <h2 className="text-3xl font-black tracking-tight">{new Intl.NumberFormat('uz-UZ').format(estimatedSalary)} UZS</h2>
                          <p className="text-xs font-medium text-indigo-200 mt-2">Guruhlar tushumidan olingan ulush</p>
@@ -544,6 +547,22 @@ export default function CrmTeachers() {
               onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
               placeholder="3 yillik tajriba"
             />
+          </div>
+
+          <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl space-y-2">
+            <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Oylik ulushi (% foizda)</label>
+            <div className="relative">
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={formData.salaryPercent ?? 40}
+                onChange={(e) => setFormData({ ...formData, salaryPercent: Number(e.target.value) })}
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-emerald-200 dark:border-emerald-800/50 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none dark:text-white pr-12"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-black text-emerald-600 pointer-events-none">%</span>
+            </div>
+            <p className="text-[10px] text-emerald-600/70">Guruh o'quvchilar to'lovidan olinadigan ulush foizi</p>
           </div>
 
           <div className="p-5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl space-y-4">

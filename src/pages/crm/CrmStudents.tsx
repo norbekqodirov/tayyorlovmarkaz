@@ -732,7 +732,7 @@ export default function CrmStudents() {
                     <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Kurs</label>
                     <select
                       value={formData.course}
-                      onChange={(e) => setFormData({...formData, course: e.target.value, group: ''})}
+                      onChange={(e) => setFormData({...formData, course: e.target.value})}
                       className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
                     >
                       <option value="">Kursni tanlang...</option>
@@ -747,17 +747,19 @@ export default function CrmStudents() {
                       value={formData.group}
                       onChange={(e) => {
                         const g = groupOptions.find((g: any) => g.name === e.target.value);
-                        setFormData({...formData, group: e.target.value, balance: g?.price ? -g.price : (formData.balance || 0)});
+                        setFormData({
+                          ...formData,
+                          group: e.target.value,
+                          course: g?.subject || formData.course || '',
+                          balance: g?.price ? -g.price : (formData.balance || 0)
+                        });
                       }}
                       className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
                     >
                       <option value="">Guruhni tanlang...</option>
-                      {groupOptions
-                        .filter((g: any) => !formData.course || g.subject === formData.course)
-                        .map((g: any) => (
-                          <option key={g.id} value={g.name}>{g.name} ({g.teacher || 'Ustoz yo\'q'})</option>
-                        ))
-                      }
+                      {groupOptions.map((g: any) => (
+                        <option key={g.id} value={g.name}>{g.name} ({g.teacher || 'Ustoz yo\'q'})</option>
+                      ))}
                     </select>
                   </div>
                 </div>

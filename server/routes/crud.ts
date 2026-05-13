@@ -273,6 +273,31 @@ router.get('/:collection/:id', async (req, res) => {
 });
 
 // ─── POST /:collection ────────────────────────────────────────────────────────
+// ─── Special: Enroll student into group (must be before /:collection POST) ────
+router.post('/enrollments', requireAuth, async (req, res) => {
+    const { studentId, groupId } = req.body;
+    if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
+    try {
+        const existing = await prisma.enrollment.findUnique({ where: { studentId_groupId: { studentId, groupId } } });
+        if (existing) return res.json({ id: existing.id, studentId, groupId, alreadyEnrolled: true });
+        const enrollment = await prisma.enrollment.create({ data: { studentId, groupId } });
+        res.json(enrollment);
+    } catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+
+// ─── Special: Remove student from group (must be before /:collection/:id DELETE)
+router.delete('/enrollments/remove', requireAuth, async (req, res) => {
+    const { studentId, groupId } = req.body;
+    try {
+        await prisma.enrollment.delete({ where: { studentId_groupId: { studentId, groupId } } });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+
 router.post('/:collection', async (req, res) => {
     const { collection } = req.params;
     try {
@@ -405,21 +430,6 @@ router.delete('/:collection/:id', async (req, res) => {
     }
 });
 
-// ─── Special: Enroll student into group ───────────────────────────────────────
-router.post('/enrollments', requireAuth, async (req, res) => {
-    const { studentId, groupId } = req.body;
-    if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
-    try {
-        // Upsert — ignore if already enrolled
-        const existing = await prisma.enrollment.findUnique({ where: { studentId_groupId: { studentId, groupId } } });
-        if (existing) return res.json({ id: existing.id, studentId, groupId, alreadyEnrolled: true });
-        const enrollment = await prisma.enrollment.create({ data: { studentId, groupId } });
-        res.json(enrollment);
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
-
 // ─── Special: Get enrollments for a group ─────────────────────────────────────
 router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
     try {
@@ -428,17 +438,6 @@ router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
             include: { student: true },
         });
         res.json(enrollments);
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
-
-// ─── Special: Remove student from group ───────────────────────────────────────
-router.delete('/enrollments/remove', requireAuth, async (req, res) => {
-    const { studentId, groupId } = req.body;
-    try {
-        await prisma.enrollment.delete({ where: { studentId_groupId: { studentId, groupId } } });
-        res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }

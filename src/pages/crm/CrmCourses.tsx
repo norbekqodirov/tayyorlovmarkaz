@@ -455,16 +455,18 @@ export default function CrmCourses() {
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Davomiyligi</label>
-                    <select
-                      value={formData.duration}
-                      onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                    >
-                      {['1 oy', '2 oy', '3 oy', '4 oy', '5 oy', '6 oy', '8 oy', '12 oy'].map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Davomiyligi (oy)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="36"
+                        value={parseInt(formData.duration || '3') || 3}
+                        onChange={(e) => setFormData({ ...formData, duration: `${e.target.value} oy` })}
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white pr-10"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400 pointer-events-none">oy</span>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars/hafta</label>
