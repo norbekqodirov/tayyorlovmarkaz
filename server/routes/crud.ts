@@ -85,8 +85,8 @@ function normalizeData(modelName: string, data: any): any {
             data.maxSize = Number(data.maxStudents) || 20;
         }
         delete data.maxStudents;
-        // teacher name string → teacherName column
-        if (data.teacher !== undefined && data.teacherName === undefined) {
+        // teacher name string → teacherName column (always overwrite so changes persist)
+        if (data.teacher !== undefined) {
             data.teacherName = data.teacher;
         }
         delete data.teacher;
@@ -181,9 +181,11 @@ router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
     (req as any).modelName = modelName;
 
     // Global Sanitization + Normalization on writes
+    // IMPORTANT: normalize must run BEFORE sanitize so field aliases
+    // (teacher→teacherName, maxStudents→maxSize) are resolved first
     if (req.method === 'POST' || req.method === 'PUT') {
-        req.body = sanitizeForPrisma(modelName, req.body);
         req.body = normalizeData(modelName, req.body);
+        req.body = sanitizeForPrisma(modelName, req.body);
     }
 
     next();
@@ -196,9 +198,12 @@ function transformForClient(modelName: string, data: any): any {
         } else if (!data.days) {
             data.days = [];
         }
-        // Restore teacher name to 'teacher' field for frontend compatibility
+        // Restore teacher name and maxSize for frontend compatibility
         if (data.teacherName !== undefined) {
             data.teacher = data.teacherName;
+        }
+        if (data.maxSize !== undefined) {
+            data.maxStudents = data.maxSize;
         }
     }
     return data;

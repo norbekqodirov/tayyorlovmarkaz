@@ -423,7 +423,10 @@ export default function CrmGroups() {
                   <td className="px-5 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors border border-blue-100 dark:border-blue-800">
-                        <MoreVertical size={16} />
+                        <Edit2 size={16} />
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-500 rounded-lg transition-colors border border-rose-100 dark:border-rose-800">
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </td>
