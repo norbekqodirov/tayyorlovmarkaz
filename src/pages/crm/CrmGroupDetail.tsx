@@ -105,7 +105,7 @@ export default function CrmGroupDetail() {
     return eachDayOfInterval({ start, end }).filter(date => {
       const day = date.getDay();
       if (!group?.days?.length) return day !== 0;
-      return group.days.map((d: string) => DAY_JS_MAP[d]).includes(day);
+      return (Array.isArray(group.days) ? group.days : []).map((d: string) => DAY_JS_MAP[d]).includes(day);
     });
   }, [currentDate, group]);
 
@@ -220,12 +220,12 @@ export default function CrmGroupDetail() {
                <p className="flex justify-between items-center"><span className="text-zinc-400">Kurs:</span> <span>{group.subject}</span></p>
                <p className="flex justify-between items-center"><span className="text-zinc-400">Boshlanish:</span> <span>{group.startDate}</span></p>
                <p className="flex justify-between items-center"><span className="text-zinc-400">Tugash:</span> <span>{group.endDate || '-'}</span></p>
-               <p className="flex justify-between items-center"><span className="text-zinc-400">Xona:</span> <span>{typeof group.room === 'object' ? (group.room as any).name : group.room}</span></p>
+               <p className="flex justify-between items-center"><span className="text-zinc-400">Xona:</span> <span>{group.room && typeof group.room === 'object' ? (group.room as any).name : group.room}</span></p>
                <p className="flex justify-between items-center"><span className="text-zinc-400">O'quvchilar:</span> <span>{groupStudents.length} kishi</span></p>
                <div className="pt-2">
                  <p className="text-zinc-400 mb-1.5">Dars kunlari:</p>
                  <div className="flex gap-2 flex-wrap">
-                   {(group.days || []).map((d: string) => <span key={d} className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] rounded uppercase tracking-widest">{d}</span>)}
+                   {(Array.isArray(group.days) ? group.days : []).map((d: string) => <span key={d} className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] rounded uppercase tracking-widest">{d}</span>)}
                  </div>
                </div>
             </div>
