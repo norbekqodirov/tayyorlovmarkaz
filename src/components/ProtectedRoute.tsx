@@ -15,8 +15,9 @@ function parsePermissions(user: any): string[] {
 
 function canAccess(user: any, allowedRoles?: string[], requiredPermission?: string): boolean {
   if (!user) return false;
-  // ADMIN always has full access
-  if (String(user.role).toUpperCase() === 'ADMIN') return true;
+  // ADMIN and SUPER_ADMIN always have full access
+  const roleUpper = String(user.role).toUpperCase();
+  if (roleUpper === 'ADMIN' || roleUpper === 'SUPER_ADMIN') return true;
 
   const perms = parsePermissions(user);
 
