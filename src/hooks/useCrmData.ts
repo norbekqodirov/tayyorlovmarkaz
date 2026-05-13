@@ -29,7 +29,7 @@ export function useCrmData() {
         if (teachersRes.status === 'fulfilled') {
           // filter to only teachers
           const allUsers = teachersRes.value.data || [];
-          setTeachers(allUsers.filter((u: any) => u.role === 'TEACHER' || u.role === 'ADMIN'));
+          setTeachers(allUsers.filter((u: any) => u.role === 'TEACHER'));
         }
         if (roomsRes.status === 'fulfilled') setRooms(roomsRes.value.data || []);
         if (groupsRes.status === 'fulfilled') setGroups(groupsRes.value.data || []);

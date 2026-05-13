@@ -279,7 +279,7 @@ export default function CrmLayout() {
   };
 
   // ── Permission filtering ─────────────────────────────────────────────────
-  const isAdmin = userRole === 'ADMIN';
+  const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
 
   const canSeeLink = (permission: string | undefined): boolean => {
     if (isAdmin) return true;

@@ -21,6 +21,7 @@ interface Group {
   id: string;
   name: string;
   subject: string;
+  courseId: string;
   teacher: string;
   teacherId: string;
   room: string;
@@ -70,6 +71,7 @@ export default function CrmGroups() {
   const [formData, setFormData] = useState<Partial<Group>>({
     name: '',
     subject: 'Matematika',
+    courseId: '',
     teacher: '',
     teacherId: '',
     room: '101-xona',
@@ -171,6 +173,7 @@ export default function CrmGroups() {
       setFormData({
         name: '',
         subject: 'Matematika',
+        courseId: '',
         teacher: '',
         teacherId: '',
         room: '101-xona',
@@ -457,6 +460,7 @@ export default function CrmGroups() {
                   setFormData({
                     ...formData,
                     subject: e.target.value,
+                    courseId: selected?.id || '',
                     price: selected?.price || formData.price || 0,
                   });
                 }}

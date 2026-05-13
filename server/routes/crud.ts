@@ -40,7 +40,7 @@ const FORCE_GENERIC: Set<string> = new Set([
 const SCHEMA_FIELDS: Record<string, string[]> = {
     'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes'],
     'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo'],
-    'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize'],
+    'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'room', 'days', 'time', 'price', 'teacherName', 'subject'],
     'room': ['name', 'capacity', 'color'],
     'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status'],
     'transaction': ['type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
@@ -79,6 +79,28 @@ function normalizeData(modelName: string, data: any): any {
         if (data.lessonsPerWeek !== undefined) data.lessonsPerWeek = Number(data.lessonsPerWeek) || 3;
         if (data.lessonDuration !== undefined) data.lessonDuration = Number(data.lessonDuration) || 90;
     }
+    if (modelName === 'group') {
+        // maxStudents (frontend) → maxSize (DB)
+        if (data.maxStudents !== undefined && data.maxSize === undefined) {
+            data.maxSize = Number(data.maxStudents) || 20;
+        }
+        delete data.maxStudents;
+        // teacher name string → teacherName column
+        if (data.teacher !== undefined && data.teacherName === undefined) {
+            data.teacherName = data.teacher;
+        }
+        delete data.teacher;
+        // days: array → JSON string
+        if (Array.isArray(data.days)) {
+            data.days = JSON.stringify(data.days);
+        }
+        // students array belongs in Enrollment table, not here
+        delete data.students;
+        // ensure price is a number
+        if (data.price !== undefined) data.price = Number(data.price) || 0;
+        // empty courseId should become null
+        if (data.courseId === '' || data.courseId === undefined) data.courseId = null;
+    }
     if (modelName === 'targetForm') {
         if (data.name !== undefined && data.title === undefined) {
             data.title = data.name;
@@ -102,7 +124,7 @@ function normalizeData(modelName: string, data: any): any {
 const VALIDATION_RULES: Record<string, { required: string[]; messages: Record<string, string> }> = {
     lead: { required: ['name', 'phone'], messages: { name: 'Ism kiritilishi shart', phone: 'Telefon raqam kiritilishi shart' } },
     student: { required: ['name'], messages: { name: "O'quvchi ismi kiritilishi shart" } },
-    group: { required: ['name', 'courseId'], messages: { name: 'Guruh nomi kiritilishi shart', courseId: 'Kurs tanlanishi shart' } },
+    group: { required: ['name'], messages: { name: 'Guruh nomi kiritilishi shart' } },
     course: { required: ['name'], messages: { name: 'Kurs nomi kiritilishi shart' } },
     staffMember: { required: ['name', 'role'], messages: { name: 'Xodim ismi kiritilishi shart', role: 'Lavozim kiritilishi shart' } },
     transaction: { required: ['type', 'amount', 'date'], messages: { type: 'Tur kiritilishi shart', amount: 'Summa kiritilishi shart', date: 'Sana kiritilishi shart' } },
@@ -167,6 +189,21 @@ router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
     next();
 });
 
+function transformForClient(modelName: string, data: any): any {
+    if (modelName === 'group') {
+        if (data.days && typeof data.days === 'string') {
+            try { data.days = JSON.parse(data.days); } catch { data.days = []; }
+        } else if (!data.days) {
+            data.days = [];
+        }
+        // Restore teacher name to 'teacher' field for frontend compatibility
+        if (data.teacherName !== undefined) {
+            data.teacher = data.teacherName;
+        }
+    }
+    return data;
+}
+
 // ─── GET /:collection ─────────────────────────────────────────────────────────
 router.get('/:collection', async (req, res) => {
     const page = parseInt(req.query.page as string) || 0;
@@ -205,12 +242,12 @@ router.get('/:collection', async (req, res) => {
         try {
             // @ts-ignore
             const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' } });
-            res.json(data);
+            res.json(data.map((item: any) => transformForClient(modelName, item)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
             const data = await prisma[modelName].findMany();
-            res.json(data);
+            res.json(data.map((item: any) => transformForClient(modelName, item)));
         }
     } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -229,7 +266,7 @@ router.get('/:collection/:id', async (req, res) => {
         // @ts-ignore
         const data = await prisma[(req as any).modelName].findUnique({ where: { id: req.params.id } });
         if (!data) return res.status(404).json({ message: 'Topilmadi' });
-        res.json(data);
+        res.json(transformForClient((req as any).modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }
