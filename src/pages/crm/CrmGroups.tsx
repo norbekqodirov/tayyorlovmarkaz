@@ -168,7 +168,10 @@ export default function CrmGroups() {
 
   const openModal = (group: Group | null = null) => {
     if (group) {
-      setFormData(group);
+      setFormData({
+        ...group,
+        days: Array.isArray(group.days) ? group.days : [],
+      });
     } else {
       setFormData({
         name: '',
@@ -406,7 +409,7 @@ export default function CrmGroups() {
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex gap-1.5 flex-wrap w-fit">
-                      {(group.days || []).map(d => (
+                      {(Array.isArray(group.days) ? group.days : []).map(d => (
                          <span key={d} className="px-2 py-1 rounded bg-emerald-500 text-white text-[10px] font-bold">{d}</span>
                       ))}
                     </div>

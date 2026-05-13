@@ -55,7 +55,7 @@ export default function CrmJournal() {
                 </div>
                 <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
                   <Calendar size={16} className="text-zinc-400" />
-                  {group.time} ({(group.days || []).join(', ')})
+                  {group.time} ({(Array.isArray(group.days) ? group.days : []).join(', ')})
                 </div>
                 <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
                   <Users size={16} className="text-zinc-400" />
