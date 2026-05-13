@@ -51,7 +51,7 @@ export default function CrmJournal() {
               <div className="space-y-2 mb-6">
                 <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
                   <MapPin size={16} className="text-zinc-400" />
-                  {typeof group.room === 'object' ? group.room.name : group.room}
+                  {group.room && typeof group.room === 'object' ? (group.room as any).name : group.room}
                 </div>
                 <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
                   <Calendar size={16} className="text-zinc-400" />

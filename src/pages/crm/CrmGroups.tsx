@@ -401,7 +401,7 @@ export default function CrmGroups() {
                   <td className="px-5 py-4">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-slate-700 dark:text-zinc-300">{group.subject}</span>
-                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">[{typeof group.room === 'object' ? (group.room as any).name : group.room}]</span>
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">[{group.room && typeof group.room === 'object' ? (group.room as any).name : group.room}]</span>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm font-bold text-emerald-600 dark:text-emerald-400">
