@@ -34,10 +34,15 @@ export class ErrorBoundary extends Component<Props, State> {
             </svg>
           </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Tizimda xatolik yuz berdi</h2>
+          {this.state.error && (
+            <pre className="text-xs text-left text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 max-w-lg w-full overflow-auto mb-4 whitespace-pre-wrap break-all">
+              {this.state.error.message}{'\n\n'}{this.state.error.stack?.slice(0, 600)}
+            </pre>
+          )}
           <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mb-6 leading-relaxed">
             Ilovada kutilmagan texnik nosozlik yuzaga keldi. Iltimos sahifani qaytadan yuklang yoki admin bilan bog'laning.
           </p>
-          <button 
+          <button
             onClick={() => window.location.reload()}
             className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition duration-300"
           >
