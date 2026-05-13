@@ -7,6 +7,7 @@ import api from '../../api/client';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useCrmData } from '../../hooks/useCrmData';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -37,10 +38,11 @@ export default function CrmTeachers() {
   
   const { data: groups = [] } = useFirestore<any>('groups');
   const { data: students = [] } = useFirestore<any>('students');
+  const { courses } = useCrmData();
   const { addDocument: addFinance } = useFirestore<any>('finance');
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
-    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40
+    name: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40
   });
 
   const loadTeachers = async () => {
@@ -78,8 +80,8 @@ export default function CrmTeachers() {
   useEffect(() => { loadTeachers(); }, []);
 
   const handleSave = async () => {
-    if (!formData.name || !formData.email) {
-      showToast("Ism va email kiritilishi shart!", 'error');
+    if (!formData.name) {
+      showToast("Ism kiritilishi shart!", 'error');
       return;
     }
     
@@ -97,7 +99,6 @@ export default function CrmTeachers() {
     try {
       const dbPayload = {
         name: formData.name,
-        email: formData.email,
         phone: formData.phone,
         password: formData.password,
         role: 'TEACHER', // Enforce teacher role
@@ -140,7 +141,7 @@ export default function CrmTeachers() {
     if (teacher) {
       setFormData({ ...teacher, password: '' });
     } else {
-      setFormData({ name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40 });
+      setFormData({ name: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40 });
     }
     setIsModalOpen(true);
   };
@@ -526,12 +527,19 @@ export default function CrmTeachers() {
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="Masalan: Aliyev Vali"
             />
-            <Input
-              label="Fan / Mutaxassislik"
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-              placeholder="Masalan: Matematika"
-            />
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fan / Mutaxassislik</label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
+              >
+                <option value="">Fan tanlang</option>
+                {courses.map((c: any) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -541,12 +549,21 @@ export default function CrmTeachers() {
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               placeholder="+998 90 123 45 67"
             />
-            <Input
-              label="Tajriba"
-              value={formData.exp}
-              onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
-              placeholder="3 yillik tajriba"
-            />
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tajriba</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  value={formData.exp ? parseInt(formData.exp as string) || '' : ''}
+                  onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white pr-14"
+                  placeholder="0"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400 pointer-events-none">yil</span>
+              </div>
+            </div>
           </div>
 
           <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl space-y-2">
@@ -569,22 +586,12 @@ export default function CrmTeachers() {
              <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-1.5">
                 <Lock size={12}/> Tizimga Kirish Ma'lumotlari
              </h4>
-             <div className="grid grid-cols-2 gap-4">
-               <Input
-                 type="email"
-                 label="Email"
-                 disabled={!!formData.id}
-                 value={formData.email}
-                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                 placeholder="ustoz@markaz.uz"
-               />
-               <Input
-                 type="password"
-                 label={formData.id ? "Yangi parol yozing" : "Parol kiriting *"}
-                 value={formData.password}
-                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-               />
-             </div>
+             <Input
+               type="password"
+               label={formData.id ? "Yangi parol yozing" : "Parol kiriting *"}
+               value={formData.password}
+               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+             />
           </div>
 
           <div className="space-y-1.5">
