@@ -60,6 +60,7 @@ export default function CrmFinance() {
   const { data: students = [], updateDocument: updateStudent } = useFirestore<any>('students');
   const { data: staff = [] } = useFirestore<any>('staff');
   const { data: teachers = [] } = useFirestore<any>('teachers');
+  const { data: groups = [] } = useFirestore<any>('groups');
   const { showToast } = useToast();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,7 +68,9 @@ export default function CrmFinance() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
-  const [activeTab, setActiveTab] = useState<'transactions' | 'debtors' | 'monthly'>('transactions');
+  const [activeTab, setActiveTab] = useState<'transactions' | 'debtors' | 'monthly' | 'tolов'>('transactions');
+  const [payYear, setPayYear] = useState(new Date().getFullYear());
+  const [payMonthIdx, setPayMonthIdx] = useState(new Date().getMonth());
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [isDebtorsModalOpen, setIsDebtorsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -344,13 +347,13 @@ export default function CrmFinance() {
       </div>
 
       <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit border border-zinc-200 dark:border-zinc-700">
-        {(['transactions', 'debtors', 'monthly'] as const).map(tab => (
+        {(['transactions', 'debtors', 'monthly', 'tolов'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
               activeTab === tab ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-400 hover:text-zinc-600'
             }`}
           >
-            {tab === 'transactions' ? "Tranzaksiyalar" : tab === 'debtors' ? `Qarzdorlar (${debtors.length})` : 'Oylik Hisobot'}
+            {tab === 'transactions' ? "Tranzaksiyalar" : tab === 'debtors' ? `Qarzdorlar (${debtors.length})` : tab === 'monthly' ? 'Oylik Hisobot' : "O'quvchi To'lovlari"}
           </button>
         ))}
       </div>
@@ -593,6 +596,104 @@ export default function CrmFinance() {
                   <td></td>
                 </tr>
               </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'tolов' && (
+        <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 space-y-3">
+            <p className="text-sm font-black text-slate-900 dark:text-white">O'quvchilar Oylik To'lovi</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <select
+                value={payYear}
+                onChange={e => setPayYear(Number(e.target.value))}
+                className="px-3 py-2 text-xs font-bold bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none"
+              >
+                {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <div className="flex flex-wrap gap-1">
+                {MONTHS.map((m, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setPayMonthIdx(i)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${payMonthIdx === i ? 'bg-blue-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200'}`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-zinc-50 dark:bg-zinc-800/50">
+                  <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">O'quvchi</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Guruh</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Qo'shilgan</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Kerakli</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">To'langan</th>
+                  <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-center">Holat</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {students
+                  .filter((s: any) => s.status === 'Faol' || !s.status)
+                  .map((s: any) => {
+                    const grp = (groups as any[]).find((g: any) => g.name === s.group);
+                    const price = grp?.price || 0;
+                    const joinedDate = s.joinedDate;
+                    // prorated calculation
+                    let expected = price;
+                    if (joinedDate && price) {
+                      const d = new Date(joinedDate);
+                      const ey = d.getFullYear(), em = d.getMonth();
+                      if (payYear < ey || (payYear === ey && payMonthIdx < em)) expected = 0;
+                      else if (payYear === ey && payMonthIdx === em) {
+                        const dim = new Date(payYear, payMonthIdx + 1, 0).getDate();
+                        expected = Math.round(((dim - d.getDate() + 1) / dim) * price);
+                      }
+                    }
+                    const paid = transactions
+                      .filter(t =>
+                        t.type === 'income' &&
+                        (t as any).studentId === s.id &&
+                        t.date && new Date(t.date).getFullYear() === payYear &&
+                        new Date(t.date).getMonth() === payMonthIdx
+                      )
+                      .reduce((a, t) => a + t.amount, 0);
+                    const status = expected === 0
+                      ? 'Hali emas'
+                      : paid >= expected
+                        ? "To'langan"
+                        : paid > 0 ? 'Qisman' : 'Qarzdor';
+                    const sc = status === "To'langan"
+                      ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700'
+                      : status === 'Qisman'
+                        ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700'
+                        : status === 'Hali emas'
+                          ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500'
+                          : 'bg-rose-100 dark:bg-rose-500/20 text-rose-600';
+                    return (
+                      <tr key={s.id} className="hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors">
+                        <td className="px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white">{s.name}</td>
+                        <td className="px-5 py-3.5 text-xs text-zinc-500">{s.group || '—'}</td>
+                        <td className="px-5 py-3.5 text-xs text-zinc-500">{joinedDate || '—'}</td>
+                        <td className="px-5 py-3.5 text-right text-sm font-black text-slate-700 dark:text-zinc-300">
+                          {expected > 0 ? `${new Intl.NumberFormat('uz-UZ').format(expected)} so'm` : '—'}
+                        </td>
+                        <td className="px-5 py-3.5 text-right text-sm font-bold text-emerald-600">
+                          {paid > 0 ? `${new Intl.NumberFormat('uz-UZ').format(paid)} so'm` : '—'}
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${sc}`}>{status}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
             </table>
           </div>
         </div>

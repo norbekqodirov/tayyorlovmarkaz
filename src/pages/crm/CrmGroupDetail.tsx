@@ -15,19 +15,35 @@ import api from '../../api/client';
 import { useToast } from '../../components/Toast';
 
 const TABS = [
-  'Davomat', 'Baholash', 'Reyting', 'Imtihonlar', 'Izoh'
+  'Davomat', 'Baholash', 'Reyting', 'Imtihonlar', 'Izoh', "To'lov"
 ];
+
+function getMonthDue(enrollDate: string | undefined, groupPrice: number, year: number, month: number): number {
+  if (!enrollDate || !groupPrice) return groupPrice || 0;
+  const d = new Date(enrollDate);
+  const ey = d.getFullYear(), em = d.getMonth();
+  if (year < ey || (year === ey && month < em)) return 0;
+  if (year === ey && month === em) {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const remaining = daysInMonth - d.getDate() + 1;
+    return Math.round((remaining / daysInMonth) * groupPrice);
+  }
+  return groupPrice;
+}
+
+const MONTH_NAMES = ['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
 
 export default function CrmGroupDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { data: groups = [] } = useFirestore<any>('groups');
-  const { data: students = [] } = useFirestore<any>('students');
+  const { data: students = [], updateDocument: updateStudentDoc } = useFirestore<any>('students');
   const { data: attendanceDocs = [], addDocument: addAtt, updateDocument: updateAtt } = useFirestore<any>('attendance');
   const { data: assessmentDocs = [], addDocument: addAssess, updateDocument: updateAssess } = useFirestore<any>('assessment');
   const { data: examDocs = [], addDocument: addExam, updateDocument: updateExam } = useFirestore<any>('exams');
   const { data: noteDocs = [], addDocument: addNote, updateDocument: updateNote } = useFirestore<any>('notes');
+  const { data: financeDocs = [] } = useFirestore<any>('finance');
 
   const [activeTab, setActiveTab] = useState('Davomat');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -36,6 +52,9 @@ export default function CrmGroupDetail() {
   const [addStudentSearch, setAddStudentSearch] = useState('');
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null);
+  const [pendingEnroll, setPendingEnroll] = useState<{ id: string; name: string } | null>(null);
+  const [enrollStartDate, setEnrollStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMonth, setPaymentMonth] = useState(new Date());
 
   const group = useMemo(() => groups.find((g: any) => g.id === id) || null, [groups, id]);
 
@@ -46,7 +65,10 @@ export default function CrmGroupDetail() {
     try {
       const res = await api.get(`/enrollments/group/${id}`);
       // Each enrollment has { id, studentId, student: { ... } }
-      const list = (res.data || []).map((e: any) => e.student || { id: e.studentId });
+      const list = (res.data || []).map((e: any) => ({
+        ...(e.student || { id: e.studentId }),
+        enrollmentStartDate: e.startDate || e.createdAt?.split('T')[0],
+      }));
       setEnrolledStudents(list);
     } catch {
       // Fallback: try group.students[] (legacy GenericDocument storage)
@@ -66,11 +88,21 @@ export default function CrmGroupDetail() {
   const groupStudents = enrolledStudents;
 
   // ─── Add student to group ─────────────────────────────────────────────────
-  const handleAddStudent = async (studentId: string) => {
+  const handleAddStudent = async (studentId: string, startDate: string) => {
     setAddingStudentId(studentId);
     try {
-      await api.post('/enrollments', { studentId, groupId: id });
+      await api.post('/enrollments', { studentId, groupId: id, startDate });
+      // Save joinedDate and prorated balance onto the student record
+      const price = group?.price || 0;
+      if (price && startDate) {
+        const d = new Date(startDate);
+        const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        const remaining = daysInMonth - d.getDate() + 1;
+        const proratedBalance = -Math.round((remaining / daysInMonth) * price);
+        await updateStudentDoc(studentId, { joinedDate: startDate, balance: proratedBalance });
+      }
       await fetchEnrollments();
+      setPendingEnroll(null);
       showToast("O'quvchi guruhga qo'shildi!", 'success');
     } catch (err: any) {
       showToast(err?.response?.data?.message || "Xatolik yuz berdi", 'error');
@@ -285,25 +317,56 @@ export default function CrmGroupDetail() {
                     autoFocus
                   />
                 </div>
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {availableStudents.slice(0, 20).map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => handleAddStudent(s.id)}
-                      disabled={addingStudentId === s.id}
-                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-300 transition-colors disabled:opacity-50"
-                    >
-                      <span>{s.name}</span>
-                      <span className="text-zinc-400">{s.phone?.replace('+998', '')}</span>
+                {pendingEnroll ? (
+                  <div className="space-y-2 p-1">
+                    <p className="text-xs font-black text-slate-700 dark:text-zinc-200">{pendingEnroll.name}</p>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Boshlanish sanasi</label>
+                      <input
+                        type="date"
+                        value={enrollStartDate}
+                        onChange={e => setEnrollStartDate(e.target.value)}
+                        className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:outline-none focus:border-blue-500 dark:text-white"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAddStudent(pendingEnroll.id, enrollStartDate)}
+                        disabled={!!addingStudentId}
+                        className="flex-1 py-2 bg-blue-500 text-white text-[10px] font-black rounded-xl hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                      >
+                        {addingStudentId ? "Qo'shilmoqda..." : 'Tasdiqlash'}
+                      </button>
+                      <button
+                        onClick={() => setPendingEnroll(null)}
+                        className="px-3 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 text-[10px] font-black rounded-xl hover:bg-zinc-200 transition-colors"
+                      >
+                        Orqaga
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {availableStudents.slice(0, 20).map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => { setPendingEnroll({ id: s.id, name: s.name }); setEnrollStartDate(new Date().toISOString().split('T')[0]); }}
+                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl text-xs font-bold text-slate-700 dark:text-zinc-300 transition-colors"
+                        >
+                          <span>{s.name}</span>
+                          <span className="text-zinc-400">{s.phone?.replace('+998', '')}</span>
+                        </button>
+                      ))}
+                      {availableStudents.length === 0 && (
+                        <p className="text-center text-xs text-zinc-400 py-4">O'quvchi topilmadi</p>
+                      )}
+                    </div>
+                    <button onClick={() => { setShowAddStudent(false); setAddStudentSearch(''); setPendingEnroll(null); }} className="w-full text-[10px] font-black text-zinc-400 hover:text-red-500 transition-colors">
+                      Yopish
                     </button>
-                  ))}
-                  {availableStudents.length === 0 && (
-                    <p className="text-center text-xs text-zinc-400 py-4">O'quvchi topilmadi</p>
-                  )}
-                </div>
-                <button onClick={() => { setShowAddStudent(false); setAddStudentSearch(''); }} className="w-full text-[10px] font-black text-zinc-400 hover:text-red-500 transition-colors">
-                  Yopish
-                </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="p-4 flex justify-between items-center">
@@ -643,7 +706,7 @@ export default function CrmGroupDetail() {
                     return (
                       <div key={s.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm flex flex-col md:flex-row gap-4">
                          <div className="w-[200px] shrink-0 font-bold text-sm text-slate-800 dark:text-zinc-200 flex items-center">{s.name}</div>
-                         <textarea 
+                         <textarea
                            defaultValue={rec?.note || ''}
                            onBlur={(e) => {
                                if (e.target.value !== (rec?.note || '')) {
@@ -657,6 +720,92 @@ export default function CrmGroupDetail() {
                     );
                  })}
                </div>
+            </div>
+          )}
+
+          {activeTab === "To'lov" && (
+            <div className="flex flex-col h-full space-y-4">
+              {/* Month selector */}
+              <div className="flex items-center gap-3">
+                <select
+                  value={paymentMonth.getFullYear()}
+                  onChange={e => setPaymentMonth(new Date(Number(e.target.value), paymentMonth.getMonth(), 1))}
+                  className="px-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none font-bold text-xs"
+                >
+                  {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <div className="flex border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden text-xs font-bold divide-x divide-zinc-200 dark:divide-zinc-700">
+                  {MONTH_NAMES.map((name, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPaymentMonth(new Date(paymentMonth.getFullYear(), i, 1))}
+                      className={`px-3 py-2 transition-colors ${paymentMonth.getMonth() === i ? 'bg-blue-500 text-white' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
+                    >
+                      {name.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Payment table */}
+              <div className="flex-1 overflow-auto border border-zinc-200 dark:border-zinc-800 rounded-2xl">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-xs font-black text-slate-800 dark:text-zinc-200 uppercase tracking-widest">O'quvchi</th>
+                      <th className="px-4 py-3 text-xs font-black text-zinc-400 uppercase tracking-widest">Qo'shilgan sana</th>
+                      <th className="px-4 py-3 text-xs font-black text-zinc-400 uppercase tracking-widest text-right">Kerakli to'lov</th>
+                      <th className="px-4 py-3 text-xs font-black text-zinc-400 uppercase tracking-widest text-right">To'langan</th>
+                      <th className="px-4 py-3 text-xs font-black text-zinc-400 uppercase tracking-widest text-center">Holat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {groupStudents.map((s: any) => {
+                      const yr = paymentMonth.getFullYear();
+                      const mo = paymentMonth.getMonth();
+                      const enrollDate = s.enrollmentStartDate || s.joinedDate;
+                      const expected = getMonthDue(enrollDate, group.price || 0, yr, mo);
+                      const paid = financeDocs
+                        .filter((f: any) =>
+                          f.type === 'income' &&
+                          f.studentId === s.id &&
+                          f.date && new Date(f.date).getFullYear() === yr &&
+                          new Date(f.date).getMonth() === mo
+                        )
+                        .reduce((acc: number, f: any) => acc + (f.amount || 0), 0);
+                      const status = expected === 0
+                        ? 'Hali emas'
+                        : paid >= expected
+                          ? "To'langan"
+                          : paid > 0
+                            ? "Qisman"
+                            : "Qarzdor";
+                      const statusColor = status === "To'langan"
+                        ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700'
+                        : status === 'Qisman'
+                          ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700'
+                          : status === 'Hali emas'
+                            ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500'
+                            : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700';
+                      return (
+                        <tr key={s.id} className="hover:bg-zinc-50/50 dark:hover:bg-white/[0.02]">
+                          <td className="px-4 py-3 text-sm font-bold text-slate-800 dark:text-zinc-200">{s.name}</td>
+                          <td className="px-4 py-3 text-xs text-zinc-500">{enrollDate || '—'}</td>
+                          <td className="px-4 py-3 text-right text-sm font-black text-slate-700 dark:text-zinc-300">
+                            {expected > 0 ? `${new Intl.NumberFormat('uz-UZ').format(expected)} so'm` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-emerald-600">
+                            {paid > 0 ? `${new Intl.NumberFormat('uz-UZ').format(paid)} so'm` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${statusColor}`}>{status}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

@@ -8,6 +8,7 @@ import {
 import api from '../../api/client';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 // ─── Permission Definitions ──────────────────────────────────────────
 const ALL_PERMISSIONS = [
@@ -474,17 +475,11 @@ export default function CrmUsers() {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest mb-1.5">Telefon (Login) *</label>
-                                        <div className="relative">
-                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                            <input
-                                                type="tel"
-                                                value={form.phone}
-                                                onChange={e => setForm({ ...form, phone: e.target.value })}
-                                                placeholder="+998 90 000 00 00"
-                                                className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                                            />
-                                        </div>
+                                        <PhoneInput
+                                            label="Telefon (Login) *"
+                                            value={form.phone || ''}
+                                            onChange={v => setForm({ ...form, phone: v })}
+                                        />
                                     </div>
 
                                     <div>

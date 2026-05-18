@@ -5,6 +5,7 @@ import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import api from '../../api/client';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 interface StaffMember {
   id: string;
@@ -956,13 +957,10 @@ export default function CrmStaff() {
                   <div className="space-y-4">
                     <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Aloqa va Ish</h4>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefon</label>
-                      <input
-                        type="text"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="+998 90 123 45 67"
+                      <PhoneInput
+                        label="Telefon"
+                        value={formData.phone || ''}
+                        onChange={(v) => setFormData({ ...formData, phone: v })}
                       />
                     </div>
                     <div className="space-y-2">

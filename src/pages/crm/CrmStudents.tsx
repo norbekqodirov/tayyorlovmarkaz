@@ -15,6 +15,7 @@ import { EmptyState, ErrorState } from '../../components/States';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 import { exportToExcel, exportToPDF, exportCertificateToPDF } from '../../utils/export';
 import { useCrmData } from '../../hooks/useCrmData';
 
@@ -34,6 +35,14 @@ interface Student {
   status: 'Faol' | 'Muzlatilgan' | 'Tark etgan' | 'Bitiruvchi';
   joinedDate: string;
   notes: string;
+}
+
+function calcProratedBalance(joinedDate: string, groupPrice: number): number {
+  if (!joinedDate || !groupPrice) return -groupPrice;
+  const d = new Date(joinedDate);
+  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const remaining = daysInMonth - d.getDate() + 1;
+  return -Math.round((remaining / daysInMonth) * groupPrice);
 }
 
 export default function CrmStudents() {
@@ -682,13 +691,13 @@ export default function CrmStudents() {
                   placeholder="Aliyev Vali"
                 />
                 <div className="grid grid-cols-2 gap-3">
-                  <Input 
+                  <PhoneInput
                     label="Telefon"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    placeholder="+998 90 123 45 67"
+                    value={formData.phone || ''}
+                    onChange={(v) => setFormData({...formData, phone: v})}
+                    required
                   />
-                  <Input 
+                  <Input
                     type="date"
                     label="Tug'ilgan sana"
                     value={formData.birthDate}
@@ -714,11 +723,10 @@ export default function CrmStudents() {
                   onChange={(e) => setFormData({...formData, parentName: e.target.value})}
                   placeholder="Aliyev G'ani"
                 />
-                <Input 
+                <PhoneInput
                   label="Ota-ona telefoni"
-                  value={formData.parentPhone}
-                  onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
-                  placeholder="+998 90 111 22 33"
+                  value={formData.parentPhone || ''}
+                  onChange={(v) => setFormData({...formData, parentPhone: v})}
                 />
               </div>
             </div>
@@ -747,11 +755,15 @@ export default function CrmStudents() {
                       value={formData.group}
                       onChange={(e) => {
                         const g = groupOptions.find((g: any) => g.name === e.target.value);
+                        const price = g?.price || 0;
+                        const balance = price
+                          ? calcProratedBalance(formData.joinedDate || new Date().toISOString().split('T')[0], price)
+                          : (formData.balance || 0);
                         setFormData({
                           ...formData,
                           group: e.target.value,
                           course: g?.subject || formData.course || '',
-                          balance: g?.price ? -g.price : (formData.balance || 0)
+                          balance
                         });
                       }}
                       className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
@@ -763,10 +775,22 @@ export default function CrmStudents() {
                     </select>
                   </div>
                 </div>
+                <Input
+                  type="date"
+                  label="Guruhga qo'shilgan sana"
+                  value={formData.joinedDate || ''}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    const g = groupOptions.find((g: any) => g.name === formData.group);
+                    const price = g?.price || 0;
+                    const balance = price ? calcProratedBalance(newDate, price) : (formData.balance || 0);
+                    setFormData({ ...formData, joinedDate: newDate, balance });
+                  }}
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5 flex flex-col gap-1.5">
                     <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>
-                    <select 
+                    <select
                       value={formData.status}
                       onChange={(e) => setFormData({...formData, status: e.target.value as any})}
                       className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
@@ -779,7 +803,7 @@ export default function CrmStudents() {
                   </div>
                   <div className="space-y-1.5 flex flex-col gap-1.5">
                     <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">To'lov Holati</label>
-                    <select 
+                    <select
                       value={formData.paymentStatus}
                       onChange={(e) => setFormData({...formData, paymentStatus: e.target.value as any})}
                       className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"

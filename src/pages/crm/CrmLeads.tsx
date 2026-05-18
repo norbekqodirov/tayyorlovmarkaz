@@ -13,6 +13,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 interface LeadActivity {
   id: string;
@@ -709,11 +710,11 @@ export default function CrmLeads() {
               onChange={(e) => setFormData({...formData, name: e.target.value})}
               placeholder="Masalan: Alisher Navoiy"
             />
-            <Input 
+            <PhoneInput
               label="Telefon"
-              value={formData.phone}
-              onChange={(e) => setFormData({...formData, phone: e.target.value})}
-              placeholder="+998 90 123 45 67"
+              value={formData.phone || ''}
+              onChange={(v) => setFormData({...formData, phone: v})}
+              required
             />
           </div>
 

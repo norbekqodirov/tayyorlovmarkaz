@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
 import { Input } from '../../components/ui/Input';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 
@@ -543,11 +544,10 @@ export default function CrmTeachers() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
+            <PhoneInput
               label="Telefon"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+998 90 123 45 67"
+              value={formData.phone || ''}
+              onChange={(v) => setFormData({ ...formData, phone: v })}
             />
             <div className="space-y-1.5">
               <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tajriba</label>

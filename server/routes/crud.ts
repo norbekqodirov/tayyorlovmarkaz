@@ -280,12 +280,14 @@ router.get('/:collection/:id', async (req, res) => {
 // ─── POST /:collection ────────────────────────────────────────────────────────
 // ─── Special: Enroll student into group (must be before /:collection POST) ────
 router.post('/enrollments', requireAuth, async (req, res) => {
-    const { studentId, groupId } = req.body;
+    const { studentId, groupId, startDate } = req.body;
     if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
     try {
         const existing = await prisma.enrollment.findUnique({ where: { studentId_groupId: { studentId, groupId } } });
         if (existing) return res.json({ id: existing.id, studentId, groupId, alreadyEnrolled: true });
-        const enrollment = await prisma.enrollment.create({ data: { studentId, groupId } });
+        const enrollment = await prisma.enrollment.create({
+            data: { studentId, groupId, startDate: startDate || new Date().toISOString().split('T')[0] } as any
+        });
         res.json(enrollment);
     } catch (error) {
         res.status(500).json({ error: String(error) });

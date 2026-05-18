@@ -112,6 +112,7 @@ model Enrollment {
   group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  startDate String?
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId])
