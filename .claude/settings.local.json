@@ -6,7 +6,9 @@
       "Bash(node -e \"console.log\\(''node ok''\\)\")",
       "Bash(python -c \":*)",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(cd /d D:\\\\Norbek\\\\tayyorlovmarkaz)",
+      "Bash(npx prisma *)"
     ]
   }
 }

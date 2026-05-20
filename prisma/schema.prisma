@@ -35,20 +35,22 @@ model User {
 // ============================================
 
 model Student {
-  id          String   @id @default(uuid())
-  name        String
-  phone       String?
-  parentPhone String?
-  parentName  String?
-  email       String?
-  birthDate   String?
-  address     String?
-  photo       String?
-  status      String   @default("active") // active, graduated, left
-  source      String?  // Instagram, Telegram, etc.
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  phone            String?
+  parentPhone      String?
+  parentName       String?
+  email            String?
+  birthDate        String?
+  address          String?
+  photo            String?
+  status           String   @default("active") // active, graduated, left
+  source           String?  // Instagram, Telegram, etc.
+  notes            String?
+  telegramChatId   String?  // O'quvchining Telegram chat ID
+  parentTelegramId String?  // Ota-onaning Telegram chat ID
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   enrollments       Enrollment[]
   payments          Payment[]
@@ -429,5 +431,70 @@ model Task {
   userId    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// TELEGRAM XABARLAR
+// ============================================
+
+model TelegramMessage {
+  id        String   @id @default(uuid())
+  chatId    String
+  type      String   // attendance, payment, grade, schedule, lead, broadcast
+  message   String
+  status    String   @default("pending") // pending, sent, delivered, failed
+  entityId  String?  // studentId, leadId, etc.
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+  @@index([type])
+  @@index([status])
+}
+
+// ============================================
+// AVTOMATIK WORKFLOWLAR
+// ============================================
+
+model Workflow {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  trigger     String    // daily_payment, daily_attendance, hourly_leads, group_lifecycle
+  isActive    Boolean   @default(true)
+  config      String    @default("{}") // JSON: trigger-specific configuration
+  lastRun     DateTime?
+  nextRun     DateTime?
+  runCount    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  logs WorkflowLog[]
+}
+
+model WorkflowLog {
+  id         String   @id @default(uuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status     String   // success, error, skipped
+  output     String?  // JSON: execution details
+  duration   Int?     // milliseconds
+  createdAt  DateTime @default(now())
+
+  @@index([workflowId])
+  @@index([createdAt])
+}
+
+// ============================================
+// HISOBOTLAR
+// ============================================
+
+model ReportTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // financial, attendance, students, teachers
+  config      String   @default("{}") // JSON: filters, columns
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 

@@ -7,10 +7,16 @@ import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-for-local';
-if (!process.env.JWT_SECRET) {
-    console.warn('[AUTH] ⚠ JWT_SECRET o\'rnatilmagan! .env faylini tekshiring.');
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+        console.error('[AUTH] ❌ JWT_SECRET o\'rnatilmagan! Production da ishlatib bo\'lmaydi.');
+        process.exit(1);
+    } else {
+        console.warn('[AUTH] ⚠ JWT_SECRET o\'rnatilmagan, development mode uchun default ishlatilmoqda.');
+    }
 }
+const JWT_SECRET_KEY = JWT_SECRET || 'dev-only-secret-key-change-in-production';
 
 // ─── Role hierarchy (higher index = more powerful) ───────────────────────────
 const ROLE_LEVEL: Record<string, number> = {
@@ -42,24 +48,31 @@ router.post('/login', async (req, res) => {
         let user = await prisma.user.findUnique({ where: { phone: normalizedPhone } });
 
         // Fallback: first-boot auto-create super admin if DB is empty
+        // Credentials are loaded from environment variables only
         if (!user) {
             const count = await prisma.user.count();
-            if (count === 0 && normalizedPhone === '+998937525592' && password === 'nn1122') {
+            const firstBootPhone = process.env.FIRST_BOOT_PHONE;
+            const firstBootPassword = process.env.FIRST_BOOT_PASSWORD;
+
+            if (count === 0 && firstBootPhone && firstBootPassword &&
+                normalizedPhone === firstBootPhone && password === firstBootPassword) {
                 const hashedPassword = await bcrypt.hash(password, 12);
                 user = await prisma.user.create({
                     data: {
                         phone: normalizedPhone,
                         password: hashedPassword,
-                        name: 'Bosh Administrator',
+                        name: process.env.FIRST_BOOT_NAME || 'Bosh Administrator',
                         role: 'SUPER_ADMIN',
                         isActive: true,
                         permissions: JSON.stringify([
                             'dashboard', 'students', 'groups', 'courses', 'schedule', 'journal',
                             'leads', 'finance', 'staff', 'marketing', 'analytics', 'settings',
-                            'users', 'backup', 'rooms', 'inventory', 'content', 'target_forms'
+                            'users', 'backup', 'rooms', 'inventory', 'content', 'target_forms',
+                            'bi', 'automations', 'telegram',
                         ]),
                     } as any,
                 });
+                console.log('[AUTH] ✅ First-boot super admin yaratildi:', normalizedPhone);
             }
         }
 
@@ -79,7 +92,7 @@ router.post('/login', async (req, res) => {
 
         const token = jwt.sign(
             { id: user.id, role: user.role, phone: user.phone },
-            JWT_SECRET,
+            JWT_SECRET_KEY,
             { expiresIn: '30d' }
         );
 
@@ -107,7 +120,7 @@ router.get('/me', async (req, res) => {
     if (!authHeader) return res.status(401).json({ message: "Token topilmadi" });
     try {
         const token = authHeader.split(' ')[1];
-        const payload: any = jwt.verify(token, JWT_SECRET);
+        const payload: any = jwt.verify(token, JWT_SECRET_KEY);
         const user = await prisma.user.findUnique({ where: { id: payload.id } });
         if (!user) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
         res.json({

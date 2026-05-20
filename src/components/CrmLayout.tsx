@@ -9,7 +9,7 @@ import {
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
   CheckSquare, Activity,
-  ArrowUpRight, Target, Users2
+  ArrowUpRight, Target, Users2, Send, Zap, Video
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
 import { useTheme } from '../contexts/ThemeContext';
@@ -125,7 +125,8 @@ const MODULES: NavModule[] = [
     sections: [
       {
         links: [
-          { name: 'BI Analitika', path: '/crmtayyorlovmarkaz/bi', icon: BarChart2, permission: 'bi' },
+          { name: 'BI Analitika',  path: '/crmtayyorlovmarkaz/bi',          icon: BarChart2,  permission: 'bi'          },
+          { name: 'Avtomatizatsiya', path: '/crmtayyorlovmarkaz/automations', icon: Zap,        permission: 'settings'    },
         ],
       },
     ],
@@ -146,11 +147,13 @@ const MODULES: NavModule[] = [
           { name: 'Xonalar',     path: '/crmtayyorlovmarkaz/rooms',     icon: DoorOpen, permission: 'rooms'     },
           { name: 'Inventar',    path: '/crmtayyorlovmarkaz/inventory', icon: Package,  permission: 'inventory' },
           { name: 'Materiallar', path: '/crmtayyorlovmarkaz/content',   icon: FileText, permission: 'content'   },
+          { name: 'Videolar',    path: '/crmtayyorlovmarkaz/videos',    icon: Video,    permission: 'content'   },
         ],
       },
       {
         title: 'Tizim',
         links: [
+          { name: 'Telegram Bot',     path: '/crmtayyorlovmarkaz/telegram', icon: Send,     permission: 'settings' },
           { name: 'Foydalanuvchilar', path: '/crmtayyorlovmarkaz/users',    icon: Users,    permission: 'users'    },
           { name: 'Sozlamalar',       path: '/crmtayyorlovmarkaz/settings', icon: Settings, permission: 'settings' },
         ],
@@ -166,9 +169,9 @@ function detectModule(pathname: string): string {
     return 'hr';
   if (pathname.includes('/finance'))
     return 'finance';
-  if (pathname.includes('/bi'))
+  if (pathname.includes('/bi') || pathname.includes('/automations'))
     return 'analytics';
-  if (pathname.includes('/rooms') || pathname.includes('/inventory') || pathname.includes('/content') || pathname.includes('/users') || pathname.includes('/settings'))
+  if (pathname.includes('/rooms') || pathname.includes('/inventory') || pathname.includes('/content') || pathname.includes('/users') || pathname.includes('/settings') || pathname.includes('/telegram') || pathname.includes('/videos'))
     return 'management';
   return 'education';
 }
@@ -194,6 +197,9 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/users': 'Foydalanuvchilar',
     '/crmtayyorlovmarkaz/settings': 'Sozlamalar',
     '/crmtayyorlovmarkaz/portal': 'Mening Portalim',
+    '/crmtayyorlovmarkaz/telegram': 'Telegram Bot',
+    '/crmtayyorlovmarkaz/automations': 'Avtomatizatsiya',
+    '/crmtayyorlovmarkaz/videos': 'Videolar',
   };
   return map[pathname] || 'Dashboard';
 }

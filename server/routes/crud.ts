@@ -8,38 +8,44 @@ const router = express.Router();
 // ─── Model Map: frontend collection → Prisma model name ──────────────────────
 // Collections NOT listed here will fallback to GenericDocument (JSON store)
 const MODEL_MAP: Record<string, string> = {
-    'courses':      'course',
-    'groups':       'group',
-    'students':     'student',
-    'rooms':        'room',
-    'staff':        'staffMember',
-    'staffMembers': 'staffMember',
-    'finance':      'transaction',
-    'transactions': 'transaction',
-    'payments':     'payment',
-    'leads':        'lead',
-    'posts':        'post',
-    'news':         'post',
-    'inventory':    'inventoryItem',
-    'tasks':        'task',
-    'notifications': 'notification',
-    'settings':     'setting',
-    'pageContent':  'pageContent',
-    'gallery':      'galleryItem',
-    'forms':        'targetForm',
+    'courses':        'course',
+    'groups':         'group',
+    'students':       'student',
+    'rooms':          'room',
+    'staff':          'staffMember',
+    'staffMembers':   'staffMember',
+    'finance':        'transaction',
+    'transactions':   'transaction',
+    'payments':       'payment',
+    'leads':          'lead',
+    'posts':          'post',
+    'news':           'post',
+    'inventory':      'inventoryItem',
+    'tasks':          'task',
+    'notifications':  'notification',
+    'settings':       'setting',
+    'pageContent':    'pageContent',
+    'gallery':        'galleryItem',
+    'forms':          'targetForm',
+    'campaigns':      'campaign',
+    'leadActivities': 'leadActivity',
+    'lead_activities':'leadActivity',
+    'assessments':    'assessment',
+    'journal':        'journalEntry',
+    'attendance':     'attendanceRecord',
+    'workflows':      'workflow',
+    'workflowLogs':   'workflowLog',
 };
 
-// Always use GenericDocument for these (they have extra fields beyond Prisma schema)
+// Always use GenericDocument for these (only truly unstructured / extra data)
 const FORCE_GENERIC: Set<string> = new Set([
-    'schedule', 'attendance', 'assessments', 'journal', 'exams', 'notes',
-    'automations', 'campaigns', 'leadActivities', 'lead_activities',
-    'enrollments_extra',
+    'schedule', 'exams', 'notes', 'automations', 'enrollments_extra',
 ]);
 
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
     'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes'],
-    'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo'],
+    'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'telegramChatId', 'parentTelegramId'],
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'room', 'days', 'time', 'price', 'teacherName', 'subject'],
     'room': ['name', 'capacity', 'color'],
     'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status'],
@@ -50,6 +56,13 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
     'task': ['title', 'completed', 'userId'],
     'targetForm': ['title', 'name', 'description', 'course', 'url', 'isActive', 'status'],
+    'campaign': ['name', 'platform', 'budget', 'spent', 'leads', 'startDate', 'endDate', 'status', 'notes'],
+    'leadActivity': ['leadId', 'type', 'content', 'date', 'user'],
+    'assessment': ['studentId', 'title', 'type', 'score', 'maxScore', 'date', 'subject', 'notes'],
+    'journalEntry': ['groupId', 'studentId', 'teacherId', 'date', 'topic', 'homework', 'grade', 'comment'],
+    'attendanceRecord': ['studentId', 'groupId', 'date', 'status', 'checkIn', 'checkOut', 'note'],
+    'workflow': ['name', 'trigger', 'isActive', 'config', 'lastRun', 'runCount'],
+    'notification': ['userId', 'title', 'message', 'type', 'isRead'],
 };
 
 // Status normalizers: convert Uzbek UI values to English DB values
@@ -326,31 +339,48 @@ router.post('/:collection', async (req, res) => {
             finalData = await prisma[(req as any).modelName].create({ data: req.body });
         }
 
-        // ─── System Notifications ──────────────────────────────────────
+        // ─── System Notifications → Prisma Notification model ──────────
         try {
             let notifTitle = '';
             let notifMessage = '';
+            let notifType = 'info';
 
             if (collection === 'leads') {
                 notifTitle = 'Yangi Lid';
                 notifMessage = `Qiziquvchi qo'shildi: ${req.body.name}`;
+                notifType = 'info';
             } else if (collection === 'students') {
                 notifTitle = "Yangi O'quvchi";
                 notifMessage = `Tizimga yangi o'quvchi qo'shildi: ${req.body.name}`;
+                notifType = 'success';
             } else if (collection === 'groups') {
                 notifTitle = 'Yangi Guruh';
                 notifMessage = `Tizimda yangi guruh ochildi: ${req.body.name || 'Nomsiz'}`;
+                notifType = 'info';
             } else if ((collection === 'finance' || collection === 'transactions') && req.body.type === 'income') {
                 notifTitle = "To'lov Qabul Qilindi";
-                notifMessage = `${req.body.amount} so'm miqdorida to'lov qabul qilindi.`;
+                notifMessage = `${Number(req.body.amount).toLocaleString('uz-UZ')} so'm to'lov qabul qilindi.`;
+                notifType = 'success';
+            } else if (collection === 'payments') {
+                notifTitle = "To'lov Ro'yxatga Olindi";
+                notifMessage = `${Number(req.body.amount).toLocaleString('uz-UZ')} so'm — ${req.body.method || 'Naqd'}`;
+                notifType = 'success';
             }
 
             if (notifTitle) {
-                await prisma.genericDocument.create({
-                    data: {
-                        collection: 'notifications',
-                        data: JSON.stringify({ title: notifTitle, message: notifMessage, type: 'info', isRead: false, time: new Date().toISOString() })
-                    }
+                // Barcha adminlarga bildirishnoma yuborish
+                const admins = await prisma.user.findMany({
+                    where: { role: { in: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] }, isActive: true },
+                    select: { id: true },
+                });
+                await prisma.notification.createMany({
+                    data: admins.map(admin => ({
+                        userId: admin.id,
+                        title: notifTitle,
+                        message: notifMessage,
+                        type: notifType,
+                        isRead: false,
+                    })),
                 });
             }
         } catch { /* Notification errors are silent */ }

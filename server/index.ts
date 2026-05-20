@@ -2,12 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import crudRoutes from './routes/crud.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
+import telegramRoutes from './routes/telegram.js';
+import reportsRoutes from './routes/reports.js';
 import path from 'path';
 import fs from 'fs';
+import { startScheduler } from './services/scheduler.js';
 
 dotenv.config();
 
@@ -15,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-// CORS - allow both dev and production origins
+// ── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
     process.env.APP_URL || 'http://localhost:3000',
     'http://localhost:3001',
@@ -24,7 +28,6 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (server-to-server, mobile apps)
         if (!origin) return callback(null, true);
         if (allowedOrigins.some(o => origin.startsWith(o))) return callback(null, true);
         callback(new Error('Not allowed by CORS'));
@@ -32,29 +35,62 @@ app.use(cors({
     credentials: true
 }));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(cookieParser());
-
-// Public health check
-app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', message: 'API is running!', env: process.env.NODE_ENV, timestamp: new Date().toISOString() });
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+// Login: max 10 ta urinish 15 daqiqada
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { message: "Juda ko'p login urinish. 15 daqiqadan keyin qayta urining." },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
-// Static files (uploaded images)
+// Umumiy API: max 200 so'rov/daqiqa
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    message: { message: "So'rovlar chegarasi oshib ketdi. Bir oz kuting." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => {
+        // Production da production limitlash qil
+        if (!IS_PROD) return true;
+        return false;
+    },
+});
+
+// ── Middleware ────────────────────────────────────────────────────────────────
+app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
+app.use('/api', apiLimiter);
+
+// Health check (rate limitdan tashqari)
+app.get('/api/health', (_req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'API is running!',
+        env: process.env.NODE_ENV,
+        timestamp: new Date().toISOString(),
+    });
+});
+
+// Static files
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
-// Routers
+// ── Routers ───────────────────────────────────────────────────────────────────
+app.use('/api/auth/login', loginLimiter);  // Login uchun alohida limit
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/telegram', telegramRoutes);
+app.use('/api/reports', reportsRoutes);
 app.use('/api', crudRoutes);
 
-// ── Production: serve Vite build & SPA fallback ─────────────────────────
+// ── Production: serve Vite build & SPA fallback ───────────────────────────────
 if (IS_PROD) {
     const distPath = path.join(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
         app.use(express.static(distPath));
-        // SPA fallback — all non-API routes serve index.html
         app.get('*', (_req, res) => {
             const indexPath = path.join(distPath, 'index.html');
             if (fs.existsSync(indexPath)) {
@@ -68,7 +104,11 @@ if (IS_PROD) {
     }
 }
 
+// ── Start server & scheduler ──────────────────────────────────────────────────
 app.listen(PORT, () => {
     console.log(`[Server]: Running in ${IS_PROD ? 'PRODUCTION' : 'development'} mode`);
     console.log(`[Server]: http://localhost:${PORT}`);
+
+    // Scheduler (cron jobs) ni ishga tushirish
+    startScheduler();
 });

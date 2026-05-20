@@ -257,7 +257,7 @@ export default function CrmVideos() {
       </div>
 
       <ConfirmDialog
-        open={deleteConfirm.open}
+        isOpen={deleteConfirm.open}
         title="Videoni o'chirish"
         message="Bu videoni o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi."
         onConfirm={confirmDelete}

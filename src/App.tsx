@@ -37,7 +37,10 @@ const CrmStaff      = React.lazy(() => import('./pages/crm/CrmStaff'));
 const CrmBI         = React.lazy(() => import('./pages/crm/CrmBI'));
 const CrmCourses    = React.lazy(() => import('./pages/crm/CrmCourses'));
 const CrmInventory  = React.lazy(() => import('./pages/crm/CrmInventory'));
-const CrmUsers      = React.lazy(() => import('./pages/crm/CrmUsers'));
+const CrmUsers        = React.lazy(() => import('./pages/crm/CrmUsers'));
+const CrmVideos       = React.lazy(() => import('./pages/crm/CrmVideos'));
+const CrmTelegram     = React.lazy(() => import('./pages/crm/CrmTelegram'));
+const CrmAutomations  = React.lazy(() => import('./pages/crm/CrmAutomations'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -108,8 +111,11 @@ export default function App() {
               <Route path="rooms"     element={<ProtectedRoute requiredPermission="rooms"     allowedRoles={['ADMIN']}><CrmRooms /></ProtectedRoute>} />
               <Route path="inventory" element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
               <Route path="content"   element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
-              <Route path="users"     element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
-              <Route path="settings"  element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
+              <Route path="users"       element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
+              <Route path="settings"    element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
+              <Route path="telegram"    element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmTelegram /></ProtectedRoute>} />
+              <Route path="automations" element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN','MANAGER']}><CrmAutomations /></ProtectedRoute>} />
+              <Route path="videos"      element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmVideos /></ProtectedRoute>} />
             </Route>
           </Routes>
         </Suspense>
