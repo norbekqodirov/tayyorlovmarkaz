@@ -398,19 +398,61 @@ export default function CrmLeads() {
                           </span>
                         </div>
 
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
                           <Phone size={12} className="text-zinc-400" />
                           {lead.phone}
                         </div>
-                        
-                        <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-700/50">
+
+                        {/* Last activity date */}
+                        {(lead.activities || []).length > 0 && (() => {
+                          const lastAct = (lead.activities || []).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+                          const daysAgo = Math.floor((Date.now() - new Date(lastAct.date).getTime()) / 86400000);
+                          return (
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-zinc-400">
+                              <Clock size={10} />
+                              {daysAgo === 0 ? 'Bugun' : daysAgo === 1 ? 'Kecha' : `${daysAgo} kun oldin`}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Quick action buttons */}
+                        <div className="flex items-center gap-1 pt-1">
+                          <a href={`tel:${lead.phone}`}
+                            onClick={e => e.stopPropagation()}
+                            className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                            title="Qo'ng'iroq qilish">
+                            <Phone size={11} />
+                          </a>
+                          <button
+                            onClick={e => { e.stopPropagation(); addActivity(lead.id, 'call', "Qo'ng'iroq qilindi"); showToast('Faoliyat qo\'shildi', 'success'); }}
+                            className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 hover:bg-blue-100 transition-colors"
+                            title="Qo'ng'iroq belgilash">
+                            <Check size={11} />
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); addActivity(lead.id, 'message', 'Xabar yuborildi'); showToast('Faoliyat qo\'shildi', 'success'); }}
+                            className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-900/20 text-violet-600 hover:bg-violet-100 transition-colors"
+                            title="Xabar yuborildi belgilash">
+                            <MessageSquare size={11} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1.5 border-t border-zinc-100 dark:border-zinc-700/50">
                           <div className="flex items-center gap-1.5">
-                            <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-[10px] font-black text-zinc-400">
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                              (lead.score || 0) >= 70 ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600' :
+                              (lead.score || 0) >= 40 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' :
+                              'bg-rose-100 dark:bg-rose-900/30 text-rose-600'
+                            }`}>
                               {lead.score}
                             </div>
                             <div className="w-16 h-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-500" style={{ width: `${lead.score}%` }}></div>
+                              <div className={`h-full rounded-full ${
+                                (lead.score || 0) >= 70 ? 'bg-emerald-500' :
+                                (lead.score || 0) >= 40 ? 'bg-amber-500' :
+                                'bg-rose-500'
+                              }`} style={{ width: `${lead.score}%` }}></div>
                             </div>
                           </div>
                           <div className="flex items-center gap-1 text-[10px] font-bold text-zinc-400">

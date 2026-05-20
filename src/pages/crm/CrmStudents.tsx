@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign,
+  Plus, Search, Edit2, Trash2, X, Check, Users,
   BookOpen, Phone, Mail, MapPin, Calendar,
   User, GraduationCap,
-  AlertCircle, Download, Send, ExternalLink, Copy
+  AlertCircle, Download, Send, ExternalLink, Copy, MessageCircle, Star
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
@@ -35,6 +35,8 @@ interface Student {
   status: 'Faol' | 'Muzlatilgan' | 'Tark etgan' | 'Bitiruvchi';
   joinedDate: string;
   notes: string;
+  telegramChatId?: string;
+  parentTelegramId?: string;
 }
 
 function calcProratedBalance(joinedDate: string, groupPrice: number): number {
@@ -79,7 +81,9 @@ export default function CrmStudents() {
     balance: 0,
     status: 'Faol',
     joinedDate: new Date().toISOString().split('T')[0],
-    notes: ''
+    notes: '',
+    telegramChatId: '',
+    parentTelegramId: '',
   });
 
   const handleSave = async () => {
@@ -179,7 +183,9 @@ export default function CrmStudents() {
         balance: 0,
         status: 'Faol',
         joinedDate: new Date().toISOString().split('T')[0],
-        notes: ''
+        notes: '',
+        telegramChatId: '',
+        parentTelegramId: '',
       });
     }
     setIsModalOpen(true);
@@ -197,20 +203,22 @@ export default function CrmStudents() {
       const matchesStatus = filterStatus === 'Barchasi' || s.status === filterStatus;
       const matchesCourse = filterCourse === 'Barchasi' || s.course === filterCourse;
       const matchesPayment = filterPayment === 'Barchasi' || s.paymentStatus === filterPayment;
-      return matchesSearch && matchesStatus && matchesCourse && matchesPayment;
+      const matchesGroup = filterGroup === 'Barchasi' || s.group === filterGroup;
+      return matchesSearch && matchesStatus && matchesCourse && matchesPayment && matchesGroup;
     });
-  }, [students, searchTerm, filterStatus, filterCourse, filterPayment]);
+  }, [students, searchTerm, filterStatus, filterCourse, filterPayment, filterGroup]);
 
   const paginatedStudents = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredStudents.slice(start, start + itemsPerPage);
   }, [filteredStudents, currentPage]);
 
+  const thisMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
   const stats = {
     total: (students || []).length,
     active: (students || []).filter(s => s.status === 'Faol').length,
     debtors: (students || []).filter(s => s.paymentStatus === 'Qarzdorlik').length,
-    totalBalance: (students || []).reduce((acc, s) => acc + (s.balance || 0), 0)
+    newThisMonth: (students || []).filter(s => s.joinedDate && s.joinedDate.startsWith(thisMonth)).length,
   };
 
   if (error) return <ErrorState message="Sinxronizatsiyada xatolik yuz berdi" onRetry={refetch} />;
@@ -283,7 +291,7 @@ export default function CrmStudents() {
           { label: 'Jami O\'quvchilar', value: stats.total, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatdagi jami' },
           { label: 'Faol O\'quvchilar', value: stats.active, icon: GraduationCap, gradient: 'from-emerald-500 to-teal-600', sub: 'Hozir o\'qiyotgan' },
           { label: 'Qarzdorlar', value: stats.debtors, icon: AlertCircle, gradient: 'from-rose-500 to-red-600', sub: 'To\'lov qilmagan' },
-          { label: 'Umumiy Balans', value: new Intl.NumberFormat('uz-UZ').format(stats.totalBalance), icon: DollarSign, gradient: 'from-amber-500 to-orange-600', sub: 'so\'m' }
+          { label: 'Bu oy yangi', value: stats.newThisMonth, icon: Star, gradient: 'from-violet-500 to-purple-600', sub: 'Yangi qo\'shilganlar' }
         ].map((stat, i) => (
           <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
             <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
@@ -346,6 +354,16 @@ export default function CrmStudents() {
                 <option value="Tolov qilingan">To'lov qilingan</option>
                 <option value="Qarzdorlik">Qarzdorlik</option>
                 <option value="Kutilmoqda">Kutilmoqda</option>
+              </select>
+              <select
+                value={filterGroup}
+                onChange={(e) => { setFilterGroup(e.target.value); setCurrentPage(1); }}
+                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="Barchasi">Barcha guruhlar</option>
+                {groupOptions.map((g: any) => (
+                  <option key={g.id} value={g.name}>{g.name}</option>
+                ))}
               </select>
               {selectedIds.size > 0 && (
                 <button
@@ -576,12 +594,21 @@ export default function CrmStudents() {
                     <div className="space-y-3">
                       <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
                         <User size={16} className="text-zinc-400" />
-                        {selectedStudent.parentName}
+                        {selectedStudent.parentName || '—'}
                       </div>
                       <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
                         <Phone size={16} className="text-zinc-400" />
-                        {selectedStudent.parentPhone}
+                        {selectedStudent.parentPhone || '—'}
                       </div>
+                      {(selectedStudent.telegramChatId || selectedStudent.parentTelegramId) && (
+                        <div className="flex items-start gap-3">
+                          <MessageCircle size={16} className="text-blue-400 mt-0.5" />
+                          <div className="text-xs text-zinc-500 space-y-1">
+                            {selectedStudent.telegramChatId && <p>O'quvchi ID: <span className="font-black text-slate-700 dark:text-zinc-200">{selectedStudent.telegramChatId}</span></p>}
+                            {selectedStudent.parentTelegramId && <p>Ota-ona ID: <span className="font-black text-slate-700 dark:text-zinc-200">{selectedStudent.parentTelegramId}</span></p>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -717,7 +744,7 @@ export default function CrmStudents() {
             <div className="space-y-4">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Ota-ona Ma'lumotlari</h4>
               <div className="space-y-3">
-                <Input 
+                <Input
                   label="Ota yoki ona ismi"
                   value={formData.parentName}
                   onChange={(e) => setFormData({...formData, parentName: e.target.value})}
@@ -728,6 +755,25 @@ export default function CrmStudents() {
                   value={formData.parentPhone || ''}
                   onChange={(v) => setFormData({...formData, parentPhone: v})}
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="O'quvchi Telegram ID"
+                    value={formData.telegramChatId || ''}
+                    onChange={(e) => setFormData({...formData, telegramChatId: e.target.value})}
+                    placeholder="123456789"
+                    leftIcon={<MessageCircle size={14} />}
+                  />
+                  <Input
+                    label="Ota-ona Telegram ID"
+                    value={formData.parentTelegramId || ''}
+                    onChange={(e) => setFormData({...formData, parentTelegramId: e.target.value})}
+                    placeholder="123456789"
+                    leftIcon={<MessageCircle size={14} />}
+                  />
+                </div>
+                <p className="text-[10px] text-zinc-400">
+                  💡 Telegram ID ni topish: botga /id yozing yoki @userinfobot ga yuboring
+                </p>
               </div>
             </div>
 

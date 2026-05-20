@@ -258,6 +258,22 @@ router.get('/:collection', async (req, res) => {
         }
 
         try {
+            // Guruhlar uchun enrollment count ni qo'shamiz
+            if (modelName === 'group') {
+                const data = await prisma.group.findMany({
+                    orderBy: { createdAt: 'desc' },
+                    include: { _count: { select: { enrollments: true } } },
+                });
+                return res.json(data.map((item: any) => {
+                    const { _count, ...rest } = item;
+                    return transformForClient('group', {
+                        ...rest,
+                        studentCount: _count?.enrollments || 0,
+                        students: Array(_count?.enrollments || 0).fill(null), // frontendga mos format
+                    });
+                }));
+            }
+
             // @ts-ignore
             const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' } });
             res.json(data.map((item: any) => transformForClient(modelName, item)));

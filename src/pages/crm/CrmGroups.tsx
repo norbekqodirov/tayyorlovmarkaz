@@ -367,7 +367,7 @@ export default function CrmGroups() {
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {(filteredGroups || []).map((group, idx) => {
-                const count = (group.students || []).length;
+                const count = (group as any).studentCount ?? (group.students || []).length;
                 const max = group.maxStudents || 15;
                 // calculate fake progress for now
                 const _start = new Date(group.startDate).getTime();
@@ -414,10 +414,27 @@ export default function CrmGroups() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-5 py-4 min-w-[150px]">
-                    <div className="w-full flex items-center justify-between border border-amber-400 p-0.5 rounded-full overflow-hidden relative h-5">
-                       <div className="absolute left-0 top-0 h-full bg-amber-400 rounded-full" style={{ width: `${progressPct}%` }}></div>
-                       <span className="relative w-full text-center text-[10px] font-black text-slate-800 z-10 block">{passedLessons} - {progressPct}%</span>
+                  <td className="px-5 py-4 min-w-[180px]">
+                    <div className="space-y-1">
+                      {/* O'quvchilar to'lganlik */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              count >= max ? 'bg-red-500' : count >= max * 0.8 ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.round((count / max) * 100))}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-black w-12 text-right ${count >= max ? 'text-red-500' : 'text-emerald-600'}`}>
+                          {count}/{max}
+                        </span>
+                      </div>
+                      {/* Kurs o'tilganlik % */}
+                      <div className="w-full border border-amber-400 p-0.5 rounded-full overflow-hidden relative h-4">
+                        <div className="absolute left-0 top-0 h-full bg-amber-400/70 rounded-full" style={{ width: `${progressPct}%` }} />
+                        <span className="relative w-full text-center text-[9px] font-black text-slate-800 dark:text-white z-10 block">{progressPct}%</span>
+                      </div>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-zinc-300">

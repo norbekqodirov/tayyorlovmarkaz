@@ -81,6 +81,16 @@ export default function CrmCourses() {
     return map;
   }, [students]);
 
+  // Per course group count
+  const groupCountByCourse = useMemo(() => {
+    const map: Record<string, number> = {};
+    (groups || []).forEach((g: any) => {
+      const courseName = g.subject || g.course || '';
+      if (courseName) map[courseName] = (map[courseName] || 0) + 1;
+    });
+    return map;
+  }, [groups]);
+
   // Overall stats
   const stats = useMemo(() => ({
     total: courses.length,
@@ -291,6 +301,8 @@ export default function CrmCourses() {
           {filteredCourses.map(course => {
             const catStyle = getCategoryStyle(course.category);
             const studentCount = studentCountByCourse[course.name] || 0;
+            const groupCount = groupCountByCourse[course.name] || 0;
+            const monthlyRevenue = studentCount * (course.price || 0);
             const statusInfo = STATUS_LABELS[course.status] || { label: course.status, cls: 'bg-zinc-100 text-zinc-500' };
             return (
               <motion.div
@@ -345,20 +357,30 @@ export default function CrmCourses() {
                     <p className="text-xs text-zinc-500 font-medium line-clamp-2 leading-relaxed">{course.description}</p>
                   )}
 
-                  <div className="grid grid-cols-3 gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                  <div className="grid grid-cols-4 gap-1.5 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                     <div className="flex flex-col items-center gap-1 p-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-                      <Clock size={14} className="text-zinc-400" />
-                      <span className="text-[10px] font-black text-zinc-600 dark:text-zinc-400">{course.duration}</span>
+                      <Clock size={13} className="text-zinc-400" />
+                      <span className="text-[9px] font-black text-zinc-600 dark:text-zinc-400">{course.duration}</span>
                     </div>
                     <div className="flex flex-col items-center gap-1 p-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-                      <Layers size={14} className="text-zinc-400" />
-                      <span className="text-[10px] font-black text-zinc-600 dark:text-zinc-400">{course.lessonsPerWeek}x/hafta</span>
+                      <Layers size={13} className="text-zinc-400" />
+                      <span className="text-[9px] font-black text-zinc-600 dark:text-zinc-400">{course.lessonsPerWeek}x/h</span>
                     </div>
                     <div className="flex flex-col items-center gap-1 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
-                      <Users size={14} className="text-blue-500" />
-                      <span className="text-[10px] font-black text-blue-600 dark:text-blue-400">{studentCount} ta</span>
+                      <Users size={13} className="text-blue-500" />
+                      <span className="text-[9px] font-black text-blue-600 dark:text-blue-400">{studentCount}ta</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1 p-2 bg-violet-50 dark:bg-violet-900/20 rounded-xl">
+                      <Layers size={13} className="text-violet-500" />
+                      <span className="text-[9px] font-black text-violet-600 dark:text-violet-400">{groupCount}gr</span>
                     </div>
                   </div>
+                  {monthlyRevenue > 0 && (
+                    <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-zinc-100 dark:border-zinc-800">
+                      <span className="font-bold text-zinc-400">Oylik daromad:</span>
+                      <span className="font-black text-emerald-600">{formatMoney(monthlyRevenue)}</span>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between pt-1">
                     <div className="text-base font-black text-blue-600">{formatMoney(course.price)}</div>

@@ -97,10 +97,14 @@ export default function CrmAdvancedBI() {
 
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [forecastData, setForecastData] = useState<any>(null);
+  const [teacherReportData, setTeacherReportData] = useState<any[]>([]);
 
   useEffect(() => {
     api.get('/analytics/dashboard').then(r => setAnalyticsData(r.data)).catch(() => {});
     api.get('/analytics/monthly').then(r => setMonthlyData(r.data || [])).catch(() => {});
+    api.get('/analytics/forecast').then(r => setForecastData(r.data)).catch(() => {});
+    api.get('/reports/teachers').then(r => setTeacherReportData(r.data?.teachers || [])).catch(() => {});
   }, []);
 
   const currentMonth = new Date().getMonth();
@@ -278,6 +282,38 @@ export default function CrmAdvancedBI() {
       {/* Overview Section */}
       {activeSection === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          {/* Forecast card */}
+          {forecastData && (
+            <div className="lg:col-span-3 bg-gradient-to-r from-violet-600 to-indigo-700 rounded-2xl p-5 text-white shadow-lg">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Keyingi oy bashorati (AI)</p>
+                  <p className="text-3xl font-black">{fM(forecastData.forecast_revenue || 0)} so'm</p>
+                  <p className="text-sm text-white/70 mt-1">
+                    {forecastData.trend_direction === 'up'
+                      ? `📈 +${forecastData.trend_pct || 0}% o'sish kutilmoqda`
+                      : forecastData.trend_direction === 'down'
+                        ? `📉 ${Math.abs(forecastData.trend_pct || 0)}% kamayish mumkin`
+                        : '➡️ Barqaror trend'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  {[
+                    { label: 'So\'nggi 3 oy', value: (forecastData.last_3_months || []).map(fM).join(' → ') || '–' },
+                    { label: 'Bashorat', value: fM(forecastData.forecast_revenue || 0) + ' so\'m' },
+                    { label: 'O\'quvchi bashorat', value: (forecastData.student_forecast || 0) + ' ta' },
+                  ].map((s, i) => (
+                    <div key={i} className="bg-white/10 rounded-xl p-3">
+                      <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{s.label}</p>
+                      <p className="text-sm font-black mt-0.5">{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="lg:col-span-2">
             <ChartCard title="Daromad Dinamikasi" desc={`Oxirgi ${period} oy — kirim, chiqim, foyda`}
               onExport={() => exportToExcel(revenueChartData, [
@@ -548,9 +584,22 @@ export default function CrmAdvancedBI() {
       )}
 
       {/* Teachers Section */}
-      {activeSection === 'teachers' && (
+      {activeSection === 'teachers' && (() => {
+        // Prefer API data over locally-computed data
+        const displayTeachers = teacherReportData.length > 0
+          ? teacherReportData.map((t: any) => ({
+              name: (t.name || '').split(' ')[0],
+              fullName: t.name || '',
+              guruhlar: t.groups || 0,
+              oquvchilar: t.students || 0,
+              davomat: t.attendanceRate || 0,
+              journal: t.journalEntries || 0,
+            }))
+          : teacherPerformance.map(t => ({ ...t, fullName: t.name, journal: 0 }));
+
+        return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {teacherPerformance.length === 0 ? (
+          {displayTeachers.length === 0 ? (
             <div className="lg:col-span-2 bg-white dark:bg-[#0f172a] rounded-2xl border border-zinc-200/80 dark:border-white/5 p-12 shadow-sm text-center">
               <Users size={40} className="mx-auto text-zinc-300 mb-3" />
               <p className="text-sm font-bold text-zinc-400">O'qituvchilar yo'q</p>
@@ -559,7 +608,7 @@ export default function CrmAdvancedBI() {
             <>
               <ChartCard title="Ustoz KPI — Guruhlar va O'quvchilar" desc="Har bir ustoz bo'yicha">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={teacherPerformance} barGap={3} barCategoryGap="30%">
+                  <BarChart data={displayTeachers} barGap={3} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 700 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 700 }} width={25} />
@@ -572,7 +621,7 @@ export default function CrmAdvancedBI() {
 
               <ChartCard title="Davomat Darajasi" desc="Ustoz o'quvchilari bo'yicha">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={teacherPerformance}>
+                  <RadarChart data={displayTeachers}>
                     <PolarGrid stroke="rgba(0,0,0,0.06)" />
                     <PolarAngleAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} />
                     <Radar name="Davomat %" dataKey="davomat" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.25} strokeWidth={2} />
@@ -590,13 +639,13 @@ export default function CrmAdvancedBI() {
                   <table className="w-full text-left">
                     <thead>
                       <tr className="bg-zinc-50 dark:bg-white/[0.02]">
-                        {['#', 'Ustoz', 'Guruhlar', "O'quvchilar", 'Davomat %', 'Reyting'].map((h, i) => (
+                        {['#', 'Ustoz', 'Guruhlar', "O'quvchilar", 'Davomat %', 'Reyting'].map((h: string, i: number) => (
                           <th key={i} className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {teacherPerformance.map((t, i) => (
+                      {displayTeachers.map((t, i) => (
                         <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors">
                           <td className="px-5 py-3.5">
                             <span className="text-[11px] font-black text-zinc-400">{i + 1}</span>
@@ -606,7 +655,7 @@ export default function CrmAdvancedBI() {
                               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-black text-[10px]">
                                 {t.name.charAt(0)}
                               </div>
-                              <span className="text-sm font-bold text-slate-900 dark:text-white">{t.name}</span>
+                              <span className="text-sm font-bold text-slate-900 dark:text-white">{t.fullName || t.name}</span>
                             </div>
                           </td>
                           <td className="px-5 py-3.5"><span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{t.guruhlar}</span></td>
@@ -614,7 +663,8 @@ export default function CrmAdvancedBI() {
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-2">
                               <div className="w-16 bg-zinc-100 dark:bg-white/5 rounded-full h-1.5">
-                                <div className="h-1.5 rounded-full bg-violet-500" style={{ width: `${t.davomat}%` }} />
+                                <div className={`h-1.5 rounded-full ${t.davomat >= 80 ? 'bg-emerald-500' : t.davomat >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                                  style={{ width: `${t.davomat}%` }} />
                               </div>
                               <span className="text-[11px] font-black text-slate-900 dark:text-white">{t.davomat}%</span>
                             </div>
@@ -635,7 +685,8 @@ export default function CrmAdvancedBI() {
             </>
           )}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
