@@ -4,7 +4,8 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateCertificate, generateBatch } from '../services/certificateService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
-import archiver from 'archiver';
+import * as archiverModule from 'archiver';
+const archiver: any = (archiverModule as any).default || archiverModule;
 import fs from 'fs';
 import path from 'path';
 
