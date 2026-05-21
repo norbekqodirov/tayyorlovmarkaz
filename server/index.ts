@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import http from 'http';
 import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import crudRoutes from './routes/crud.js';
@@ -9,9 +10,14 @@ import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
 import telegramRoutes from './routes/telegram.js';
 import reportsRoutes from './routes/reports.js';
+import auditRoutes from './routes/audit.js';
+import salaryRoutes from './routes/salary.js';
+import certificatesRoutes from './routes/certificates.js';
+import testsRoutes from './routes/tests.js';
 import path from 'path';
 import fs from 'fs';
 import { startScheduler } from './services/scheduler.js';
+import { initRealtime } from './services/realtime.js';
 
 dotenv.config();
 
@@ -36,7 +42,6 @@ app.use(cors({
 }));
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
-// Login: max 10 ta urinish 15 daqiqada
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
@@ -45,15 +50,13 @@ const loginLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Umumiy API: max 200 so'rov/daqiqa
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 200,
     message: { message: "So'rovlar chegarasi oshib ketdi. Bir oz kuting." },
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => {
-        // Production da production limitlash qil
+    skip: (_req) => {
         if (!IS_PROD) return true;
         return false;
     },
@@ -71,6 +74,7 @@ app.get('/api/health', (_req, res) => {
         message: 'API is running!',
         env: process.env.NODE_ENV,
         timestamp: new Date().toISOString(),
+        realtime: true,
     });
 });
 
@@ -78,12 +82,16 @@ app.get('/api/health', (_req, res) => {
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
 // ── Routers ───────────────────────────────────────────────────────────────────
-app.use('/api/auth/login', loginLimiter);  // Login uchun alohida limit
+app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/salary', salaryRoutes);
+app.use('/api/certificates', certificatesRoutes);
+app.use('/api/tests', testsRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ───────────────────────────────
@@ -104,10 +112,14 @@ if (IS_PROD) {
     }
 }
 
-// ── Start server & scheduler ──────────────────────────────────────────────────
-app.listen(PORT, () => {
+// ── Start HTTP server + WebSocket + scheduler ────────────────────────────────
+const server = http.createServer(app);
+initRealtime(server);
+
+server.listen(PORT, () => {
     console.log(`[Server]: Running in ${IS_PROD ? 'PRODUCTION' : 'development'} mode`);
     console.log(`[Server]: http://localhost:${PORT}`);
+    console.log(`[Server]: WebSocket ws://localhost:${PORT}/socket.io`);
 
     // Scheduler (cron jobs) ni ishga tushirish
     startScheduler();

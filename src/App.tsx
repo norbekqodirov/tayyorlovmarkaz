@@ -41,6 +41,10 @@ const CrmUsers        = React.lazy(() => import('./pages/crm/CrmUsers'));
 const CrmVideos       = React.lazy(() => import('./pages/crm/CrmVideos'));
 const CrmTelegram     = React.lazy(() => import('./pages/crm/CrmTelegram'));
 const CrmAutomations  = React.lazy(() => import('./pages/crm/CrmAutomations'));
+const CrmCertificates = React.lazy(() => import('./pages/crm/CrmCertificates'));
+const CrmTests        = React.lazy(() => import('./pages/crm/CrmTests'));
+const CrmAudit        = React.lazy(() => import('./pages/crm/CrmAudit'));
+const VerifyCert      = React.lazy(() => import('./pages/VerifyCert'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -72,6 +76,7 @@ export default function App() {
             </Route>
 
             <Route path="/l/:formId" element={<LeadForm />} />
+            <Route path="/verify/:serial" element={<VerifyCert />} />
 
             {/* CRM Routes */}
             <Route path="/crmtayyorlovmarkaz/login" element={<CrmLogin />} />
@@ -115,7 +120,10 @@ export default function App() {
               <Route path="settings"    element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
               <Route path="telegram"    element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmTelegram /></ProtectedRoute>} />
               <Route path="automations" element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN','MANAGER']}><CrmAutomations /></ProtectedRoute>} />
-              <Route path="videos"      element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmVideos /></ProtectedRoute>} />
+              <Route path="videos"       element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmVideos /></ProtectedRoute>} />
+              <Route path="certificates" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER','TEACHER']}><CrmCertificates /></ProtectedRoute>} />
+              <Route path="tests"        element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER','TEACHER']}><CrmTests /></ProtectedRoute>} />
+              <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN','SUPER_ADMIN']}><CrmAudit /></ProtectedRoute>} />
             </Route>
           </Routes>
         </Suspense>

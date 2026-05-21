@@ -2,8 +2,123 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { invalidate, NS } from '../services/cache.js';
+import { emitToAdmins, emitToAll, emitToUser } from '../services/realtime.js';
+import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
+
+// ─── Server-side search/filter/sort config ────────────────────────────────────
+// Maps model name → fields searchable by text "search" query param
+const SEARCH_FIELDS: Record<string, string[]> = {
+    student: ['name', 'phone', 'email', 'parentName', 'parentPhone'],
+    lead: ['name', 'phone', 'email', 'course', 'source'],
+    course: ['name', 'title', 'category', 'description'],
+    group: ['name', 'subject', 'teacherName'],
+    staffMember: ['name', 'role', 'phone', 'email', 'department'],
+    user: ['name', 'phone', 'email'],
+    inventoryItem: ['name', 'category', 'location'],
+    post: ['title', 'excerpt', 'category'],
+    transaction: ['category', 'description', 'studentName', 'staffName'],
+};
+
+// Soft-delete-aware models — auto-add { deletedAt: null } to where clause
+const SOFT_DELETE_MODELS = new Set([
+    'student', 'lead', 'course', 'group', 'user', 'transaction', 'payment',
+    'staffMember', 'inventoryItem', 'test',
+]);
+
+/**
+ * Parse query params for server-side filter/sort/pagination.
+ * Supports:
+ *   ?page=1&limit=20
+ *   ?search=foo
+ *   ?sort=createdAt:desc,name:asc
+ *   ?filter[status]=active&filter[stage][in]=new,contacted
+ *   ?filter[createdAt][gte]=2026-01-01
+ */
+function parseQueryFilters(query: any, modelName: string): {
+    where: any;
+    orderBy: any;
+    skip: number;
+    take: number | undefined;
+    hasFilter: boolean;
+} {
+    const where: any = {};
+    let hasFilter = false;
+
+    // Soft delete default
+    if (SOFT_DELETE_MODELS.has(modelName) && query.includeDeleted !== 'true') {
+        where.deletedAt = null;
+    }
+
+    // Text search across multiple fields (SQLite case-sensitive limitation noted)
+    const search = (query.search || '').trim();
+    if (search && SEARCH_FIELDS[modelName]) {
+        where.OR = SEARCH_FIELDS[modelName].map(field => ({
+            [field]: { contains: search },
+        }));
+        hasFilter = true;
+    }
+
+    // filter[key]=value or filter[key][op]=value
+    Object.entries(query).forEach(([key, value]) => {
+        if (!key.startsWith('filter[')) return;
+        // filter[status] -> ['status']
+        // filter[createdAt][gte] -> ['createdAt', 'gte']
+        const m = key.match(/^filter\[([^\]]+)\](?:\[([^\]]+)\])?$/);
+        if (!m) return;
+        const field = m[1];
+        const op = m[2];
+        let v: any = value;
+        if (op === 'in' && typeof v === 'string') v = v.split(',');
+        if (op === 'gte' || op === 'lte' || op === 'gt' || op === 'lt') {
+            where[field] = { ...where[field], [op]: v };
+        } else if (op === 'in') {
+            where[field] = { in: Array.isArray(v) ? v : [v] };
+        } else if (op === 'not') {
+            where[field] = { not: v };
+        } else {
+            where[field] = v;
+        }
+        hasFilter = true;
+    });
+
+    // Sort: createdAt:desc,name:asc
+    const sortRaw = (query.sort || '').toString();
+    let orderBy: any = { createdAt: 'desc' };
+    if (sortRaw) {
+        const parts = sortRaw.split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (parts.length === 1) {
+            const [field, dir] = parts[0].split(':');
+            orderBy = { [field]: (dir === 'asc' ? 'asc' : 'desc') };
+        } else if (parts.length > 1) {
+            orderBy = parts.map((p: string) => {
+                const [field, dir] = p.split(':');
+                return { [field]: (dir === 'asc' ? 'asc' : 'desc') };
+            });
+        }
+    }
+
+    const page = parseInt(query.page) || 0;
+    const limit = parseInt(query.limit) || 0;
+    const skip = page > 0 && limit > 0 ? (page - 1) * limit : 0;
+    const take = limit > 0 ? limit : undefined;
+
+    return { where, orderBy, skip, take, hasFilter };
+}
+
+// Cache namespaces affected by collection mutations
+function cacheNamespacesFor(collection: string): string[] {
+    const namespaces = [NS.ANALYTICS, NS.DASHBOARD];
+    if (collection === 'transactions' || collection === 'finance' || collection === 'payments') {
+        namespaces.push(NS.FINANCE, NS.REPORTS);
+    }
+    if (collection === 'students' || collection === 'leads' || collection === 'groups') {
+        namespaces.push(NS.REPORTS);
+    }
+    return namespaces;
+}
 
 // ─── Model Map: frontend collection → Prisma model name ──────────────────────
 // Collections NOT listed here will fallback to GenericDocument (JSON store)
@@ -234,10 +349,21 @@ router.get('/:collection', async (req, res) => {
                 where: { collection },
                 orderBy: { createdAt: 'desc' },
             });
-            const mapped = docs.map((d: any) => {
+            let mapped = docs.map((d: any) => {
                 try { return { id: d.id, ...JSON.parse(d.data) }; }
                 catch { return { id: d.id }; }
             });
+
+            // Client-side text search for GenericDocument fallback
+            const search = (req.query.search as string)?.trim().toLowerCase();
+            if (search) {
+                mapped = mapped.filter((item: any) =>
+                    Object.values(item).some(v =>
+                        typeof v === 'string' && v.toLowerCase().includes(search)
+                    )
+                );
+            }
+
             if (page > 0 && limit > 0) {
                 const start = (page - 1) * limit;
                 return res.json({ data: mapped.slice(start, start + limit), total: mapped.length, page, limit });
@@ -246,22 +372,49 @@ router.get('/:collection', async (req, res) => {
         }
 
         const modelName = (req as any).modelName;
-        if (page > 0 && limit > 0) {
+        const { where, orderBy, skip, take, hasFilter } = parseQueryFilters(req.query, modelName);
+
+        // Paginated response (when ?page= and ?limit= are present, OR filter is used)
+        if ((page > 0 && limit > 0) || hasFilter) {
             // @ts-ignore
             const [total, data] = await Promise.all([
                 // @ts-ignore
-                prisma[modelName].count(),
+                prisma[modelName].count({ where }),
                 // @ts-ignore
-                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+                prisma[modelName].findMany({
+                    where,
+                    orderBy,
+                    skip,
+                    take,
+                    ...(modelName === 'group' ? { include: { _count: { select: { enrollments: true } } } } : {}),
+                }),
             ]);
-            return res.json({ data, total, page, limit });
+
+            const mapped = data.map((item: any) => {
+                if (modelName === 'group' && item._count) {
+                    const { _count, ...rest } = item;
+                    return transformForClient('group', {
+                        ...rest,
+                        studentCount: _count?.enrollments || 0,
+                        students: Array(_count?.enrollments || 0).fill(null),
+                    });
+                }
+                return transformForClient(modelName, item);
+            });
+
+            if (page > 0 && limit > 0) {
+                return res.json({ data: mapped, total, page, limit });
+            }
+            return res.json(mapped);
         }
 
+        // No pagination/filter — fetch everything (legacy fast path)
         try {
             // Guruhlar uchun enrollment count ni qo'shamiz
             if (modelName === 'group') {
                 const data = await prisma.group.findMany({
-                    orderBy: { createdAt: 'desc' },
+                    where,
+                    orderBy,
                     include: { _count: { select: { enrollments: true } } },
                 });
                 return res.json(data.map((item: any) => {
@@ -269,18 +422,18 @@ router.get('/:collection', async (req, res) => {
                     return transformForClient('group', {
                         ...rest,
                         studentCount: _count?.enrollments || 0,
-                        students: Array(_count?.enrollments || 0).fill(null), // frontendga mos format
+                        students: Array(_count?.enrollments || 0).fill(null),
                     });
                 }));
             }
 
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' } });
+            const data = await prisma[modelName].findMany({ where, orderBy });
             res.json(data.map((item: any) => transformForClient(modelName, item)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
-            const data = await prisma[modelName].findMany();
+            const data = await prisma[modelName].findMany({ where });
             res.json(data.map((item: any) => transformForClient(modelName, item)));
         }
     } catch (error) {
@@ -389,17 +542,54 @@ router.post('/:collection', async (req, res) => {
                     where: { role: { in: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] }, isActive: true },
                     select: { id: true },
                 });
-                await prisma.notification.createMany({
-                    data: admins.map(admin => ({
-                        userId: admin.id,
-                        title: notifTitle,
-                        message: notifMessage,
-                        type: notifType,
-                        isRead: false,
-                    })),
-                });
+                const notifs = admins.map(admin => ({
+                    userId: admin.id,
+                    title: notifTitle,
+                    message: notifMessage,
+                    type: notifType,
+                    isRead: false,
+                }));
+                await prisma.notification.createMany({ data: notifs });
+
+                // Real-time push to each admin
+                try {
+                    admins.forEach(admin => {
+                        emitToUser(admin.id, 'notification:new', {
+                            title: notifTitle,
+                            message: notifMessage,
+                            type: notifType,
+                            createdAt: new Date().toISOString(),
+                        });
+                    });
+                } catch {/* silent */}
             }
         } catch { /* Notification errors are silent */ }
+
+        // Invalidate analytics/cache for this collection
+        try {
+            cacheNamespacesFor(collection).forEach(ns => invalidate(ns));
+        } catch { /* silent */ }
+
+        // Real-time event for this collection
+        try {
+            const event = `${collection}:created`;
+            emitToAll(event, finalData);
+        } catch {/* silent */}
+
+        // Audit log
+        try {
+            const user = (req as any).user;
+            await logAudit({
+                userId: user?.id,
+                userName: user?.name || 'system',
+                action: 'create',
+                resource: (req as any).modelName || collection,
+                resourceId: finalData?.id,
+                after: finalData,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']?.toString(),
+            });
+        } catch {/* silent */}
 
         res.json(finalData);
     } catch (error) {
@@ -409,7 +599,18 @@ router.post('/:collection', async (req, res) => {
 
 // ─── PUT /:collection/:id ──────────────────────────────────────────────────────
 router.put('/:collection/:id', async (req, res) => {
+    const { collection } = req.params;
     try {
+        // Capture before for audit log
+        let before: any = null;
+        if (!(req as any).useFallback) {
+            try {
+                // @ts-ignore
+                before = await prisma[(req as any).modelName].findUnique({ where: { id: req.params.id } });
+            } catch {}
+        }
+
+        let result: any;
         if ((req as any).useFallback) {
             const existing = await prisma.genericDocument.findUnique({ where: { id: req.params.id } });
             const existingData = existing ? (() => { try { return JSON.parse(existing.data); } catch { return {}; } })() : {};
@@ -418,12 +619,35 @@ router.put('/:collection/:id', async (req, res) => {
                 where: { id: req.params.id },
                 data: { data: JSON.stringify(mergedData) }
             });
-            try { return res.json({ id: doc.id, ...JSON.parse(doc.data) }); }
-            catch { return res.json({ id: doc.id }); }
+            try { result = { id: doc.id, ...JSON.parse(doc.data) }; }
+            catch { result = { id: doc.id }; }
+        } else {
+            // @ts-ignore
+            result = await prisma[(req as any).modelName].update({ where: { id: req.params.id }, data: req.body });
         }
-        // @ts-ignore
-        const data = await prisma[(req as any).modelName].update({ where: { id: req.params.id }, data: req.body });
-        res.json(data);
+
+        // Invalidate cache
+        try { cacheNamespacesFor(collection).forEach(ns => invalidate(ns)); } catch {}
+
+        // Real-time update event
+        try { emitToAll(`${collection}:updated`, result); } catch {}
+
+        // Audit
+        try {
+            const user = (req as any).user;
+            await logAudit({
+                userId: user?.id,
+                userName: user?.name || 'system',
+                action: 'update',
+                resource: (req as any).modelName || collection,
+                resourceId: req.params.id,
+                before, after: result,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']?.toString(),
+            });
+        } catch {}
+
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }
@@ -475,9 +699,84 @@ router.delete('/:collection/:id', async (req, res) => {
             });
         }
 
+        // Soft delete for supported models
+        const modelName = (req as any).modelName;
+        // Capture before for audit
+        let before: any = null;
+        try {
+            // @ts-ignore
+            before = await prisma[modelName].findUnique({ where: { id } });
+        } catch {}
+
+        if (SOFT_DELETE_MODELS.has(modelName) && req.query.hard !== 'true') {
+            try {
+                // @ts-ignore
+                await prisma[modelName].update({ where: { id }, data: { deletedAt: new Date() } });
+                cacheNamespacesFor(collection).forEach(ns => invalidate(ns));
+                try { emitToAll(`${collection}:deleted`, { id }); } catch {}
+                try {
+                    const user = (req as any).user;
+                    await logAudit({
+                        userId: user?.id,
+                        userName: user?.name || 'system',
+                        action: 'delete',
+                        resource: modelName,
+                        resourceId: id,
+                        before,
+                        ipAddress: req.ip,
+                        userAgent: req.headers['user-agent']?.toString(),
+                        metadata: { softDelete: true },
+                    });
+                } catch {}
+                return res.json({ success: true, softDelete: true });
+            } catch (err) {
+                // Fall through to hard delete
+            }
+        }
+
         // @ts-ignore
-        await prisma[(req as any).modelName].delete({ where: { id } });
+        await prisma[modelName].delete({ where: { id } });
+
+        // Invalidate cache
+        try { cacheNamespacesFor(collection).forEach(ns => invalidate(ns)); } catch {}
+
+        // Real-time delete event
+        try { emitToAll(`${collection}:deleted`, { id }); } catch {}
+
+        // Audit (hard delete)
+        try {
+            const user = (req as any).user;
+            await logAudit({
+                userId: user?.id,
+                userName: user?.name || 'system',
+                action: 'delete',
+                resource: modelName,
+                resourceId: id,
+                before,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']?.toString(),
+            });
+        } catch {}
+
         res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+
+// ─── POST /:collection/:id/restore — Restore soft-deleted record ──────────────
+router.post('/:collection/:id/restore', async (req, res) => {
+    const { collection, id } = req.params;
+    try {
+        if ((req as any).useFallback) return res.status(400).json({ message: 'Restore not supported for this collection' });
+        const modelName = (req as any).modelName;
+        if (!SOFT_DELETE_MODELS.has(modelName)) {
+            return res.status(400).json({ message: "Bu turdagi yozuvni qayta tiklab bo'lmaydi" });
+        }
+        // @ts-ignore
+        const restored = await prisma[modelName].update({ where: { id }, data: { deletedAt: null } });
+        cacheNamespacesFor(collection).forEach(ns => invalidate(ns));
+        res.json(restored);
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }

@@ -21,6 +21,7 @@ model User {
   avatar    String?
   permissions String? @default("[]") // JSON array of permission keys
   isActive  Boolean  @default(true)
+  deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -28,6 +29,11 @@ model User {
   enrollments    Enrollment[]
   journalEntries JournalEntry[]     @relation("TeacherJournal")
   notifications  Notification[]
+  auditLogs      AuditLog[]
+
+  @@index([role, isActive])
+  @@index([deletedAt])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -49,6 +55,7 @@ model Student {
   notes            String?
   telegramChatId   String?  // O'quvchining Telegram chat ID
   parentTelegramId String?  // Ota-onaning Telegram chat ID
+  deletedAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -57,6 +64,15 @@ model Student {
   attendanceRecords AttendanceRecord[]
   assessments       Assessment[]
   journalEntries    JournalEntry[]
+  certificates      Certificate[]
+  testSubmissions   TestSubmission[]
+
+  @@index([phone])
+  @@index([telegramChatId])
+  @@index([status])
+  @@index([source])
+  @@index([deletedAt])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -74,10 +90,17 @@ model Course {
   lessonsPerWeek Int?     @default(3)
   lessonDuration Int?     @default(90)  // minutes
   status         String   @default("Active") // Active, Draft, Archived
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  groups Group[]
+  groups        Group[]
+  certificates  Certificate[]
+  tests         Test[]
+
+  @@index([category, status])
+  @@index([status])
+  @@index([deletedAt])
 }
 
 model Group {
@@ -97,6 +120,7 @@ model Group {
   price       Float?   @default(0)
   teacherName String?
   subject     String?
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -104,6 +128,12 @@ model Group {
   schedules         Schedule[]
   attendanceRecords AttendanceRecord[]
   journalEntries    JournalEntry[]
+  tests             Test[]
+
+  @@index([courseId, status])
+  @@index([teacherId])
+  @@index([status])
+  @@index([deletedAt])
 }
 
 model Enrollment {
@@ -118,6 +148,8 @@ model Enrollment {
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId])
+  @@index([groupId])
+  @@index([studentId])
 }
 
 // ============================================
@@ -133,6 +165,10 @@ model Schedule {
   endTime   String // "16:00"
   roomId    String?
   room      Room?  @relation(fields: [roomId], references: [id])
+
+  @@index([groupId])
+  @@index([roomId, dayOfWeek])
+  @@index([dayOfWeek, startTime])
 }
 
 model Room {
@@ -161,6 +197,10 @@ model AttendanceRecord {
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId, date])
+  @@index([groupId, date])
+  @@index([studentId, date])
+  @@index([status])
+  @@index([date])
 }
 
 model JournalEntry {
@@ -177,6 +217,10 @@ model JournalEntry {
   grade     Float?
   comment   String?
   createdAt DateTime @default(now())
+
+  @@index([groupId, date])
+  @@index([studentId, date])
+  @@index([teacherId])
 }
 
 // ============================================
@@ -213,8 +257,15 @@ model Transaction {
   studentName String?
   staffId     String?
   staffName   String?
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([type, date])
+  @@index([category])
+  @@index([studentId])
+  @@index([date])
+  @@index([deletedAt])
 }
 
 model Payment {
@@ -228,7 +279,14 @@ model Payment {
   dueDate   String?
   status    String   @default("paid") // paid, pending, overdue
   notes     String?
+  deletedAt DateTime?
   createdAt DateTime @default(now())
+
+  @@index([studentId, status])
+  @@index([dueDate, status])
+  @@index([status])
+  @@index([date])
+  @@index([deletedAt])
 }
 
 // ============================================
@@ -250,8 +308,62 @@ model StaffMember {
   education  String?
   experience String?
   photo      String?
+  deletedAt  DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  salaries        Salary[]
+  attendances     StaffAttendance[]
+
+  @@index([role])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ============================================
+// XODIM OYLIK TARIXI
+// ============================================
+
+model Salary {
+  id          String   @id @default(uuid())
+  staffId     String
+  staff       StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  month       String   // "2026-05"
+  baseSalary  Float    @default(0)
+  bonus       Float    @default(0)
+  deduction   Float    @default(0)
+  total       Float    @default(0)
+  paid        Boolean  @default(false)
+  paidAt      DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([staffId, month])
+  @@index([staffId])
+  @@index([month])
+  @@index([paid])
+}
+
+// ============================================
+// XODIM DAVOMATI
+// ============================================
+
+model StaffAttendance {
+  id        String   @id @default(uuid())
+  staffId   String
+  staff     StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      String   // "2026-05-21"
+  checkIn   String?  // "09:00"
+  checkOut  String?  // "18:00"
+  status    String   @default("present") // present, absent, late, sick, vacation
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@unique([staffId, date])
+  @@index([staffId, date])
+  @@index([date])
+  @@index([status])
 }
 
 // ============================================
@@ -259,21 +371,31 @@ model StaffMember {
 // ============================================
 
 model Lead {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String
-  email     String?
-  stage     String   @default("new") // new, contacted, meeting, won, lost
-  source    String?  // Instagram, Facebook, Telegram, etc.
-  course    String?  // Qaysi kursga qiziqish
-  score     Int      @default(0) // 0-100
-  status    String   @default("warm") // hot, warm, cold
-  date      String?
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  phone         String
+  email         String?
+  stage         String   @default("new") // new, contacted, meeting, won, lost
+  source        String?  // Instagram, Facebook, Telegram, etc.
+  course        String?  // Qaysi kursga qiziqish
+  score         Int      @default(0) // 0-100
+  status        String   @default("warm") // hot, warm, cold
+  date          String?
+  notes         String?
+  nextContactAt String?  // Follow-up scheduler
+  assignedTo    String?  // userId
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   activities LeadActivity[]
+
+  @@index([stage, status])
+  @@index([source])
+  @@index([phone])
+  @@index([assignedTo])
+  @@index([deletedAt])
+  @@index([createdAt])
 }
 
 model LeadActivity {
@@ -314,13 +436,40 @@ model InventoryItem {
   name        String
   category    String   @default("Texnika") // Texnika, Mebel, O'quv qurollari
   quantity    Int      @default(1)
+  threshold   Int      @default(0)        // Low stock alert threshold
   price       Float    @default(0)
   location    String?  // Xona nomi
   condition   String   @default("Yaxshi") // Yaxshi, O'rtacha, Yomon
   purchaseDate String?
   notes       String?
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  transactions InventoryTransaction[]
+
+  @@index([category])
+  @@index([location])
+  @@index([deletedAt])
+}
+
+// ============================================
+// INVENTAR TRANZAKSIYALARI (kirim/chiqim)
+// ============================================
+
+model InventoryTransaction {
+  id        String   @id @default(uuid())
+  itemId    String
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type      String   // in, out, adjustment, damage
+  quantity  Int
+  reason    String?
+  userId    String?
+  userName  String?
+  createdAt DateTime @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([type])
 }
 
 // ============================================
@@ -379,7 +528,11 @@ model Notification {
   message   String
   type      String   @default("info") // info, alert, success, warning
   isRead    Boolean  @default(false)
+  link      String?  // Optional click action
   createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -496,5 +649,201 @@ model ReportTemplate {
   config      String   @default("{}") // JSON: filters, columns
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName   String   // Snapshot of user's name at action time
+  action     String   // create, update, delete, restore, login, logout
+  resource   String   // student, group, payment, lead, ...
+  resourceId String?
+  before     String?  // JSON snapshot before change
+  after      String?  // JSON snapshot after change
+  ipAddress  String?
+  userAgent  String?
+  metadata   String?  // JSON extra context (reason, batch ID, etc.)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================
+// SERTIFIKATLAR
+// ============================================
+
+model CertificateTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("certificate") // certificate, diploma, recognition
+  background  String?  // Image URL
+  config      String   @default("{\"elements\":[]}") // JSON layout
+  width       Int      @default(842)
+  height      Int      @default(595)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  certificates Certificate[]
+
+  @@index([isActive])
+  @@index([type])
+}
+
+model Certificate {
+  id            String   @id @default(uuid())
+  templateId    String
+  template      CertificateTemplate @relation(fields: [templateId], references: [id])
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId      String?
+  course        Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  serialNumber  String   @unique // CRT-2026-0001
+  issuedAt      DateTime @default(now())
+  issuedBy      String?  // userId
+  signature     String?  // Image URL
+  qrCode        String?  // Verification URL
+  pdfUrl        String?  // Generated PDF path
+  grade         String?  // Grade or score on certificate
+  metadata      String?  // JSON extra fields
+  revokedAt     DateTime?
+  revokedReason String?
+
+  @@index([studentId])
+  @@index([courseId])
+  @@index([serialNumber])
+  @@index([issuedAt])
+}
+
+// ============================================
+// TEST/IMTIHON TIZIMI
+// ============================================
+
+model Test {
+  id               String   @id @default(uuid())
+  title            String
+  description      String?
+  courseId         String?
+  course           Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  groupId          String?
+  group            Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  duration         Int      @default(60) // minutes
+  totalScore       Float    @default(100)
+  passingScore     Float    @default(60)
+  shuffleQuestions Boolean  @default(false)
+  shuffleOptions   Boolean  @default(false)
+  showResults      Boolean  @default(true)
+  scheduledStart   String?
+  scheduledEnd     String?
+  status           String   @default("draft") // draft, published, closed
+  createdBy        String?
+  deletedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  questions   Question[]
+  submissions TestSubmission[]
+
+  @@index([courseId])
+  @@index([groupId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([deletedAt])
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  testId        String
+  test          Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  order         Int      @default(0)
+  type          String   // single_choice, multi_choice, true_false, short_answer, long_answer, fill_blank, matching
+  text          String
+  imageUrl      String?
+  options       String   @default("[]") // JSON [{id, text, isCorrect}, ...]
+  correctAnswer String?
+  score         Float    @default(1)
+  explanation   String?
+
+  answers Answer[]
+
+  @@index([testId, order])
+}
+
+model TestSubmission {
+  id          String   @id @default(uuid())
+  testId      String
+  test        Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  startedAt   DateTime @default(now())
+  submittedAt DateTime?
+  score       Float?
+  status      String   @default("in_progress") // in_progress, submitted, graded
+  cheating    Boolean  @default(false)
+  metadata    String?  // JSON: violations, timings
+
+  answers Answer[]
+
+  @@unique([testId, studentId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model Answer {
+  id           String   @id @default(uuid())
+  submissionId String
+  submission   TestSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  questionId   String
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value        String   // JSON: answer payload
+  score        Float?
+  isCorrect    Boolean?
+  feedback     String?
+
+  @@unique([submissionId, questionId])
+}
+
+// ============================================
+// UY VAZIFASI
+// ============================================
+
+model HomeworkAssignment {
+  id          String   @id @default(uuid())
+  groupId     String
+  title       String
+  description String?
+  dueDate     String?
+  attachments String?  // JSON array of URLs
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  submissions HomeworkSubmission[]
+
+  @@index([groupId, dueDate])
+}
+
+model HomeworkSubmission {
+  id           String   @id @default(uuid())
+  assignmentId String
+  assignment   HomeworkAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  content      String?
+  attachments  String?  // JSON
+  submittedAt  DateTime @default(now())
+  grade        Float?
+  feedback     String?
+  status       String   @default("submitted") // submitted, graded, late
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
 }
 

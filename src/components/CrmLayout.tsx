@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
 import { useTheme } from '../contexts/ThemeContext';
+import { useSocket, usePresence } from '../hooks/useSocket';
+import { Award, ScrollText, History } from 'lucide-react';
 
 // ─── Module definitions ────────────────────────────────────────────────────
 type NavItem = {
@@ -127,6 +129,7 @@ const MODULES: NavModule[] = [
         links: [
           { name: 'BI Analitika',  path: '/crmtayyorlovmarkaz/bi',          icon: BarChart2,  permission: 'bi'          },
           { name: 'Avtomatizatsiya', path: '/crmtayyorlovmarkaz/automations', icon: Zap,        permission: 'settings'    },
+          { name: 'Audit Tarixi',  path: '/crmtayyorlovmarkaz/audit',       icon: History,    permission: undefined     },
         ],
       },
     ],
@@ -148,6 +151,8 @@ const MODULES: NavModule[] = [
           { name: 'Inventar',    path: '/crmtayyorlovmarkaz/inventory', icon: Package,  permission: 'inventory' },
           { name: 'Materiallar', path: '/crmtayyorlovmarkaz/content',   icon: FileText, permission: 'content'   },
           { name: 'Videolar',    path: '/crmtayyorlovmarkaz/videos',    icon: Video,    permission: 'content'   },
+          { name: 'Sertifikatlar', path: '/crmtayyorlovmarkaz/certificates', icon: Award,     permission: undefined },
+          { name: 'Testlar',       path: '/crmtayyorlovmarkaz/tests',         icon: ScrollText, permission: undefined },
         ],
       },
       {
@@ -200,6 +205,9 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/telegram': 'Telegram Bot',
     '/crmtayyorlovmarkaz/automations': 'Avtomatizatsiya',
     '/crmtayyorlovmarkaz/videos': 'Videolar',
+    '/crmtayyorlovmarkaz/certificates': 'Sertifikatlar',
+    '/crmtayyorlovmarkaz/tests': 'Testlar',
+    '/crmtayyorlovmarkaz/audit': 'Audit Tarixi',
   };
   return map[pathname] || 'Dashboard';
 }
@@ -264,6 +272,23 @@ export default function CrmLayout() {
     const t = setInterval(loadNotifications, 30000);
     return () => clearInterval(t);
   }, [loadNotifications]);
+
+  // Real-time notification push via WebSocket
+  useSocket<any>('notification:new', (notif) => {
+    setNotifications(prev => [
+      { ...notif, id: notif.id || `tmp-${Date.now()}`, isRead: false, createdAt: notif.createdAt || new Date().toISOString() },
+      ...prev,
+    ].slice(0, 8));
+    // Browser notification
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification(notif.title || 'Yangi bildirishnoma', { body: notif.message, icon: '/favicon.ico' });
+      }
+    } catch {}
+  });
+
+  // Presence indicator
+  const presence = usePresence();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -677,6 +702,19 @@ export default function CrmLayout() {
             </div>
 
             <div className="w-px h-5 bg-zinc-200 dark:bg-white/10 mx-0.5" />
+
+            {/* Online users indicator */}
+            {presence.online > 0 && (
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-xl" title={`${presence.online} foydalanuvchi onlayn`}>
+                <span className="relative flex w-2 h-2">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 tabular-nums">
+                  {presence.online}
+                </span>
+              </div>
+            )}
 
             {/* Activity / notifications */}
             <div className="relative">
