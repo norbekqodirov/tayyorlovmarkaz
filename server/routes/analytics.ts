@@ -397,4 +397,68 @@ router.get('/forecast', requireAuth, async (_req, res) => {
     }
 });
 
+// GET /api/analytics/cohort — O'quvchi retention (oy bo'yicha)
+router.get('/cohort', requireAuth, async (_req, res) => {
+    try {
+        const now = new Date();
+        const cohortMonths = 6; // so'nggi 6 oy
+
+        // Her cohort oy uchun o'quvchilar va ularning retention
+        const cohorts = [];
+
+        for (let i = cohortMonths - 1; i >= 0; i--) {
+            const cohortDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const nextMonth = new Date(cohortDate.getFullYear(), cohortDate.getMonth() + 1, 1);
+            const cohortStr = `${cohortDate.getFullYear()}-${String(cohortDate.getMonth() + 1).padStart(2, '0')}`;
+
+            // O'sha oyda qo'shilgan o'quvchilar
+            const cohortStudents = await prisma.student.findMany({
+                where: {
+                    createdAt: { gte: cohortDate, lt: nextMonth },
+                },
+                select: { id: true, status: true },
+            });
+
+            if (cohortStudents.length === 0) {
+                cohorts.push({ month: cohortStr, total: 0, retention: [] });
+                continue;
+            }
+
+            const cohortIds = cohortStudents.map(s => s.id);
+            const retention: number[] = [100]; // Birinchi oy doim 100%
+
+            // Keyingi oylar uchun retention hisoblash
+            for (let j = 1; j <= Math.min(i, 5); j++) {
+                const checkDate = new Date(cohortDate.getFullYear(), cohortDate.getMonth() + j, 1);
+                const checkStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}`;
+
+                // O'sha oyda davomat yozuvi yoki faol bo'lgan o'quvchilar
+                const activeCount = await prisma.attendanceRecord.findMany({
+                    where: {
+                        studentId: { in: cohortIds },
+                        date: { startsWith: checkStr },
+                    },
+                    select: { studentId: true },
+                }).then(records => new Set(records.map(r => r.studentId)).size);
+
+                retention.push(cohortStudents.length > 0
+                    ? Math.round((activeCount / cohortStudents.length) * 100)
+                    : 0
+                );
+            }
+
+            cohorts.push({
+                month: cohortStr,
+                total: cohortStudents.length,
+                active: cohortStudents.filter(s => s.status === 'active').length,
+                retention,
+            });
+        }
+
+        res.json(cohorts);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;

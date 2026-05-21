@@ -25,6 +25,8 @@ export const WIDGET_REGISTRY = [
   { id: 'stat_teachers', title: "O'qituvchilar", category: 'HR', permission: 'teachers', size: 'sm' as const },
   { id: 'stat_attendance', title: 'Bugun Davomat', category: 'Statistika', permission: 'students', size: 'sm' as const },
   { id: 'stat_conversion', title: 'Konversiya', category: 'Marketing', permission: 'leads', size: 'sm' as const },
+  { id: 'stat_pending', title: "Kutilayotgan To'lovlar", category: 'Moliya', permission: 'finance', size: 'sm' as const },
+  { id: 'stat_teacher_load', title: "O'qituvchi Yuki", category: 'HR', permission: 'teachers', size: 'sm' as const },
   { id: 'chart_revenue', title: 'Daromad Grafigi', category: 'Moliya', permission: 'finance', size: 'lg' as const },
   { id: 'chart_students', title: "O'quvchi O'sishi", category: 'Tahlil', permission: 'students', size: 'md' as const },
   { id: 'chart_leads', title: 'Lid Manbasi', category: 'Marketing', permission: 'leads', size: 'md' as const },
@@ -40,6 +42,7 @@ export const WIDGET_REGISTRY = [
 
 const DEFAULT_WIDGETS_ADMIN = [
   'stat_students', 'stat_revenue', 'stat_leads', 'stat_debtors',
+  'stat_pending', 'stat_teacher_load',
   'chart_revenue', 'chart_students',
   'table_upcoming', 'table_debtors', 'list_payments', 'list_recent_leads'
 ];
@@ -137,6 +140,24 @@ function StatCard({ id, data }: { id: string; data: any }) {
       gradient: 'from-indigo-500 to-blue-600',
       trend: `${data.conversionRate}%`,
       up: data.conversionRate >= 20,
+    },
+    stat_pending: {
+      label: "Kutilayotgan To'lovlar",
+      value: data.pendingPayments,
+      sub: `${formatCompact(data.pendingAmount)} so'm bu oy`,
+      icon: CreditCard,
+      gradient: 'from-amber-400 to-orange-500',
+      trend: `${data.pendingPayments} ta`,
+      up: data.pendingPayments === 0,
+    },
+    stat_teacher_load: {
+      label: "O'qituvchi Yuki",
+      value: `${data.avgGroupsPerTeacher}`,
+      sub: `O'rtacha guruh/o'qituvchi, max ${data.maxGroupsPerTeacher}`,
+      icon: BookOpen,
+      gradient: 'from-cyan-600 to-blue-700',
+      trend: `max ${data.maxGroupsPerTeacher}`,
+      up: data.maxGroupsPerTeacher <= 5,
     },
   };
 
@@ -891,6 +912,36 @@ export default function CrmDashboard() {
     const wonLeads = leads.filter((l: any) => l.stage === 'won').length;
     const conversionRate = leads.length > 0 ? Math.round((wonLeads / leads.length) * 100) : 0;
 
+    // Pending payments: active students without a payment this month
+    const thisMonthStr = `${new Date().getFullYear()}-${String(currentMonth + 1).padStart(2, '0')}`;
+    const paidStudentIds = new Set(
+      transactions
+        .filter((t: any) => t.type === 'income' && t.date?.startsWith(thisMonthStr))
+        .map((t: any) => t.studentId)
+        .filter(Boolean)
+    );
+    const pendingStudents = (students as any[]).filter(
+      (s: any) => (s.status === 'Faol' || s.status === 'active') && !paidStudentIds.has(s.id)
+    );
+    const pendingPayments = pendingStudents.length;
+    const pendingAmount = pendingStudents.reduce(
+      (acc: number, s: any) => acc + (s.balance && s.balance < 0 ? Math.abs(s.balance) : 0), 0
+    );
+
+    // Teacher workload: groups per teacher
+    const teacherGroupCounts: Record<string, number> = {};
+    (groups as any[])
+      .filter((g: any) => g.status === 'Faol' || g.status === 'active')
+      .forEach((g: any) => {
+        const t = g.teacher || g.teacherId || 'Unknown';
+        teacherGroupCounts[t] = (teacherGroupCounts[t] || 0) + 1;
+      });
+    const loadValues = Object.values(teacherGroupCounts) as number[];
+    const avgGroupsPerTeacher = loadValues.length > 0
+      ? Math.round(loadValues.reduce((a, b) => a + b, 0) / loadValues.length)
+      : 0;
+    const maxGroupsPerTeacher = loadValues.length > 0 ? Math.max(...loadValues) : 0;
+
     return {
       studentsTotal: students.length,
       studentsActive: activeStudents.length,
@@ -909,6 +960,10 @@ export default function CrmDashboard() {
       todayPresent,
       todayAbsent,
       todayAttendanceRate,
+      pendingPayments,
+      pendingAmount,
+      avgGroupsPerTeacher,
+      maxGroupsPerTeacher,
     };
   }, [students, groups, leads, transactions, teachers, attendance, currentMonth, prevMonth, today]);
 
@@ -917,6 +972,7 @@ export default function CrmDashboard() {
       case 'stat_students': case 'stat_groups': case 'stat_revenue':
       case 'stat_leads': case 'stat_debtors': case 'stat_teachers':
       case 'stat_attendance': case 'stat_conversion':
+      case 'stat_pending': case 'stat_teacher_load':
         return <StatCard id={id} data={aggrData} />;
       case 'chart_revenue':
         return <RevenueChart data={revenueData} />;

@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFirestore } from '../../hooks/useFirestore';
-import { BookOpen, Users, Calendar, MapPin } from 'lucide-react';
+import { BookOpen, Users, Calendar, MapPin, TrendingUp } from 'lucide-react';
 
 export default function CrmJournal() {
   const navigate = useNavigate();
   const { data: groups = [] } = useFirestore<any>('groups');
+  const { data: attendanceDocs = [] } = useFirestore<any>('attendance');
   const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
 
   const teacherGroups = useMemo(() => {
@@ -14,6 +15,21 @@ export default function CrmJournal() {
     }
     return groups;
   }, [groups, user]);
+
+  // This month attendance % per group
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const groupAttendanceMap = useMemo(() => {
+    const map: Record<string, { present: number; total: number }> = {};
+    attendanceDocs.forEach((doc: any) => {
+      if (!doc.date?.startsWith(currentMonthStr) || !doc.groupId) return;
+      if (!map[doc.groupId]) map[doc.groupId] = { present: 0, total: 0 };
+      (doc.records || []).forEach((r: any) => {
+        map[doc.groupId].total++;
+        if (r.status === 'present') map[doc.groupId].present++;
+      });
+    });
+    return map;
+  }, [attendanceDocs, currentMonthStr]);
 
   return (
     <div className="space-y-6">
@@ -64,11 +80,37 @@ export default function CrmJournal() {
               </div>
 
               <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                <div 
+                <div
                   className="bg-blue-500 h-full rounded-full"
                   style={{ width: `${Math.min(100, ((group.students || []).length / (group.maxStudents || 15)) * 100)}%` }}
                 />
               </div>
+
+              {/* Monthly attendance % */}
+              {(() => {
+                const att = groupAttendanceMap[group.id];
+                if (!att || att.total === 0) return null;
+                const pct = Math.round((att.present / att.total) * 100);
+                return (
+                  <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingUp size={11} className="text-zinc-400" />
+                      <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Bu oy davomat</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-black ${pct >= 80 ? 'text-emerald-600' : pct >= 60 ? 'text-amber-500' : 'text-rose-500'}`}>
+                        {pct}%
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ))
         )}

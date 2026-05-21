@@ -141,6 +141,22 @@ export default function CrmGroupDetail() {
     });
   }, [currentDate, group]);
 
+  // ─── Mark all present for a given date ───────────────────────────────────
+  const handleMarkAllPresent = async (dateStr: string) => {
+    const existingDoc = attendanceDocs.find((a: any) => a.groupId === group?.id && a.date === dateStr);
+    const allRecords = groupStudents.map((s: any) => ({
+      studentId: s.id,
+      status: 'present',
+      time: new Date().toISOString(),
+    }));
+    if (existingDoc) {
+      await updateAtt(existingDoc.id, { records: allRecords });
+    } else {
+      await addAtt({ groupId: group?.id, date: dateStr, records: allRecords });
+    }
+    showToast(`${groupStudents.length} ta o'quvchi "Keldi" deb belgilandi`, 'success');
+  };
+
   const handleAttendanceClick = async (studentId: string, dateStr: string, currentStatus: string | undefined) => {
     // Cycle logic: undefined -> 'present' -> 'absent' -> 'late' -> undefined
     const statusCycle: Record<string, string | null> = {
@@ -406,9 +422,9 @@ export default function CrmGroupDetail() {
           {activeTab === 'Davomat' && (
             <div className="flex flex-col h-full space-y-4">
               {/* Controls */}
-              <div className="flex items-center gap-3">
-                <select 
-                   value={currentDate.getFullYear()} 
+              <div className="flex items-center gap-3 flex-wrap">
+                <select
+                   value={currentDate.getFullYear()}
                    onChange={(e) => setCurrentDate(new Date(Number(e.target.value), currentDate.getMonth(), 1))}
                    className="px-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none font-bold text-xs"
                 >
@@ -429,6 +445,14 @@ export default function CrmGroupDetail() {
                      </button>
                    ))}
                 </div>
+                {/* Mark all present for today */}
+                <button
+                  onClick={() => handleMarkAllPresent(format(new Date(), 'yyyy-MM-dd'))}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black transition-colors ml-auto"
+                  title="Bugun barcha o'quvchilarni 'Keldi' deb belgilash"
+                >
+                  <Check size={14} /> Hammasi Keldi (Bugun)
+                </button>
               </div>
 
               {/* Attendance Grid */}
@@ -439,6 +463,9 @@ export default function CrmGroupDetail() {
                       <th className="px-4 py-3 text-xs font-black text-slate-800 dark:text-zinc-200 uppercase tracking-widest sticky left-0 bg-white dark:bg-zinc-900 z-20 border-r border-zinc-200 dark:border-zinc-800">
                         Talabalar
                       </th>
+                      <th className="px-3 py-3 text-center text-[10px] font-black text-emerald-600 border-l border-zinc-100 dark:border-zinc-800 min-w-[60px]">
+                        %
+                      </th>
                       {daysInMonth.map((d, i) => (
                         <th key={i} className="px-2 py-3 text-center text-[10px] font-black text-blue-500 border-l border-zinc-100 dark:border-zinc-800">
                           {format(d, 'dd MMM', { locale: uz })}
@@ -447,10 +474,49 @@ export default function CrmGroupDetail() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-sm font-bold text-slate-700 dark:text-zinc-300">
-                    {groupStudents.map((s: any, idx) => (
+                    {groupStudents.map((s: any, idx) => {
+                      // Compute this month's attendance % for this student
+                      let monthPresent = 0, monthTotal = 0;
+                      daysInMonth.forEach(d => {
+                        const dateStr = format(d, 'yyyy-MM-dd');
+                        const rec = attendanceDocs.find((a: any) => a.groupId === group.id && a.date === dateStr);
+                        if (rec?.records) {
+                          const r = rec.records.find((r: any) => r.studentId === s.id);
+                          if (r) { monthTotal++; if (r.status === 'present') monthPresent++; }
+                        }
+                      });
+                      const attPct = monthTotal > 0 ? Math.round((monthPresent / monthTotal) * 100) : null;
+
+                      // Check consecutive absences (last 3 lesson days)
+                      const last3 = daysInMonth.slice(-3);
+                      const consecutiveAbsent = last3.filter(d => {
+                        const dateStr = format(d, 'yyyy-MM-dd');
+                        const rec = attendanceDocs.find((a: any) => a.groupId === group.id && a.date === dateStr);
+                        const r = rec?.records?.find((r: any) => r.studentId === s.id);
+                        return r?.status === 'absent';
+                      }).length;
+
+                      return (
                       <tr key={s.id} className="hover:bg-zinc-50/50 dark:hover:bg-white/[0.02]">
                         <td className="px-4 py-3 sticky left-0 bg-white dark:bg-zinc-900 z-10 border-r border-zinc-100 dark:border-zinc-800 min-w-[200px]">
-                          <span className="text-zinc-400 mr-2">{idx + 1}</span> {s.name}
+                          <div className="flex items-center gap-2">
+                            <span className="text-zinc-400 text-xs">{idx + 1}</span>
+                            <span>{s.name}</span>
+                            {consecutiveAbsent >= 3 && (
+                              <span className="text-[9px] font-black text-rose-500 bg-rose-50 dark:bg-rose-900/20 px-1.5 py-0.5 rounded-md">
+                                {consecutiveAbsent} kun yo'q
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {/* Attendance % column */}
+                        <td className="px-3 py-1.5 border-l border-zinc-100 dark:border-zinc-800 text-center">
+                          {attPct !== null ? (
+                            <span className={`text-[11px] font-black ${
+                              attPct >= 80 ? 'text-emerald-600' :
+                              attPct >= 60 ? 'text-amber-500' : 'text-rose-500'
+                            }`}>{attPct}%</span>
+                          ) : <span className="text-[10px] text-zinc-300">—</span>}
                         </td>
                         {daysInMonth.map((d, i) => {
                           const dateStr = format(d, 'yyyy-MM-dd');
@@ -475,11 +541,11 @@ export default function CrmGroupDetail() {
                           );
                         })}
                       </tr>
-                    ))}
+                    ); })}
                   </tbody>
                 </table>
               </div>
-              
+
               {/* Footer action */}
               <div className="flex justify-end pt-2">
                  <button className="text-[10px] uppercase font-black tracking-widest text-zinc-400 hover:text-blue-500 transition-colors border border-zinc-200 dark:border-zinc-700 px-4 py-2 rounded-xl">
