@@ -46,6 +46,7 @@ const CrmTests        = React.lazy(() => import('./pages/crm/CrmTests'));
 const CrmAudit        = React.lazy(() => import('./pages/crm/CrmAudit'));
 const VerifyCert      = React.lazy(() => import('./pages/VerifyCert'));
 const TelegramPortal  = React.lazy(() => import('./pages/portal/TelegramPortal'));
+const StaffPortal     = React.lazy(() => import('./pages/portal/StaffPortal'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="/l/:formId" element={<LeadForm />} />
             <Route path="/verify/:serial" element={<VerifyCert />} />
             <Route path="/portal" element={<TelegramPortal />} />
+            <Route path="/staff-portal" element={<StaffPortal />} />
 
             {/* CRM Routes */}
             <Route path="/crmtayyorlovmarkaz/login" element={<CrmLogin />} />

@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import prisma from '../db.js';
-import { sendMessage, sendPaymentReminder, sendAttendanceAlert, sendBroadcast } from './telegramService.js';
+import { sendMessage, sendPaymentReminder, sendAttendanceAlert, sendBroadcast, sendStaffMessage } from './telegramService.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -373,9 +373,107 @@ export async function startScheduler() {
             runGroupLifecycle();
         }, { timezone: 'Asia/Tashkent' });
 
+        // Har kuni 08:00 — Staff: dars eslatmasi
+        cron.schedule('0 8 * * *', () => {
+            console.log('[StaffScheduler] ⏰ Kunlik briefing boshlandi');
+            runStaffDailyBriefing();
+        }, { timezone: 'Asia/Tashkent' });
+
+        // Har kuni 12:00 — Staff: davomat belgilanmagan guruhlar
+        cron.schedule('0 12 * * *', () => {
+            console.log('[StaffScheduler] ⏰ Davomat alert boshlandi');
+            runStaffAttendanceAlert();
+        }, { timezone: 'Asia/Tashkent' });
+
         console.log('[Scheduler] ✅ Barcha cron joblar ishga tushdi');
     } catch (err: any) {
         console.error('[Scheduler] Xato:', err.message);
+    }
+}
+
+// ─── Staff Bot: 08:00 — O'qituvchilarga bugungi dars eslatmasi ───────────────
+
+async function runStaffDailyBriefing() {
+    try {
+        const todayNum = new Date().getDay() || 7; // 0=Sun→7
+        const DAY_UZ: Record<number, string> = {
+            1: 'Dushanba', 2: 'Seshanba', 3: 'Chorshanba', 4: 'Payshanba',
+            5: 'Juma', 6: 'Shanba', 7: 'Yakshanba',
+        };
+
+        // Get teachers with today's lessons
+        const teacherGroups = await prisma.group.findMany({
+            where: {
+                status: 'active', deletedAt: null,
+                teacherId: { not: null },
+                schedules: { some: { dayOfWeek: todayNum } },
+            },
+            include: {
+                teacher: { select: { id: true, name: true, telegramChatId: true } },
+                schedules: { where: { dayOfWeek: todayNum }, select: { startTime: true, endTime: true } },
+            },
+        });
+
+        // Group by teacher
+        const byTeacher: Record<string, { chatId: string; name: string; groups: string[] }> = {};
+        for (const g of teacherGroups) {
+            if (!g.teacher?.telegramChatId) continue;
+            const tid = g.teacher.id;
+            if (!byTeacher[tid]) {
+                byTeacher[tid] = { chatId: g.teacher.telegramChatId, name: g.teacher.name, groups: [] };
+            }
+            const times = g.schedules.map(s => `${s.startTime}–${s.endTime}`).join(', ');
+            byTeacher[tid].groups.push(`• ${g.name} (${times})`);
+        }
+
+        let sent = 0;
+        for (const { chatId, groups } of Object.values(byTeacher)) {
+            const text =
+                `📚 <b>Bugungi darslar — ${DAY_UZ[todayNum]}</b>\n\n` +
+                groups.join('\n') + '\n\n' +
+                `Dars jadvali uchun /today`;
+            const ok = await sendStaffMessage(chatId, text, 'HTML');
+            if (ok) sent++;
+        }
+        console.log(`[StaffScheduler] ✅ Kunlik briefing: ${sent} o'qituvchiga yuborildi`);
+    } catch (err: any) {
+        console.error('[StaffScheduler] Briefing xato:', err.message);
+    }
+}
+
+// ─── Staff Bot: 12:00 — Davomat belgilanmagan guruhlar ────────────────────────
+
+async function runStaffAttendanceAlert() {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const todayNum = new Date().getDay() || 7;
+
+        // Groups with today's schedule that have NO attendance records yet
+        const groups = await prisma.group.findMany({
+            where: {
+                status: 'active', deletedAt: null,
+                teacherId: { not: null },
+                schedules: { some: { dayOfWeek: todayNum } },
+                attendanceRecords: { none: { date: today } },
+            },
+            include: {
+                teacher: { select: { name: true, telegramChatId: true } },
+            },
+        });
+
+        let alerted = 0;
+        for (const g of groups) {
+            if (!g.teacher?.telegramChatId) continue;
+            const text =
+                `⚠️ <b>Davomat belgilanmagan</b>\n\n` +
+                `<b>${g.name}</b> guruhi uchun bugungi davomat hali belgilanmagan.\n\n` +
+                `Iltimos, tezroq belgilang.`;
+            const ok = await sendStaffMessage(g.teacher.telegramChatId, text, 'HTML');
+            if (ok) alerted++;
+        }
+        console.log(`[StaffScheduler] ✅ Davomat alert: ${alerted} o'qituvchiga yuborildi`);
+    } catch (err: any) {
+        console.error('[StaffScheduler] Attendance alert xato:', err.message);
     }
 }
 
@@ -385,4 +483,6 @@ export const JOBS: Record<string, () => Promise<void>> = {
     daily_attendance_monitor: runAttendanceMonitoring,
     hourly_lead_nurturing: runLeadNurturing,
     daily_group_lifecycle: runGroupLifecycle,
+    staff_daily_briefing: runStaffDailyBriefing,
+    staff_attendance_alert: runStaffAttendanceAlert,
 };

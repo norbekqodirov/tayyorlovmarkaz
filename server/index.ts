@@ -15,6 +15,8 @@ import salaryRoutes from './routes/salary.js';
 import certificatesRoutes from './routes/certificates.js';
 import testsRoutes from './routes/tests.js';
 import portalRoutes from './routes/portal.js';
+import staffTelegramRoutes from './routes/staffTelegram.js';
+import staffPortalRoutes from './routes/staffPortal.js';
 import path from 'path';
 import fs from 'fs';
 import { startScheduler } from './services/scheduler.js';
@@ -98,6 +100,8 @@ app.use('/api/salary', salaryRoutes);
 app.use('/api/certificates', certificatesRoutes);
 app.use('/api/tests', testsRoutes);
 app.use('/api/portal', portalRoutes);
+app.use('/api/staff-telegram', staffTelegramRoutes);
+app.use('/api/staff-portal', staffPortalRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ───────────────────────────────

@@ -51,7 +51,7 @@ const TYPE_COLORS: Record<string, string> = {
     manual: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
 };
 
-type ActiveTab = 'overview' | 'broadcast' | 'miniapp' | 'settings' | 'history';
+type ActiveTab = 'overview' | 'broadcast' | 'miniapp' | 'settings' | 'history' | 'staffbot';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -94,8 +94,25 @@ export default function CrmTelegram() {
     const [historyTotal, setHistoryTotal] = useState(0);
     const [historyFilter, setHistoryFilter] = useState('');
 
+    // Staff Bot
+    const [staffWebhookInfo, setStaffWebhookInfo] = useState<any>(null);
+    const [staffWebhookUrl, setStaffWebhookUrl] = useState('');
+    const [settingStaffWebhook, setSettingStaffWebhook] = useState(false);
+    const [staffTokenInput, setStaffTokenInput] = useState('');
+    const [showStaffToken, setShowStaffToken] = useState(false);
+    const [savingStaffToken, setSavingStaffToken] = useState(false);
+    const [staffMiniAppUrl, setStaffMiniAppUrl] = useState('');
+    const [savingStaffMiniApp, setSavingStaffMiniApp] = useState(false);
+    const [staffBroadcastMsg, setStaffBroadcastMsg] = useState('');
+    const [staffBroadcastRole, setStaffBroadcastRole] = useState('');
+    const [sendingStaffBroadcast, setSendingStaffBroadcast] = useState(false);
+    const [staffBroadcastResult, setStaffBroadcastResult] = useState<{ sent: number; failed: number } | null>(null);
+
     useEffect(() => { loadData(); }, []);
     useEffect(() => { if (activeTab === 'history') loadHistory(); }, [activeTab, historyPage, historyFilter]);
+    useEffect(() => {
+        if (activeTab === 'staffbot') loadStaffBotData();
+    }, [activeTab]);
 
     const loadData = async () => {
         setLoading(true);
@@ -203,6 +220,77 @@ export default function CrmTelegram() {
         }
     };
 
+    const loadStaffBotData = async () => {
+        try {
+            const [webhookRes, settingsRes] = await Promise.all([
+                api.get('/staff-telegram/webhook-info').catch(() => ({ data: null })),
+                Promise.resolve({ data: { staff_bot_token: '', staff_mini_app_url: '' } }),
+            ]);
+            setStaffWebhookInfo(webhookRes.data?.result || webhookRes.data);
+            // Load staff mini app url from settings
+            try {
+                const s = await api.get('/telegram/settings');
+                setStaffMiniAppUrl(s.data.staffMiniAppUrl || '');
+                // Pre-fill webhook url suggestion
+                if (!staffWebhookUrl) {
+                    setStaffWebhookUrl(`${window.location.origin}/api/staff-telegram/webhook`);
+                }
+            } catch {}
+        } catch {}
+    };
+
+    const saveStaffToken = async () => {
+        if (!staffTokenInput.trim()) return showToast('Token kiriting', 'error');
+        setSavingStaffToken(true);
+        try {
+            await api.put('/telegram/settings', { staff_bot_token: staffTokenInput.trim() });
+            showToast('Staff bot token saqlandi!', 'success');
+            setStaffTokenInput('');
+            loadStaffBotData();
+        } catch { showToast('Saqlashda xatolik', 'error'); }
+        finally { setSavingStaffToken(false); }
+    };
+
+    const saveStaffMiniApp = async () => {
+        if (!staffMiniAppUrl.trim()) return showToast('URL kiriting', 'error');
+        setSavingStaffMiniApp(true);
+        try {
+            await api.put('/telegram/settings', { staffMiniAppUrl: staffMiniAppUrl.trim() });
+            showToast('Staff portal URL saqlandi!', 'success');
+        } catch { showToast('Saqlashda xatolik', 'error'); }
+        finally { setSavingStaffMiniApp(false); }
+    };
+
+    const setStaffWebhookHandler = async () => {
+        if (!staffWebhookUrl.trim()) return showToast("Webhook URL kiriting", 'error');
+        setSettingStaffWebhook(true);
+        try {
+            const res = await api.post('/staff-telegram/set-webhook', { url: staffWebhookUrl.trim() });
+            if (res.data.ok) {
+                showToast('Staff bot webhook o\'rnatildi! ✅', 'success');
+                loadStaffBotData();
+            } else {
+                showToast('Xato: ' + (res.data.description || ''), 'error');
+            }
+        } catch { showToast('Server xatosi', 'error'); }
+        finally { setSettingStaffWebhook(false); }
+    };
+
+    const sendStaffBroadcastHandler = async () => {
+        if (!staffBroadcastMsg.trim()) return showToast('Xabar matnini kiriting', 'error');
+        setSendingStaffBroadcast(true);
+        try {
+            const res = await api.post('/staff-telegram/broadcast', {
+                text: staffBroadcastMsg,
+                role: staffBroadcastRole || undefined,
+            });
+            setStaffBroadcastResult({ sent: res.data.sent, failed: res.data.failed });
+            showToast(`${res.data.sent} xodimga xabar yuborildi!`, 'success');
+            setStaffBroadcastMsg('');
+        } catch { showToast('Server xatosi', 'error'); }
+        finally { setSendingStaffBroadcast(false); }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -217,6 +305,7 @@ export default function CrmTelegram() {
         { id: 'miniapp', label: 'Mini App', icon: Smartphone },
         { id: 'settings', label: 'Sozlama', icon: Settings },
         { id: 'history', label: 'Tarix', icon: MessageSquare },
+        { id: 'staffbot', label: 'Staff Bot', icon: Shield },
     ];
 
     return (
@@ -778,6 +867,181 @@ export default function CrmTelegram() {
                                 >Keyingi →</button>
                             </div>
                         )}
+                    </div>
+                </motion.div>
+            )}
+            {/* ── Staff Bot tab ────────────────────────────────────────── */}
+            {activeTab === 'staffbot' && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+
+                    {/* Webhook status */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+                                <Radio size={16} className="text-violet-600 dark:text-violet-400" />
+                            </div>
+                            <div>
+                                <p className="font-bold text-slate-900 dark:text-white">Webhook holati</p>
+                                {staffWebhookInfo?.url ? (
+                                    <p className="text-xs text-zinc-400 truncate max-w-[260px]">{staffWebhookInfo.url}</p>
+                                ) : (
+                                    <p className="text-xs text-zinc-400">Webhook o'rnatilmagan</p>
+                                )}
+                            </div>
+                            <div className="ml-auto">
+                                {staffWebhookInfo?.url ? (
+                                    <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-1 rounded-lg font-bold">✓ Faol</span>
+                                ) : (
+                                    <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-1 rounded-lg font-bold">⚠ O'rnatilmagan</span>
+                                )}
+                            </div>
+                        </div>
+                        {staffWebhookInfo?.last_error_message && (
+                            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                                Oxirgi xato: {staffWebhookInfo.last_error_message}
+                            </div>
+                        )}
+                        {/* Set webhook */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Webhook URL o'rnatish</label>
+                            <div className="flex gap-2">
+                                <input
+                                    value={staffWebhookUrl}
+                                    onChange={e => setStaffWebhookUrl(e.target.value)}
+                                    placeholder="https://example.com/api/staff-telegram/webhook"
+                                    className="flex-1 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                />
+                                <button
+                                    onClick={setStaffWebhookHandler}
+                                    disabled={settingStaffWebhook}
+                                    className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
+                                >
+                                    {settingStaffWebhook ? <RefreshCw size={14} className="animate-spin" /> : "O'rnat"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Staff bot token */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-3">
+                        <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <Shield size={15} className="text-violet-500" /> Staff Bot Token
+                        </p>
+                        <p className="text-xs text-zinc-400">@BotFather dan olingan alohida staff bot token (o'quvchi botidan farqli)</p>
+                        <div className="flex gap-2">
+                            <div className="flex-1 relative">
+                                <input
+                                    type={showStaffToken ? 'text' : 'password'}
+                                    value={staffTokenInput}
+                                    onChange={e => setStaffTokenInput(e.target.value)}
+                                    placeholder="1234567890:ABCdef..."
+                                    className="w-full text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl pl-3 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                />
+                                <button
+                                    onClick={() => setShowStaffToken(v => !v)}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
+                                >
+                                    {showStaffToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                            </div>
+                            <button
+                                onClick={saveStaffToken}
+                                disabled={savingStaffToken}
+                                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
+                            >
+                                {savingStaffToken ? <RefreshCw size={14} className="animate-spin" /> : 'Saqlash'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Staff Mini App URL */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-3">
+                        <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <Smartphone size={15} className="text-violet-500" /> Staff Portal URL
+                        </p>
+                        <p className="text-xs text-zinc-400">Staff bot xabari havolasida ishlatiladi. Masalan: https://t.me/YourStaffBot/staffapp yoki https://yoursite.com/staff-portal</p>
+                        <div className="flex gap-2">
+                            <input
+                                value={staffMiniAppUrl}
+                                onChange={e => setStaffMiniAppUrl(e.target.value)}
+                                placeholder="https://yoursite.com/staff-portal"
+                                className="flex-1 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                            />
+                            <button
+                                onClick={saveStaffMiniApp}
+                                disabled={savingStaffMiniApp}
+                                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
+                            >
+                                {savingStaffMiniApp ? <RefreshCw size={14} className="animate-spin" /> : 'Saqlash'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Staff Broadcast */}
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
+                        <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <Megaphone size={15} className="text-violet-500" /> Xodimlarga xabar yuborish
+                        </p>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Maqsadli guruh</label>
+                                <select
+                                    value={staffBroadcastRole}
+                                    onChange={e => setStaffBroadcastRole(e.target.value)}
+                                    className="w-full text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                >
+                                    <option value="">Barcha xodimlar</option>
+                                    <option value="TEACHER">Faqat o'qituvchilar</option>
+                                    <option value="MANAGER">Faqat menejerlar</option>
+                                    <option value="ADMIN">Faqat adminlar</option>
+                                    <option value="HR">Faqat HR</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Xabar matni</label>
+                                <textarea
+                                    value={staffBroadcastMsg}
+                                    onChange={e => setStaffBroadcastMsg(e.target.value)}
+                                    placeholder="Xodimlar uchun xabar..."
+                                    rows={4}
+                                    className="w-full text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+                                />
+                            </div>
+                            <button
+                                onClick={sendStaffBroadcastHandler}
+                                disabled={sendingStaffBroadcast || !staffBroadcastMsg.trim()}
+                                className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                            >
+                                {sendingStaffBroadcast
+                                    ? <><RefreshCw size={14} className="animate-spin" /> Yuborilmoqda...</>
+                                    : <><Send size={14} /> Yuborish</>
+                                }
+                            </button>
+                            {staffBroadcastResult && (
+                                <div className="flex gap-3">
+                                    <div className="flex-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 text-center">
+                                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Yuborildi</p>
+                                        <p className="font-bold text-lg text-emerald-700 dark:text-emerald-300">{staffBroadcastResult.sent}</p>
+                                    </div>
+                                    <div className="flex-1 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 text-center">
+                                        <p className="text-xs text-red-600 dark:text-red-400 font-medium">Xato</p>
+                                        <p className="font-bold text-lg text-red-700 dark:text-red-300">{staffBroadcastResult.failed}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Info */}
+                    <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 text-sm text-violet-700 dark:text-violet-300 space-y-2">
+                        <p className="font-bold">ℹ️ Staff Bot haqida</p>
+                        <ul className="text-xs space-y-1 list-disc list-inside opacity-80">
+                            <li>Xodimlar CRM sahifasidan Telegram ulash: Xodimlar → Telegram ID maydoni</li>
+                            <li>Bot komandalar: /start, /today, /mygroups, /stats, /link</li>
+                            <li>O'qituvchi faqat o'z guruhlarini ko'radi</li>
+                            <li>Menejer/Admin barcha guruhlar va statistikani ko'radi</li>
+                            <li>Webhook URL: {window.location.origin}/api/staff-telegram/webhook</li>
+                        </ul>
                     </div>
                 </motion.div>
             )}

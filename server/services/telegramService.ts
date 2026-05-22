@@ -152,6 +152,112 @@ export async function sendBroadcast(chatIds: string[], text: string, type: strin
     return { sent, failed };
 }
 
+// ─── Staff Bot helpers ────────────────────────────────────────────────────────
+
+async function getStaffBotToken(): Promise<string | null> {
+    try {
+        const setting = await prisma.setting.findUnique({ where: { key: 'staff_bot_token' } });
+        return setting?.value || process.env.STAFF_BOT_TOKEN || null;
+    } catch {
+        return process.env.STAFF_BOT_TOKEN || null;
+    }
+}
+
+/** Raw Staff Bot API call */
+export async function sendStaffBotRequest(method: string, params: Record<string, any>): Promise<any> {
+    const token = await getStaffBotToken();
+    if (!token) return { ok: false, description: 'Staff bot token not set' };
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+        });
+        return res.json();
+    } catch (err: any) {
+        return { ok: false, description: err.message };
+    }
+}
+
+/** Send message via Staff Bot */
+export async function sendStaffMessage(
+    chatId: string,
+    text: string,
+    parseMode: 'HTML' | 'Markdown' = 'HTML',
+    replyMarkup?: any,
+): Promise<boolean> {
+    const token = await getStaffBotToken();
+    if (!token) {
+        console.warn('[StaffBot] Token topilmadi. Settings → Staff Bot Token kiriting.');
+        return false;
+    }
+    try {
+        const url = `https://api.telegram.org/bot${token}/sendMessage`;
+        const body: any = { chat_id: chatId, text, parse_mode: parseMode };
+        if (replyMarkup) body.reply_markup = replyMarkup;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const result = await response.json() as any;
+        return result.ok;
+    } catch (err: any) {
+        console.error('[StaffBot] sendMessage xato:', err.message);
+        return false;
+    }
+}
+
+/** Validate Telegram Mini App initData using STAFF bot token */
+export async function validateStaffInitData(initData: string): Promise<{
+    valid: boolean;
+    telegramUserId?: string;
+    firstName?: string;
+    username?: string;
+}> {
+    const token = await getStaffBotToken();
+    if (!token || !initData) return { valid: false };
+    try {
+        const params = new URLSearchParams(initData);
+        const hash = params.get('hash');
+        if (!hash) return { valid: false };
+
+        params.delete('hash');
+        const dataCheckString = Array.from(params.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `${k}=${v}`)
+            .join('\n');
+
+        const secretKey = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+        const expectedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+        if (expectedHash !== hash) return { valid: false };
+
+        const authDate = parseInt(params.get('auth_date') || '0');
+        if (Math.floor(Date.now() / 1000) - authDate > 86_400) return { valid: false };
+
+        const user = params.get('user') ? JSON.parse(params.get('user')!) : null;
+        return {
+            valid: true,
+            telegramUserId: String(user?.id || ''),
+            firstName: user?.first_name || '',
+            username: user?.username || '',
+        };
+    } catch {
+        return { valid: false };
+    }
+}
+
+/** Set Staff bot webhook */
+export async function setStaffWebhook(url: string): Promise<any> {
+    return sendStaffBotRequest('setWebhook', { url, drop_pending_updates: true });
+}
+
+/** Get Staff bot webhook info */
+export async function getStaffWebhookInfo(): Promise<any> {
+    return sendStaffBotRequest('getWebhookInfo', {});
+}
+
 // Davomat bildirishnomasi — ota-onaga
 export async function sendAttendanceAlert(studentName: string, groupName: string, parentTelegramId: string): Promise<boolean> {
     const text = `📚 <b>Davomat Xabari</b>\n\n` +

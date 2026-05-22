@@ -177,7 +177,7 @@ router.get('/stats', requireAuth, async (_req, res) => {
 // PUT /api/telegram/settings — bot sozlamalari
 router.put('/settings', requireAuth, async (req, res) => {
     try {
-        const { token, adminChatId, autoAttendance, autoPayment, autoLead } = req.body;
+        const { token, adminChatId, autoAttendance, autoPayment, autoLead, staff_bot_token, staffMiniAppUrl } = req.body;
 
         const updates = [
             token !== undefined ? { key: 'telegram_bot_token', value: token } : null,
@@ -185,6 +185,8 @@ router.put('/settings', requireAuth, async (req, res) => {
             autoAttendance !== undefined ? { key: 'telegram_auto_attendance', value: String(autoAttendance) } : null,
             autoPayment !== undefined ? { key: 'telegram_auto_payment', value: String(autoPayment) } : null,
             autoLead !== undefined ? { key: 'telegram_auto_lead', value: String(autoLead) } : null,
+            staff_bot_token !== undefined ? { key: 'staff_bot_token', value: staff_bot_token } : null,
+            staffMiniAppUrl !== undefined ? { key: 'staff_mini_app_url', value: staffMiniAppUrl } : null,
         ].filter(Boolean) as { key: string; value: string }[];
 
         for (const update of updates) {
@@ -204,7 +206,7 @@ router.put('/settings', requireAuth, async (req, res) => {
 // GET /api/telegram/settings — sozlamalarni olish
 router.get('/settings', requireAuth, async (_req, res) => {
     try {
-        const keys = ['telegram_bot_token', 'telegram_admin_chat_id', 'telegram_auto_attendance', 'telegram_auto_payment', 'telegram_auto_lead', 'telegram_mini_app_url'];
+        const keys = ['telegram_bot_token', 'telegram_admin_chat_id', 'telegram_auto_attendance', 'telegram_auto_payment', 'telegram_auto_lead', 'telegram_mini_app_url', 'staff_bot_token', 'staff_mini_app_url'];
         const settings = await prisma.setting.findMany({ where: { key: { in: keys } } });
 
         const result: Record<string, string> = {};
@@ -226,6 +228,7 @@ router.get('/settings', requireAuth, async (_req, res) => {
             autoPayment: result.telegram_auto_payment === 'true',
             autoLead: result.telegram_auto_lead === 'true',
             miniAppUrl: result.telegram_mini_app_url || '',
+            staffMiniAppUrl: result.staff_mini_app_url || '',
         });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
