@@ -67,18 +67,42 @@ declare global {
 
 const API_BASE = '/api/portal';
 
+// URL dan token o'qish (bot xabari havola orqali)
+function getUrlToken(): string {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('t');
+    if (t) {
+        // localStorage ga saqlash — keyingi tashrif uchun
+        localStorage.setItem('portal_url_token', t);
+        localStorage.setItem('portal_url_token_ts', String(Date.now()));
+    }
+    // localStorage dan ham olish
+    const stored = localStorage.getItem('portal_url_token');
+    const storedTs = parseInt(localStorage.getItem('portal_url_token_ts') || '0');
+    if (stored && (Date.now() - storedTs) < 82_800_000) return stored; // 23 soat
+    return '';
+}
+
 async function portalFetch(endpoint: string, initData: string) {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-        headers: {
-            'x-telegram-init-data': initData,
-            // Dev fallback: comment in for local testing
-            // 'x-dev-chat-id': 'YOUR_CHAT_ID',
-        },
-    });
+    const urlToken = getUrlToken();
+    const headers: Record<string, string> = {};
+
+    if (urlToken) {
+        // URL token prioriteti yuqori
+        headers['x-portal-token'] = urlToken;
+    } else if (initData) {
+        headers['x-telegram-init-data'] = initData;
+    }
+
+    // URL ga token qo'shish (server ham query param orqali qabul qiladi)
+    const sep = endpoint.includes('?') ? '&' : '?';
+    const tokenSuffix = urlToken ? `${sep}t=${encodeURIComponent(urlToken)}` : '';
+
+    const res = await fetch(`${API_BASE}${endpoint}${tokenSuffix}`, { headers });
     if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         const err = new Error(`${res.status}`) as any;
-        err.debug = errBody.debug || errBody.error || '';
+        err.debug = errBody.hint || errBody.error || '';
         throw err;
     }
     return res.json();

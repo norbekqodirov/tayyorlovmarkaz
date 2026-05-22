@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import { validateInitData } from '../services/telegramService.js';
 
@@ -14,16 +15,29 @@ async function portalAuth(req: any, res: any, next: any) {
         return next();
     }
 
-    const initData = req.headers['x-telegram-init-data'] as string;
-    console.log('[Portal] initData length:', initData?.length ?? 0, '| first 80:', initData?.substring(0, 80));
+    const portalSecret = process.env.JWT_SECRET || 'dev-only-secret-key';
 
-    if (!initData) return res.status(401).json({ error: 'initData talab qilinadi', debug: 'empty' });
+    // ── 1. URL token auth (bot xabari orqali kelgan link) ─────────────────
+    const urlToken = (req.query.t || req.headers['x-portal-token']) as string;
+    if (urlToken) {
+        try {
+            const decoded: any = jwt.verify(urlToken, portalSecret);
+            if (decoded.chatId) {
+                req.portalChatId = decoded.chatId;
+                return next();
+            }
+        } catch {
+            // Token yaroqsiz yoki muddati o'tgan → Telegram initData bilan davom etamiz
+        }
+    }
+
+    // ── 2. Telegram initData auth (web_app button orqali) ─────────────────
+    const initData = req.headers['x-telegram-init-data'] as string;
+    if (!initData) return res.status(401).json({ error: 'Autentifikatsiya talab qilinadi', hint: 'Botdan portal havolasini oling' });
 
     const result = await validateInitData(initData);
-    console.log('[Portal] validate result:', JSON.stringify(result));
-
     if (!result.valid || !result.telegramUserId) {
-        return res.status(401).json({ error: 'Noto\'g\'ri Telegram auth', debug: JSON.stringify(result) });
+        return res.status(401).json({ error: 'Telegram auth yaroqsiz', hint: '/start buyrug\'ini qayta yuboring' });
     }
 
     req.portalChatId = result.telegramUserId;

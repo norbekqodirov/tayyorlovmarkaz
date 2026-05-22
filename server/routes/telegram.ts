@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
@@ -287,8 +288,26 @@ router.post('/webhook', async (req, res) => {
                 const miniAppSetting = await prisma.setting.findUnique({ where: { key: 'telegram_mini_app_url' } });
                 const miniAppUrl = miniAppSetting?.value || '';
 
-                const replyMarkup = miniAppUrl
-                    ? { inline_keyboard: [[{ text: '📱 Portalga kirish', web_app: { url: miniAppUrl } }]] }
+                // JWT token generatsiya — portal auth uchun (24 soat amal qiladi)
+                const portalSecret = process.env.JWT_SECRET || 'dev-only-secret-key';
+                const portalToken = jwt.sign(
+                    { chatId, role: matchedRole, studentId: matchedId },
+                    portalSecret,
+                    { expiresIn: '24h' }
+                );
+
+                // Portal URL ga token qo'shish
+                const portalUrl = miniAppUrl
+                    ? `${miniAppUrl}?t=${portalToken}`
+                    : '';
+
+                const replyMarkup = portalUrl
+                    ? {
+                        inline_keyboard: [
+                            [{ text: '📱 Portalga kirish', web_app: { url: portalUrl } }],
+                            [{ text: '🔗 Brauzerda ochish', url: portalUrl }],
+                        ]
+                      }
                     : { remove_keyboard: true };
 
                 const successText = matchedRole === 'student'
@@ -331,8 +350,19 @@ router.post('/webhook', async (req, res) => {
             if (linked) {
                 const miniAppSetting = await prisma.setting.findUnique({ where: { key: 'telegram_mini_app_url' } });
                 const miniAppUrl = miniAppSetting?.value || '';
-                const replyMarkup = miniAppUrl
-                    ? { inline_keyboard: [[{ text: '📱 Portalga kirish', web_app: { url: miniAppUrl } }]] }
+
+                // Har safar /start bosishda yangi token
+                const portalSecret = process.env.JWT_SECRET || 'dev-only-secret-key';
+                const portalToken = jwt.sign({ chatId, studentId: linked.id }, portalSecret, { expiresIn: '24h' });
+                const portalUrl = miniAppUrl ? `${miniAppUrl}?t=${portalToken}` : '';
+
+                const replyMarkup = portalUrl
+                    ? {
+                        inline_keyboard: [
+                            [{ text: '📱 Portalga kirish', web_app: { url: portalUrl } }],
+                            [{ text: '🔗 Brauzerda ochish', url: portalUrl }],
+                        ]
+                      }
                     : undefined;
 
                 await sendMessage(chatId,
