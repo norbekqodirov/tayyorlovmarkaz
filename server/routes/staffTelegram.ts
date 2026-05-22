@@ -5,6 +5,7 @@ import {
     sendStaffMessage,
     setStaffWebhook,
     getStaffWebhookInfo,
+    extractPhoneDigits,
 } from '../services/telegramService.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -31,28 +32,14 @@ router.post('/webhook', async (req, res) => {
         if (!update) return res.sendStatus(200);
 
         const msg = update.message;
-        if (!msg?.text) return res.sendStatus(200);
+        if (!msg) return res.sendStatus(200);
 
         const chatId = String(msg.chat.id);
-        const text = (msg.text || '').trim();
         const firstName = msg.from?.first_name || '';
+        const text = (msg.text || '').trim();
 
-        // ── /start ────────────────────────────────────────────────────────────
-        if (text.startsWith('/start')) {
-            const user = await prisma.user.findFirst({
-                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
-                select: { id: true, name: true, role: true },
-            });
-
-            if (!user) {
-                await sendStaffMessage(
-                    chatId,
-                    `👋 Assalomu alaykum, ${firstName}!\n\nSiz tizimda ro'yxatdan o'tilmagansiz. Admin bilan bog'laning va Telegram ID'ingizni ulashishni so'rang.\n\n<code>ID: ${chatId}</code>`,
-                    'HTML',
-                );
-                return res.sendStatus(200);
-            }
-
+        // ── Helper: portal havolasini yuborish ───────────────────────────────
+        const sendPortalLink = async (user: { id: string; name: string; role: string }) => {
             const token = jwt.sign(
                 { userId: user.id, role: user.role, chatId },
                 JWT_SECRET,
@@ -64,29 +51,99 @@ router.post('/webhook', async (req, res) => {
                 : '';
 
             const roleLabel: Record<string, string> = {
-                SUPER_ADMIN: '👑 Super Admin',
-                ADMIN: '🔑 Admin',
-                MANAGER: '📊 Menejer',
-                TEACHER: '📚 O\'qituvchi',
-                HR: '👥 HR',
+                SUPER_ADMIN: '👑 Super Admin', ADMIN: '🔑 Admin',
+                MANAGER: '📊 Menejer', TEACHER: '📚 O\'qituvchi', HR: '👥 HR',
             };
-
-            const replyMarkup = portalUrl ? {
-                inline_keyboard: [
-                    [{ text: '📱 Staff Portalga kirish', web_app: { url: portalUrl } }],
-                    [{ text: '🔗 Brauzerda ochish', url: portalUrl }],
-                ],
-            } : undefined;
 
             await sendStaffMessage(
                 chatId,
                 `✅ <b>Xush kelibsiz, ${user.name}!</b>\n\n` +
                 `Rol: ${roleLabel[user.role] || user.role}\n\n` +
-                (portalUrl
-                    ? `Staff portaliga kirish uchun quyidagi tugmani bosing:`
-                    : `Portal URL sozlanmagan. Admin bilan bog'laning.`),
+                (portalUrl ? `Portalga kirish uchun quyidagi tugmani bosing:` : `Portal URL hali sozlanmagan.`),
                 'HTML',
-                replyMarkup,
+                portalUrl ? {
+                    inline_keyboard: [
+                        [{ text: '📱 Staff Portalga kirish', web_app: { url: portalUrl } }],
+                        [{ text: '🔗 Brauzerda ochish', url: portalUrl }],
+                    ],
+                } : { remove_keyboard: true },
+            );
+        };
+
+        // ── Contact shared: telefon raqam orqali avtomatik bog'lash ──────────
+        if (msg.contact) {
+            const tgPhone = msg.contact.phone_number || '';
+            const tgDigits = extractPhoneDigits(tgPhone);
+
+            if (!tgDigits) {
+                await sendStaffMessage(chatId,
+                    '❌ Telefon raqam o\'qilmadi. Iltimos qayta urinib ko\'ring.',
+                    'HTML', { remove_keyboard: true });
+                return res.sendStatus(200);
+            }
+
+            // Tizimdan barcha aktiv xodimlarni olib telefon raqamini taqqoslaymiz
+            const users = await prisma.user.findMany({
+                where: { isActive: true, deletedAt: null },
+                select: { id: true, name: true, role: true, phone: true },
+            });
+
+            let matched: { id: string; name: string; role: string } | null = null;
+            for (const u of users) {
+                if (u.phone && extractPhoneDigits(u.phone) === tgDigits) {
+                    matched = { id: u.id, name: u.name, role: u.role };
+                    break;
+                }
+            }
+
+            if (!matched) {
+                await sendStaffMessage(
+                    chatId,
+                    `❌ <b>Raqam topilmadi</b>\n\n` +
+                    `<code>${tgPhone}</code> raqami tizimda xodim sifatida ro'yxatda yo'q.\n\n` +
+                    `Iltimos, CRM'ga kiritilgan ish raqamingizni ishlatganingizni tekshiring yoki admin bilan bog'laning.`,
+                    'HTML', { remove_keyboard: true },
+                );
+                return res.sendStatus(200);
+            }
+
+            // Muvaffaqiyatli — telegramChatId ni saqlaymiz
+            await prisma.user.update({
+                where: { id: matched.id },
+                data: { telegramChatId: chatId },
+            });
+
+            await sendPortalLink(matched);
+            return res.sendStatus(200);
+        }
+
+        // ── /start ────────────────────────────────────────────────────────────
+        if (text.startsWith('/start')) {
+            // Avval allaqachon bog'langan-bo'lmagonini tekshiramiz
+            const linked = await prisma.user.findFirst({
+                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
+                select: { id: true, name: true, role: true },
+            });
+
+            if (linked) {
+                // Allaqachon bog'langan — to'g'ridan portal havolasini yuboramiz
+                await sendPortalLink(linked);
+                return res.sendStatus(200);
+            }
+
+            // Birinchi marta — telefon raqam so'raymiz
+            await sendStaffMessage(
+                chatId,
+                `👋 <b>Assalomu alaykum, ${firstName}!</b>\n\n` +
+                `Bu <b>Staff Portal</b> — o'qituvchi va xodimlar uchun ichki tizim.\n\n` +
+                `Tizimga kirish uchun <b>telefon raqamingizni</b> ulashing.\n` +
+                `(CRM'ga kiritilgan ish raqamingiz bo'lishi kerak)`,
+                'HTML',
+                {
+                    keyboard: [[{ text: '📱 Telefon raqamni ulashish', request_contact: true }]],
+                    resize_keyboard: true,
+                    one_time_keyboard: true,
+                },
             );
             return res.sendStatus(200);
         }
@@ -97,7 +154,10 @@ router.post('/webhook', async (req, res) => {
                 where: { telegramChatId: chatId, isActive: true, deletedAt: null },
                 select: { id: true, name: true, role: true },
             });
-            if (!user) return res.sendStatus(200);
+            if (!user) {
+                await sendStaffMessage(chatId, '⚠️ Tizimga kirish uchun /start bosing.', 'HTML');
+                return res.sendStatus(200);
+            }
 
             const todayNum = new Date().getDay() || 7; // 0=Sun→7, 1=Mon, ... 6=Sat
             const dayMap: Record<number, string> = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun' };
@@ -154,7 +214,10 @@ router.post('/webhook', async (req, res) => {
                 where: { telegramChatId: chatId, isActive: true, deletedAt: null },
                 select: { id: true, role: true },
             });
-            if (!user) return res.sendStatus(200);
+            if (!user) {
+                await sendStaffMessage(chatId, '⚠️ Tizimga kirish uchun /start bosing.', 'HTML');
+                return res.sendStatus(200);
+            }
 
             const where: any = { deletedAt: null, status: 'active' };
             if (user.role === 'TEACHER') where.teacherId = user.id;
@@ -222,32 +285,14 @@ router.post('/webhook', async (req, res) => {
                 select: { id: true, name: true, role: true },
             });
             if (!user) {
-                await sendStaffMessage(chatId, '❌ Siz tizimda topilmadingiz.', 'HTML');
+                await sendStaffMessage(
+                    chatId,
+                    '❌ Avval /start orqali tizimga kirish kerak.',
+                    'HTML',
+                );
                 return res.sendStatus(200);
             }
-
-            const token = jwt.sign({ userId: user.id, role: user.role, chatId }, JWT_SECRET, { expiresIn: '24h' });
-            const staffPortalUrl = await getStaffMiniAppUrl();
-            const portalUrl = staffPortalUrl
-                ? `${staffPortalUrl}${staffPortalUrl.includes('?') ? '&' : '?'}t=${token}`
-                : '';
-
-            if (!portalUrl) {
-                await sendStaffMessage(chatId, '⚙️ Portal URL hali sozlanmagan. Admin bilan bog\'laning.', 'HTML');
-                return res.sendStatus(200);
-            }
-
-            await sendStaffMessage(
-                chatId,
-                `🔗 <b>Portal havolasi (24 soat amal qiladi)</b>\n\n${portalUrl}`,
-                'HTML',
-                {
-                    inline_keyboard: [
-                        [{ text: '📱 Portalni ochish', web_app: { url: portalUrl } }],
-                        [{ text: '🌐 Brauzerda ochish', url: portalUrl }],
-                    ],
-                },
-            );
+            await sendPortalLink(user);
             return res.sendStatus(200);
         }
 
