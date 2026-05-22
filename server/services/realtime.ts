@@ -30,7 +30,7 @@ export function initRealtime(httpServer: HttpServer) {
             },
             credentials: true,
         },
-        path: '/socket.io',
+        path: '/api/socket.io',
         pingInterval: 25000,
         pingTimeout: 60000,
     });
