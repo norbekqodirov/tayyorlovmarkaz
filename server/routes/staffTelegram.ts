@@ -82,38 +82,72 @@ router.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // Tizimdan barcha aktiv xodimlarni olib telefon raqamini taqqoslaymiz
-            const users = await prisma.user.findMany({
-                where: { isActive: true, deletedAt: null },
+            // Qadam 1: StaffMember (HR sahifasidagi xodimlar) dan qidirish
+            const allStaff = await prisma.staffMember.findMany({
+                where: { status: { not: 'Ishdan bo\'shagan' }, deletedAt: null },
                 select: { id: true, name: true, role: true, phone: true },
             });
 
-            let matched: { id: string; name: string; role: string } | null = null;
-            for (const u of users) {
-                if (u.phone && extractPhoneDigits(u.phone) === tgDigits) {
-                    matched = { id: u.id, name: u.name, role: u.role };
+            let matchedStaff: { id: string; name: string; role: string } | null = null;
+            for (const s of allStaff) {
+                if (s.phone && extractPhoneDigits(s.phone) === tgDigits) {
+                    matchedStaff = { id: s.id, name: s.name, role: s.role };
                     break;
                 }
             }
 
-            if (!matched) {
+            if (!matchedStaff) {
                 await sendStaffMessage(
                     chatId,
                     `❌ <b>Raqam topilmadi</b>\n\n` +
                     `<code>${tgPhone}</code> raqami tizimda xodim sifatida ro'yxatda yo'q.\n\n` +
-                    `Iltimos, CRM'ga kiritilgan ish raqamingizni ishlatganingizni tekshiring yoki admin bilan bog'laning.`,
+                    `Iltimos, HR bo'limiga kiritilgan ish raqamingizni ishlatganingizni tekshiring yoki admin bilan bog'laning.`,
                     'HTML', { remove_keyboard: true },
                 );
                 return res.sendStatus(200);
             }
 
-            // Muvaffaqiyatli — telegramChatId ni saqlaymiz
+            // StaffMember ga telegramChatId saqlaymiz (HR kuzatuvi uchun)
+            try {
+                await prisma.staffMember.update({
+                    where: { id: matchedStaff.id },
+                    data: { telegramChatId: chatId },
+                });
+            } catch { /* unique constraint — boshqa kimda bog'liq bo'lsa o'tkazib yuboramiz */ }
+
+            // Qadam 2: Xuddi shu telefon bo'yicha User (CRM portal akkaunt) topamiz
+            const allUsers = await prisma.user.findMany({
+                where: { isActive: true, deletedAt: null },
+                select: { id: true, name: true, role: true, phone: true },
+            });
+
+            let matchedUser: { id: string; name: string; role: string } | null = null;
+            for (const u of allUsers) {
+                if (u.phone && extractPhoneDigits(u.phone) === tgDigits) {
+                    matchedUser = { id: u.id, name: u.name, role: u.role };
+                    break;
+                }
+            }
+
+            if (!matchedUser) {
+                // Xodim topildi lekin portal akkaunt yo'q
+                await sendStaffMessage(
+                    chatId,
+                    `✅ <b>Xodim topildi: ${matchedStaff.name}</b>\n\n` +
+                    `Ammo portal (CRM) akkauntingiz topilmadi.\n\n` +
+                    `Portarga kirish uchun admin bilan bog'laning — u sizga CRM akkaunt yaratib beradi.`,
+                    'HTML', { remove_keyboard: true },
+                );
+                return res.sendStatus(200);
+            }
+
+            // Muvaffaqiyatli — User ga telegramChatId saqlaymiz (portal auth uchun)
             await prisma.user.update({
-                where: { id: matched.id },
+                where: { id: matchedUser.id },
                 data: { telegramChatId: chatId },
             });
 
-            await sendPortalLink(matched);
+            await sendPortalLink(matchedUser);
             return res.sendStatus(200);
         }
 

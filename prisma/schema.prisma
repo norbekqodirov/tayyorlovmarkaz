@@ -296,29 +296,31 @@ model Payment {
 // ============================================
 
 model StaffMember {
-  id         String   @id @default(uuid())
-  name       String
-  role       String   // "Direktor", "Administrator", "O'qituvchi"
-  email      String?
-  phone      String?
-  salary     Float    @default(0)
-  joinedDate String?
-  status     String   @default("Faol") // Faol, Ta'tilda, Ishdan bo'shagan
-  department String   @default("Ma'muriyat")
-  address    String?
-  passport   String?
-  education  String?
-  experience String?
-  photo      String?
-  deletedAt  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String   @id @default(uuid())
+  name           String
+  role           String   // "Direktor", "Administrator", "O'qituvchi"
+  email          String?
+  phone          String?
+  salary         Float    @default(0)
+  joinedDate     String?
+  status         String   @default("Faol") // Faol, Ta'tilda, Ishdan bo'shagan
+  department     String   @default("Ma'muriyat")
+  address        String?
+  passport       String?
+  education      String?
+  experience     String?
+  photo          String?
+  telegramChatId String?  @unique  // Staff bot Telegram chat ID
+  deletedAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   salaries        Salary[]
   attendances     StaffAttendance[]
 
   @@index([role])
   @@index([status])
+  @@index([telegramChatId])
   @@index([deletedAt])
 }
 
