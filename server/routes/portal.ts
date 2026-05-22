@@ -15,11 +15,15 @@ async function portalAuth(req: any, res: any, next: any) {
     }
 
     const initData = req.headers['x-telegram-init-data'] as string;
-    if (!initData) return res.status(401).json({ error: 'initData talab qilinadi' });
+    console.log('[Portal] initData length:', initData?.length ?? 0, '| first 80:', initData?.substring(0, 80));
+
+    if (!initData) return res.status(401).json({ error: 'initData talab qilinadi', debug: 'empty' });
 
     const result = await validateInitData(initData);
+    console.log('[Portal] validate result:', JSON.stringify(result));
+
     if (!result.valid || !result.telegramUserId) {
-        return res.status(401).json({ error: 'Noto\'g\'ri Telegram auth' });
+        return res.status(401).json({ error: 'Noto\'g\'ri Telegram auth', debug: JSON.stringify(result) });
     }
 
     req.portalChatId = result.telegramUserId;
