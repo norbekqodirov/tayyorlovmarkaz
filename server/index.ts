@@ -66,6 +66,8 @@ const apiLimiter = rateLimit({
 });
 
 // ── Middleware ────────────────────────────────────────────────────────────────
+// Trust CloudFlare + nginx proxy (1 hop)
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use('/api', apiLimiter);
