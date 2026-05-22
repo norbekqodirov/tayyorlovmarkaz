@@ -112,7 +112,7 @@ const TABS: { id: Tab; label: string; icon: typeof BookOpen }[] = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function TelegramPortal() {
-    const [initData, setInitData] = useState('');
+    const [initData, setInitData] = useState<string | null>(null); // null = Telegram init kutilmoqda
     const [tgUser, setTgUser] = useState<{ name: string; photo?: string } | null>(null);
     const [isDark, setIsDark] = useState(false);
 
@@ -134,16 +134,20 @@ export default function TelegramPortal() {
         if (tg) {
             tg.ready();
             tg.expand();
-            setInitData(tg.initData || '');
             const user = tg.initDataUnsafe?.user;
             if (user) setTgUser({ name: user.first_name, photo: user.photo_url });
             setIsDark(tg.colorScheme === 'dark');
+            // initData ni eng oxirida set qilish — fetchMe triggerlanishi uchun
+            setInitData(tg.initData || '');
+        } else {
+            // Telegram ichida emas — '' set qilsak 401 xatosi chiqadi
+            setInitData('');
         }
     }, []);
 
-    // Fetch me data after initData is ready
+    // Fetch me data — faqat initData null bo'lmaganida (Telegram init tugaganidan keyin)
     useEffect(() => {
-        if (initData === undefined) return; // wait for init
+        if (initData === null) return; // Telegram WebApp hali initsializatsiya bo'lmagan
         fetchMe();
     }, [initData]);
 
@@ -151,7 +155,7 @@ export default function TelegramPortal() {
         setLoading(true);
         setError('');
         try {
-            const data = await portalFetch('/me', initData);
+            const data = await portalFetch('/me', initData ?? '');
             setMeData(data);
         } catch (e: any) {
             if (e.message === '404') setError('linked');
@@ -163,7 +167,7 @@ export default function TelegramPortal() {
     };
 
     const loadTabData = useCallback(async (t: Tab) => {
-        if (t === 'home' || !meData?.linked) return;
+        if (t === 'home' || !meData?.linked || initData === null) return;
         setTabLoading(true);
         try {
             if (t === 'attendance' && !attendance) {
