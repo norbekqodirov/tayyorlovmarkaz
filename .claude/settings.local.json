@@ -8,7 +8,30 @@
       "Bash(npx tsc:*)",
       "Bash(npx vite:*)",
       "Bash(cd /d D:\\\\Norbek\\\\tayyorlovmarkaz)",
-      "Bash(npx prisma *)"
+      "Bash(npx prisma *)",
+      "Bash(git config *)",
+      "Bash(xargs grep -l \"sidebar\\\\|Sidebar\\\\|navigation\\\\|nav.*items\")",
+      "Bash(xargs grep -l \"telegram\\\\|Telegram\")",
+      "Bash(gh pr *)",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue; \\(Get-Command gh\\).Source 2>$null; where.exe gh 2>$null)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\GitHub CLI\" -ErrorAction SilentlyContinue; Get-ChildItem \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\" -ErrorAction SilentlyContinue; Get-ChildItem \"C:\\\\Users\\\\Norbek\\\\AppData\\\\Local\\\\Programs\\\\GitHub CLI\" -ErrorAction SilentlyContinue)",
+      "PowerShell($env:GITHUB_TOKEN; [System.Environment]::GetEnvironmentVariable\\(\"GITHUB_TOKEN\", \"User\"\\); git -C \"D:\\\\Norbek\\\\tayyorlovmarkaz\" config --get credential.helper 2>$null)",
+      "Bash(tasklist /FI \"IMAGENAME eq node.exe\")",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process | Where-Object {$_.ProcessName -match 'node|tsx|prisma'} | Select-Object Id, ProcessName)",
+      "Read(//dev/**)",
+      "Bash(curl -s \"http://localhost:3001/api/students\" -H \"Authorization: Bearer $\\(cat /dev/null\\)\")",
+      "Bash(curl -sv \"http://localhost:3001/api/health\")",
+      "Bash(curl -sv \"http://localhost:3000/api/health\")",
+      "Bash(curl -s \"http://localhost:3000/api/health\")",
+      "Bash(curl -v \"http://localhost:3000/api/health\")",
+      "Bash(curl -s \"http://localhost:3001/api/health\")",
+      "Bash(npx tsx *)",
+      "Bash(curl -s \"http://localhost:3001/api/students\")",
+      "Bash(node --input-type=module --experimental-vm-modules)",
+      "Bash(timeout 8 node -e ' *)",
+      "Bash(node -e \"const pkg = require\\('./package.json'\\); console.log\\(JSON.stringify\\(pkg.scripts, null, 2\\)\\)\")",
+      "Bash(node -e ' *)"
     ]
   }
 }

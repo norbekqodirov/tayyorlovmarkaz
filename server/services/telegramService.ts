@@ -1,6 +1,8 @@
+import crypto from 'crypto';
 import prisma from '../db.js';
 
-// Telegram Bot API orqali xabar yuborish (telegraf ishlatmasdan, to'g'ridan HTTP)
+// ─── Core helpers ─────────────────────────────────────────────────────────────
+
 async function getBotToken(): Promise<string | null> {
     try {
         const setting = await prisma.setting.findUnique({ where: { key: 'telegram_bot_token' } });
@@ -10,7 +12,80 @@ async function getBotToken(): Promise<string | null> {
     }
 }
 
-export async function sendMessage(chatId: string, text: string, parseMode: 'HTML' | 'Markdown' = 'HTML'): Promise<boolean> {
+/** Raw Telegram Bot API call */
+export async function sendTelegramRequest(method: string, params: Record<string, any>): Promise<any> {
+    const token = await getBotToken();
+    if (!token) return { ok: false, description: 'Token not set' };
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+        });
+        return res.json();
+    } catch (err: any) {
+        return { ok: false, description: err.message };
+    }
+}
+
+// ─── Phone normalization ──────────────────────────────────────────────────────
+
+/** Returns last 9 significant digits for Uzbek phone matching */
+export function extractPhoneDigits(phone: string): string {
+    const digits = phone.replace(/\D/g, '');
+    return digits.length >= 9 ? digits.slice(-9) : digits;
+}
+
+// ─── Telegram Mini App initData validation ────────────────────────────────────
+
+export async function validateInitData(initData: string): Promise<{
+    valid: boolean;
+    telegramUserId?: string;
+    firstName?: string;
+    username?: string;
+}> {
+    const token = await getBotToken();
+    if (!token || !initData) return { valid: false };
+    try {
+        const params = new URLSearchParams(initData);
+        const hash = params.get('hash');
+        if (!hash) return { valid: false };
+
+        params.delete('hash');
+        const dataCheckString = Array.from(params.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `${k}=${v}`)
+            .join('\n');
+
+        const secretKey = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+        const expectedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+        if (expectedHash !== hash) return { valid: false };
+
+        // Replay-attack: reject if older than 24 hours
+        const authDate = parseInt(params.get('auth_date') || '0');
+        if (Math.floor(Date.now() / 1000) - authDate > 86_400) return { valid: false };
+
+        const user = params.get('user') ? JSON.parse(params.get('user')!) : null;
+        return {
+            valid: true,
+            telegramUserId: String(user?.id || ''),
+            firstName: user?.first_name || '',
+            username: user?.username || '',
+        };
+    } catch {
+        return { valid: false };
+    }
+}
+
+// ─── sendMessage (updated signature) ─────────────────────────────────────────
+
+export async function sendMessage(
+    chatId: string,
+    text: string,
+    parseMode: 'HTML' | 'Markdown' = 'HTML',
+    replyMarkup?: any,
+): Promise<boolean> {
     const token = await getBotToken();
     if (!token) {
         console.warn('[Telegram] Bot token topilmadi. Settings → Telegram da token kiriting.');
@@ -19,19 +94,16 @@ export async function sendMessage(chatId: string, text: string, parseMode: 'HTML
 
     try {
         const url = `https://api.telegram.org/bot${token}/sendMessage`;
+        const body: any = { chat_id: chatId, text, parse_mode: parseMode };
+        if (replyMarkup) body.reply_markup = replyMarkup;
+
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text,
-                parse_mode: parseMode,
-            }),
+            body: JSON.stringify(body),
         });
-
         const result = await response.json() as any;
 
-        // Log saqlash
         await prisma.telegramMessage.create({
             data: {
                 chatId,
@@ -45,19 +117,19 @@ export async function sendMessage(chatId: string, text: string, parseMode: 'HTML
         return result.ok;
     } catch (err: any) {
         console.error('[Telegram] sendMessage xato:', err.message);
-
         await prisma.telegramMessage.create({
-            data: {
-                chatId,
-                type: 'manual',
-                message: text.substring(0, 500),
-                status: 'failed',
-                error: err.message,
-            },
+            data: { chatId, type: 'manual', message: text.substring(0, 500), status: 'failed', error: err.message },
         }).catch(() => {});
-
         return false;
     }
+}
+
+/** Set bot menu button to Mini App URL */
+export async function setMenuButton(miniAppUrl: string): Promise<boolean> {
+    const result = await sendTelegramRequest('setChatMenuButton', {
+        menu_button: { type: 'web_app', text: '📱 Portal', web_app: { url: miniAppUrl } },
+    });
+    return result.ok === true;
 }
 
 export async function sendBroadcast(chatIds: string[], text: string, type: string = 'broadcast'): Promise<{ sent: number; failed: number }> {

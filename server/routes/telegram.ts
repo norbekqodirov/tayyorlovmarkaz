@@ -1,7 +1,10 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { sendMessage, sendBroadcast, getBotInfo } from '../services/telegramService.js';
+import {
+    sendMessage, sendBroadcast, getBotInfo,
+    sendTelegramRequest, setMenuButton, extractPhoneDigits,
+} from '../services/telegramService.js';
 
 const router = express.Router();
 
@@ -200,7 +203,7 @@ router.put('/settings', requireAuth, async (req, res) => {
 // GET /api/telegram/settings — sozlamalarni olish
 router.get('/settings', requireAuth, async (_req, res) => {
     try {
-        const keys = ['telegram_bot_token', 'telegram_admin_chat_id', 'telegram_auto_attendance', 'telegram_auto_payment', 'telegram_auto_lead'];
+        const keys = ['telegram_bot_token', 'telegram_admin_chat_id', 'telegram_auto_attendance', 'telegram_auto_payment', 'telegram_auto_lead', 'telegram_mini_app_url'];
         const settings = await prisma.setting.findMany({ where: { key: { in: keys } } });
 
         const result: Record<string, string> = {};
@@ -221,6 +224,7 @@ router.get('/settings', requireAuth, async (_req, res) => {
             autoAttendance: result.telegram_auto_attendance === 'true',
             autoPayment: result.telegram_auto_payment === 'true',
             autoLead: result.telegram_auto_lead === 'true',
+            miniAppUrl: result.telegram_mini_app_url || '',
         });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -234,36 +238,189 @@ router.post('/webhook', async (req, res) => {
         if (!message) return res.json({ ok: true });
 
         const chatId = String(message.chat?.id);
-        const text = message.text || '';
+        const text = (message.text || '').trim();
 
-        // Oddiy buyruqlar
+        // ── Contact shared: auto-link handler ────────────────────────────────
+        if (message.contact) {
+            const tgPhone = message.contact.phone_number || '';
+            const tgDigits = extractPhoneDigits(tgPhone);
+
+            if (!tgDigits) {
+                await sendMessage(chatId, '❌ Telefon raqam o\'qilmadi. Iltimos qayta urinib ko\'ring.', 'HTML', { remove_keyboard: true });
+                return res.json({ ok: true });
+            }
+
+            // Load all active students with phones
+            const students = await prisma.student.findMany({
+                where: { deletedAt: null },
+                select: { id: true, name: true, phone: true, parentPhone: true, telegramChatId: true, parentTelegramId: true },
+            });
+
+            let matchedId: string | null = null;
+            let matchedName = '';
+            let matchedRole: 'student' | 'parent' = 'student';
+
+            for (const s of students) {
+                if (s.phone && extractPhoneDigits(s.phone) === tgDigits) {
+                    matchedId = s.id;
+                    matchedName = s.name;
+                    matchedRole = 'student';
+                    break;
+                }
+                if (s.parentPhone && extractPhoneDigits(s.parentPhone) === tgDigits) {
+                    matchedId = s.id;
+                    matchedName = s.name;
+                    matchedRole = 'parent';
+                    break;
+                }
+            }
+
+            if (matchedId) {
+                // Update the student record
+                await prisma.student.update({
+                    where: { id: matchedId },
+                    data: matchedRole === 'student'
+                        ? { telegramChatId: chatId }
+                        : { parentTelegramId: chatId },
+                });
+
+                const miniAppSetting = await prisma.setting.findUnique({ where: { key: 'telegram_mini_app_url' } });
+                const miniAppUrl = miniAppSetting?.value || '';
+
+                const replyMarkup = miniAppUrl
+                    ? { inline_keyboard: [[{ text: '📱 Portalga kirish', web_app: { url: miniAppUrl } }]] }
+                    : { remove_keyboard: true };
+
+                const successText = matchedRole === 'student'
+                    ? `✅ <b>Muvaffaqiyatli ulandi!</b>\n\n` +
+                      `Salom, <b>${matchedName}</b>! 👋\n\n` +
+                      `Sizning Telegram hisobingiz tizimga bog'landi. Endi quyidagi bildirishnomalarni olasiz:\n` +
+                      `• 📚 Davomat xabarlari\n• 💰 To'lov eslatmalari\n• 📊 Baho natijalari\n` +
+                      (miniAppUrl ? `\n📱 <b>Portal</b> orqali ma'lumotlaringizni istalgan vaqt ko'rishingiz mumkin!` : '')
+                    : `✅ <b>Ota-ona sifatida ulandi!</b>\n\n` +
+                      `Hurmatli ota-ona! <b>${matchedName}</b> ning Telegram hisobingiz tizimga bog'landi.\n\n` +
+                      `Farzandingiz haqida bildirishnomalar olasiz:\n` +
+                      `• 📚 Davomat xabarlari\n• 💰 To'lov eslatmalari\n• 📊 Baho natijalari\n` +
+                      (miniAppUrl ? `\n📱 <b>Portal</b> orqali farzandingiz ma'lumotlarini ko'rishingiz mumkin!` : '');
+
+                await sendMessage(chatId, successText, 'HTML', replyMarkup);
+            } else {
+                await sendMessage(chatId,
+                    `❌ <b>Raqam topilmadi</b>\n\n` +
+                    `Sizning <code>${tgPhone}</code> raqamingiz tizimda ro'yxatda yo'q.\n\n` +
+                    `Iltimos, markaz administratori bilan bog'laning yoki o'z raqamingizni CRM ga qo'shishni so'rang.`,
+                    'HTML',
+                    { remove_keyboard: true }
+                );
+            }
+
+            return res.json({ ok: true });
+        }
+
+        // ── Text commands ─────────────────────────────────────────────────────
         if (text === '/start') {
-            await sendMessage(chatId,
-                `👋 <b>Salom!</b>\n\nTayyorlov Markaz CRM botiga xush kelibsiz!\n\n` +
-                `📋 <b>Mavjud buyruqlar:</b>\n` +
-                `/info — Ma'lumot olish\n` +
-                `/help — Yordam\n\n` +
-                `<i>Sizning chat ID: <b>${chatId}</b></i>\n` +
-                `Bu IDni CRM tizimiga qo'shish uchun adminга murojaat qiling.`
-            );
-        } else if (text === '/id') {
-            await sendMessage(chatId, `🔑 Sizning Telegram Chat ID: <b>${chatId}</b>`);
+            // Check if already linked
+            const linked = await prisma.student.findFirst({
+                where: {
+                    OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }],
+                    deletedAt: null,
+                },
+                select: { id: true, name: true },
+            });
+
+            if (linked) {
+                const miniAppSetting = await prisma.setting.findUnique({ where: { key: 'telegram_mini_app_url' } });
+                const miniAppUrl = miniAppSetting?.value || '';
+                const replyMarkup = miniAppUrl
+                    ? { inline_keyboard: [[{ text: '📱 Portalga kirish', web_app: { url: miniAppUrl } }]] }
+                    : undefined;
+
+                await sendMessage(chatId,
+                    `👋 <b>Qayta xush kelibsiz, ${linked.name}!</b>\n\n` +
+                    `Hisobingiz tizimga bog'liq. Barcha bildirishnomalar avtomatik yuboriladi.\n\n` +
+                    `/help — buyruqlar ro'yxati`,
+                    'HTML', replyMarkup
+                );
+            } else {
+                // Ask to share contact
+                await sendTelegramRequest('sendMessage', {
+                    chat_id: chatId,
+                    text:
+                        `👋 <b>Salom! Tayyorlov Markaz botiga xush kelibsiz!</b>\n\n` +
+                        `Bildirishnomalar olish uchun telefon raqamingizni ulashing. ` +
+                        `Raqam CRM tizimidagi ma'lumotingiz bilan solishtiriladi.\n\n` +
+                        `👇 Quyidagi tugmani bosing:`,
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        keyboard: [[{ text: '📱 Telefon raqamni ulashish', request_contact: true }]],
+                        resize_keyboard: true,
+                        one_time_keyboard: true,
+                    },
+                });
+            }
         } else if (text === '/help') {
             await sendMessage(chatId,
-                `📌 <b>Yordam</b>\n\n` +
-                `Bu bot orqali quyidagi bildirishnomalarni olasiz:\n` +
-                `• 📚 Davomat ma'lumotlari\n` +
-                `• 💰 To'lov eslatmalari\n` +
-                `• 📊 Baho ma'lumotlari\n` +
+                `📌 <b>Buyruqlar ro'yxati</b>\n\n` +
+                `/start — Boshlash / qayta bog'lash\n` +
+                `/id — Chat ID ko'rish\n` +
+                `/info — Profilingiz ma'lumotlari\n` +
+                `/help — Yordam\n\n` +
+                `<b>Bildirishnomalar:</b>\n` +
+                `• 📚 Davomat (kelmagan kun)\n` +
+                `• 💰 To'lov eslatmasi\n` +
+                `• 📊 Baho natijalari\n` +
                 `• 📅 Jadval o'zgarishlari\n\n` +
-                `Savollar uchun markaz administratoriga murojaat qiling.`
+                `Savollar uchun markaz bilan bog'laning. 📞`
             );
+        } else if (text === '/id') {
+            await sendMessage(chatId, `🔑 Sizning Telegram Chat ID: <code>${chatId}</code>`);
+        } else if (text === '/info') {
+            const linked = await prisma.student.findFirst({
+                where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
+                include: {
+                    enrollments: {
+                        include: { group: { include: { course: { select: { name: true } } } } },
+                    },
+                },
+            });
+            if (!linked) {
+                await sendMessage(chatId,
+                    `❌ Hisobingiz tizimga ulanmagan.\n\n/start buyrug'ini yuboring va telefon raqamingizni ulashing.`
+                );
+            } else {
+                const groups = linked.enrollments.map(e => `• ${e.group.name} (${e.group.course?.name || 'Kurs'})`).join('\n') || '—';
+                await sendMessage(chatId,
+                    `👤 <b>${linked.name}</b>\n\n` +
+                    `📚 <b>Guruhlar:</b>\n${groups}\n\n` +
+                    `📊 Status: ${linked.status === 'active' ? '✅ Faol' : linked.status}`
+                );
+            }
         }
 
         res.json({ ok: true });
     } catch (err: any) {
         console.error('[Telegram webhook]', err);
-        res.json({ ok: true }); // Telegram ga doimo ok qaytaramiz
+        res.json({ ok: true });
+    }
+});
+
+// POST /api/telegram/set-menu-button — Mini App menu button sozlash
+router.post('/set-menu-button', requireAuth, async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ message: 'URL kiritilishi shart' });
+
+        // Save to settings
+        await prisma.setting.upsert({
+            where: { key: 'telegram_mini_app_url' },
+            update: { value: url },
+            create: { key: 'telegram_mini_app_url', value: url },
+        });
+
+        const ok = await setMenuButton(url);
+        res.json({ ok, message: ok ? 'Menu button o\'rnatildi!' : 'Saqlandi, lekin bot bilan ulanishda xato' });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
     }
 });
 
