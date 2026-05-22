@@ -143,10 +143,25 @@ export default function TelegramPortal() {
             const user = tg.initDataUnsafe?.user;
             if (user) setTgUser({ name: user.first_name, photo: user.photo_url });
             setIsDark(tg.colorScheme === 'dark');
-            // initData ni eng oxirida set qilish — fetchMe triggerlanishi uchun
-            setInitData(tg.initData || '');
+
+            if (tg.initData) {
+                // Muvaffaqiyatli Telegram auth — initData saqlash
+                localStorage.setItem('tg_init_data', tg.initData);
+                localStorage.setItem('tg_init_ts', String(Date.now()));
+                setInitData(tg.initData);
+            } else {
+                // initData bo'sh — localStorage dan olish (so'nggi 23 soat ichida)
+                const stored = localStorage.getItem('tg_init_data');
+                const storedTs = parseInt(localStorage.getItem('tg_init_ts') || '0');
+                const age = (Date.now() - storedTs) / 1000;
+                if (stored && age < 82800) { // 23 soat
+                    setInitData(stored);
+                } else {
+                    setInitData('');
+                }
+            }
         } else {
-            // Telegram ichida emas — '' set qilsak 401 xatosi chiqadi
+            // Telegram ichida emas
             setInitData('');
         }
     }, []);
@@ -212,21 +227,40 @@ export default function TelegramPortal() {
     }
 
     if (error === 'auth' || error === 'network') {
+        const isEmpty = (initData?.length ?? 0) === 0;
         return (
             <div className={`min-h-screen flex flex-col items-center justify-center gap-4 p-6 text-center ${isDark ? 'bg-zinc-950 text-white' : 'bg-slate-50 text-zinc-900'}`}>
                 <div className="w-16 h-16 rounded-3xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                     <XCircle size={32} className="text-red-500" />
                 </div>
                 <div>
-                    <p className="font-bold text-lg">Kirish xatosi</p>
-                    <p className="text-sm text-zinc-500 mt-1">Telegram orqali kirish talab qilinadi</p>
+                    <p className="font-bold text-lg">
+                        {isEmpty ? "Telegram orqali oching" : "Kirish xatosi"}
+                    </p>
+                    <p className="text-sm text-zinc-500 mt-1">
+                        {isEmpty
+                            ? "Portalga kirish uchun botdagi tugmani bosing"
+                            : "Telegram autentifikatsiyasi muammosi"}
+                    </p>
                 </div>
+                {isEmpty && (
+                    <div className="w-full max-w-xs p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-left space-y-2">
+                        {["@tayyorlovmarkazbot ga yozing", "/start buyrug'ini yuboring", "Telefon raqamni ulashing", "\"📱 Portalga kirish\" tugmasini bosing"].map((step, i) => (
+                            <div key={i} className="flex items-center gap-2.5 text-sm text-blue-700 dark:text-blue-300">
+                                <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                                {step}
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {debugInfo && (
                     <p className="text-xs text-zinc-400 max-w-xs break-all bg-zinc-100 dark:bg-zinc-900 p-2 rounded-lg font-mono">{debugInfo}</p>
                 )}
-                <button onClick={fetchMe} className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-bold">
-                    <RefreshCw size={14} /> Qayta urinish
-                </button>
+                {!isEmpty && (
+                    <button onClick={fetchMe} className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-bold">
+                        <RefreshCw size={14} /> Qayta urinish
+                    </button>
+                )}
             </div>
         );
     }
