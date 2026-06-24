@@ -131,6 +131,7 @@ const MODULES: NavModule[] = [
         links: [
           { name: 'BI Analitika',  path: '/crmtayyorlovmarkaz/bi',          icon: BarChart2, permission: 'bi' },
           { name: 'AI Bashoratlar', path: '/crmtayyorlovmarkaz/predictions', icon: Brain,     permission: 'bi' },
+          { name: 'KPI & Maqsadlar', path: '/crmtayyorlovmarkaz/goals',      icon: Target,    permission: 'bi' },
         ],
       },
     ],
@@ -171,7 +172,7 @@ function detectModule(pathname: string): string {
     return 'hr';
   if (pathname.includes('/finance'))
     return 'finance';
-  if (pathname.includes('/bi'))
+  if (pathname.includes('/bi') || pathname.includes('/predictions') || pathname.includes('/goals'))
     return 'analytics';
   if (pathname.includes('/rooms') || pathname.includes('/inventory') || pathname.includes('/content') || pathname.includes('/users') || pathname.includes('/settings'))
     return 'management';
@@ -201,6 +202,7 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/content': 'Materiallar',
     '/crmtayyorlovmarkaz/users': 'Foydalanuvchilar',
     '/crmtayyorlovmarkaz/settings': 'Sozlamalar',
+    '/crmtayyorlovmarkaz/goals': 'KPI & Maqsadlar',
     '/crmtayyorlovmarkaz/portal': 'Mening Portalim',
   };
   return map[pathname] || 'Dashboard';

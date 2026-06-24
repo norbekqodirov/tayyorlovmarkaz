@@ -45,6 +45,7 @@ const CrmQuiz            = React.lazy(() => import('./pages/crm/CrmQuiz'));
 const PublicQuiz         = React.lazy(() => import('./pages/PublicQuiz'));
 const CrmAIContent       = React.lazy(() => import('./pages/crm/CrmAIContent'));
 const CrmPredictions     = React.lazy(() => import('./pages/crm/CrmPredictions'));
+const CrmGoals           = React.lazy(() => import('./pages/crm/CrmGoals'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -122,6 +123,7 @@ export default function App() {
               <Route path="quiz"       element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
               <Route path="ai-content"   element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmAIContent /></ProtectedRoute>} />
               <Route path="predictions" element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmPredictions /></ProtectedRoute>} />
+              <Route path="goals"       element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmGoals /></ProtectedRoute>} />
               <Route path="users"     element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
               <Route path="settings"  element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
             </Route>

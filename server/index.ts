@@ -14,6 +14,7 @@ import studentsRoutes from './routes/students.js';
 import quizRoutes from './routes/quiz.js';
 import aiRoutes from './routes/ai.js';
 import predictionsRoutes from './routes/predictions.js';
+import goalsRoutes from './routes/goals.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -64,6 +65,7 @@ app.use('/api/students', studentsRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/predictions', predictionsRoutes);
+app.use('/api/goals', goalsRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────
