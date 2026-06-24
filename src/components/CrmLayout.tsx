@@ -8,7 +8,7 @@ import {
   Search, UserCircle, ChevronDown, ChevronRight,
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
-  CheckSquare, Activity, MessageSquare, Bot,
+  CheckSquare, Activity, MessageSquare, Bot, ClipboardList,
   ArrowUpRight, Target, Users2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
@@ -55,6 +55,7 @@ const MODULES: NavModule[] = [
           { name: 'Kurslar',         path: '/crmtayyorlovmarkaz/courses',    icon: BookOpen,       permission: 'courses'    },
           { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',   icon: Calendar,       permission: 'schedule'   },
           { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',    icon: ClipboardCheck, permission: 'journal'    },
+          { name: 'Test Tizimi',     path: '/crmtayyorlovmarkaz/quiz',      icon: ClipboardList,  permission: 'content'    },
         ],
       },
     ],
@@ -192,6 +193,7 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/bi': 'BI Analitika',
     '/crmtayyorlovmarkaz/communication': 'Aloqa Markazi',
     '/crmtayyorlovmarkaz/telegram': 'Telegram Bot',
+    '/crmtayyorlovmarkaz/quiz': 'Test Tizimi',
     '/crmtayyorlovmarkaz/rooms': 'Xonalar',
     '/crmtayyorlovmarkaz/inventory': 'Inventar',
     '/crmtayyorlovmarkaz/content': 'Materiallar',

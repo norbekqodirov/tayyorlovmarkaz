@@ -11,6 +11,7 @@ import paymentsRoutes from './routes/payments.js';
 import financeRoutes from './routes/finance.js';
 import communicationRoutes from './routes/communication.js';
 import studentsRoutes from './routes/students.js';
+import quizRoutes from './routes/quiz.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -58,6 +59,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/communication', communicationRoutes);
 app.use('/api/notifications', communicationRoutes);
 app.use('/api/students', studentsRoutes);
+app.use('/api/quiz', quizRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────

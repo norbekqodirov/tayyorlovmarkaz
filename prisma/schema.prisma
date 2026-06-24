@@ -602,3 +602,77 @@ model Parent {
   createdAt  DateTime  @default(now())
   children   Student[] @relation("StudentParent")
 }
+
+// ============================================
+// FAZA 3 — TEST TIZIMI
+// ============================================
+
+model Quiz {
+  id          String       @id @default(uuid())
+  title       String
+  description String?      @db.Text
+  courseId    String?
+  groupId     String?
+  duration    Int          @default(30) // daqiqada
+  maxScore    Int          @default(100)
+  passingScore Int         @default(60)
+  isPublic    Boolean      @default(false) // lid uchun ochiq test
+  publicSlug  String?      @unique        // /test/<slug>
+  status      String       @default("draft") // draft, active, archived
+  createdById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+}
+
+model QuizQuestion {
+  id        String         @id @default(uuid())
+  quizId    String
+  quiz      Quiz           @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text      String         @db.Text
+  type      String         @default("single") // single, multiple, text
+  order     Int            @default(0)
+  points    Int            @default(1)
+  imageUrl  String?
+  options   QuizOption[]
+  answers   QuizAnswer[]
+}
+
+model QuizOption {
+  id         String       @id @default(uuid())
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean      @default(false)
+  order      Int          @default(0)
+}
+
+model QuizAttempt {
+  id          String       @id @default(uuid())
+  quizId      String
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  studentId   String?      // null = anonim (lid)
+  studentName String?      // anonim uchun
+  studentPhone String?     // anonim uchun
+  score       Float        @default(0)
+  maxScore    Float        @default(0)
+  passed      Boolean      @default(false)
+  startedAt   DateTime     @default(now())
+  finishedAt  DateTime?
+  timeSpent   Int?         // soniyada
+  answers     QuizAnswer[]
+}
+
+model QuizAnswer {
+  id          String       @id @default(uuid())
+  attemptId   String
+  attempt     QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptions String   @db.Text // JSON: option ID lari ro'yxati
+  textAnswer  String?      @db.Text
+  isCorrect   Boolean      @default(false)
+  points      Float        @default(0)
+}
