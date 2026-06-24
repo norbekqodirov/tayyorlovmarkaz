@@ -8,7 +8,7 @@ import {
   Search, UserCircle, ChevronDown, ChevronRight,
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
-  Activity, MessageSquare, Bot, ClipboardList, Sparkles,
+  Activity, MessageSquare, Bot, ClipboardList, Sparkles, Brain,
   ArrowUpRight, Target, Users2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
@@ -129,7 +129,8 @@ const MODULES: NavModule[] = [
     sections: [
       {
         links: [
-          { name: 'BI Analitika', path: '/crmtayyorlovmarkaz/bi', icon: BarChart2, permission: 'bi' },
+          { name: 'BI Analitika',  path: '/crmtayyorlovmarkaz/bi',          icon: BarChart2, permission: 'bi' },
+          { name: 'AI Bashoratlar', path: '/crmtayyorlovmarkaz/predictions', icon: Brain,     permission: 'bi' },
         ],
       },
     ],
