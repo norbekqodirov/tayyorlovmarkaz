@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { applyUnicodeFont } from './pdfFont';
 
 interface ExportColumn {
   header: string;
@@ -20,12 +21,15 @@ export function exportToExcel(data: any[], columns: ExportColumn[], filename: st
   // Set column widths
   ws['!cols'] = columns.map(c => ({ wch: c.width || 20 }));
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Ma\'lumotlar');
+  XLSX.utils.book_append_sheet(wb, ws, "Ma'lumotlar");
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
 
-export function exportToPDF(data: any[], columns: ExportColumn[], title: string, filename: string) {
+export async function exportToPDF(data: any[], columns: ExportColumn[], title: string, filename: string) {
   const doc = new jsPDF();
+
+  // Apply Unicode font for Uzbek/Cyrillic text support
+  await applyUnicodeFont(doc);
 
   // Title
   doc.setFontSize(16);
@@ -40,8 +44,8 @@ export function exportToPDF(data: any[], columns: ExportColumn[], title: string,
     startY: 35,
     head: [columns.map(c => c.header)],
     body: data.map(row => columns.map(c => String(row[c.key] ?? ''))),
-    styles: { fontSize: 8, cellPadding: 3 },
-    headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+    styles: { fontSize: 8, cellPadding: 3, font: 'Roboto' },
+    headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold', font: 'Roboto' },
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });
 
@@ -56,9 +60,12 @@ export function exportToPDF(data: any[], columns: ExportColumn[], title: string,
   doc.save(`${filename}.pdf`);
 }
 
-export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Markazi") {
+export async function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Markazi") {
   // Use A5 format for receipts
   const doc = new jsPDF({ format: 'a5' });
+
+  // Apply Unicode font
+  await applyUnicodeFont(doc);
 
   // Receipt Header
   doc.setFillColor(59, 130, 246); // Blue-500
@@ -66,11 +73,10 @@ export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Ma
   
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'normal');
   doc.text("TO'LOV CHEKI", 15, 20);
   
   doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
   doc.text(orgName, doc.internal.pageSize.getWidth() - 15, 20, { align: 'right' });
 
   // Receipt Body
@@ -80,10 +86,8 @@ export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Ma
   doc.setFontSize(12);
   doc.text("To'lov summasi:", 15, 50);
   doc.setFontSize(24);
-  doc.setFont('helvetica', 'bold');
   const amountStr = new Intl.NumberFormat('uz-UZ').format(transaction.amount) + " UZS";
   doc.text(transaction.type === 'income' ? `+${amountStr}` : `-${amountStr}`, 15, 62);
-  doc.setFont('helvetica', 'normal');
 
   // Details
   let startY = 85;
@@ -93,14 +97,11 @@ export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Ma
   doc.setTextColor(100, 100, 100);
   
   const drawRow = (label: string, value: string, yPos: number) => {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Roboto', 'normal');
     doc.text(label, 15, yPos);
-    doc.setFont('helvetica', 'bold');
     doc.setTextColor(50, 50, 50);
-    // Right aligned text handles long values better
     doc.text(value || '-', doc.internal.pageSize.getWidth() - 15, yPos, { align: 'right' });
     doc.setTextColor(100, 100, 100);
-    // Draw subtle line
     doc.setDrawColor(240, 240, 240);
     doc.line(15, yPos + 3, doc.internal.pageSize.getWidth() - 15, yPos + 3);
   };
@@ -118,9 +119,8 @@ export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Ma
   }
 
   // Description
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.text("Tavsif:", 15, startY + 5);
-  doc.setFont('helvetica', 'italic');
   doc.setTextColor(80, 80, 80);
   
   const splitTitle = doc.splitTextToSize(transaction.description || 'Kiritilmagan', doc.internal.pageSize.getWidth() - 30);
@@ -128,7 +128,6 @@ export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Ma
 
   // Footer
   const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
   doc.text("To'lovingiz uchun tashakkur!", doc.internal.pageSize.getWidth() / 2, pageHeight - 15, { align: 'center' });
@@ -138,10 +137,13 @@ export function exportReceiptToPDF(transaction: any, orgName: string = "O'quv Ma
   doc.save(fileName);
 }
 
-export function exportCertificateToPDF(student: any, orgName: string = "DATA TA'LIM MARKAZI") {
+export async function exportCertificateToPDF(student: any, orgName: string = "DATA TA'LIM MARKAZI") {
   const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
   const w = doc.internal.pageSize.getWidth();
   const h = doc.internal.pageSize.getHeight();
+
+  // Apply Unicode font
+  await applyUnicodeFont(doc);
   
   // Background
   doc.setFillColor(252, 252, 252);
@@ -157,23 +159,20 @@ export function exportCertificateToPDF(student: any, orgName: string = "DATA TA'
   // Title
   doc.setTextColor(30, 30, 40);
   doc.setFontSize(45);
-  doc.setFont('times', 'bold');
+  doc.setFont('Roboto', 'normal');
   doc.text("S E R T I F I K A T", w / 2, 60, { align: 'center' });
   
   doc.setFontSize(16);
-  doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 110);
   doc.text("Guvohnoma shuni tasdiqlaydiki,", w / 2, 85, { align: 'center' });
   
   // Student Name
   doc.setFontSize(40);
   doc.setTextColor(37, 99, 235); // Blue-600
-  doc.setFont('times', 'italic');
-  doc.text((student.name || 'Noma\'lum o\'quvchi').toUpperCase(), w / 2, 115, { align: 'center' });
+  doc.text((student.name || "Noma'lum o'quvchi").toUpperCase(), w / 2, 115, { align: 'center' });
 
   // Description
   doc.setFontSize(16);
-  doc.setFont('helvetica', 'normal');
   doc.setTextColor(60, 60, 70);
   doc.text(`Tashkilotimizning "${student.course || 'Umumiy'}" kursini amaliy va nazariy`, w / 2, 140, { align: 'center' });
   doc.text("jihatdan muvaffaqiyatli tamomlagani uchun taqdirlandi.", w / 2, 152, { align: 'center' });
@@ -181,7 +180,6 @@ export function exportCertificateToPDF(student: any, orgName: string = "DATA TA'
   // Bottom details
   doc.setFontSize(14);
   doc.setTextColor(30, 30, 30);
-  doc.setFont('times', 'bold');
   
   doc.text(orgName, 50, h - 40);
   doc.text(new Date().toLocaleDateString('uz-UZ'), w - 50, h - 40, { align: 'right' });
@@ -192,7 +190,6 @@ export function exportCertificateToPDF(student: any, orgName: string = "DATA TA'
   doc.line(50, h - 43, 130, h - 43); // Left line
   doc.line(w - 110, h - 43, w - 50, h - 43); // Right line
   
-  doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(150, 150, 150);
   doc.text("Boshqaruvchi", 90, h - 35, { align: 'center' });

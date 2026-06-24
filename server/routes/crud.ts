@@ -8,38 +8,50 @@ const router = express.Router();
 // ─── Model Map: frontend collection → Prisma model name ──────────────────────
 // Collections NOT listed here will fallback to GenericDocument (JSON store)
 const MODEL_MAP: Record<string, string> = {
-    'courses':      'course',
-    'groups':       'group',
-    'students':     'student',
-    'rooms':        'room',
-    'staff':        'staffMember',
-    'staffMembers': 'staffMember',
-    'finance':      'transaction',
-    'transactions': 'transaction',
-    'payments':     'payment',
-    'leads':        'lead',
-    'posts':        'post',
-    'news':         'post',
-    'inventory':    'inventoryItem',
-    'tasks':        'task',
-    'notifications': 'notification',
-    'settings':     'setting',
-    'pageContent':  'pageContent',
-    'gallery':      'galleryItem',
-    'forms':        'targetForm',
+    // ── Core entities ────────────────────────────────────────────────────────
+    'courses':        'course',
+    'groups':         'group',
+    'students':       'student',
+    'rooms':          'room',
+    'staff':          'staffMember',
+    'staffMembers':   'staffMember',
+    'finance':        'transaction',
+    'transactions':   'transaction',
+    'payments':       'payment',
+    'leads':          'lead',
+    'posts':          'post',
+    'news':           'post',
+    'inventory':      'inventoryItem',
+    'tasks':          'task',
+    'notifications':  'notification',
+    'settings':       'setting',
+    'pageContent':    'pageContent',
+    'gallery':        'galleryItem',
+    'forms':          'targetForm',
+    // ── Academic (Faza 0.2 — migrated from GenericDocument) ─────────────────
+    'schedule':       'groupSchedule',
+    'attendance':     'attendance',
+    'assessment':     'assessment',
+    'assessments':    'assessment',
+    'exams':          'exam',
+    'notes':          'groupStudentNote',
+    'campaigns':      'campaign',
+    'leadActivities': 'leadActivity',
+    'lead_activities':'leadActivity',
 };
 
-// Always use GenericDocument for these (they have extra fields beyond Prisma schema)
+// Collections still stored as GenericDocument (truly schema-less or rarely used)
 const FORCE_GENERIC: Set<string> = new Set([
-    'schedule', 'attendance', 'assessments', 'journal', 'exams', 'notes',
-    'automations', 'campaigns', 'leadActivities', 'lead_activities',
+    'automations',
     'enrollments_extra',
+    'journal', // JournalEntry model has different structure; migrated via journalEntries endpoint
 ]);
 
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
+    // ── Core entities ────────────────────────────────────────────────────────
     'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes'],
-    'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo'],
+    'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'balance', 'joinedDate'],
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize'],
     'room': ['name', 'capacity', 'color'],
     'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status'],
@@ -50,6 +62,14 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
     'task': ['title', 'completed', 'userId'],
     'targetForm': ['title', 'description', 'course', 'url', 'isActive'],
+    // ── Academic (Faza 0.2) ──────────────────────────────────────────────────
+    'groupSchedule':   ['groupId', 'groupName', 'teacher', 'room', 'startTime', 'endTime', 'days', 'color'],
+    'attendance':      ['groupId', 'date', 'records'],
+    'assessment':      ['studentId', 'groupId', 'title', 'type', 'score', 'maxScore', 'date', 'subject', 'notes'],
+    'exam':            ['groupId', 'studentId', 'examName', 'score'],
+    'groupStudentNote':['groupId', 'studentId', 'note'],
+    'campaign':        ['name', 'platform', 'budget', 'spent', 'leads', 'startDate', 'endDate', 'status', 'notes'],
+    'leadActivity':    ['leadId', 'type', 'content', 'date', 'user'],
 };
 
 // Status normalizers: convert Uzbek UI values to English DB values
@@ -84,6 +104,9 @@ function normalizeData(modelName: string, data: any): any {
     }
     if (modelName === 'payment') {
         if (data.amount !== undefined) data.amount = Number(data.amount) || 0;
+    }
+    if (modelName === 'student') {
+        if (data.balance !== undefined) data.balance = Number(data.balance) || 0;
     }
     return data;
 }
@@ -267,11 +290,8 @@ router.post('/:collection', async (req, res) => {
             }
 
             if (notifTitle) {
-                await prisma.genericDocument.create({
-                    data: {
-                        collection: 'notifications',
-                        data: JSON.stringify({ title: notifTitle, message: notifMessage, type: 'info', isRead: false, time: new Date().toISOString() })
-                    }
+                await prisma.notification.create({
+                    data: { title: notifTitle, message: notifMessage, type: 'info', isRead: false }
                 });
             }
         } catch { /* Notification errors are silent */ }
@@ -332,23 +352,21 @@ router.delete('/:collection/:id', async (req, res) => {
             return res.json({ success: true });
         }
 
-        // Native Prisma models — schema cascades handle related Prisma records.
-        // Also clean up any GenericDocument-stored related records.
+        // Native Prisma models — Faza 0.2: academic/marketing collections are now
+        // native tables with onDelete: Cascade in schema, so no manual cleanup needed.
+        // Only clean up truly-generic (FORCE_GENERIC) related docs.
         if (collection === 'students') {
+            // journal still in FORCE_GENERIC
             await prisma.genericDocument.deleteMany({
-                where: { collection: { in: ['attendance', 'assessments', 'journal', 'exams', 'notes'] }, data: { contains: `"studentId":"${id}"` } }
+                where: { collection: 'journal', data: { contains: `"studentId":"${id}"` } }
             });
         }
         if (collection === 'groups') {
             await prisma.genericDocument.deleteMany({
-                where: { collection: { in: ['schedule', 'attendance', 'assessments', 'journal', 'exams', 'notes'] }, data: { contains: `"groupId":"${id}"` } }
+                where: { collection: 'journal', data: { contains: `"groupId":"${id}"` } }
             });
         }
-        if (collection === 'leads') {
-            await prisma.genericDocument.deleteMany({
-                where: { collection: { in: ['leadActivities'] }, data: { contains: `"leadId":"${id}"` } }
-            });
-        }
+        // leads: leadActivities now native — cascade handles it
 
         // @ts-ignore
         await prisma[(req as any).modelName].delete({ where: { id } });
