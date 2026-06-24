@@ -1,195 +1,147 @@
 /**
  * server/routes/telegram.ts
- * ────────────────────────────────────────────────────────────────────────────
- * Telegram Bot webhook handler.
+ * Telegram Bot webhook + admin endpoints
  *
- * Qo'llab-quvvatlanadigan komandalar:
- *   /start   — Xush kelibsiz xabari
- *   /leads   — Bugungi yangi lidlar soni
- *   /stats   — Asosiy statistika (o'quvchilar, guruhlar, moliya)
- *   /new_lead— Yangi lid qo'shish (interaktiv dialog)
- *
- * Sozlash:
- *   .env da TELEGRAM_BOT_TOKEN va TELEGRAM_WEBHOOK_SECRET ni qo'shing.
- *   Webhook URL: POST /api/telegram/webhook
- *
- * Production uchun:
- *   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://sizning-domain.uz/api/telegram/webhook
+ * POST /api/telegram/webhook       — grammY bot webhook
+ * GET  /api/telegram/set-webhook   — webhook URL sozlash (dev)
+ * GET  /api/telegram/info          — webhook holati
+ * POST /api/telegram/send          — server tomonidan xabar yuborish (admin)
+ * POST /api/telegram/link-student  — o'quvchini Telegram ga ulash
  */
 
 import express from 'express';
+import { handleBotWebhook, sendTelegramNotification } from '../bot/index.js';
 import prisma from '../db.js';
 
 const router = express.Router();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
 
-// ─── Telegram API helper ──────────────────────────────────────────────────────
-async function sendMessage(chatId: number | string, text: string, options: Record<string, any> = {}) {
-    if (!BOT_TOKEN) {
-        console.warn('[Telegram] BOT_TOKEN not set — skipping sendMessage');
-        return;
-    }
-    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-    const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', ...options });
-    try {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body,
-        });
-        if (!res.ok) {
-            const err = await res.text();
-            console.error('[Telegram] sendMessage error:', err);
-        }
-    } catch (e) {
-        console.error('[Telegram] sendMessage fetch error:', e);
-    }
-}
+// ─── Bot webhook ──────────────────────────────────────────────────────────────
 
-// ─── Command handlers ─────────────────────────────────────────────────────────
-async function handleStart(chatId: number) {
-    await sendMessage(chatId,
-        `🎓 <b>Tayyorlovmarkaz CRM Bot</b>\n\n` +
-        `Assalomu alaykum! Men sizga CRM tizimi bilan ishlashda yordam beraman.\n\n` +
-        `<b>Mavjud komandalar:</b>\n` +
-        `/leads — Bugungi yangi lidlar\n` +
-        `/stats — Umumiy statistika\n` +
-        `/help — Yordam\n\n` +
-        `<i>Muammolar bo'lsa admin bilan bog'laning.</i>`
-    );
-}
-
-async function handleLeads(chatId: number) {
-    try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayLeads = await prisma.lead.findMany({
-            where: { createdAt: { gte: today } },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-        });
-        const total = await prisma.lead.count();
-        const won = await prisma.lead.count({ where: { stage: 'won' } });
-
-        let text = `📊 <b>Lidlar Hisoboti</b>\n\n`;
-        text += `Bugungi yangi lidlar: <b>${todayLeads.length}</b>\n`;
-        text += `Jami lidlar: <b>${total}</b>\n`;
-        text += `Yutilgan (Won): <b>${won}</b>\n`;
-        text += `Konversiya: <b>${total > 0 ? Math.round((won / total) * 100) : 0}%</b>\n\n`;
-
-        if (todayLeads.length > 0) {
-            text += `<b>Bugungi lidlar:</b>\n`;
-            todayLeads.forEach((l, i) => {
-                text += `${i + 1}. ${l.name} — ${l.phone} (${l.source || 'Noma\'lum'})\n`;
-            });
-        } else {
-            text += `<i>Bugun hali yangi lid yo'q.</i>`;
-        }
-
-        await sendMessage(chatId, text);
-    } catch (e) {
-        await sendMessage(chatId, '❌ Ma\'lumot olishda xatolik yuz berdi.');
-    }
-}
-
-async function handleStats(chatId: number) {
-    try {
-        const [students, groups, leads, revenue] = await Promise.all([
-            prisma.student.count({ where: { status: 'active' } }),
-            prisma.group.count({ where: { status: { in: ['Active', 'Faol'] } } }),
-            prisma.lead.count({ where: { stage: { in: ['new', 'contacted', 'meeting'] } } }),
-            prisma.transaction.aggregate({
-                _sum: { amount: true },
-                where: { type: 'income' },
-            }),
-        ]);
-
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
-        const monthRevenue = await prisma.transaction.aggregate({
-            _sum: { amount: true },
-            where: { type: 'income', createdAt: { gte: monthStart } },
-        });
-
-        const totalRevenue = revenue._sum.amount || 0;
-        const monthRev = monthRevenue._sum.amount || 0;
-
-        const text =
-            `📈 <b>Umumiy Statistika</b>\n\n` +
-            `👩‍🎓 Faol o'quvchilar: <b>${students}</b>\n` +
-            `📚 Faol guruhlar: <b>${groups}</b>\n` +
-            `🎯 Aktiv lidlar: <b>${leads}</b>\n\n` +
-            `💰 <b>Moliyaviy Holat:</b>\n` +
-            `Bu oy tushumlari: <b>${new Intl.NumberFormat('uz-UZ').format(monthRev)} so'm</b>\n` +
-            `Jami tushumlar: <b>${new Intl.NumberFormat('uz-UZ').format(totalRevenue)} so'm</b>`;
-
-        await sendMessage(chatId, text);
-    } catch (e) {
-        await sendMessage(chatId, '❌ Statistika olishda xatolik.');
-    }
-}
-
-// ─── Webhook endpoint ─────────────────────────────────────────────────────────
-router.post('/webhook', async (req, res) => {
-    // Webhook secret tekshiruvi (ixtiyoriy lekin xavfsizlik uchun tavsiya etiladi)
+router.post('/webhook', (req, res) => {
+    // Webhook secret tekshiruvi
     const secret = req.headers['x-telegram-bot-api-secret-token'];
     if (WEBHOOK_SECRET && secret !== WEBHOOK_SECRET) {
-        return res.status(403).json({ message: 'Forbidden' });
+        res.status(403).json({ message: 'Forbidden' });
+        return;
     }
-
-    res.status(200).json({ ok: true }); // Telegramga tez javob qaytaramiz
-
-    const update = req.body;
-    const message = update?.message || update?.edited_message;
-    if (!message) return;
-
-    const chatId = message.chat.id;
-    const text: string = message.text || '';
-    const command = text.split(' ')[0].toLowerCase();
-
-    try {
-        switch (command) {
-            case '/start':
-            case '/help':
-                await handleStart(chatId);
-                break;
-            case '/leads':
-                await handleLeads(chatId);
-                break;
-            case '/stats':
-                await handleStats(chatId);
-                break;
-            default:
-                if (text.startsWith('/')) {
-                    await sendMessage(chatId, `❓ Noma'lum komanda: <code>${command}</code>\n\nYordam uchun: /help`);
-                }
-        }
-    } catch (e) {
-        console.error('[Telegram] Handler error:', e);
-    }
+    handleBotWebhook(req, res);
 });
 
-// ─── Webhook registration helper (dev only) ───────────────────────────────────
+// ─── Webhook sozlash (dev) ────────────────────────────────────────────────────
+
 router.get('/set-webhook', async (req, res) => {
     if (!BOT_TOKEN) return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN not set' });
     const webhookUrl = req.query.url as string;
     if (!webhookUrl) return res.status(400).json({ error: 'url query param required' });
 
-    const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`;
-    const body = JSON.stringify({ url: webhookUrl, secret_token: WEBHOOK_SECRET || undefined });
-    const r = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-    const data = await r.json();
-    res.json(data);
+    const body = JSON.stringify({
+        url: webhookUrl,
+        secret_token: WEBHOOK_SECRET || undefined,
+        allowed_updates: ['message', 'callback_query']
+    });
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+    });
+    res.json(await r.json());
 });
 
-// ─── Webhook info ─────────────────────────────────────────────────────────────
+// ─── Webhook holati ───────────────────────────────────────────────────────────
+
 router.get('/info', async (_req, res) => {
     if (!BOT_TOKEN) return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN not set' });
     const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo`);
-    const data = await r.json();
-    res.json(data);
+    res.json(await r.json());
+});
+
+// ─── Server tomonidan xabar yuborish ─────────────────────────────────────────
+
+router.post('/send', async (req, res) => {
+    const { chatId, message } = req.body;
+    if (!chatId || !message) return res.status(400).json({ error: 'chatId and message required' });
+    await sendTelegramNotification(chatId, message);
+    res.json({ ok: true });
+});
+
+// ─── O'quvchini Telegram ga ulash ────────────────────────────────────────────
+
+router.post('/link-student', async (req, res) => {
+    const { studentId, telegramChatId } = req.body;
+    if (!studentId || !telegramChatId) {
+        return res.status(400).json({ error: 'studentId and telegramChatId required' });
+    }
+
+    try {
+        const student = await prisma.student.findUnique({ where: { id: studentId } });
+        if (!student) return res.status(404).json({ error: 'Student not found' });
+
+        // notes ga tg:<chatId> tegli yozuv qo'shamiz
+        const existingNotes = student.notes || '';
+        const tgTag = `tg:${telegramChatId}`;
+        const updatedNotes = existingNotes.includes('tg:')
+            ? existingNotes.replace(/tg:\d+/, tgTag)
+            : existingNotes + (existingNotes ? '\n' : '') + tgTag;
+
+        await prisma.student.update({
+            where: { id: studentId },
+            data: { notes: updatedNotes }
+        });
+
+        // O'quvchiga xabar yuboramiz
+        await sendTelegramNotification(
+            telegramChatId,
+            `✅ <b>Muvaffaqiyat!</b>\n\nSizning akkauntingiz ${student.name} nomi bilan tizimga ulandi.\n\n/start yuboring!`
+        );
+
+        res.json({ ok: true, message: 'Student linked to Telegram' });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─── Ommaviy xabar (bulk notify) ─────────────────────────────────────────────
+
+router.post('/broadcast', async (req, res) => {
+    const { message, targetType, groupId } = req.body;
+    if (!message) return res.status(400).json({ error: 'message required' });
+
+    try {
+        let students: { notes: string | null; name: string }[] = [];
+
+        if (targetType === 'debtors') {
+            students = await prisma.student.findMany({
+                where: { balance: { lt: 0 }, status: 'active' },
+                select: { notes: true, name: true }
+            });
+        } else if (targetType === 'group' && groupId) {
+            const enrollments = await prisma.enrollment.findMany({
+                where: { groupId },
+                include: { student: { select: { notes: true, name: true } } }
+            });
+            students = enrollments.map(e => e.student);
+        } else {
+            students = await prisma.student.findMany({
+                where: { status: 'active' },
+                select: { notes: true, name: true }
+            });
+        }
+
+        let sent = 0;
+        for (const s of students) {
+            const match = s.notes?.match(/tg:(\d+)/);
+            if (match) {
+                await sendTelegramNotification(match[1], message);
+                sent++;
+            }
+        }
+
+        res.json({ ok: true, sent, total: students.length });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 export default router;

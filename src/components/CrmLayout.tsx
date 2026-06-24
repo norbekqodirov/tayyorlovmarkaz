@@ -8,7 +8,7 @@ import {
   Search, UserCircle, ChevronDown, ChevronRight,
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
-  CheckSquare, Activity, MessageSquare,
+  CheckSquare, Activity, MessageSquare, Bot,
   ArrowUpRight, Target, Users2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
@@ -75,6 +75,7 @@ const MODULES: NavModule[] = [
           { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon,   permission: 'target_forms' },
           { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing',     icon: Megaphone,      permission: 'marketing'    },
           { name: 'Aloqa Markazi',   path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'marketing'    },
+          { name: 'Telegram Bot',    path: '/crmtayyorlovmarkaz/telegram',      icon: Bot,            permission: undefined        },
         ],
       },
     ],
@@ -161,7 +162,7 @@ const MODULES: NavModule[] = [
 ];
 
 function detectModule(pathname: string): string {
-  if (pathname.includes('/leads') || pathname.includes('/forms') || pathname.includes('/marketing'))
+  if (pathname.includes('/leads') || pathname.includes('/forms') || pathname.includes('/marketing') || pathname.includes('/communication') || pathname.includes('/telegram'))
     return 'marketing';
   if (pathname.includes('/teachers') || pathname.includes('/staff'))
     return 'hr';
@@ -189,6 +190,8 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/staff': 'Xodimlar',
     '/crmtayyorlovmarkaz/finance': 'Moliya',
     '/crmtayyorlovmarkaz/bi': 'BI Analitika',
+    '/crmtayyorlovmarkaz/communication': 'Aloqa Markazi',
+    '/crmtayyorlovmarkaz/telegram': 'Telegram Bot',
     '/crmtayyorlovmarkaz/rooms': 'Xonalar',
     '/crmtayyorlovmarkaz/inventory': 'Inventar',
     '/crmtayyorlovmarkaz/content': 'Materiallar',

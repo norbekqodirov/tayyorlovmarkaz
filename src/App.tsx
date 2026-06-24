@@ -40,6 +40,7 @@ const CrmInventory  = React.lazy(() => import('./pages/crm/CrmInventory'));
 const CrmUsers          = React.lazy(() => import('./pages/crm/CrmUsers'));
 const CrmCommunication   = React.lazy(() => import('./pages/crm/CrmCommunication'));
 const CrmStudentProfile  = React.lazy(() => import('./pages/crm/CrmStudentProfile'));
+const CrmTelegram        = React.lazy(() => import('./pages/crm/CrmTelegram'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -112,6 +113,7 @@ export default function App() {
               <Route path="inventory" element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
               <Route path="content"        element={<ProtectedRoute requiredPermission="content"        allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
               <Route path="communication" element={<ProtectedRoute requiredPermission="marketing"      allowedRoles={['ADMIN','MANAGER']}><CrmCommunication /></ProtectedRoute>} />
+              <Route path="telegram"      element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTelegram /></ProtectedRoute>} />
               <Route path="users"     element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
               <Route path="settings"  element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
             </Route>
