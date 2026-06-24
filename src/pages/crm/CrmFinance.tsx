@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   DollarSign, TrendingUp, TrendingDown, Download, Plus,
   Search, ArrowUpRight, ArrowDownRight, CreditCard, Wallet,
   X, Calendar, FileText, User, Trash2, AlertTriangle,
-  CheckCircle2, BarChart3, PieChart as PieChartIcon, Filter, Check, Send
+  CheckCircle2, BarChart3, PieChart as PieChartIcon, Filter, Check, Send,
+  Copy, ExternalLink, Receipt, Clock, XCircle, ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,6 +18,24 @@ import { exportToExcel, exportToPDF, exportReceiptToPDF } from '../../utils/expo
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
+import api from '../../api/client';
+
+interface Invoice {
+  id: string;
+  number: string;
+  studentId: string;
+  student: { id: string; name: string; phone: string; group: string };
+  amount: number;
+  discount: number;
+  tax: number;
+  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  dueDate: string;
+  paidAt: string | null;
+  method: string | null;
+  description: string | null;
+  items: { id: string; name: string; quantity: number; price: number }[];
+  createdAt: string;
+}
 
 interface Transaction {
   id: string;
@@ -67,11 +86,97 @@ export default function CrmFinance() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
-  const [activeTab, setActiveTab] = useState<'transactions' | 'debtors' | 'monthly'>('transactions');
+  const [activeTab, setActiveTab] = useState<'transactions' | 'debtors' | 'monthly' | 'invoices'>('transactions');
+
+  // Invoices state
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({
+    studentId: '', amount: '', discount: '0', tax: '0',
+    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    method: 'Naqd', description: '',
+  });
+  const [invoiceLinks, setInvoiceLinks] = useState<{ payme: string; click: string; amount: number } | null>(null);
+  const [invoiceLinksLoading, setInvoiceLinksLoading] = useState(false);
+
+  const fetchInvoices = useCallback(async () => {
+    setInvoicesLoading(true);
+    try {
+      const res = await api.get('/finance/invoices');
+      setInvoices(res.data || []);
+    } catch { /* ignore */ } finally {
+      setInvoicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'invoices') fetchInvoices();
+  }, [activeTab, fetchInvoices]);
+
+  const handleCreateInvoice = async () => {
+    if (!invoiceForm.studentId || !invoiceForm.amount) return;
+    try {
+      await api.post('/finance/invoices', {
+        studentId: invoiceForm.studentId,
+        amount: Number(invoiceForm.amount),
+        discount: Number(invoiceForm.discount),
+        tax: Number(invoiceForm.tax),
+        dueDate: invoiceForm.dueDate,
+        method: invoiceForm.method,
+        description: invoiceForm.description,
+      });
+      showToast("Invoice yaratildi", 'success');
+      setIsInvoiceModalOpen(false);
+      setInvoiceForm({ studentId: '', amount: '', discount: '0', tax: '0', dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], method: 'Naqd', description: '' });
+      fetchInvoices();
+    } catch { showToast("Xatolik yuz berdi", 'error'); }
+  };
+
+  const handleMarkInvoicePaid = async (invoiceId: string) => {
+    try {
+      await api.patch(`/finance/invoices/${invoiceId}`, { status: 'paid' });
+      showToast("Invoice to'landi deb belgilandi", 'success');
+      fetchInvoices();
+    } catch { showToast("Xatolik yuz berdi", 'error'); }
+  };
+
+  const handleGetInvoiceLinks = async (invoice: Invoice) => {
+    setInvoiceLinksLoading(true);
+    try {
+      const res = await api.get(`/finance/invoices/${invoice.id}/payment-links`);
+      setInvoiceLinks(res.data);
+    } catch { showToast("Havolalarni yuklashda xatolik", 'error'); } finally {
+      setInvoiceLinksLoading(false);
+    }
+  };
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [isDebtorsModalOpen, setIsDebtorsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 20;
+
+  const [paymentLinks, setPaymentLinks] = useState<{ payme: string; click: string; studentName: string; amount: number } | null>(null);
+  const [isGeneratingLinks, setIsGeneratingLinks] = useState(false);
+  const [copiedType, setCopiedType] = useState<'payme' | 'click' | null>(null);
+
+  const handleGetPaymentLinks = async (studentId: string, studentName: string, balance: number) => {
+    setIsGeneratingLinks(true);
+    try {
+      const debtAmount = Math.abs(balance);
+      const res = await api.get(`/payments/generate-links?studentId=${studentId}&amount=${debtAmount}`);
+      setPaymentLinks({
+        payme: res.data.payme,
+        click: res.data.click,
+        studentName,
+        amount: debtAmount
+      });
+    } catch (err) {
+      showToast("To'lov havolalarini yuklashda xatolik yuz berdi", 'error');
+    } finally {
+      setIsGeneratingLinks(false);
+    }
+  };
+
 
   const [form, setForm] = useState<Partial<Transaction>>({
     type: 'income',
@@ -214,8 +319,8 @@ export default function CrmFinance() {
               }} className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-t-xl">
                 Excel (.xlsx)
               </button>
-              <button onClick={() => {
-                exportToPDF(filteredTransactions, [
+              <button onClick={async () => {
+                await exportToPDF(filteredTransactions, [
                   { header: 'Sana', key: 'date' }, { header: 'Kategoriya', key: 'category' },
                   { header: 'Summa', key: 'amount' }, { header: 'Tavsif', key: 'description' },
                 ], 'Moliya Hisoboti', 'Moliya');
@@ -343,14 +448,19 @@ export default function CrmFinance() {
         </div>
       </div>
 
-      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit border border-zinc-200 dark:border-zinc-700">
-        {(['transactions', 'debtors', 'monthly'] as const).map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
+      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit border border-zinc-200 dark:border-zinc-700 flex-wrap">
+        {([
+          { key: 'transactions', label: 'Tranzaksiyalar' },
+          { key: 'invoices', label: `Invoicelar (${invoices.filter(i => i.status === 'pending').length})` },
+          { key: 'debtors', label: `Qarzdorlar (${debtors.length})` },
+          { key: 'monthly', label: 'Oylik Hisobot' },
+        ] as const).map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
-              activeTab === tab ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-400 hover:text-zinc-600'
+              activeTab === tab.key ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-400 hover:text-zinc-600'
             }`}
           >
-            {tab === 'transactions' ? "Tranzaksiyalar" : tab === 'debtors' ? `Qarzdorlar (${debtors.length})` : 'Oylik Hisobot'}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -453,6 +563,242 @@ export default function CrmFinance() {
         </div>
       )}
 
+      {activeTab === 'invoices' && (
+        <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-blue-100 dark:bg-blue-500/20 rounded-lg flex items-center justify-center">
+                <Receipt size={14} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-slate-900 dark:text-white">Invoicelar</p>
+                <p className="text-[10px] text-zinc-400">Jami: {invoices.length} ta</p>
+              </div>
+            </div>
+            <Button onClick={() => setIsInvoiceModalOpen(true)} leftIcon={<Plus size={14} />} size="sm">
+              Yangi Invoice
+            </Button>
+          </div>
+
+          {invoicesLoading ? (
+            <div className="py-16 text-center text-zinc-400 text-sm">Yuklanmoqda...</div>
+          ) : invoices.length === 0 ? (
+            <div className="py-16 text-center">
+              <Receipt size={32} className="mx-auto text-zinc-200 mb-2" />
+              <p className="text-sm font-bold text-zinc-400">Invoice mavjud emas</p>
+              <button onClick={() => setIsInvoiceModalOpen(true)} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
+                + Birinchi invoice yaratish
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-zinc-50 dark:bg-zinc-800/50">
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Raqam</th>
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Talaba</th>
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Summa</th>
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Muddat</th>
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Holat</th>
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Amal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {invoices.map(inv => {
+                    const isOverdue = inv.status === 'pending' && inv.dueDate < new Date().toISOString().split('T')[0];
+                    const statusColors: Record<string, string> = {
+                      pending: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400',
+                      paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400',
+                      overdue: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400',
+                      cancelled: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+                    };
+                    const statusLabels: Record<string, string> = { pending: 'Kutilmoqda', paid: "To'landi", overdue: 'Muddati o\'tgan', cancelled: 'Bekor' };
+                    return (
+                      <tr key={inv.id} className="hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors group">
+                        <td className="px-5 py-3.5">
+                          <span className="text-xs font-black text-slate-900 dark:text-white">{inv.number}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">{inv.student?.name}</p>
+                          <p className="text-[10px] text-zinc-400">{inv.student?.group}</p>
+                        </td>
+                        <td className="px-5 py-3.5 font-black text-sm text-slate-900 dark:text-white">
+                          {formatMoney(inv.amount)}
+                          {inv.discount > 0 && <span className="ml-1 text-[10px] text-emerald-500">-{inv.discount}%</span>}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className={`text-xs font-bold ${isOverdue ? 'text-rose-500' : 'text-zinc-500'}`}>{inv.dueDate}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${statusColors[isOverdue ? 'overdue' : inv.status]}`}>
+                            {statusLabels[isOverdue ? 'overdue' : inv.status]}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-all">
+                            {inv.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => handleMarkInvoicePaid(inv.id)}
+                                  className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                                  title="To'landi deb belgilash"
+                                >
+                                  <CheckCircle2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleGetInvoiceLinks(inv)}
+                                  className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-600 rounded-lg"
+                                  title="To'lov havolalari"
+                                >
+                                  <ExternalLink size={13} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Invoice yaratish modali */}
+      <Modal isOpen={isInvoiceModalOpen} onClose={() => setIsInvoiceModalOpen(false)} title="Yangi Invoice Yaratish">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Talaba</label>
+            <select
+              value={invoiceForm.studentId}
+              onChange={e => setInvoiceForm(f => ({ ...f, studentId: e.target.value }))}
+              className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+            >
+              <option value="">Talabani tanlang...</option>
+              {students.map((s: any) => (
+                <option key={s.id} value={s.id}>{s.name} {s.group ? `(${s.group})` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Summa (so'm)</label>
+              <input
+                type="number" placeholder="500000"
+                value={invoiceForm.amount}
+                onChange={e => setInvoiceForm(f => ({ ...f, amount: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">To'lov usuli</label>
+              <select
+                value={invoiceForm.method}
+                onChange={e => setInvoiceForm(f => ({ ...f, method: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+              >
+                {['Naqd', 'Payme', 'Click', 'Bank', 'Karta'].map(m => <option key={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Chegirma (%)</label>
+              <input
+                type="number" placeholder="0" min="0" max="100"
+                value={invoiceForm.discount}
+                onChange={e => setInvoiceForm(f => ({ ...f, discount: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">To'lov muddati</label>
+              <input
+                type="date"
+                value={invoiceForm.dueDate}
+                onChange={e => setInvoiceForm(f => ({ ...f, dueDate: e.target.value }))}
+                className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Tavsif</label>
+            <input
+              placeholder="Kurs to'lovi, Yanvar oyi..."
+              value={invoiceForm.description}
+              onChange={e => setInvoiceForm(f => ({ ...f, description: e.target.value }))}
+              className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+            />
+          </div>
+          {invoiceForm.amount && Number(invoiceForm.amount) > 0 && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-500/10 rounded-xl">
+              <div className="flex justify-between text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                <span>Asosiy summa:</span>
+                <span>{formatMoney(Number(invoiceForm.amount))}</span>
+              </div>
+              {Number(invoiceForm.discount) > 0 && (
+                <div className="flex justify-between text-xs font-bold text-emerald-600 mt-1">
+                  <span>Chegirma ({invoiceForm.discount}%):</span>
+                  <span>-{formatMoney(Number(invoiceForm.amount) * Number(invoiceForm.discount) / 100)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm font-black text-blue-700 dark:text-blue-400 mt-1.5 pt-1.5 border-t border-blue-200 dark:border-blue-500/30">
+                <span>Jami:</span>
+                <span>{formatMoney(Number(invoiceForm.amount) * (1 - Number(invoiceForm.discount) / 100))}</span>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setIsInvoiceModalOpen(false)} className="flex-1">Bekor</Button>
+            <Button onClick={handleCreateInvoice} className="flex-1" disabled={!invoiceForm.studentId || !invoiceForm.amount}>
+              Invoice Yaratish
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Invoice to'lov havolalari modali */}
+      <Modal isOpen={!!invoiceLinks} onClose={() => setInvoiceLinks(null)} title="To'lov Havolalari">
+        {invoiceLinks && (
+          <div className="space-y-4">
+            <p className="text-xs text-zinc-500">Summa: <span className="font-black text-slate-900 dark:text-white">{formatMoney(invoiceLinks.amount)}</span></p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl">
+                <p className="text-xs font-black text-zinc-500 mb-2">PAYME</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { navigator.clipboard.writeText(invoiceLinks.payme); showToast("Nusxalandi", 'success'); }}
+                    className="flex-1 py-2 text-xs font-bold bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-lg flex items-center justify-center gap-1">
+                    <Copy size={12} /> Nusxalash
+                  </button>
+                  <a href={invoiceLinks.payme} target="_blank" rel="noreferrer"
+                    className="p-2 bg-blue-600 text-white rounded-lg flex items-center justify-center">
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+              <div className="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl">
+                <p className="text-xs font-black text-zinc-500 mb-2">CLICK</p>
+                <div className="flex gap-2">
+                  <button onClick={() => { navigator.clipboard.writeText(invoiceLinks.click); showToast("Nusxalandi", 'success'); }}
+                    className="flex-1 py-2 text-xs font-bold bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-lg flex items-center justify-center gap-1">
+                    <Copy size={12} /> Nusxalash
+                  </button>
+                  <a href={invoiceLinks.click} target="_blank" rel="noreferrer"
+                    className="p-2 bg-blue-600 text-white rounded-lg flex items-center justify-center">
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={() => setInvoiceLinks(null)}>Yopish</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {activeTab === 'debtors' && (
         <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
           <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
@@ -493,6 +839,7 @@ export default function CrmFinance() {
                     <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">Telefon</th>
                     <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Qarz Miqdori</th>
                     <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Holat</th>
+                    <th className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest text-right">Amal</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -524,6 +871,16 @@ export default function CrmFinance() {
                         <span className="px-2.5 py-1 bg-rose-100 dark:bg-rose-500/20 text-rose-600 rounded-full text-[10px] font-black">
                           Qarzdor
                         </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <button
+                          onClick={() => handleGetPaymentLinks(s.id, s.name, s.balance)}
+                          disabled={isGeneratingLinks}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                        >
+                          <CreditCard size={12} />
+                          Havola
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -640,7 +997,7 @@ export default function CrmFinance() {
                 </div>
                 <div className="space-y-2 pt-2">
                   <Button variant="secondary" className="w-full" leftIcon={<Download size={15} />}
-                    onClick={() => exportReceiptToPDF(selectedTransaction)}>
+                    onClick={async () => { await exportReceiptToPDF(selectedTransaction); }}>
                     Chek (PDF)
                   </Button>
                   <Button variant="danger" className="w-full" leftIcon={<Trash2 size={15} />}
@@ -731,6 +1088,104 @@ export default function CrmFinance() {
             <Button onClick={handleSave} leftIcon={<Check size={14} />}>Saqlash</Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!paymentLinks}
+        onClose={() => setPaymentLinks(null)}
+        title="To'lov havolalari"
+        width="md"
+      >
+        {paymentLinks && (
+          <div className="space-y-5 py-2">
+            <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-850">
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">O'quvchi</p>
+              <p className="text-base font-black text-slate-900 dark:text-white mt-0.5">{paymentLinks.studentName}</p>
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mt-3">Qarz miqdori</p>
+              <p className="text-lg font-black text-rose-600 mt-0.5">{formatMoney(paymentLinks.amount)}</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Payme Card */}
+              <div className="p-4 bg-gradient-to-b from-[#f9fafc] to-[#f3f5f8] dark:from-zinc-800/40 dark:to-zinc-800/70 border border-zinc-200/50 dark:border-zinc-700/50 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-xl bg-[#2cf] flex items-center justify-center text-white font-black text-xs shadow-sm shadow-[#2cf]/20">P</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">Payme</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 mt-2 font-medium">Payme orqali to'g'ridan-to'g'ri to'lov havolasi</p>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(paymentLinks.payme);
+                      setCopiedType('payme');
+                      setTimeout(() => setCopiedType(null), 2000);
+                      showToast("Payme havolasi nusxalandi!", "success");
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      copiedType === 'payme'
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:border-zinc-750 dark:text-zinc-300'
+                    }`}
+                  >
+                    {copiedType === 'payme' ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedType === 'payme' ? 'Nusxalandi' : 'Nusxalash'}
+                  </button>
+                  <a
+                    href={paymentLinks.payme}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center justify-center"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                </div>
+              </div>
+
+              {/* Click Card */}
+              <div className="p-4 bg-gradient-to-b from-[#f9fafc] to-[#f3f5f8] dark:from-zinc-800/40 dark:to-zinc-800/70 border border-zinc-200/50 dark:border-zinc-700/50 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-xl bg-[#005bff] flex items-center justify-center text-white font-black text-xs shadow-sm shadow-[#005bff]/20">C</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">Click</span>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 mt-2 font-medium">Click orqali to'g'ridan-to'g'ri to'lov havolasi</p>
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(paymentLinks.click);
+                      setCopiedType('click');
+                      setTimeout(() => setCopiedType(null), 2000);
+                      showToast("Click havolasi nusxalandi!", "success");
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      copiedType === 'click'
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:border-zinc-750 dark:text-zinc-300'
+                    }`}
+                  >
+                    {copiedType === 'click' ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedType === 'click' ? 'Nusxalandi' : 'Nusxalash'}
+                  </button>
+                  <a
+                    href={paymentLinks.click}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center justify-center"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <Button variant="secondary" onClick={() => setPaymentLinks(null)}>Yopish</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

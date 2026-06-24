@@ -37,7 +37,9 @@ const CrmStaff      = React.lazy(() => import('./pages/crm/CrmStaff'));
 const CrmBI         = React.lazy(() => import('./pages/crm/CrmBI'));
 const CrmCourses    = React.lazy(() => import('./pages/crm/CrmCourses'));
 const CrmInventory  = React.lazy(() => import('./pages/crm/CrmInventory'));
-const CrmUsers      = React.lazy(() => import('./pages/crm/CrmUsers'));
+const CrmUsers          = React.lazy(() => import('./pages/crm/CrmUsers'));
+const CrmCommunication   = React.lazy(() => import('./pages/crm/CrmCommunication'));
+const CrmStudentProfile  = React.lazy(() => import('./pages/crm/CrmStudentProfile'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -84,7 +86,8 @@ export default function App() {
               <Route index element={<CrmDashboard />} />
 
               {/* Ta'lim */}
-              <Route path="students"   element={<ProtectedRoute requiredPermission="students"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudents /></ProtectedRoute>} />
+              <Route path="students"     element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudents /></ProtectedRoute>} />
+              <Route path="students/:id" element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudentProfile /></ProtectedRoute>} />
               <Route path="groups"     element={<ProtectedRoute requiredPermission="groups"     allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroups /></ProtectedRoute>} />
               <Route path="groups/:id" element={<ProtectedRoute requiredPermission="groups"     allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroupDetail /></ProtectedRoute>} />
               <Route path="courses"    element={<ProtectedRoute requiredPermission="courses"    allowedRoles={['ADMIN','MANAGER']}><CrmCourses /></ProtectedRoute>} />
@@ -107,7 +110,8 @@ export default function App() {
               {/* Boshqaruv */}
               <Route path="rooms"     element={<ProtectedRoute requiredPermission="rooms"     allowedRoles={['ADMIN']}><CrmRooms /></ProtectedRoute>} />
               <Route path="inventory" element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
-              <Route path="content"   element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
+              <Route path="content"        element={<ProtectedRoute requiredPermission="content"        allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
+              <Route path="communication" element={<ProtectedRoute requiredPermission="marketing"      allowedRoles={['ADMIN','MANAGER']}><CrmCommunication /></ProtectedRoute>} />
               <Route path="users"     element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
               <Route path="settings"  element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
             </Route>

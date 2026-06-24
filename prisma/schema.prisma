@@ -3,9 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 
 // ============================================
 // FOYDALANUVCHILAR VA AUTENTIFIKATSIYA
@@ -19,7 +20,7 @@ model User {
   name      String
   role      String   @default("ADMIN") // SUPER_ADMIN, ADMIN, MANAGER, TEACHER
   avatar    String?
-  permissions String? @default("[]") // JSON array of permission keys
+  permissions String? @default("[]") @db.Text // JSON array of permission keys
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -46,7 +47,12 @@ model Student {
   photo       String?
   status      String   @default("active") // active, graduated, left
   source      String?  // Instagram, Telegram, etc.
-  notes       String?
+  notes       String? @db.Text
+  course      String?
+  group       String?
+  paymentStatus String?  @default("Kutilmoqda")
+  balance       Float?   @default(0)
+  joinedDate    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -55,6 +61,10 @@ model Student {
   attendanceRecords AttendanceRecord[]
   assessments       Assessment[]
   journalEntries    JournalEntry[]
+  exams             Exam[]
+  notesRelation     GroupStudentNote[]
+  invoices          Invoice[]
+  parents           Parent[]          @relation("StudentParent")
 }
 
 // ============================================
@@ -66,7 +76,7 @@ model Course {
   name           String   // used by frontend
   title          String?  // alias/display title
   category       String?  @default("Boshqa")
-  description    String?
+  description    String? @db.Text
   price          Float    @default(0)
   duration       String?  // "3 oy", "6 oy"
   lessonsPerWeek Int?     @default(3)
@@ -96,6 +106,10 @@ model Group {
   schedules         Schedule[]
   attendanceRecords AttendanceRecord[]
   journalEntries    JournalEntry[]
+  assessments       Assessment[]
+  attendances       Attendance[]
+  exams             Exam[]
+  notes             GroupStudentNote[]
 }
 
 model Enrollment {
@@ -178,13 +192,15 @@ model Assessment {
   id        String   @id @default(uuid())
   studentId String
   student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  title     String   // "Mock Test #3", "Oylik Imtihon"
+  groupId   String?
+  group     Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title     String?   // "Mock Test #3", "Oylik Imtihon"
   type      String   @default("test") // test, exam, quiz, homework
   score     Float
   maxScore  Float    @default(100)
   date      String
   subject   String?
-  notes     String?
+  notes     String? @db.Text
   createdAt DateTime @default(now())
 }
 
@@ -291,7 +307,7 @@ model Campaign {
   startDate String?
   endDate   String?
   status    String   @default("active") // active, paused, completed
-  notes     String?
+  notes     String? @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -309,7 +325,7 @@ model InventoryItem {
   location    String?  // Xona nomi
   condition   String   @default("Yaxshi") // Yaxshi, O'rtacha, Yomon
   purchaseDate String?
-  notes       String?
+  notes       String? @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -321,8 +337,8 @@ model InventoryItem {
 model Post {
   id        String   @id @default(uuid())
   title     String
-  content   String?
-  excerpt   String?
+  content   String? @db.Text
+  excerpt   String? @db.Text
   imageUrl  String?
   author    String?
   status    String   @default("Faol") // Faol, Qoralama, Arxiv
@@ -364,8 +380,8 @@ model Setting {
 
 model Notification {
   id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String?  // Optional: null = system notification (broadcast)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   message   String
   type      String   @default("info") // info, alert, success, warning
@@ -393,7 +409,7 @@ model GalleryItem {
 model PageContent {
   id        String   @id @default(uuid())
   section   String   @unique // "hero", "stats", "programs", "testimonials", "cta"
-  data      String   // JSON formatda
+  data      String   @db.Text // JSON formatda
   updatedAt DateTime @updatedAt
 }
 
@@ -404,7 +420,7 @@ model PageContent {
 model GenericDocument {
   id         String   @id @default(uuid())
   collection String   // "teachers", "schedule", etc
-  data       String   // JSON payload
+  data       String   @db.Text // JSON payload
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -424,3 +440,165 @@ model Task {
   updatedAt DateTime @updatedAt
 }
 
+// ============================================
+// NEW ACADEMIC MODELS (Faza 0.2 Generic Clean)
+// ============================================
+
+model GroupSchedule {
+  id         String   @id @default(uuid())
+  groupId    String
+  groupName  String
+  teacher    String
+  room       String
+  startTime  String
+  endTime    String
+  days       String   @db.Text // JSON representation of days (number[])
+  color      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Attendance {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  date      String   // "2026-03-22"
+  records   String   @db.Text // JSON representation of records (studentId, status, time)[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, date])
+}
+
+model Exam {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  examName  String
+  score     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, studentId, examName])
+}
+
+model GroupStudentNote {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  note      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, studentId])
+}
+
+model OnlineTransaction {
+  id            String    @id @default(uuid())
+  provider      String    // "payme" or "click"
+  transactionId String    @unique // provider's transaction ID (e.g. click_trans_id or payme's _id)
+  amount        Float
+  studentId     String
+  state         Int       // For payme: 1 = created, 2 = performed, -1 = canceled, -2 = canceled after perform. For click: 0 = prepare, 1 = complete, 2 = cancel.
+  reason        Int?      // cancellation reason code
+  createdAt     DateTime  @default(now())
+  performAt     DateTime?
+  cancelAt      DateTime?
+}
+
+// ============================================
+// FAZA 1.1 — KENGAYTIRILGAN MOLIYA MODELLARI
+// ============================================
+
+model Invoice {
+  id          String        @id @default(uuid())
+  number      String        @unique // INV-2025-0001
+  studentId   String
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  amount      Float
+  discount    Float         @default(0)
+  tax         Float         @default(0)
+  status      String        @default("pending") // pending, paid, overdue, cancelled
+  dueDate     String
+  paidAt      DateTime?
+  method      String?       // Naqd, Payme, Click, Bank, Karta
+  description String?       @db.Text
+  items       InvoiceItem[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model InvoiceItem {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  name      String
+  quantity  Int     @default(1)
+  price     Float
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  category    String   // SALARY, RENT, UTILITIES, SUPPLIES, MARKETING, EQUIPMENT, OTHER
+  amount      Float
+  description String   @db.Text
+  date        String
+  receipt     String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Budget {
+  id       String @id @default(uuid())
+  month    Int
+  year     Int
+  category String
+  planned  Float
+  actual   Float  @default(0)
+
+  @@unique([month, year, category])
+}
+
+// ============================================
+// FAZA 1.3 — ALOQA MARKAZI MODELLARI
+// ============================================
+
+model MessageTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  content   String   @db.Text // {{student_name}}, {{amount}}, {{date}} o'zgaruvchilar
+  type      String   @default("CUSTOM") // PAYMENT_REMINDER, LESSON_REMINDER, WELCOME, BIRTHDAY, ANNOUNCEMENT, RESULT, CUSTOM
+  language  String   @default("uz")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BulkMessage {
+  id         String   @id @default(uuid())
+  templateId String?
+  content    String   @db.Text
+  targetType String   // "group", "course", "all", "debtors", "leads"
+  targetId   String?
+  sentAt     DateTime?
+  sentCount  Int      @default(0)
+  status     String   @default("draft") // draft, sent, failed
+  createdAt  DateTime @default(now())
+}
+
+// ============================================
+// FAZA 1.4 — OTA-ONA MODELI
+// ============================================
+
+model Parent {
+  id         String    @id @default(uuid())
+  name       String
+  phone      String
+  telegramId String?
+  createdAt  DateTime  @default(now())
+  children   Student[] @relation("StudentParent")
+}

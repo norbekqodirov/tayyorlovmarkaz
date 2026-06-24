@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign,
@@ -37,6 +38,7 @@ interface Student {
 }
 
 export default function CrmStudents() {
+  const navigate = useNavigate();
   const { data: students = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
   const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
   const { courses: liveCourses, groups: liveGroups } = useCrmData();
@@ -511,9 +513,17 @@ export default function CrmStudents() {
               <div className="p-6 space-y-8">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">O'quvchi Profili</h2>
-                  <button onClick={() => setIsDetailOpen(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors">
-                    <X size={20} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setIsDetailOpen(false); navigate(`/crmtayyorlovmarkaz/students/${selectedStudent.id}`); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors"
+                    >
+                      <ExternalLink size={12} /> To'liq profil
+                    </button>
+                    <button onClick={() => setIsDetailOpen(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors">
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex flex-col items-center text-center space-y-4">

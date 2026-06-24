@@ -86,8 +86,11 @@ function KpiCard({ label, value, sub, icon: Icon, color, trend, up }: {
 }
 
 export default function CrmAdvancedBI() {
-  const [period, setPeriod] = useState<'3' | '6' | '12'>('6');
+  const [period, setPeriod] = useState<'week' | 'month' | 'year' | '3' | '6' | '12'>('6');
   const [activeSection, setActiveSection] = useState<'overview' | 'finance' | 'students' | 'marketing' | 'teachers'>('overview');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [showCustomRange, setShowCustomRange] = useState(false);
 
   const { data: students = [] } = useFirestore<any>('students');
   const { data: leads = [] } = useFirestore<any>('leads');
@@ -97,11 +100,33 @@ export default function CrmAdvancedBI() {
 
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [managerSummary, setManagerSummary] = useState<any>(null);
+
+  const getDateRange = () => {
+    const now = new Date();
+    if (period === 'week') {
+      const from = new Date(now); from.setDate(now.getDate() - 7);
+      return { from: from.toISOString().split('T')[0], to: now.toISOString().split('T')[0] };
+    }
+    if (period === 'month') {
+      return { from: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, to: now.toISOString().split('T')[0] };
+    }
+    if (period === 'year') {
+      return { from: `${now.getFullYear()}-01-01`, to: now.toISOString().split('T')[0] };
+    }
+    return { from: customFrom || '', to: customTo || '' };
+  };
 
   useEffect(() => {
     api.get('/analytics/dashboard').then(r => setAnalyticsData(r.data)).catch(() => {});
     api.get('/analytics/monthly').then(r => setMonthlyData(r.data || [])).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const range = getDateRange();
+    const params = range.from && range.to ? `?from=${range.from}&to=${range.to}` : '';
+    api.get(`/analytics/reports/manager-summary${params}`).then(r => setManagerSummary(r.data)).catch(() => {});
+  }, [period, customFrom, customTo]);
 
   const currentMonth = new Date().getMonth();
   const periodNum = Number(period);
@@ -233,15 +258,28 @@ export default function CrmAdvancedBI() {
           <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">BI Analitika</h1>
           <p className="text-xs text-zinc-400 mt-0.5">Real vaqtli biznes ko'rsatkichlar va tahlil</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
-            {(['3', '6', '12'] as const).map(p => (
-              <button key={p} onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${period === p ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-400'}`}>
-                {p} oy
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700 flex-wrap">
+            {([
+              { key: 'week', label: 'Hafta' },
+              { key: 'month', label: 'Oy' },
+              { key: 'year', label: 'Yil' },
+              { key: '3', label: '3 oy' },
+              { key: '6', label: '6 oy' },
+              { key: '12', label: '12 oy' },
+            ] as const).map(p => (
+              <button key={p.key} onClick={() => { setPeriod(p.key); setShowCustomRange(false); }}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${period === p.key ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-400'}`}>
+                {p.label}
               </button>
             ))}
           </div>
+          {managerSummary && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/30 text-xs font-black text-emerald-700 dark:text-emerald-400">
+              <TrendingUp size={12} />
+              {managerSummary.income_growth >= 0 ? '+' : ''}{managerSummary.income_growth}% o'tgan oyga
+            </div>
+          )}
           <button
             onClick={() => {
               exportToExcel(students, [

@@ -8,7 +8,7 @@ import {
   Search, UserCircle, ChevronDown, ChevronRight,
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
-  CheckSquare, Activity,
+  CheckSquare, Activity, MessageSquare,
   ArrowUpRight, Target, Users2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
@@ -73,7 +73,8 @@ const MODULES: NavModule[] = [
         links: [
           { name: 'Lidlar (Voronka)', path: '/crmtayyorlovmarkaz/leads',     icon: TrendingUp, permission: 'leads'        },
           { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon,   permission: 'target_forms' },
-          { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing', icon: Megaphone,  permission: 'marketing'    },
+          { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing',     icon: Megaphone,      permission: 'marketing'    },
+          { name: 'Aloqa Markazi',   path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'marketing'    },
         ],
       },
     ],
@@ -279,7 +280,7 @@ export default function CrmLayout() {
   };
 
   // ── Permission filtering ─────────────────────────────────────────────────
-  const isAdmin = userRole === 'ADMIN';
+  const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
 
   const canSeeLink = (permission: string | undefined): boolean => {
     if (isAdmin) return true;

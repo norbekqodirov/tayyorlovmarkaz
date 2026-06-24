@@ -6,6 +6,11 @@ import authRoutes from './routes/auth.js';
 import crudRoutes from './routes/crud.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
+import telegramRoutes from './routes/telegram.js';
+import paymentsRoutes from './routes/payments.js';
+import financeRoutes from './routes/finance.js';
+import communicationRoutes from './routes/communication.js';
+import studentsRoutes from './routes/students.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -47,6 +52,12 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/telegram', telegramRoutes);
+app.use('/api/payments', paymentsRoutes);
+app.use('/api/finance', financeRoutes);
+app.use('/api/communication', communicationRoutes);
+app.use('/api/notifications', communicationRoutes);
+app.use('/api/students', studentsRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────
