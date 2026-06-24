@@ -4,11 +4,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   LayoutDashboard, Users, FileText, Link as LinkIcon, LogOut, Menu, X,
   Settings, GraduationCap, Presentation, Wallet, Calendar, DoorOpen,
-  Layers, Megaphone, Star, BookOpen, Plus, Bell, BarChart2, Package,
+  Layers, Megaphone, BookOpen, Plus, Bell, BarChart2, Package,
   Search, UserCircle, ChevronDown, ChevronRight,
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
-  CheckSquare, Activity, MessageSquare, Bot, ClipboardList,
+  Activity, MessageSquare, Bot, ClipboardList, Sparkles,
   ArrowUpRight, Target, Users2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
@@ -75,8 +75,9 @@ const MODULES: NavModule[] = [
           { name: 'Lidlar (Voronka)', path: '/crmtayyorlovmarkaz/leads',     icon: TrendingUp, permission: 'leads'        },
           { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon,   permission: 'target_forms' },
           { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing',     icon: Megaphone,      permission: 'marketing'    },
+          { name: 'AI Kontent',      path: '/crmtayyorlovmarkaz/ai-content',    icon: Sparkles,       permission: 'marketing'    },
           { name: 'Aloqa Markazi',   path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'marketing'    },
-          { name: 'Telegram Bot',    path: '/crmtayyorlovmarkaz/telegram',      icon: Bot,            permission: undefined        },
+          { name: 'Telegram Bot',    path: '/crmtayyorlovmarkaz/telegram',      icon: Bot,            permission: undefined       },
         ],
       },
     ],
