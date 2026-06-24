@@ -9,7 +9,7 @@ import {
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
   Activity, MessageSquare, Bot, ClipboardList, Sparkles, Brain,
-  ArrowUpRight, Target, Users2
+  ArrowUpRight, Target, Users2, Zap, Shield, Award, FileBarChart2
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
 import { useTheme } from '../contexts/ThemeContext';
@@ -155,6 +155,15 @@ const MODULES: NavModule[] = [
         ],
       },
       {
+        title: 'Avtomatlashtirish',
+        links: [
+          { name: 'Avtomatlar',    path: '/crmtayyorlovmarkaz/automations',  icon: Zap,          permission: undefined },
+          { name: 'Sertifikatlar', path: '/crmtayyorlovmarkaz/certificates', icon: Award,        permission: 'settings' },
+          { name: 'Hisobotlar',    path: '/crmtayyorlovmarkaz/reports',      icon: FileBarChart2, permission: 'bi'      },
+          { name: 'Audit Jurnali', path: '/crmtayyorlovmarkaz/audit',        icon: Shield,       permission: undefined },
+        ],
+      },
+      {
         title: 'Tizim',
         links: [
           { name: 'Foydalanuvchilar', path: '/crmtayyorlovmarkaz/users',    icon: Users,    permission: 'users'    },
@@ -174,7 +183,7 @@ function detectModule(pathname: string): string {
     return 'finance';
   if (pathname.includes('/bi') || pathname.includes('/predictions') || pathname.includes('/goals'))
     return 'analytics';
-  if (pathname.includes('/rooms') || pathname.includes('/inventory') || pathname.includes('/content') || pathname.includes('/users') || pathname.includes('/settings'))
+  if (pathname.includes('/rooms') || pathname.includes('/inventory') || pathname.includes('/content') || pathname.includes('/users') || pathname.includes('/settings') || pathname.includes('/automations') || pathname.includes('/audit') || pathname.includes('/certificates') || pathname.includes('/reports'))
     return 'management';
   return 'education';
 }
@@ -204,6 +213,10 @@ function getPageTitle(pathname: string): string {
     '/crmtayyorlovmarkaz/settings': 'Sozlamalar',
     '/crmtayyorlovmarkaz/goals': 'KPI & Maqsadlar',
     '/crmtayyorlovmarkaz/portal': 'Mening Portalim',
+    '/crmtayyorlovmarkaz/automations': 'Avtomatlar',
+    '/crmtayyorlovmarkaz/audit': 'Audit Jurnali',
+    '/crmtayyorlovmarkaz/certificates': 'Sertifikatlar',
+    '/crmtayyorlovmarkaz/reports': 'Hisobotlar',
   };
   return map[pathname] || 'Dashboard';
 }

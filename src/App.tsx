@@ -48,6 +48,11 @@ const CrmPredictions     = React.lazy(() => import('./pages/crm/CrmPredictions')
 const CrmGoals           = React.lazy(() => import('./pages/crm/CrmGoals'));
 const TelegramPortal     = React.lazy(() => import('./pages/portal/TelegramPortal'));
 const StaffPortal        = React.lazy(() => import('./pages/portal/StaffPortal'));
+const CrmAutomations     = React.lazy(() => import('./pages/crm/CrmAutomations'));
+const CrmAudit           = React.lazy(() => import('./pages/crm/CrmAudit'));
+const CrmCertificates    = React.lazy(() => import('./pages/crm/CrmCertificates'));
+const CrmReports         = React.lazy(() => import('./pages/crm/CrmReports'));
+const VerifyCert         = React.lazy(() => import('./pages/VerifyCert'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -82,6 +87,7 @@ export default function App() {
             <Route path="/test/:slug" element={<PublicQuiz />} />
             <Route path="/portal" element={<TelegramPortal />} />
             <Route path="/staff-portal" element={<StaffPortal />} />
+            <Route path="/verify-cert/:id" element={<VerifyCert />} />
 
             {/* CRM Routes */}
             <Route path="/crmtayyorlovmarkaz/login" element={<CrmLogin />} />
@@ -128,8 +134,12 @@ export default function App() {
               <Route path="ai-content"   element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmAIContent /></ProtectedRoute>} />
               <Route path="predictions" element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmPredictions /></ProtectedRoute>} />
               <Route path="goals"       element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmGoals /></ProtectedRoute>} />
-              <Route path="users"     element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
-              <Route path="settings"  element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
+              <Route path="users"        element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
+              <Route path="settings"     element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
+              <Route path="automations"  element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAutomations /></ProtectedRoute>} />
+              <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAudit /></ProtectedRoute>} />
+              <Route path="certificates" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmCertificates /></ProtectedRoute>} />
+              <Route path="reports"      element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmReports /></ProtectedRoute>} />
             </Route>
           </Routes>
         </Suspense>

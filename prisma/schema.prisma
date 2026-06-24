@@ -30,6 +30,7 @@ model User {
   enrollments    Enrollment[]
   journalEntries JournalEntry[]     @relation("TeacherJournal")
   notifications  Notification[]
+  auditLogs      AuditLog[]
 }
 
 // ============================================
@@ -68,6 +69,7 @@ model Student {
   notesRelation     GroupStudentNote[]
   invoices          Invoice[]
   parents           Parent[]          @relation("StudentParent")
+  certificates      Certificate[]
 }
 
 // ============================================
@@ -88,7 +90,8 @@ model Course {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  groups Group[]
+  groups       Group[]
+  certificates Certificate[]
 }
 
 model Group {
@@ -263,6 +266,9 @@ model StaffMember {
   telegramChatId String?  @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  salaries         Salary[]
+  staffAttendances StaffAttendance[]
 }
 
 // ============================================
@@ -332,6 +338,8 @@ model InventoryItem {
   notes       String? @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  transactions InventoryTransaction[]
 }
 
 // ============================================
@@ -700,4 +708,189 @@ model Goal {
   status      String   @default("active") // active, completed, failed
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// TELEGRAM XABARLARI
+// ============================================
+
+model TelegramMessage {
+  id        String   @id @default(uuid())
+  chatId    String
+  type      String   // attendance, payment, grade, schedule, lead, broadcast
+  message   String   @db.Text
+  status    String   @default("pending") // pending, sent, delivered, failed
+  entityId  String?
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
+// AVTOMATIK WORKFLOWLAR
+// ============================================
+
+model Workflow {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  trigger     String    // daily_payment, daily_attendance, hourly_leads, group_lifecycle
+  isActive    Boolean   @default(true)
+  config      String    @default("{}") @db.Text
+  lastRun     DateTime?
+  nextRun     DateTime?
+  runCount    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  logs WorkflowLog[]
+}
+
+model WorkflowLog {
+  id         String   @id @default(uuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status     String   // success, error, skipped
+  output     String?  @db.Text
+  duration   Int?
+  createdAt  DateTime @default(now())
+
+  @@index([workflowId])
+  @@index([createdAt])
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName   String
+  action     String   // create, update, delete, restore, login, logout
+  resource   String
+  resourceId String?
+  before     String?  @db.Text
+  after      String?  @db.Text
+  ipAddress  String?
+  userAgent  String?
+  metadata   String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([resource])
+  @@index([createdAt])
+}
+
+// ============================================
+// XODIM MAOSH VA DAVOMAT
+// ============================================
+
+model Salary {
+  id         String      @id @default(uuid())
+  staffId    String
+  staff      StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  month      String      // "2026-05"
+  baseSalary Float       @default(0)
+  bonus      Float       @default(0)
+  deduction  Float       @default(0)
+  total      Float       @default(0)
+  paid       Boolean     @default(false)
+  paidAt     DateTime?
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([staffId, month])
+  @@index([staffId])
+}
+
+model StaffAttendance {
+  id        String      @id @default(uuid())
+  staffId   String
+  staff     StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      String      // "2026-05-21"
+  checkIn   String?
+  checkOut  String?
+  status    String      @default("present")
+  notes     String?
+  createdAt DateTime    @default(now())
+
+  @@unique([staffId, date])
+  @@index([staffId, date])
+}
+
+// ============================================
+// INVENTAR TRANZAKSIYALAR
+// ============================================
+
+model InventoryTransaction {
+  id        String        @id @default(uuid())
+  itemId    String
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type      String        // in, out, adjustment, damage
+  quantity  Int
+  reason    String?
+  userId    String?
+  userName  String?
+  createdAt DateTime      @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([type])
+}
+
+// ============================================
+// SERTIFIKATLAR
+// ============================================
+
+model CertificateTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   @default("certificate")
+  background  String?
+  config      String   @default("{\"elements\":[]}") @db.Text
+  width       Int      @default(842)
+  height      Int      @default(595)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  certificates Certificate[]
+}
+
+model Certificate {
+  id           String              @id @default(uuid())
+  templateId   String
+  template     CertificateTemplate @relation(fields: [templateId], references: [id])
+  studentId    String
+  student      Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId     String?
+  course       Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  serialNumber String              @unique
+  issuedAt     DateTime            @default(now())
+  issuedBy     String?
+  signature    String?
+  qrCode       String?
+  metadata     String?             @db.Text
+
+  @@index([studentId])
+  @@index([serialNumber])
+}
+
+// ============================================
+// HISOBOT SHABLONLAR
+// ============================================
+
+model ReportTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // financial, attendance, students, teachers
+  config    String   @default("{}") @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

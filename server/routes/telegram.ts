@@ -3,10 +3,16 @@
  * Telegram Bot webhook + admin endpoints
  *
  * POST /api/telegram/webhook       — grammY bot webhook
- * GET  /api/telegram/set-webhook   — webhook URL sozlash (dev)
+ * GET  /api/telegram/set-webhook   — webhook URL sozlash
  * GET  /api/telegram/info          — webhook holati
- * POST /api/telegram/send          — server tomonidan xabar yuborish (admin)
+ * GET  /api/telegram/status        — bot holati + statistika
+ * GET  /api/telegram/stats         — xabar statistikasi
+ * GET  /api/telegram/messages      — xabar tarixi
+ * GET  /api/telegram/settings      — sozlamalar olish
+ * PUT  /api/telegram/settings      — sozlamalar saqlash
+ * POST /api/telegram/send          — server tomonidan xabar yuborish
  * POST /api/telegram/link-student  — o'quvchini Telegram ga ulash
+ * POST /api/telegram/broadcast     — ommaviy xabar
  */
 
 import express from 'express';
@@ -142,6 +148,141 @@ router.post('/broadcast', async (req, res) => {
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// ─── Bot holati ───────────────────────────────────────────────────────────────
+
+router.get('/status', async (_req, res) => {
+    try {
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+        const [botInfo, messagesToday, sentToday, linkedStudents, totalStudents] = await Promise.all([
+            BOT_TOKEN
+                ? fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`).then(r => r.json())
+                : Promise.resolve({ ok: false }),
+            prisma.telegramMessage.count({ where: { createdAt: { gte: new Date(todayStart) } } }),
+            prisma.telegramMessage.count({ where: { status: 'sent', createdAt: { gte: new Date(todayStart) } } }),
+            prisma.student.count({ where: { telegramChatId: { not: null }, status: 'active' } }),
+            prisma.student.count({ where: { status: 'active' } }),
+        ]);
+
+        const info = botInfo?.result || {};
+        res.json({
+            ok: botInfo?.ok ?? false,
+            username: info.username,
+            name: info.first_name,
+            error: botInfo?.ok ? undefined : (botInfo?.description || 'Token noto\'g\'ri'),
+            messagesToday,
+            sentToday,
+            linkedStudents,
+            totalStudents,
+        });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Statistika ───────────────────────────────────────────────────────────────
+
+router.get('/stats', async (_req, res) => {
+    try {
+        const [total, sent, failed, today, byType, linkedStudents, linkedParents, totalStudents] = await Promise.all([
+            prisma.telegramMessage.count(),
+            prisma.telegramMessage.count({ where: { status: 'sent' } }),
+            prisma.telegramMessage.count({ where: { status: 'failed' } }),
+            prisma.telegramMessage.count({ where: { createdAt: { gte: new Date(new Date().setHours(0,0,0,0)) } } }),
+            prisma.telegramMessage.groupBy({ by: ['type'], _count: { id: true } }),
+            prisma.student.count({ where: { telegramChatId: { not: null }, status: 'active' } }),
+            prisma.student.count({ where: { parentTelegramId: { not: null }, status: 'active' } }),
+            prisma.student.count({ where: { status: 'active' } }),
+        ]);
+        res.json({
+            messages: { total, sent, failed, today },
+            coverage: { students: linkedStudents, parents: linkedParents, totalStudents, studentPct: totalStudents > 0 ? Math.round(linkedStudents/totalStudents*100) : 0, parentPct: totalStudents > 0 ? Math.round(linkedParents/totalStudents*100) : 0 },
+            byType: byType.map((b: any) => ({ type: b.type, count: b._count.id })),
+        });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Xabar tarixi ─────────────────────────────────────────────────────────────
+
+router.get('/messages', async (req, res) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Number(req.query.limit) || 20);
+    const type = req.query.type as string;
+    const status = req.query.status as string;
+    const where: any = {};
+    if (type) where.type = type;
+    if (status) where.status = status;
+
+    try {
+        const [total, messages] = await Promise.all([
+            prisma.telegramMessage.count({ where }),
+            prisma.telegramMessage.findMany({
+                where, orderBy: { createdAt: 'desc' },
+                skip: (page - 1) * limit, take: limit,
+            }),
+        ]);
+        res.json({ data: messages, total, page, limit });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Sozlamalar ───────────────────────────────────────────────────────────────
+
+router.get('/settings', async (_req, res) => {
+    try {
+        const keys = ['telegram_bot_token', 'telegram_admin_chat_id', 'auto_attendance_notify', 'auto_payment_notify', 'auto_lead_notify', 'telegram_mini_app_url', 'staff_mini_app_url'];
+        const settings = await prisma.setting.findMany({ where: { key: { in: keys } } });
+        const map: Record<string, string> = {};
+        settings.forEach((s: any) => { map[s.key] = s.value; });
+        res.json({
+            botTokenSet: !!(map['telegram_bot_token'] || process.env.TELEGRAM_BOT_TOKEN),
+            adminChatId: map['telegram_admin_chat_id'] || process.env.TELEGRAM_ADMIN_IDS || '',
+            autoAttendance: map['auto_attendance_notify'] === 'true',
+            autoPayment: map['auto_payment_notify'] === 'true',
+            autoLead: map['auto_lead_notify'] === 'true',
+            miniAppUrl: map['telegram_mini_app_url'] || process.env.TELEGRAM_MINI_APP_URL || '',
+            staffMiniAppUrl: map['staff_mini_app_url'] || process.env.STAFF_MINI_APP_URL || '',
+        });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/settings', async (req, res) => {
+    const { botToken, adminChatId, autoAttendance, autoPayment, autoLead, miniAppUrl, staffMiniAppUrl } = req.body;
+    try {
+        const upsertMany = [
+            { key: 'telegram_admin_chat_id', value: String(adminChatId || '') },
+            { key: 'auto_attendance_notify', value: String(!!autoAttendance) },
+            { key: 'auto_payment_notify', value: String(!!autoPayment) },
+            { key: 'auto_lead_notify', value: String(!!autoLead) },
+            { key: 'telegram_mini_app_url', value: String(miniAppUrl || '') },
+            { key: 'staff_mini_app_url', value: String(staffMiniAppUrl || '') },
+        ];
+        if (botToken && botToken.length > 10 && !botToken.includes('***')) {
+            upsertMany.push({ key: 'telegram_bot_token', value: botToken });
+        }
+        await Promise.all(upsertMany.map(s => prisma.setting.upsert({
+            where: { key: s.key },
+            create: { key: s.key, value: s.value },
+            update: { value: s.value },
+        })));
+        res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── O'quvchini to'g'ridan ID bo'yicha ulash (yangi usul) ────────────────────
+
+router.post('/link-direct', async (req, res) => {
+    const { studentId, telegramChatId } = req.body;
+    if (!studentId || !telegramChatId) return res.status(400).json({ error: 'studentId and telegramChatId required' });
+    try {
+        await prisma.student.update({
+            where: { id: studentId },
+            data: { telegramChatId: String(telegramChatId) },
+        });
+        await sendTelegramNotification(String(telegramChatId),
+            `✅ Akkauntingiz tizimga ulandi! /start yuboring.`);
+        res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 export default router;

@@ -18,6 +18,10 @@ import goalsRoutes from './routes/goals.js';
 import portalRoutes from './routes/portal.js';
 import staffPortalRoutes from './routes/staffPortal.js';
 import staffTelegramRoutes from './routes/staffTelegram.js';
+import auditRoutes from './routes/audit.js';
+import certificatesRoutes from './routes/certificates.js';
+import salaryRoutes from './routes/salary.js';
+import reportsRoutes from './routes/reports.js';
 import { startScheduler } from './services/scheduler.js';
 import path from 'path';
 import fs from 'fs';
@@ -76,6 +80,10 @@ app.use('/api/goals', goalsRoutes);
 app.use('/api/portal', portalRoutes);
 app.use('/api/staff-portal', staffPortalRoutes);
 app.use('/api/staff-telegram', staffTelegramRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/certificates', certificatesRoutes);
+app.use('/api/salary', salaryRoutes);
+app.use('/api/reports', reportsRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────
