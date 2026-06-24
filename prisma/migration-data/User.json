@@ -1,0 +1,15 @@
+[
+  {
+    "id": "62bb3ad5-de40-4cf8-8bcb-ac2e24431da0",
+    "email": null,
+    "phone": "+998937525592",
+    "password": "$2b$12$z3lrBekhByCrwcH8ST8Ede3Nrr5pJYta4wA.fx85xrk1mpKKBYlS.",
+    "name": "Bosh Administrator",
+    "role": "SUPER_ADMIN",
+    "avatar": null,
+    "permissions": "[\"dashboard\",\"students\",\"groups\",\"courses\",\"schedule\",\"journal\",\"leads\",\"finance\",\"staff\",\"marketing\",\"analytics\",\"settings\",\"users\",\"backup\",\"rooms\",\"inventory\",\"content\",\"target_forms\"]",
+    "isActive": true,
+    "createdAt": "2026-05-10T14:30:15.287Z",
+    "updatedAt": "2026-05-10T14:30:15.287Z"
+  }
+]
