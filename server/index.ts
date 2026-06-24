@@ -15,12 +15,17 @@ import quizRoutes from './routes/quiz.js';
 import aiRoutes from './routes/ai.js';
 import predictionsRoutes from './routes/predictions.js';
 import goalsRoutes from './routes/goals.js';
+import portalRoutes from './routes/portal.js';
+import staffPortalRoutes from './routes/staffPortal.js';
+import staffTelegramRoutes from './routes/staffTelegram.js';
+import { startScheduler } from './services/scheduler.js';
 import path from 'path';
 import fs from 'fs';
 
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // CloudFlare + nginx compatibility
 const PORT = process.env.PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -29,6 +34,8 @@ const allowedOrigins = [
     process.env.APP_URL || 'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:5173',
+    'https://web.telegram.org',
+    'https://telegram.org',
 ].filter(Boolean);
 
 app.use(cors({
@@ -66,6 +73,9 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/predictions', predictionsRoutes);
 app.use('/api/goals', goalsRoutes);
+app.use('/api/portal', portalRoutes);
+app.use('/api/staff-portal', staffPortalRoutes);
+app.use('/api/staff-telegram', staffTelegramRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────
@@ -90,4 +100,5 @@ if (IS_PROD) {
 app.listen(PORT, () => {
     console.log(`[Server]: Running in ${IS_PROD ? 'PRODUCTION' : 'development'} mode`);
     console.log(`[Server]: http://localhost:${PORT}`);
+    startScheduler();
 });

@@ -21,9 +21,10 @@ model User {
   role      String   @default("ADMIN") // SUPER_ADMIN, ADMIN, MANAGER, TEACHER
   avatar    String?
   permissions String? @default("[]") @db.Text // JSON array of permission keys
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive       Boolean  @default(true)
+  telegramChatId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   taughtGroups   Group[]            @relation("TeacherGroups")
   enrollments    Enrollment[]
@@ -47,14 +48,16 @@ model Student {
   photo       String?
   status      String   @default("active") // active, graduated, left
   source      String?  // Instagram, Telegram, etc.
-  notes       String? @db.Text
-  course      String?
-  group       String?
-  paymentStatus String?  @default("Kutilmoqda")
-  balance       Float?   @default(0)
-  joinedDate    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  notes            String? @db.Text
+  course           String?
+  group            String?
+  paymentStatus    String?  @default("Kutilmoqda")
+  balance          Float?   @default(0)
+  joinedDate       String?
+  telegramChatId   String?
+  parentTelegramId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   enrollments       Enrollment[]
   payments          Payment[]
@@ -256,9 +259,10 @@ model StaffMember {
   passport   String?
   education  String?
   experience String?
-  photo      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  photo          String?
+  telegramChatId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 // ============================================
