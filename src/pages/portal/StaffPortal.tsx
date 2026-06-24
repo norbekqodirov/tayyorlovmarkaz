@@ -10,7 +10,9 @@ import {
     ChevronRight, RefreshCw, Clock, CheckCircle2, XCircle,
     AlertCircle, UserCheck, Search, Building2, BookOpen,
     TrendingUp, CreditCard, GraduationCap, Save, ArrowLeft,
+    Fingerprint,
 } from 'lucide-react';
+import FaceIdCheckin from '../../components/portal/FaceIdCheckin';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,19 +123,20 @@ function RoleLabel({ role }: { role: string }) {
 
 // ─── Tab configs ──────────────────────────────────────────────────────────────
 
-type TabId = 'today' | 'groups' | 'attendance' | 'grades' | 'profile' | 'stats' | 'students';
+type TabId = 'today' | 'groups' | 'attendance' | 'grades' | 'profile' | 'stats' | 'students' | 'faceid';
 
 function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[] {
+    const faceTab = { id: 'faceid' as TabId, label: 'Davomat', icon: Fingerprint };
     const base = [
         { id: 'today' as TabId, label: 'Bugun', icon: Calendar },
         { id: 'groups' as TabId, label: role === 'TEACHER' ? 'Guruhlarim' : 'Guruhlar', icon: Users },
-        { id: 'attendance' as TabId, label: 'Davomat', icon: CheckSquare },
+        { id: 'attendance' as TabId, label: 'Jurnal', icon: CheckSquare },
         { id: 'profile' as TabId, label: 'Profil', icon: User },
     ];
 
     if (role === 'TEACHER') {
         return [
-            base[0], base[1], base[2],
+            base[0], base[1], faceTab, base[2],
             { id: 'grades' as TabId, label: 'Natijalar', icon: BarChart2 },
             base[3],
         ];
@@ -141,9 +144,8 @@ function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[]
 
     if (['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(role)) {
         return [
-            base[0], base[1],
+            base[0], base[1], faceTab,
             { id: 'stats' as TabId, label: 'Statistika', icon: TrendingUp },
-            { id: 'students' as TabId, label: "O'quvchilar", icon: GraduationCap },
             base[3],
         ];
     }
@@ -151,6 +153,7 @@ function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[]
     // HR
     return [
         { id: 'groups' as TabId, label: 'Xodimlar', icon: Users },
+        faceTab,
         base[2],
         base[3],
     ];
@@ -908,6 +911,9 @@ export default function StaffPortal() {
                                 <BarChart2 size={36} className="mx-auto mb-3 opacity-30" />
                                 Natijalar bo'limi tez orada
                             </div>
+                        )}
+                        {activeTab === 'faceid' && (
+                            <FaceIdCheckin initData={initData} staffName={staffUser.name} />
                         )}
                         {activeTab === 'profile' && (
                             <ProfileTab staffUser={staffUser} initData={initData} />

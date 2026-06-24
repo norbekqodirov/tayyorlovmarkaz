@@ -48,6 +48,7 @@ model Student {
   address     String?
   photo       String?
   status      String   @default("active") // active, graduated, left
+  deletedAt   DateTime?
   source      String?  // Instagram, Telegram, etc.
   notes            String? @db.Text
   course           String?
@@ -60,6 +61,7 @@ model Student {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  branchId         String?
   enrollments       Enrollment[]
   payments          Payment[]
   attendanceRecords AttendanceRecord[]
@@ -70,6 +72,7 @@ model Student {
   invoices          Invoice[]
   parents           Parent[]          @relation("StudentParent")
   certificates      Certificate[]
+  testSubmissions   TestSubmission[]
 }
 
 // ============================================
@@ -92,6 +95,8 @@ model Course {
 
   groups       Group[]
   certificates Certificate[]
+  levels       CourseLevel[]
+  tests        Test[]
 }
 
 model Group {
@@ -102,6 +107,8 @@ model Group {
   teacherId String?
   teacher   User?    @relation("TeacherGroups", fields: [teacherId], references: [id], onDelete: SetNull)
   status    String   @default("active") // active, completed, paused
+  deletedAt DateTime?
+  branchId  String?
   startDate String?
   endDate   String?
   maxSize   Int      @default(20)
@@ -116,6 +123,7 @@ model Group {
   attendances       Attendance[]
   exams             Exam[]
   notes             GroupStudentNote[]
+  tests             Test[]
 }
 
 model Enrollment {
@@ -241,6 +249,7 @@ model Payment {
   dueDate   String?
   status    String   @default("paid") // paid, pending, overdue
   notes     String?
+  deletedAt DateTime?
   createdAt DateTime @default(now())
 }
 
@@ -257,18 +266,22 @@ model StaffMember {
   salary     Float    @default(0)
   joinedDate String?
   status     String   @default("Faol") // Faol, Ta'tilda, Ishdan bo'shagan
+  deletedAt  DateTime?
   department String   @default("Ma'muriyat")
   address    String?
   passport   String?
   education  String?
   experience String?
   photo          String?
+  branchId       String?
   telegramChatId String?  @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   salaries         Salary[]
   staffAttendances StaffAttendance[]
+  leaveRequests    LeaveRequest[]
+  faceProfile      StaffFaceProfile?
 }
 
 // ============================================
@@ -287,6 +300,7 @@ model Lead {
   status    String   @default("warm") // hot, warm, cold
   date      String?
   notes     String?
+  deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -811,18 +825,60 @@ model Salary {
 }
 
 model StaffAttendance {
-  id        String      @id @default(uuid())
-  staffId   String
-  staff     StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  date      String      // "2026-05-21"
-  checkIn   String?
-  checkOut  String?
-  status    String      @default("present")
-  notes     String?
-  createdAt DateTime    @default(now())
+  id          String        @id @default(uuid())
+  staffId     String
+  staff       StaffMember   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date        String        // "2026-06-25"
+  checkIn     String?       // "09:05"
+  checkOut    String?       // "18:00"
+  status      String        @default("pending") // pending, present, late, absent
+  locationId  String?
+  location    WorkLocation? @relation(fields: [locationId], references: [id])
+  checkInLat  Float?
+  checkInLng  Float?
+  checkOutLat Float?
+  checkOutLng Float?
+  faceScore   Float?        // 0-1, face match confidence
+  verifiedBy  String        @default("face_id") // face_id, manual, admin
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@unique([staffId, date])
   @@index([staffId, date])
+  @@index([date])
+}
+
+// ============================================
+// FACE ID VA ISH JOYLARI
+// ============================================
+
+model WorkLocation {
+  id            String           @id @default(uuid())
+  name          String
+  address       String?
+  latitude      Float
+  longitude     Float
+  radius        Int              @default(200)    // metr
+  workStartTime String           @default("09:00") // HH:MM
+  lateAfterMin  Int              @default(15)     // necha daqiqadan keyin kech = "late"
+  branchId      String?
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  attendances   StaffAttendance[]
+
+  @@index([isActive])
+}
+
+model StaffFaceProfile {
+  id           String      @id @default(uuid())
+  staffId      String      @unique
+  staff        StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  descriptor   String      @db.Text  // JSON: 128-element Float32Array
+  photoUrl     String?
+  registeredAt DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
 // ============================================
@@ -864,19 +920,23 @@ model CertificateTemplate {
 }
 
 model Certificate {
-  id           String              @id @default(uuid())
-  templateId   String
-  template     CertificateTemplate @relation(fields: [templateId], references: [id])
-  studentId    String
-  student      Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  courseId     String?
-  course       Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  serialNumber String              @unique
-  issuedAt     DateTime            @default(now())
-  issuedBy     String?
-  signature    String?
-  qrCode       String?
-  metadata     String?             @db.Text
+  id             String              @id @default(uuid())
+  templateId     String
+  template       CertificateTemplate @relation(fields: [templateId], references: [id])
+  studentId      String
+  student        Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  courseId       String?
+  course         Course?             @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  serialNumber   String              @unique
+  issuedAt       DateTime            @default(now())
+  issuedBy       String?
+  signature      String?
+  qrCode         String?
+  metadata       String?             @db.Text
+  pdfUrl         String?
+  grade          String?
+  revokedAt      DateTime?
+  revokedReason  String?
 
   @@index([studentId])
   @@index([serialNumber])
@@ -893,4 +953,225 @@ model ReportTemplate {
   config    String   @default("{}") @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// E'LONLAR (ANNOUNCEMENTS)
+// ============================================
+
+model Announcement {
+  id        String    @id @default(uuid())
+  title     String
+  content   String    @db.Text
+  type      String    @default("general") // general, urgent, event, maintenance
+  audience  String    @default("all")     // all, students, staff, teachers
+  priority  String    @default("normal")  // normal, high, critical
+  pinned    Boolean   @default(false)
+  expiresAt DateTime?
+  createdBy String?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([audience])
+  @@index([createdAt])
+}
+
+// ============================================
+// ICHKI XABARLAR (MESSAGES)
+// ============================================
+
+model Message {
+  id         String    @id @default(uuid())
+  senderId   String
+  receiverId String
+  senderType String    @default("admin")
+  content    String    @db.Text
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, readAt])
+}
+
+// ============================================
+// CHEGIRMALAR
+// ============================================
+
+model Discount {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String?
+  type      String   // percent, fixed
+  value     Float
+  maxUses   Int?
+  usedCount Int      @default(0)
+  validFrom String?
+  validTo   String?
+  courseId  String?
+  groupId   String?
+  minAmount Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([code])
+  @@index([isActive])
+}
+
+// ============================================
+// MEHNAT TA'TILLARI
+// ============================================
+
+model LeaveRequest {
+  id         String      @id @default(uuid())
+  staffId    String
+  staff      StaffMember @relation(fields: [staffId], references: [id])
+  type       String      // annual, sick, personal, unpaid
+  startDate  String
+  endDate    String
+  reason     String?
+  status     String      @default("pending") // pending, approved, rejected
+  approvedBy String?
+  approvedAt DateTime?
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([staffId, status])
+  @@index([status])
+}
+
+// ============================================
+// KURS DARAJALARI VA MODULLARI (CURRICULUM)
+// ============================================
+
+model CourseLevel {
+  id          String        @id @default(uuid())
+  courseId    String
+  course      Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  order       Int           @default(0)
+  name        String
+  description String?
+  createdAt   DateTime      @default(now())
+  modules     CourseModule[]
+
+  @@index([courseId, order])
+}
+
+model CourseModule {
+  id          String      @id @default(uuid())
+  levelId     String
+  level       CourseLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  order       Int         @default(0)
+  title       String
+  description String?
+  materials   String?     @db.Text
+  duration    Int?
+  createdAt   DateTime    @default(now())
+
+  @@index([levelId, order])
+}
+
+// ============================================
+// FILIALLAR (BRANCHES)
+// ============================================
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  phone     String?
+  status    String   @default("active")
+  managerId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// ============================================
+// IMTIHON TIZIMI (TESTS / EXAMS)
+// ============================================
+
+model Test {
+  id               String   @id @default(uuid())
+  title            String
+  description      String?
+  courseId         String?
+  course           Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  groupId          String?
+  group            Group?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  duration         Int      @default(60)
+  totalScore       Float    @default(100)
+  passingScore     Float    @default(60)
+  shuffleQuestions Boolean  @default(false)
+  shuffleOptions   Boolean  @default(false)
+  showResults      Boolean  @default(true)
+  scheduledStart   String?
+  scheduledEnd     String?
+  status           String   @default("draft")
+  createdBy        String?
+  deletedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  questions   Question[]
+  submissions TestSubmission[]
+
+  @@index([courseId])
+  @@index([groupId])
+  @@index([status])
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  testId        String
+  test          Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  order         Int      @default(0)
+  type          String
+  text          String
+  imageUrl      String?
+  options       String   @default("[]") @db.Text
+  correctAnswer String?
+  score         Float    @default(1)
+  explanation   String?
+
+  answers Answer[]
+
+  @@index([testId, order])
+}
+
+model TestSubmission {
+  id          String    @id @default(uuid())
+  testId      String
+  test        Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  score       Float?
+  status      String    @default("in_progress")
+  cheating    Boolean   @default(false)
+  metadata    String?   @db.Text
+
+  answers Answer[]
+
+  @@unique([testId, studentId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model Answer {
+  id           String         @id @default(uuid())
+  submissionId String
+  submission   TestSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  questionId   String
+  question     Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value        String         @db.Text
+  score        Float?
+  isCorrect    Boolean?
+  feedback     String?
+
+  @@unique([submissionId, questionId])
 }

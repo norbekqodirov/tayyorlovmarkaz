@@ -30,7 +30,7 @@ export async function cached<T>(
  * Use this after CRUD operations to keep cache fresh.
  */
 export function invalidate(prefix: string): void {
-    const keys = Array.from(cache.keys());
+    const keys = Array.from(cache.keys()) as string[];
     for (const k of keys) {
         if (k.startsWith(prefix)) cache.delete(k);
     }

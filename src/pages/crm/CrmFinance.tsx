@@ -14,6 +14,7 @@ import {
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { printReceipt } from '../../components/ReceiptPrint';
 import { exportToExcel, exportToPDF, exportReceiptToPDF } from '../../utils/export';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -535,10 +536,30 @@ export default function CrmFinance() {
                       {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ open: true, id: t.id }); }}
-                        className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all">
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {t.type === 'income' && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              printReceipt({
+                                id: t.id,
+                                amount: t.amount,
+                                method: t.method || 'Naqd',
+                                paidAt: t.date,
+                                notes: t.description,
+                                student: t.studentName ? { name: t.studentName } : undefined,
+                              });
+                            }}
+                            className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-500 rounded-lg transition-all"
+                            title="Chek chop etish">
+                            <Receipt size={14} />
+                          </button>
+                        )}
+                        <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ open: true, id: t.id }); }}
+                          className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-lg transition-all">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

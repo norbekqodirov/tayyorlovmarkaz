@@ -5,11 +5,12 @@ import {
   Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign,
   BookOpen, Phone, Mail, MapPin, Calendar,
   User, GraduationCap,
-  AlertCircle, Download, Send, ExternalLink, Copy
+  AlertCircle, Download, Send, ExternalLink, Copy, Upload
 } from 'lucide-react';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import ImportWizard from '../../components/ImportWizard';
 import Pagination from '../../components/Pagination';
 import { SkeletonTable } from '../../components/Skeleton';
 import { EmptyState, ErrorState } from '../../components/States';
@@ -56,6 +57,7 @@ export default function CrmStudents() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [importOpen, setImportOpen] = useState(false);
   const itemsPerPage = 20;
   
   const [formData, setFormData] = useState<Partial<Student>>({
@@ -260,7 +262,15 @@ export default function CrmStudents() {
               </button>
             </div>
           </div>
-          <button 
+          <button
+            onClick={() => setImportOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
+            title="Excel/CSV dan import qilish"
+          >
+            <Upload size={18} />
+            Import
+          </button>
+          <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
           >
@@ -269,6 +279,17 @@ export default function CrmStudents() {
           </button>
         </div>
       </div>
+
+      {/* Excel/CSV Import sehrgari */}
+      <AnimatePresence>
+        {importOpen && (
+          <ImportWizard
+            collection="students"
+            onClose={() => setImportOpen(false)}
+            onSuccess={() => { refetch(); showToast('Import yakunlandi', 'success'); }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

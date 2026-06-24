@@ -82,9 +82,9 @@ router.get('/me', portalAuth, async (req: any, res) => {
             name: e.group.name,
             course: e.group.course?.name || 'Kurs',
             teacher: e.group.teacher?.name || '',
-            days: e.group.days || '',
-            time: e.group.time || '',
-            room: e.group.room || '',
+            days: (e.group as any).days || '',
+            time: (e.group as any).time || '',
+            room: (e.group as any).room || '',
             status: e.group.status,
             schedules: e.group.schedules,
         }));
@@ -300,7 +300,7 @@ router.get('/schedule', portalAuth, async (req: any, res) => {
                     teacher: e.group.teacher?.name || '',
                     startTime: sch.startTime,
                     endTime: sch.endTime,
-                    room: sch.room?.name || e.group.room || '',
+                    room: sch.room?.name || (e.group as any).room || '',
                 });
             }
         }

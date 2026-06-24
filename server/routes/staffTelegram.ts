@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import {
@@ -13,7 +13,7 @@ const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-key';
 
-// ─── Helper: get staff mini app URL ─────────────────────────────────────────
+// в”Ђв”Ђв”Ђ Helper: get staff mini app URL в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 async function getStaffMiniAppUrl(): Promise<string> {
     try {
@@ -24,7 +24,7 @@ async function getStaffMiniAppUrl(): Promise<string> {
     }
 }
 
-// ─── POST /api/staff-telegram/webhook ────────────────────────────────────────
+// в”Ђв”Ђв”Ђ POST /api/staff-telegram/webhook в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 router.post('/webhook', async (req, res) => {
     try {
@@ -38,7 +38,7 @@ router.post('/webhook', async (req, res) => {
         const firstName = msg.from?.first_name || '';
         const text = (msg.text || '').trim();
 
-        // ── Helper: portal havolasini yuborish ───────────────────────────────
+        // в”Ђв”Ђ Helper: portal havolasini yuborish в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         const sendPortalLink = async (user: { id: string; name: string; role: string }) => {
             const token = jwt.sign(
                 { userId: user.id, role: user.role, chatId },
@@ -51,33 +51,33 @@ router.post('/webhook', async (req, res) => {
                 : '';
 
             const roleLabel: Record<string, string> = {
-                SUPER_ADMIN: '👑 Super Admin', ADMIN: '🔑 Admin',
-                MANAGER: '📊 Menejer', TEACHER: '📚 O\'qituvchi', HR: '👥 HR',
+                SUPER_ADMIN: 'рџ‘‘ Super Admin', ADMIN: 'рџ”‘ Admin',
+                MANAGER: 'рџ“Љ Menejer', TEACHER: 'рџ“љ O\'qituvchi', HR: 'рџ‘Ґ HR',
             };
 
             await sendStaffMessage(
                 chatId,
-                `✅ <b>Xush kelibsiz, ${user.name}!</b>\n\n` +
+                `вњ… <b>Xush kelibsiz, ${user.name}!</b>\n\n` +
                 `Rol: ${roleLabel[user.role] || user.role}\n\n` +
                 (portalUrl ? `Portalga kirish uchun quyidagi tugmani bosing:` : `Portal URL hali sozlanmagan.`),
                 'HTML',
                 portalUrl ? {
                     inline_keyboard: [
-                        [{ text: '📱 Staff Portalga kirish', web_app: { url: portalUrl } }],
-                        [{ text: '🔗 Brauzerda ochish', url: portalUrl }],
+                        [{ text: 'рџ“± Staff Portalga kirish', web_app: { url: portalUrl } }],
+                        [{ text: 'рџ”— Brauzerda ochish', url: portalUrl }],
                     ],
                 } : { remove_keyboard: true },
             );
         };
 
-        // ── Contact shared: telefon raqam orqali avtomatik bog'lash ──────────
+        // в”Ђв”Ђ Contact shared: telefon raqam orqali avtomatik bog'lash в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (msg.contact) {
             const tgPhone = msg.contact.phone_number || '';
             const tgDigits = extractPhoneDigits(tgPhone);
 
             if (!tgDigits) {
                 await sendStaffMessage(chatId,
-                    '❌ Telefon raqam o\'qilmadi. Iltimos qayta urinib ko\'ring.',
+                    'вќЊ Telefon raqam o\'qilmadi. Iltimos qayta urinib ko\'ring.',
                     'HTML', { remove_keyboard: true });
                 return res.sendStatus(200);
             }
@@ -99,7 +99,7 @@ router.post('/webhook', async (req, res) => {
             if (!matchedStaff) {
                 await sendStaffMessage(
                     chatId,
-                    `❌ <b>Raqam topilmadi</b>\n\n` +
+                    `вќЊ <b>Raqam topilmadi</b>\n\n` +
                     `<code>${tgPhone}</code> raqami tizimda xodim sifatida ro'yxatda yo'q.\n\n` +
                     `Iltimos, HR bo'limiga kiritilgan ish raqamingizni ishlatganingizni tekshiring yoki admin bilan bog'laning.`,
                     'HTML', { remove_keyboard: true },
@@ -113,11 +113,11 @@ router.post('/webhook', async (req, res) => {
                     where: { id: matchedStaff.id },
                     data: { telegramChatId: chatId },
                 });
-            } catch { /* unique constraint — boshqa kimda bog'liq bo'lsa o'tkazib yuboramiz */ }
+            } catch { /* unique constraint вЂ” boshqa kimda bog'liq bo'lsa o'tkazib yuboramiz */ }
 
             // Qadam 2: Xuddi shu telefon bo'yicha User (CRM portal akkaunt) topamiz
             const allUsers = await prisma.user.findMany({
-                where: { isActive: true, deletedAt: null },
+                where: { isActive: true },
                 select: { id: true, name: true, role: true, phone: true },
             });
 
@@ -133,15 +133,15 @@ router.post('/webhook', async (req, res) => {
                 // Xodim topildi lekin portal akkaunt yo'q
                 await sendStaffMessage(
                     chatId,
-                    `✅ <b>Xodim topildi: ${matchedStaff.name}</b>\n\n` +
+                    `вњ… <b>Xodim topildi: ${matchedStaff.name}</b>\n\n` +
                     `Ammo portal (CRM) akkauntingiz topilmadi.\n\n` +
-                    `Portarga kirish uchun admin bilan bog'laning — u sizga CRM akkaunt yaratib beradi.`,
+                    `Portarga kirish uchun admin bilan bog'laning вЂ” u sizga CRM akkaunt yaratib beradi.`,
                     'HTML', { remove_keyboard: true },
                 );
                 return res.sendStatus(200);
             }
 
-            // Muvaffaqiyatli — User ga telegramChatId saqlaymiz (portal auth uchun)
+            // Muvaffaqiyatli вЂ” User ga telegramChatId saqlaymiz (portal auth uchun)
             await prisma.user.update({
                 where: { id: matchedUser.id },
                 data: { telegramChatId: chatId },
@@ -151,30 +151,30 @@ router.post('/webhook', async (req, res) => {
             return res.sendStatus(200);
         }
 
-        // ── /start ────────────────────────────────────────────────────────────
+        // в”Ђв”Ђ /start в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (text.startsWith('/start')) {
             // Avval allaqachon bog'langan-bo'lmagonini tekshiramiz
             const linked = await prisma.user.findFirst({
-                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
+                where: { telegramChatId: chatId, isActive: true },
                 select: { id: true, name: true, role: true },
             });
 
             if (linked) {
-                // Allaqachon bog'langan — to'g'ridan portal havolasini yuboramiz
+                // Allaqachon bog'langan вЂ” to'g'ridan portal havolasini yuboramiz
                 await sendPortalLink(linked);
                 return res.sendStatus(200);
             }
 
-            // Birinchi marta — telefon raqam so'raymiz
+            // Birinchi marta вЂ” telefon raqam so'raymiz
             await sendStaffMessage(
                 chatId,
-                `👋 <b>Assalomu alaykum, ${firstName}!</b>\n\n` +
-                `Bu <b>Staff Portal</b> — o'qituvchi va xodimlar uchun ichki tizim.\n\n` +
+                `рџ‘‹ <b>Assalomu alaykum, ${firstName}!</b>\n\n` +
+                `Bu <b>Staff Portal</b> вЂ” o'qituvchi va xodimlar uchun ichki tizim.\n\n` +
                 `Tizimga kirish uchun <b>telefon raqamingizni</b> ulashing.\n` +
                 `(CRM'ga kiritilgan ish raqamingiz bo'lishi kerak)`,
                 'HTML',
                 {
-                    keyboard: [[{ text: '📱 Telefon raqamni ulashish', request_contact: true }]],
+                    keyboard: [[{ text: 'рџ“± Telefon raqamni ulashish', request_contact: true }]],
                     resize_keyboard: true,
                     one_time_keyboard: true,
                 },
@@ -182,18 +182,18 @@ router.post('/webhook', async (req, res) => {
             return res.sendStatus(200);
         }
 
-        // ── /today ────────────────────────────────────────────────────────────
+        // в”Ђв”Ђ /today в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (text === '/today') {
             const user = await prisma.user.findFirst({
-                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
+                where: { telegramChatId: chatId, isActive: true },
                 select: { id: true, name: true, role: true },
             });
             if (!user) {
-                await sendStaffMessage(chatId, '⚠️ Tizimga kirish uchun /start bosing.', 'HTML');
+                await sendStaffMessage(chatId, 'вљ пёЏ Tizimga kirish uchun /start bosing.', 'HTML');
                 return res.sendStatus(200);
             }
 
-            const todayNum = new Date().getDay() || 7; // 0=Sun→7, 1=Mon, ... 6=Sat
+            const todayNum = new Date().getDay() || 7; // 0=Sunв†’7, 1=Mon, ... 6=Sat
             const dayMap: Record<number, string> = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun' };
             const dayUz: Record<number, string> = {
                 1: 'Dushanba', 2: 'Seshanba', 3: 'Chorshanba', 4: 'Payshanba',
@@ -223,33 +223,33 @@ router.post('/webhook', async (req, res) => {
             });
 
             if (schedules.length === 0) {
-                await sendStaffMessage(chatId, `📅 <b>${dayUz[todayNum]}</b>\n\nBugun darslar yo'q.`, 'HTML');
+                await sendStaffMessage(chatId, `рџ“… <b>${dayUz[todayNum]}</b>\n\nBugun darslar yo'q.`, 'HTML');
                 return res.sendStatus(200);
             }
 
             const lines = schedules.map(s =>
-                `• <b>${s.startTime}–${s.endTime}</b> | ${s.group.name}` +
+                `вЂў <b>${s.startTime}вЂ“${s.endTime}</b> | ${s.group.name}` +
                 (s.group.course ? ` (${s.group.course.name})` : '') +
-                (s.room ? ` | 🚪 ${s.room.name}` : s.group.room ? ` | 🚪 ${s.group.room}` : '') +
-                (user.role !== 'TEACHER' && s.group.teacher ? ` | 👤 ${s.group.teacher.name}` : ''),
+                (s.room ? ` | рџљЄ ${s.room.name}` : (s.group as any).room ? ` | рџљЄ ${(s.group as any).room}` : '') +
+                (user.role !== 'TEACHER' && s.group.teacher ? ` | рџ‘¤ ${s.group.teacher.name}` : ''),
             );
 
             await sendStaffMessage(
                 chatId,
-                `📅 <b>Bugungi darslar (${dayUz[todayNum]})</b>\n\n${lines.join('\n')}`,
+                `рџ“… <b>Bugungi darslar (${dayUz[todayNum]})</b>\n\n${lines.join('\n')}`,
                 'HTML',
             );
             return res.sendStatus(200);
         }
 
-        // ── /mygroups ─────────────────────────────────────────────────────────
+        // в”Ђв”Ђ /mygroups в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (text === '/mygroups') {
             const user = await prisma.user.findFirst({
-                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
+                where: { telegramChatId: chatId, isActive: true },
                 select: { id: true, role: true },
             });
             if (!user) {
-                await sendStaffMessage(chatId, '⚠️ Tizimga kirish uchun /start bosing.', 'HTML');
+                await sendStaffMessage(chatId, 'вљ пёЏ Tizimga kirish uchun /start bosing.', 'HTML');
                 return res.sendStatus(200);
             }
 
@@ -266,29 +266,29 @@ router.post('/webhook', async (req, res) => {
             });
 
             if (groups.length === 0) {
-                await sendStaffMessage(chatId, '👥 Faol guruhlar topilmadi.', 'HTML');
+                await sendStaffMessage(chatId, 'рџ‘Ґ Faol guruhlar topilmadi.', 'HTML');
                 return res.sendStatus(200);
             }
 
             const lines = groups.map(g =>
-                `• <b>${g.name}</b>${g.course ? ` — ${g.course.name}` : ''} | 👤 ${g._count.enrollments} o'quvchi`,
+                `вЂў <b>${g.name}</b>${g.course ? ` вЂ” ${g.course.name}` : ''} | рџ‘¤ ${g._count.enrollments} o'quvchi`,
             );
             await sendStaffMessage(
                 chatId,
-                `👥 <b>Guruhlar (${groups.length} ta)</b>\n\n${lines.join('\n')}`,
+                `рџ‘Ґ <b>Guruhlar (${groups.length} ta)</b>\n\n${lines.join('\n')}`,
                 'HTML',
             );
             return res.sendStatus(200);
         }
 
-        // ── /stats ────────────────────────────────────────────────────────────
+        // в”Ђв”Ђ /stats в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (text === '/stats') {
             const user = await prisma.user.findFirst({
-                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
+                where: { telegramChatId: chatId, isActive: true },
                 select: { id: true, role: true },
             });
             if (!user || !['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(user.role)) {
-                await sendStaffMessage(chatId, '⛔ Bu buyruq faqat menejer va adminlar uchun.', 'HTML');
+                await sendStaffMessage(chatId, 'в›” Bu buyruq faqat menejer va adminlar uchun.', 'HTML');
                 return res.sendStatus(200);
             }
 
@@ -302,26 +302,26 @@ router.post('/webhook', async (req, res) => {
 
             await sendStaffMessage(
                 chatId,
-                `📊 <b>Bugungi statistika</b>\n\n` +
-                `🎓 Faol o'quvchilar: <b>${studentCount}</b>\n` +
-                `👥 Faol guruhlar: <b>${groupCount}</b>\n` +
-                `✅ Bugungi davomat: <b>${todayAttendance}</b>\n` +
-                `💳 To'lanmagan: <b>${unpaidCount}</b>`,
+                `рџ“Љ <b>Bugungi statistika</b>\n\n` +
+                `рџЋ“ Faol o'quvchilar: <b>${studentCount}</b>\n` +
+                `рџ‘Ґ Faol guruhlar: <b>${groupCount}</b>\n` +
+                `вњ… Bugungi davomat: <b>${todayAttendance}</b>\n` +
+                `рџ’і To'lanmagan: <b>${unpaidCount}</b>`,
                 'HTML',
             );
             return res.sendStatus(200);
         }
 
-        // ── /link ─────────────────────────────────────────────────────────────
+        // в”Ђв”Ђ /link в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (text === '/link') {
             const user = await prisma.user.findFirst({
-                where: { telegramChatId: chatId, isActive: true, deletedAt: null },
+                where: { telegramChatId: chatId, isActive: true },
                 select: { id: true, name: true, role: true },
             });
             if (!user) {
                 await sendStaffMessage(
                     chatId,
-                    '❌ Avval /start orqali tizimga kirish kerak.',
+                    'вќЊ Avval /start orqali tizimga kirish kerak.',
                     'HTML',
                 );
                 return res.sendStatus(200);
@@ -330,16 +330,16 @@ router.post('/webhook', async (req, res) => {
             return res.sendStatus(200);
         }
 
-        // ── Unknown command ───────────────────────────────────────────────────
+        // в”Ђв”Ђ Unknown command в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if (text.startsWith('/')) {
             await sendStaffMessage(
                 chatId,
-                `ℹ️ <b>Mavjud buyruqlar:</b>\n\n` +
-                `/start — Kirish va portal havolasi\n` +
-                `/today — Bugungi darslar\n` +
-                `/mygroups — Guruhlar ro'yxati\n` +
-                `/stats — Statistika (menejer/admin)\n` +
-                `/link — Portal havolasi`,
+                `в„№пёЏ <b>Mavjud buyruqlar:</b>\n\n` +
+                `/start вЂ” Kirish va portal havolasi\n` +
+                `/today вЂ” Bugungi darslar\n` +
+                `/mygroups вЂ” Guruhlar ro'yxati\n` +
+                `/stats вЂ” Statistika (menejer/admin)\n` +
+                `/link вЂ” Portal havolasi`,
                 'HTML',
             );
         }
@@ -351,7 +351,7 @@ router.post('/webhook', async (req, res) => {
     }
 });
 
-// ─── GET /api/staff-telegram/webhook-info ─────────────────────────────────────
+// в”Ђв”Ђв”Ђ GET /api/staff-telegram/webhook-info в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 router.get('/webhook-info', requireAuth, async (_req, res) => {
     try {
@@ -362,7 +362,7 @@ router.get('/webhook-info', requireAuth, async (_req, res) => {
     }
 });
 
-// ─── POST /api/staff-telegram/set-webhook ────────────────────────────────────
+// в”Ђв”Ђв”Ђ POST /api/staff-telegram/set-webhook в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 router.post('/set-webhook', requireAuth, async (req, res) => {
     try {
@@ -375,7 +375,7 @@ router.post('/set-webhook', requireAuth, async (req, res) => {
     }
 });
 
-// ─── POST /api/staff-telegram/send ───────────────────────────────────────────
+// в”Ђв”Ђв”Ђ POST /api/staff-telegram/send в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 router.post('/send', requireAuth, async (req, res) => {
     try {
@@ -395,7 +395,7 @@ router.post('/send', requireAuth, async (req, res) => {
     }
 });
 
-// ─── POST /api/staff-telegram/broadcast ──────────────────────────────────────
+// в”Ђв”Ђв”Ђ POST /api/staff-telegram/broadcast в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 router.post('/broadcast', requireAuth, async (req, res) => {
     try {

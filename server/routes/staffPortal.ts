@@ -57,7 +57,7 @@ async function staffPortalAuth(req: any, res: any, next: any) {
     }
 
     const user = await prisma.user.findFirst({
-        where: { telegramChatId: result.telegramUserId, isActive: true, deletedAt: null },
+        where: { telegramChatId: result.telegramUserId, isActive: true },
         select: { id: true, name: true, role: true, avatar: true, telegramChatId: true },
     });
     if (!user) {
@@ -168,7 +168,7 @@ router.get('/today', staffPortalAuth, async (req: any, res) => {
                 teacherId: s.group.teacher?.id || '',
                 startTime: s.startTime,
                 endTime: s.endTime,
-                room: s.room?.name || s.group.room || '',
+                room: s.room?.name || (s.group as any).room || '',
                 studentCount: s.group._count.enrollments,
                 attendanceMarked: markedSet.has(s.groupId),
             })),
@@ -226,7 +226,7 @@ router.get('/groups', staffPortalAuth, async (req: any, res) => {
                 teacher: g.teacher?.name || '',
                 studentCount: g._count.enrollments,
                 schedules: g.schedules,
-                room: g.room || '',
+                room: (g as any).room || '',
                 attendancePercent: attMap[g.id]?.total
                     ? Math.round((attMap[g.id].present / attMap[g.id].total) * 100)
                     : null,
@@ -537,4 +537,290 @@ router.put('/me/telegram', staffPortalAuth, async (req: any, res) => {
     }
 });
 
+// ─── Face ID & Davomat ───────────────────────────────────────────────────────
+
+// Euclidean distance — face-api.js descriptor solishtirish (threshold < 0.6)
+function faceDistance(d1: number[], d2: number[]): number {
+    let sum = 0;
+    for (let i = 0; i < d1.length; i++) sum += (d1[i] - d2[i]) ** 2;
+    return Math.sqrt(sum);
+}
+
+// Haversine — metr
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// GET /api/staff-portal/face-profile — o'z yuz profil holati
+router.get('/face-profile', staffPortalAuth, async (req: any, res) => {
+    try {
+        const staffMember = await prisma.staffMember.findFirst({
+            where: { telegramChatId: req.staffUser.telegramChatId },
+        });
+        if (!staffMember) {
+            const profile = await prisma.staffFaceProfile.findFirst({
+                where: { staff: { id: req.staffUser.id } },
+                select: { id: true, photoUrl: true, registeredAt: true },
+            });
+            return res.json({ registered: !!profile, profile });
+        }
+
+        const profile = await prisma.staffFaceProfile.findUnique({
+            where: { staffId: staffMember.id },
+            select: { id: true, photoUrl: true, registeredAt: true },
+        });
+        res.json({ registered: !!profile, profile });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/staff-portal/face-profile — yuz profilini ro'yxatdan o'tkazish
+// Body: { descriptor: number[128], photoDataUrl: string }
+router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { descriptor, photoDataUrl } = req.body;
+        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
+            return res.status(400).json({ error: 'Noto\'g\'ri descriptor (128-element array kerak)' });
+        }
+
+        const staffMember = await prisma.staffMember.findFirst({
+            where: { telegramChatId: req.staffUser.telegramChatId },
+        });
+        const staffId = staffMember?.id || req.staffUser.id;
+
+        const profile = await prisma.staffFaceProfile.upsert({
+            where: { staffId },
+            update: {
+                descriptor: JSON.stringify(descriptor),
+                photoUrl: photoDataUrl || null,
+            },
+            create: {
+                staffId,
+                descriptor: JSON.stringify(descriptor),
+                photoUrl: photoDataUrl || null,
+            },
+        });
+
+        res.json({ ok: true, profileId: profile.id, registeredAt: profile.registeredAt });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/staff-portal/check-in — Face ID + GPS bilan kirib kelish
+// Body: { descriptor: number[128], latitude: number, longitude: number, photoDataUrl?: string }
+router.post('/check-in', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { descriptor, latitude, longitude, photoDataUrl } = req.body;
+
+        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
+            return res.status(400).json({ error: 'Yuz descriptor kerak' });
+        }
+        if (latitude == null || longitude == null) {
+            return res.status(400).json({ error: 'GPS joylashuvi kerak' });
+        }
+
+        // 1. Xodimni topish
+        const staffMember = await prisma.staffMember.findFirst({
+            where: { telegramChatId: req.staffUser.telegramChatId },
+            include: { faceProfile: true },
+        });
+        const staffId = staffMember?.id;
+        if (!staffId) return res.status(404).json({ error: 'Xodim topilmadi' });
+
+        // 2. Yuz profilini tekshirish
+        const faceProfile = staffMember.faceProfile;
+        if (!faceProfile) {
+            return res.status(400).json({ error: 'Yuz profili ro\'yxatdan o\'tilmagan. Avval yuzingizni ro\'yxatdan o\'tkazing.' });
+        }
+
+        // 3. Face match tekshirish
+        const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
+        const distance = faceDistance(descriptor, storedDescriptor);
+        const faceScore = Math.max(0, 1 - distance); // 0-1
+        const THRESHOLD = 0.6; // distance < 0.6 = bir xil odam
+
+        if (distance >= THRESHOLD) {
+            return res.status(403).json({
+                error: 'Yuz mos kelmadi. Qayta urinib ko\'ring.',
+                faceScore: parseFloat(faceScore.toFixed(3)),
+            });
+        }
+
+        // 4. Joylashuvni tekshirish
+        const locations = await prisma.workLocation.findMany({ where: { isActive: true } });
+        const matchedLocation = locations.find(loc =>
+            haversine(latitude, longitude, loc.latitude, loc.longitude) <= loc.radius
+        );
+
+        if (!matchedLocation) {
+            return res.status(403).json({
+                error: 'Siz ish joyidan tashqaridasiz. Ish joyi hududida bo\'lgandagina kirish mumkin.',
+                faceScore: parseFloat(faceScore.toFixed(3)),
+            });
+        }
+
+        // 5. Kechikkan yoki o'z vaqtida?
+        const now = new Date();
+        const timeStr = now.toTimeString().slice(0, 5); // "HH:MM"
+        const date = now.toISOString().split('T')[0];
+
+        const [startH, startM] = matchedLocation.workStartTime.split(':').map(Number);
+        const lateMinutes = matchedLocation.lateAfterMin;
+        const startMinutes = startH * 60 + startM;
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        const status = nowMinutes <= startMinutes + lateMinutes ? 'present' : 'late';
+
+        // 6. Avval kirib kelganmi?
+        const existing = await prisma.staffAttendance.findUnique({
+            where: { staffId_date: { staffId, date } },
+        });
+
+        if (existing?.checkIn) {
+            return res.status(409).json({
+                error: 'Siz bugun allaqachon kirib kelgansiz.',
+                checkIn: existing.checkIn,
+                status: existing.status,
+            });
+        }
+
+        // 7. Yozish
+        const record = await prisma.staffAttendance.upsert({
+            where: { staffId_date: { staffId, date } },
+            update: {
+                checkIn: timeStr,
+                status,
+                locationId: matchedLocation.id,
+                checkInLat: latitude,
+                checkInLng: longitude,
+                faceScore: parseFloat(faceScore.toFixed(4)),
+                verifiedBy: 'face_id',
+            },
+            create: {
+                staffId,
+                date,
+                checkIn: timeStr,
+                status,
+                locationId: matchedLocation.id,
+                checkInLat: latitude,
+                checkInLng: longitude,
+                faceScore: parseFloat(faceScore.toFixed(4)),
+                verifiedBy: 'face_id',
+            },
+        });
+
+        res.json({
+            ok: true,
+            checkIn: timeStr,
+            status,
+            location: matchedLocation.name,
+            faceScore: parseFloat(faceScore.toFixed(3)),
+            record,
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/staff-portal/check-out — chiqib ketish (face ID bilan)
+// Body: { descriptor: number[128], latitude: number, longitude: number }
+router.post('/check-out', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { descriptor, latitude, longitude } = req.body;
+
+        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
+            return res.status(400).json({ error: 'Yuz descriptor kerak' });
+        }
+
+        const staffMember = await prisma.staffMember.findFirst({
+            where: { telegramChatId: req.staffUser.telegramChatId },
+            include: { faceProfile: true },
+        });
+        if (!staffMember) return res.status(404).json({ error: 'Xodim topilmadi' });
+
+        const faceProfile = staffMember.faceProfile;
+        if (!faceProfile) return res.status(400).json({ error: 'Yuz profili yo\'q' });
+
+        const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
+        const distance = faceDistance(descriptor, storedDescriptor);
+        if (distance >= 0.6) {
+            return res.status(403).json({ error: 'Yuz mos kelmadi', faceScore: Math.max(0, 1 - distance) });
+        }
+
+        const date = new Date().toISOString().split('T')[0];
+        const timeStr = new Date().toTimeString().slice(0, 5);
+
+        const existing = await prisma.staffAttendance.findUnique({
+            where: { staffId_date: { staffId: staffMember.id, date } },
+        });
+
+        if (!existing?.checkIn) {
+            return res.status(400).json({ error: 'Avval kirib kelish belgilanmagan' });
+        }
+        if (existing.checkOut) {
+            return res.status(409).json({ error: 'Chiqib ketish allaqachon belgilangan', checkOut: existing.checkOut });
+        }
+
+        const record = await prisma.staffAttendance.update({
+            where: { staffId_date: { staffId: staffMember.id, date } },
+            data: {
+                checkOut: timeStr,
+                checkOutLat: latitude,
+                checkOutLng: longitude,
+            },
+        });
+
+        res.json({ ok: true, checkOut: timeStr, record });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/staff-portal/my-attendance — xodimning o'z davomati
+router.get('/my-attendance', staffPortalAuth, async (req: any, res) => {
+    try {
+        const staffMember = await prisma.staffMember.findFirst({
+            where: { telegramChatId: req.staffUser.telegramChatId },
+        });
+        if (!staffMember) return res.status(404).json({ error: 'Xodim topilmadi' });
+
+        const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+        const today = new Date().toISOString().split('T')[0];
+
+        const [records, todayRec, faceProfile] = await Promise.all([
+            prisma.staffAttendance.findMany({
+                where: { staffId: staffMember.id, date: { startsWith: month } },
+                include: { location: { select: { name: true } } },
+                orderBy: { date: 'desc' },
+            }),
+            prisma.staffAttendance.findUnique({
+                where: { staffId_date: { staffId: staffMember.id, date: today } },
+                include: { location: { select: { name: true } } },
+            }),
+            prisma.staffFaceProfile.findUnique({
+                where: { staffId: staffMember.id },
+                select: { id: true, photoUrl: true, registeredAt: true },
+            }),
+        ]);
+
+        const stats = {
+            present: records.filter(r => r.status === 'present').length,
+            late:    records.filter(r => r.status === 'late').length,
+            absent:  records.filter(r => r.status === 'absent').length,
+            total:   records.length,
+        };
+
+        res.json({ month, today: todayRec, stats, records, faceRegistered: !!faceProfile, faceProfile });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;
+

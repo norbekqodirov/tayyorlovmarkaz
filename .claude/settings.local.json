@@ -6,7 +6,17 @@
       "Bash(node -e \"console.log\\(''node ok''\\)\")",
       "Bash(python -c \":*)",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(npx prisma *)",
+      "Bash(git add *)",
+      "Bash(git stash *)",
+      "Bash(git pull *)",
+      "Bash(git config *)",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(grep -v \"^$\\\\|version\\\\|prisma\\\\|follow\\\\|update\\\\|└\\\\|┌\\\\|│\\\\|─\\\\|please\")",
+      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.quiz.count\\(\\).then\\(n => { console.log\\('\\\\''Quiz count:'\\\\'', n\\); p.$disconnect\\(\\); }\\).catch\\(e => { console.error\\('\\\\''Error:'\\\\'', e.message\\); p.$disconnect\\(\\); }\\);')",
+      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.goal.count\\(\\).then\\(n => { console.log\\('\\\\''Goal table OK, count:'\\\\'', n\\); p.$disconnect\\(\\); }\\).catch\\(e => console.error\\(e.message\\)\\);')"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -9,9 +9,12 @@ import {
   ClipboardCheck, TrendingUp, CreditCard, UserCog,
   PanelLeftClose, PanelLeftOpen, Sun, Moon,
   Activity, MessageSquare, Bot, ClipboardList, Sparkles, Brain,
-  ArrowUpRight, Target, Users2, Zap, Shield, Award, FileBarChart2
+  ArrowUpRight, Target, Users2, Zap, Shield, Award, FileBarChart2,
+  TrendingDown, Building2, Fingerprint, MapPin,
 } from 'lucide-react';
 import GlobalSearch from './GlobalSearch';
+import ShortcutsHelp from './ShortcutsHelp';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Module definitions ────────────────────────────────────────────────────
@@ -56,6 +59,7 @@ const MODULES: NavModule[] = [
           { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',   icon: Calendar,       permission: 'schedule'   },
           { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',    icon: ClipboardCheck, permission: 'journal'    },
           { name: 'Test Tizimi',     path: '/crmtayyorlovmarkaz/quiz',      icon: ClipboardList,  permission: 'content'    },
+          { name: 'Imtihonlar',      path: '/crmtayyorlovmarkaz/tests',     icon: FileText,       permission: 'journal'    },
         ],
       },
     ],
@@ -75,9 +79,27 @@ const MODULES: NavModule[] = [
           { name: 'Lidlar (Voronka)', path: '/crmtayyorlovmarkaz/leads',     icon: TrendingUp, permission: 'leads'        },
           { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon,   permission: 'target_forms' },
           { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing',     icon: Megaphone,      permission: 'marketing'    },
-          { name: 'AI Kontent',      path: '/crmtayyorlovmarkaz/ai-content',    icon: Sparkles,       permission: 'marketing'    },
-          { name: 'Aloqa Markazi',   path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'marketing'    },
-          { name: 'Telegram Bot',    path: '/crmtayyorlovmarkaz/telegram',      icon: Bot,            permission: undefined       },
+          { name: 'AI Kontent',       path: '/crmtayyorlovmarkaz/ai-content',    icon: Sparkles,       permission: 'marketing'    },
+          { name: 'Aloqa Markazi',    path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'marketing'    },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'kommunikatsiya',
+    label: 'Kommunikatsiya',
+    icon: MessageSquare,
+    accent: '#06b6d4',
+    gradient: 'from-cyan-500 to-sky-600',
+    color: 'text-cyan-500',
+    activeBg: 'bg-cyan-600',
+    activeNavBg: 'bg-cyan-600',
+    sections: [
+      {
+        links: [
+          { name: "Xabarlar",    path: '/crmtayyorlovmarkaz/messages',      icon: MessageSquare, permission: 'marketing' },
+          { name: "E'lonlar",    path: '/crmtayyorlovmarkaz/announcements', icon: Bell,          permission: 'marketing' },
+          { name: 'Telegram Bot', path: '/crmtayyorlovmarkaz/telegram',     icon: Bot,           permission: undefined   },
         ],
       },
     ],
@@ -94,8 +116,11 @@ const MODULES: NavModule[] = [
     sections: [
       {
         links: [
-          { name: 'Ustozlar', path: '/crmtayyorlovmarkaz/teachers', icon: Presentation, permission: undefined },
-          { name: 'Xodimlar', path: '/crmtayyorlovmarkaz/staff',    icon: Users,        permission: undefined },
+          { name: 'Ustozlar',           path: '/crmtayyorlovmarkaz/teachers',          icon: Presentation, permission: undefined },
+          { name: 'Xodimlar',           path: '/crmtayyorlovmarkaz/staff',             icon: Users,        permission: undefined },
+          { name: 'Mehnat Ta\'tillari', path: '/crmtayyorlovmarkaz/leave-requests',    icon: Calendar,     permission: undefined },
+          { name: 'Xodim Davomati',     path: '/crmtayyorlovmarkaz/staff-attendance',  icon: Fingerprint,  permission: undefined },
+          { name: 'Ish Joylari',        path: '/crmtayyorlovmarkaz/work-locations',    icon: MapPin,       permission: undefined },
         ],
       },
     ],
@@ -112,7 +137,8 @@ const MODULES: NavModule[] = [
     sections: [
       {
         links: [
-          { name: 'Moliya', path: '/crmtayyorlovmarkaz/finance', icon: Wallet, permission: 'finance' },
+          { name: 'Moliya',    path: '/crmtayyorlovmarkaz/finance',    icon: Wallet,      permission: 'finance' },
+          { name: 'Chegirmalar', path: '/crmtayyorlovmarkaz/discounts', icon: TrendingDown, permission: 'finance' },
         ],
       },
     ],
@@ -129,9 +155,10 @@ const MODULES: NavModule[] = [
     sections: [
       {
         links: [
-          { name: 'BI Analitika',  path: '/crmtayyorlovmarkaz/bi',          icon: BarChart2, permission: 'bi' },
-          { name: 'AI Bashoratlar', path: '/crmtayyorlovmarkaz/predictions', icon: Brain,     permission: 'bi' },
-          { name: 'KPI & Maqsadlar', path: '/crmtayyorlovmarkaz/goals',      icon: Target,    permission: 'bi' },
+          { name: 'BI Analitika',     path: '/crmtayyorlovmarkaz/bi',               icon: BarChart2,     permission: 'bi'      },
+          { name: 'AI Bashoratlar',  path: '/crmtayyorlovmarkaz/predictions',      icon: Brain,         permission: 'bi'      },
+          { name: 'KPI & Maqsadlar', path: '/crmtayyorlovmarkaz/goals',            icon: Target,        permission: 'bi'      },
+          { name: 'Ijroiya Hisobot', path: '/crmtayyorlovmarkaz/executive-report', icon: FileBarChart2, permission: undefined  },
         ],
       },
     ],
@@ -149,6 +176,7 @@ const MODULES: NavModule[] = [
       {
         title: 'Resurslar',
         links: [
+          { name: 'Filiallar',   path: '/crmtayyorlovmarkaz/branches',  icon: Building2, permission: undefined   },
           { name: 'Xonalar',     path: '/crmtayyorlovmarkaz/rooms',     icon: DoorOpen, permission: 'rooms'     },
           { name: 'Inventar',    path: '/crmtayyorlovmarkaz/inventory', icon: Package,  permission: 'inventory' },
           { name: 'Materiallar', path: '/crmtayyorlovmarkaz/content',   icon: FileText, permission: 'content'   },
@@ -174,51 +202,38 @@ const MODULES: NavModule[] = [
   },
 ];
 
-function detectModule(pathname: string): string {
-  if (pathname.includes('/leads') || pathname.includes('/forms') || pathname.includes('/marketing') || pathname.includes('/communication') || pathname.includes('/telegram'))
-    return 'marketing';
-  if (pathname.includes('/teachers') || pathname.includes('/staff'))
-    return 'hr';
-  if (pathname.includes('/finance'))
-    return 'finance';
-  if (pathname.includes('/bi') || pathname.includes('/predictions') || pathname.includes('/goals'))
-    return 'analytics';
-  if (pathname.includes('/rooms') || pathname.includes('/inventory') || pathname.includes('/content') || pathname.includes('/users') || pathname.includes('/settings') || pathname.includes('/automations') || pathname.includes('/audit') || pathname.includes('/certificates') || pathname.includes('/reports'))
-    return 'management';
-  return 'education';
+// Find the nav link (and its module) that best matches the current path.
+// Uses longest-prefix matching so nested routes (e.g. /students/:id) resolve
+// to their parent link, and the source of truth stays the MODULES list above
+// — no separate hardcoded path lists to keep in sync.
+function findActiveLink(pathname: string): { module: NavModule; link: NavItem } | null {
+  let best: { module: NavModule; link: NavItem; len: number } | null = null;
+  for (const mod of MODULES) {
+    for (const sec of mod.sections) {
+      for (const link of sec.links) {
+        if (pathname === link.path || pathname.startsWith(link.path + '/')) {
+          if (!best || link.path.length > best.len) {
+            best = { module: mod, link, len: link.path.length };
+          }
+        }
+      }
+    }
+  }
+  return best ? { module: best.module, link: best.link } : null;
 }
 
+function detectModule(pathname: string): string {
+  return findActiveLink(pathname)?.module.id ?? 'education';
+}
+
+// Titles for dynamic / non-nav routes that have no entry in MODULES.
 function getPageTitle(pathname: string): string {
-  const map: Record<string, string> = {
-    '/crmtayyorlovmarkaz': 'Dashboard',
-    '/crmtayyorlovmarkaz/students': "O'quvchilar",
-    '/crmtayyorlovmarkaz/groups': 'Guruhlar',
-    '/crmtayyorlovmarkaz/courses': 'Kurslar',
-    '/crmtayyorlovmarkaz/schedule': 'Dars Jadvali',
-    '/crmtayyorlovmarkaz/journal': 'Elektron Jurnal',
-    '/crmtayyorlovmarkaz/leads': 'Lidlar',
-    '/crmtayyorlovmarkaz/forms': 'Target Formalar',
-    '/crmtayyorlovmarkaz/marketing': 'Marketing',
-    '/crmtayyorlovmarkaz/teachers': 'Ustozlar',
-    '/crmtayyorlovmarkaz/staff': 'Xodimlar',
-    '/crmtayyorlovmarkaz/finance': 'Moliya',
-    '/crmtayyorlovmarkaz/bi': 'BI Analitika',
-    '/crmtayyorlovmarkaz/communication': 'Aloqa Markazi',
-    '/crmtayyorlovmarkaz/telegram': 'Telegram Bot',
-    '/crmtayyorlovmarkaz/quiz': 'Test Tizimi',
-    '/crmtayyorlovmarkaz/rooms': 'Xonalar',
-    '/crmtayyorlovmarkaz/inventory': 'Inventar',
-    '/crmtayyorlovmarkaz/content': 'Materiallar',
-    '/crmtayyorlovmarkaz/users': 'Foydalanuvchilar',
-    '/crmtayyorlovmarkaz/settings': 'Sozlamalar',
-    '/crmtayyorlovmarkaz/goals': 'KPI & Maqsadlar',
-    '/crmtayyorlovmarkaz/portal': 'Mening Portalim',
-    '/crmtayyorlovmarkaz/automations': 'Avtomatlar',
-    '/crmtayyorlovmarkaz/audit': 'Audit Jurnali',
-    '/crmtayyorlovmarkaz/certificates': 'Sertifikatlar',
-    '/crmtayyorlovmarkaz/reports': 'Hisobotlar',
-  };
-  return map[pathname] || 'Dashboard';
+  if (/\/students\/[^/]+\/progress$/.test(pathname)) return "O'quvchi Progressi";
+  if (/\/students\/[^/]+$/.test(pathname))          return "O'quvchi Profili";
+  if (/\/groups\/[^/]+$/.test(pathname))            return 'Guruh';
+  if (/\/courses\/[^/]+$/.test(pathname))           return 'Kurs';
+  if (pathname.endsWith('/portal'))                 return 'Mening Portalim';
+  return findActiveLink(pathname)?.link.name ?? 'Dashboard';
 }
 
 export default function CrmLayout() {
@@ -229,6 +244,7 @@ export default function CrmLayout() {
   const [showQuickActions, setShowQuickActions]   = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu]           = useState(false);
+  const [showShortcuts, setShowShortcuts]         = useState(false);
   const [currentTime, setCurrentTime]             = useState(new Date());
 
   const navigate  = useNavigate();
@@ -282,18 +298,27 @@ export default function CrmLayout() {
     return () => clearInterval(t);
   }, [loadNotifications]);
 
+  // Escape — barcha ochiq dropdownlarni yopadi
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setIsSearchOpen(true); }
       if (e.key === 'Escape') {
         setShowQuickActions(false);
         setShowNotifications(false);
         setShowUserMenu(false);
+        setShowShortcuts(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Global klaviatura yorliqlari (Ctrl+K qidirish, N yangi, ? yordam, G+harf navigatsiya)
+  const shortcutHandlers = useMemo(() => ({
+    onSearch: () => setIsSearchOpen(true),
+    onNew:    () => { setShowQuickActions(true); setShowNotifications(false); setShowUserMenu(false); },
+    onHelp:   () => setShowShortcuts(true),
+  }), []);
+  useKeyboardShortcuts(shortcutHandlers);
 
   const handleLogout = () => {
     localStorage.removeItem('crm_token');
@@ -826,6 +851,9 @@ export default function CrmLayout() {
 
       {/* Global search */}
       <GlobalSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+
+      {/* Klaviatura yorliqlari oynasi ("?" tugmasi bilan ochiladi) */}
+      <ShortcutsHelp isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} />
     </div>
   );
 }

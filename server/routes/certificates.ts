@@ -4,7 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { generateCertificate, generateBatch } from '../services/certificateService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
-import archiver from 'archiver';
+import * as archiver from 'archiver';
 import fs from 'fs';
 import path from 'path';
 
@@ -196,7 +196,9 @@ router.post('/zip', requireAuth, async (req, res) => {
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="certificates-${Date.now()}.zip"`);
 
-        const archive = archiver('zip', { zlib: { level: 6 } });
+        const archive = (archiver as any).default
+            ? (archiver as any).default('zip', { zlib: { level: 6 } })
+            : (archiver as any)('zip', { zlib: { level: 6 } });
         archive.on('error', (err: any) => {
             console.error('ZIP error:', err);
             res.status(500).end();

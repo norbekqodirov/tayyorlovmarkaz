@@ -46,6 +46,19 @@ export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
   );
 }
 
+export function SkeletonStatCard() {
+  return (
+    <div className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm animate-pulse">
+      <div className="flex items-center justify-between mb-3">
+        <div className="w-8 h-8 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+        <div className="h-3 bg-zinc-200 dark:bg-zinc-800 rounded w-12" />
+      </div>
+      <div className="h-6 bg-zinc-200 dark:bg-zinc-800 rounded w-20 mb-1" />
+      <div className="h-3 bg-zinc-200 dark:bg-zinc-800 rounded w-24" />
+    </div>
+  );
+}
+
 export function SkeletonDashboard() {
   return (
     <div className="space-y-6">

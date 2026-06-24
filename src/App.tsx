@@ -39,7 +39,7 @@ const CrmCourses    = React.lazy(() => import('./pages/crm/CrmCourses'));
 const CrmInventory  = React.lazy(() => import('./pages/crm/CrmInventory'));
 const CrmUsers          = React.lazy(() => import('./pages/crm/CrmUsers'));
 const CrmCommunication   = React.lazy(() => import('./pages/crm/CrmCommunication'));
-const CrmStudentProfile  = React.lazy(() => import('./pages/crm/CrmStudentProfile'));
+const CrmStudentDetail   = React.lazy(() => import('./pages/crm/CrmStudentDetail'));
 const CrmTelegram        = React.lazy(() => import('./pages/crm/CrmTelegram'));
 const CrmQuiz            = React.lazy(() => import('./pages/crm/CrmQuiz'));
 const PublicQuiz         = React.lazy(() => import('./pages/PublicQuiz'));
@@ -53,6 +53,17 @@ const CrmAudit           = React.lazy(() => import('./pages/crm/CrmAudit'));
 const CrmCertificates    = React.lazy(() => import('./pages/crm/CrmCertificates'));
 const CrmReports         = React.lazy(() => import('./pages/crm/CrmReports'));
 const VerifyCert         = React.lazy(() => import('./pages/VerifyCert'));
+const CrmMessages        = React.lazy(() => import('./pages/crm/CrmMessages'));
+const CrmAnnouncements   = React.lazy(() => import('./pages/crm/CrmAnnouncements'));
+const CrmBranches        = React.lazy(() => import('./pages/crm/CrmBranches'));
+const CrmDiscounts       = React.lazy(() => import('./pages/crm/CrmDiscounts'));
+const CrmTests           = React.lazy(() => import('./pages/crm/CrmTests'));
+const CrmLeaveRequests   = React.lazy(() => import('./pages/crm/CrmLeaveRequests'));
+const CrmExecutiveReport = React.lazy(() => import('./pages/crm/CrmExecutiveReport'));
+const CrmCourseDetail    = React.lazy(() => import('./pages/crm/CrmCourseDetail'));
+const CrmStudentProgress   = React.lazy(() => import('./pages/crm/CrmStudentProgress'));
+const CrmStaffAttendance   = React.lazy(() => import('./pages/crm/CrmStaffAttendance'));
+const CrmWorkLocations     = React.lazy(() => import('./pages/crm/CrmWorkLocations'));
 const GlobalSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
     <div className="flex flex-col items-center gap-4">
@@ -99,47 +110,62 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              {/* Dashboard — all authenticated users */}
+              {/* Dashboard — barcha autentifikatsiyadan o'tgan foydalanuvchilar */}
               <Route index element={<CrmDashboard />} />
 
-              {/* Ta'lim */}
-              <Route path="students"     element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudents /></ProtectedRoute>} />
-              <Route path="students/:id" element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudentProfile /></ProtectedRoute>} />
-              <Route path="groups"     element={<ProtectedRoute requiredPermission="groups"     allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroups /></ProtectedRoute>} />
-              <Route path="groups/:id" element={<ProtectedRoute requiredPermission="groups"     allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroupDetail /></ProtectedRoute>} />
-              <Route path="courses"    element={<ProtectedRoute requiredPermission="courses"    allowedRoles={['ADMIN','MANAGER']}><CrmCourses /></ProtectedRoute>} />
-              <Route path="schedule"   element={<ProtectedRoute requiredPermission="schedule"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmSchedule /></ProtectedRoute>} />
-              <Route path="journal"    element={<ProtectedRoute requiredPermission="journal"    allowedRoles={['ADMIN','TEACHER']}><CrmJournal /></ProtectedRoute>} />
+              {/* ─── Ta'lim ─── */}
+              <Route path="students"               element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudents /></ProtectedRoute>} />
+              <Route path="students/:id/progress"  element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudentProgress /></ProtectedRoute>} />
+              <Route path="students/:id"           element={<ProtectedRoute requiredPermission="students" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmStudentDetail /></ProtectedRoute>} />
+              <Route path="groups"     element={<ProtectedRoute requiredPermission="groups"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroups /></ProtectedRoute>} />
+              <Route path="groups/:id" element={<ProtectedRoute requiredPermission="groups"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroupDetail /></ProtectedRoute>} />
+              <Route path="courses"     element={<ProtectedRoute requiredPermission="courses" allowedRoles={['ADMIN','MANAGER']}><CrmCourses /></ProtectedRoute>} />
+              <Route path="courses/:id" element={<ProtectedRoute requiredPermission="courses" allowedRoles={['ADMIN','MANAGER']}><CrmCourseDetail /></ProtectedRoute>} />
+              <Route path="schedule" element={<ProtectedRoute requiredPermission="schedule" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmSchedule /></ProtectedRoute>} />
+              <Route path="journal"  element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER']}><CrmJournal /></ProtectedRoute>} />
+              <Route path="quiz"     element={<ProtectedRoute requiredPermission="content"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
+              <Route path="tests"    element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmTests /></ProtectedRoute>} />
 
-              {/* Marketing */}
-              <Route path="leads"     element={<ProtectedRoute requiredPermission="leads"       allowedRoles={['ADMIN','MANAGER']}><CrmLeads /></ProtectedRoute>} />
-              <Route path="forms"     element={<ProtectedRoute requiredPermission="target_forms" allowedRoles={['ADMIN']}><CrmForms /></ProtectedRoute>} />
-              <Route path="marketing" element={<ProtectedRoute requiredPermission="marketing"   allowedRoles={['ADMIN','MANAGER']}><CrmMarketing /></ProtectedRoute>} />
+              {/* ─── Marketing ─── */}
+              <Route path="leads"        element={<ProtectedRoute requiredPermission="leads"        allowedRoles={['ADMIN','MANAGER']}><CrmLeads /></ProtectedRoute>} />
+              <Route path="forms"        element={<ProtectedRoute requiredPermission="target_forms" allowedRoles={['ADMIN']}><CrmForms /></ProtectedRoute>} />
+              <Route path="marketing"    element={<ProtectedRoute requiredPermission="marketing"    allowedRoles={['ADMIN','MANAGER']}><CrmMarketing /></ProtectedRoute>} />
+              <Route path="ai-content"   element={<ProtectedRoute requiredPermission="marketing"    allowedRoles={['ADMIN','MANAGER']}><CrmAIContent /></ProtectedRoute>} />
+              <Route path="communication" element={<ProtectedRoute requiredPermission="marketing"   allowedRoles={['ADMIN','MANAGER']}><CrmCommunication /></ProtectedRoute>} />
 
-              {/* HR — admin only (not in custom permissions list) */}
-              <Route path="teachers" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTeachers /></ProtectedRoute>} />
-              <Route path="staff"    element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaff /></ProtectedRoute>} />
-
-              {/* Moliya */}
-              <Route path="finance" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmFinance /></ProtectedRoute>} />
-              <Route path="bi"      element={<ProtectedRoute requiredPermission="bi"      allowedRoles={['ADMIN','MANAGER']}><CrmBI /></ProtectedRoute>} />
-
-              {/* Boshqaruv */}
-              <Route path="rooms"     element={<ProtectedRoute requiredPermission="rooms"     allowedRoles={['ADMIN']}><CrmRooms /></ProtectedRoute>} />
-              <Route path="inventory" element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
-              <Route path="content"        element={<ProtectedRoute requiredPermission="content"        allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
-              <Route path="communication" element={<ProtectedRoute requiredPermission="marketing"      allowedRoles={['ADMIN','MANAGER']}><CrmCommunication /></ProtectedRoute>} />
+              {/* ─── Kommunikatsiya ─── */}
+              <Route path="messages"      element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmMessages /></ProtectedRoute>} />
+              <Route path="announcements" element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmAnnouncements /></ProtectedRoute>} />
               <Route path="telegram"      element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTelegram /></ProtectedRoute>} />
-              <Route path="quiz"       element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
-              <Route path="ai-content"   element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmAIContent /></ProtectedRoute>} />
-              <Route path="predictions" element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmPredictions /></ProtectedRoute>} />
-              <Route path="goals"       element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmGoals /></ProtectedRoute>} />
-              <Route path="users"        element={<ProtectedRoute requiredPermission="users"     allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
-              <Route path="settings"     element={<ProtectedRoute requiredPermission="settings"  allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
+
+              {/* ─── HR (admin uchun — maxsus ruxsatlar ro'yxatida emas) ─── */}
+              <Route path="teachers"         element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTeachers /></ProtectedRoute>} />
+              <Route path="staff"            element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaff /></ProtectedRoute>} />
+              <Route path="leave-requests"   element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmLeaveRequests /></ProtectedRoute>} />
+              <Route path="staff-attendance" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmStaffAttendance /></ProtectedRoute>} />
+              <Route path="work-locations"   element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmWorkLocations /></ProtectedRoute>} />
+
+              {/* ─── Moliya ─── */}
+              <Route path="finance"   element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmFinance /></ProtectedRoute>} />
+              <Route path="discounts" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmDiscounts /></ProtectedRoute>} />
+
+              {/* ─── Analitika ─── */}
+              <Route path="bi"               element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmBI /></ProtectedRoute>} />
+              <Route path="predictions"      element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmPredictions /></ProtectedRoute>} />
+              <Route path="goals"            element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmGoals /></ProtectedRoute>} />
+              <Route path="executive-report" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmExecutiveReport /></ProtectedRoute>} />
+
+              {/* ─── Boshqaruv ─── */}
+              <Route path="branches"     element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmBranches /></ProtectedRoute>} />
+              <Route path="rooms"        element={<ProtectedRoute requiredPermission="rooms"     allowedRoles={['ADMIN']}><CrmRooms /></ProtectedRoute>} />
+              <Route path="inventory"    element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
+              <Route path="content"      element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
               <Route path="automations"  element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAutomations /></ProtectedRoute>} />
-              <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAudit /></ProtectedRoute>} />
               <Route path="certificates" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmCertificates /></ProtectedRoute>} />
               <Route path="reports"      element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmReports /></ProtectedRoute>} />
+              <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAudit /></ProtectedRoute>} />
+              <Route path="users"        element={<ProtectedRoute requiredPermission="users"    allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
+              <Route path="settings"     element={<ProtectedRoute requiredPermission="settings" allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
             </Route>
           </Routes>
         </Suspense>

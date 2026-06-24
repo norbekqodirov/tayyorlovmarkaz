@@ -65,6 +65,17 @@ const COLLECTION_WRITE_LEVEL: Record<string, number> = {
     bi:            2,
 };
 
+export const requireMinRole = (minRole: string) => (req: Request, res: Response, next: NextFunction) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Avtorizatsiya talab qilinadi" });
+    const userLevel = ROLE_LEVEL[user.role] || 0;
+    const minLevel  = ROLE_LEVEL[minRole]   || 0;
+    if (userLevel < minLevel) {
+        return res.status(403).json({ message: "Sizda bu amalni bajarish uchun ruxsat yo'q" });
+    }
+    next();
+};
+
 export const requireRole = (req: Request, res: Response, next: NextFunction) => {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ message: "Avtorizatsiya talab qilinadi" });
