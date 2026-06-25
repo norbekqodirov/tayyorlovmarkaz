@@ -14,7 +14,7 @@
  *   /notify <chatId> <xabar> — Xabar yuborish (faqat server tomonidan)
  */
 
-import { Bot, webhookCallback, InlineKeyboard } from 'grammy';
+import { Bot, webhookCallback, InlineKeyboard, Keyboard } from 'grammy';
 import prisma from '../db.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
@@ -28,10 +28,26 @@ export const bot = new Bot(BOT_TOKEN || 'PLACEHOLDER');
 // ─── O'quvchi & admin tekshiruvi ─────────────────────────────────────────────
 
 async function findStudentByChatId(chatId: number | string) {
+    const cid = String(chatId);
     return prisma.student.findFirst({
-        where: { notes: { contains: `tg:${chatId}` } },
+        where: {
+            OR: [{ telegramChatId: cid }, { parentTelegramId: cid }],
+            deletedAt: null,
+        },
         include: { enrollments: { include: { group: { include: { course: true } } } } }
     });
+}
+
+// Telefon raqamning oxirgi 9 raqami (mamlakat kodisiz) — taqqoslash uchun
+function extractDigits(phone: string): string {
+    const d = String(phone || '').replace(/\D/g, '');
+    return d.length > 9 ? d.slice(-9) : d;
+}
+
+// Mini App URL (DB sozlamasidan)
+async function getMiniAppUrl(): Promise<string> {
+    const s = await prisma.setting.findUnique({ where: { key: 'telegram_mini_app_url' } });
+    return s?.value || 'https://tayyorlovmarkaz.uz/portal';
 }
 
 async function isAdmin(chatId: number | string) {
@@ -46,7 +62,9 @@ bot.command('start', async (ctx) => {
     const student = await findStudentByChatId(chatId);
 
     if (student) {
+        const url = await getMiniAppUrl();
         const kb = new InlineKeyboard()
+            .webApp('📱 Portalga kirish', url).row()
             .text('💳 Balansim', 'balance')
             .text('📅 Davomat', 'attendance').row()
             .text('💰 To\'lov linki', 'pay_link')
@@ -54,32 +72,76 @@ bot.command('start', async (ctx) => {
 
         await ctx.reply(
             `👋 Xush kelibsiz, <b>${student.name}</b>!\n\n` +
-            `Tayyorlovmarkaz CRM botiga muvaffaqiyatli kirdingiz.\n` +
-            `Quyidagi tugmalardan foydalaning:`,
+            `Portalga kirish uchun tugmani bosing yoki quyidagi komandalardan foydalaning:`,
             { parse_mode: 'HTML', reply_markup: kb }
         );
     } else {
-        const payload = ctx.match; // /start <token>
-        if (payload) {
-            await ctx.reply(
-                `🔗 Tizimga ulanish uchun:\n\n` +
-                `Telefon raqamingizni yuboring yoki admin bilan bog'laning.`,
-                { parse_mode: 'HTML' }
-            );
-        } else {
-            await ctx.reply(
-                `🎓 <b>Tayyorlovmarkaz CRM Bot</b>\n\n` +
-                `Siz hali tizimga ulanmadingiz.\n\n` +
-                `<b>Admin uchun komandalar:</b>\n` +
-                `/leads — Bugungi lidlar\n` +
-                `/stats — Statistika\n` +
-                `/debtors — Qarzdorlar\n\n` +
-                `<b>O\'quvchilar:</b>\n` +
-                `Admin orqali akkauntingizni Telegram ga ulang.`,
-                { parse_mode: 'HTML' }
-            );
-        }
+        // Tizimga ulanmagan — telefon raqam so'raymiz
+        const kb = new Keyboard()
+            .requestContact('📱 Telefon raqamni ulashish')
+            .resized()
+            .oneTime();
+        await ctx.reply(
+            `🎓 <b>Tayyorlovmarkaz Portal</b>\n\n` +
+            `Portalga kirish uchun telefon raqamingizni ulashing.\n\n` +
+            `⚠️ Raqamingiz tizimda <b>o'quvchi</b> yoki <b>ota-ona</b> sifatida ` +
+            `ro'yxatda bo'lishi kerak. Aks holda admin bilan bog'laning.`,
+            { parse_mode: 'HTML', reply_markup: kb }
+        );
     }
+});
+
+// ─── Telefon raqam ulashish (contact) ─────────────────────────────────────────
+
+bot.on('message:contact', async (ctx) => {
+    const contact = ctx.message.contact;
+    const chatId = String(ctx.chat.id);
+    const digits = extractDigits(contact.phone_number);
+
+    if (!digits) {
+        await ctx.reply('❌ Telefon raqam o\'qilmadi. Qayta urinib ko\'ring.',
+            { reply_markup: { remove_keyboard: true } });
+        return;
+    }
+
+    // O'quvchi yoki ota-ona telefoni bo'yicha qidirish
+    const students = await prisma.student.findMany({
+        where: { deletedAt: null },
+        select: { id: true, name: true, phone: true, parentPhone: true },
+    });
+
+    let matched: { id: string; name: string } | null = null;
+    let asParent = false;
+    for (const s of students) {
+        if (s.phone && extractDigits(s.phone) === digits) { matched = { id: s.id, name: s.name }; asParent = false; break; }
+        if (s.parentPhone && extractDigits(s.parentPhone) === digits) { matched = { id: s.id, name: s.name }; asParent = true; break; }
+    }
+
+    if (!matched) {
+        await ctx.reply(
+            `❌ <b>Raqam topilmadi</b>\n\n` +
+            `<code>${contact.phone_number}</code> tizimda o'quvchi yoki ota-ona sifatida ro'yxatda yo'q.\n\n` +
+            `Iltimos o'quv markazga bergan raqamingizni ulashing yoki admin bilan bog'laning.`,
+            { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
+        );
+        return;
+    }
+
+    // Telegram chatId ni o'quvchi (yoki ota-ona) maydoniga saqlash
+    await prisma.student.update({
+        where: { id: matched.id },
+        data: asParent ? { parentTelegramId: chatId } : { telegramChatId: chatId },
+    });
+
+    await ctx.reply(
+        `✅ <b>Xush kelibsiz, ${matched.name}!</b>\n\n` +
+        `${asParent ? 'Ota-ona' : 'O\'quvchi'} sifatida muvaffaqiyatli ulandingiz.`,
+        { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
+    );
+
+    const url = await getMiniAppUrl();
+    const kb = new InlineKeyboard().webApp('📱 Portalga kirish', url);
+    await ctx.reply('Portalni ochish uchun tugmani bosing 👇', { reply_markup: kb });
 });
 
 bot.command('help', async (ctx) => {
