@@ -122,7 +122,9 @@ function CameraView({
   const streamRef = useRef<MediaStream | null>(null);
   const [ready, setReady] = useState(false);
   const [detected, setDetected] = useState(false);
+  const [manualAllowed, setManualAllowed] = useState(false);
   const detectTimer = useRef<any>(null);
+  const manualTimer = useRef<any>(null);
 
   useEffect(() => {
     let active = true;
@@ -143,6 +145,7 @@ function CameraView({
     return () => {
       active = false;
       if (detectTimer.current) clearInterval(detectTimer.current);
+      if (manualTimer.current) clearTimeout(manualTimer.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
@@ -158,14 +161,18 @@ function CameraView({
         const api = await loadFaceApi();
         const result = await api.detectSingleFace(
           videoRef.current,
-          new api.TinyFaceDetectorOptions({ inputSize: 224 })
+          new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
         );
         if (running) setDetected(!!result);
-      } catch { /* ignore */ }
+      } catch (e) {
+        console.warn('[FaceID] Detection error:', e);
+      }
     };
 
     detectTimer.current = setInterval(detect, 500);
-    return () => { running = false; clearInterval(detectTimer.current); };
+    // 8 soniya o'tsa qo'lda olishga ruxsat
+    manualTimer.current = setTimeout(() => { if (running) setManualAllowed(true); }, 8000);
+    return () => { running = false; clearInterval(detectTimer.current); clearTimeout(manualTimer.current); };
   }, [ready]);
 
   const capture = async () => {
@@ -220,12 +227,22 @@ function CameraView({
         </button>
         <button
           onClick={capture}
-          disabled={!detected || !ready}
-          className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-bold flex items-center justify-center gap-2 transition-all"
+          disabled={!ready || (!detected && !manualAllowed)}
+          className={`flex-1 py-3 rounded-2xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+            detected ? 'bg-blue-600 hover:bg-blue-700' :
+            manualAllowed ? 'bg-amber-500 hover:bg-amber-600' :
+            'bg-blue-600 opacity-40 cursor-not-allowed'
+          }`}
         >
-          <Camera size={16} /> Suratga olish
+          <Camera size={16} />
+          {detected ? 'Suratga olish' : manualAllowed ? 'Qo\'lda olish' : 'Suratga olish'}
         </button>
       </div>
+      {manualAllowed && !detected && (
+        <p className="text-xs text-amber-600 text-center px-4 -mt-2">
+          Yuz aniqlanmadi — yorug'likni yaxshilang yoki boshqa qurilmada urinib ko'ring
+        </p>
+      )}
     </div>
   );
 }
