@@ -614,12 +614,12 @@ router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
 });
 
 // POST /api/staff-portal/check-in — Face ID + GPS bilan kirib kelish
-// Body: { descriptor: number[128], latitude: number, longitude: number, photoDataUrl?: string }
+// Body: { descriptor: number[128], latitude: number, longitude: number, faceBypass?: boolean, photoDataUrl?: string }
 router.post('/check-in', staffPortalAuth, async (req: any, res) => {
     try {
-        const { descriptor, latitude, longitude, photoDataUrl } = req.body;
+        const { descriptor, latitude, longitude, photoDataUrl, faceBypass = false } = req.body;
 
-        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
+        if (!faceBypass && (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128)) {
             return res.status(400).json({ error: 'Yuz descriptor kerak' });
         }
         if (latitude == null || longitude == null) {
@@ -640,17 +640,20 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
             return res.status(400).json({ error: 'Yuz profili ro\'yxatdan o\'tilmagan. Avval yuzingizni ro\'yxatdan o\'tkazing.' });
         }
 
-        // 3. Face match tekshirish
-        const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
-        const distance = faceDistance(descriptor, storedDescriptor);
-        const faceScore = Math.max(0, 1 - distance); // 0-1
-        const THRESHOLD = 0.6; // distance < 0.6 = bir xil odam
+        // 3. Face match tekshirish (bypass bo'lmasa)
+        let faceScore = 1.0;
+        if (!faceBypass) {
+            const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
+            const distance = faceDistance(descriptor, storedDescriptor);
+            faceScore = Math.max(0, 1 - distance);
+            const THRESHOLD = 0.6;
 
-        if (distance >= THRESHOLD) {
-            return res.status(403).json({
-                error: 'Yuz mos kelmadi. Qayta urinib ko\'ring.',
-                faceScore: parseFloat(faceScore.toFixed(3)),
-            });
+            if (distance >= THRESHOLD) {
+                return res.status(403).json({
+                    error: 'Yuz mos kelmadi. Qayta urinib ko\'ring.',
+                    faceScore: parseFloat(faceScore.toFixed(3)),
+                });
+            }
         }
 
         // 4. Joylashuvni tekshirish
@@ -691,6 +694,7 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
         }
 
         // 7. Yozish
+        const verifiedBy = faceBypass ? 'gps_only' : 'face_id';
         const record = await prisma.staffAttendance.upsert({
             where: { staffId_date: { staffId, date } },
             update: {
@@ -699,8 +703,8 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
                 locationId: matchedLocation.id,
                 checkInLat: latitude,
                 checkInLng: longitude,
-                faceScore: parseFloat(faceScore.toFixed(4)),
-                verifiedBy: 'face_id',
+                faceScore: faceBypass ? null : parseFloat(faceScore.toFixed(4)),
+                verifiedBy,
             },
             create: {
                 staffId,
@@ -710,8 +714,8 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
                 locationId: matchedLocation.id,
                 checkInLat: latitude,
                 checkInLng: longitude,
-                faceScore: parseFloat(faceScore.toFixed(4)),
-                verifiedBy: 'face_id',
+                faceScore: faceBypass ? null : parseFloat(faceScore.toFixed(4)),
+                verifiedBy,
             },
         });
 
@@ -720,7 +724,8 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
             checkIn: timeStr,
             status,
             location: matchedLocation.name,
-            faceScore: parseFloat(faceScore.toFixed(3)),
+            faceScore: faceBypass ? 0 : parseFloat(faceScore.toFixed(3)),
+            faceBypass,
             record,
         });
     } catch (err: any) {
@@ -729,12 +734,12 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
 });
 
 // POST /api/staff-portal/check-out — chiqib ketish (face ID bilan)
-// Body: { descriptor: number[128], latitude: number, longitude: number }
+// Body: { descriptor: number[128], latitude: number, longitude: number, faceBypass?: boolean }
 router.post('/check-out', staffPortalAuth, async (req: any, res) => {
     try {
-        const { descriptor, latitude, longitude } = req.body;
+        const { descriptor, latitude, longitude, faceBypass = false } = req.body;
 
-        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
+        if (!faceBypass && (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128)) {
             return res.status(400).json({ error: 'Yuz descriptor kerak' });
         }
 
@@ -747,10 +752,12 @@ router.post('/check-out', staffPortalAuth, async (req: any, res) => {
         const faceProfile = staffMember.faceProfile;
         if (!faceProfile) return res.status(400).json({ error: 'Yuz profili yo\'q' });
 
-        const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
-        const distance = faceDistance(descriptor, storedDescriptor);
-        if (distance >= 0.6) {
-            return res.status(403).json({ error: 'Yuz mos kelmadi', faceScore: Math.max(0, 1 - distance) });
+        if (!faceBypass) {
+            const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
+            const distance = faceDistance(descriptor, storedDescriptor);
+            if (distance >= 0.6) {
+                return res.status(403).json({ error: 'Yuz mos kelmadi', faceScore: Math.max(0, 1 - distance) });
+            }
         }
 
         const date = new Date().toISOString().split('T')[0];

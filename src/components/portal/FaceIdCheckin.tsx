@@ -256,6 +256,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
   const [errorMsg, setErrorMsg] = useState('');
   const [successData, setSuccessData] = useState<any>(null);
   const [capturedCanvas, setCapturedCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   // ─── 1. Modellarni yuklash ────────────────────────────────────────────────
 
@@ -270,6 +271,13 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
         setStep('error');
       });
   }, []);
+
+  // ─── Elapsed timer (processing/verifying) ───────────────────────────────
+  useEffect(() => {
+    if (step !== 'processing' && step !== 'verifying') { setElapsed(0); return; }
+    const t = setInterval(() => setElapsed(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [step]);
 
   // ─── 2. Profil va bugungi holat ──────────────────────────────────────────
 
@@ -297,17 +305,33 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     if (step === 'loading_profile') loadProfile();
   }, [step, loadProfile]);
 
-  // ─── 3. Descriptor olish ─────────────────────────────────────────────────
+  // ─── 3. Descriptor olish (12s timeout bilan) ─────────────────────────────
 
   const extractDescriptor = async (canvas: HTMLCanvasElement): Promise<number[] | null> => {
     const api = await loadFaceApi();
-    const detection = await api.detectSingleFace(
-      canvas,
-      new api.TinyFaceDetectorOptions({ inputSize: 224 })
-    ).withFaceLandmarks().withFaceDescriptor();
 
-    if (!detection) return null;
-    return Array.from(detection.descriptor as Float32Array);
+    let timer: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('TIMEOUT')), 12000);
+    });
+
+    try {
+      const detection = await Promise.race([
+        api.detectSingleFace(
+          canvas,
+          new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
+        ).withFaceLandmarks().withFaceDescriptor(),
+        timeoutPromise,
+      ]);
+      clearTimeout(timer!);
+      if (!detection) return null;
+      return Array.from(detection.descriptor as Float32Array);
+    } catch (e: any) {
+      clearTimeout(timer!);
+      if (e.message === 'TIMEOUT') throw e;
+      console.warn('[FaceID] extractDescriptor:', e);
+      return null;
+    }
   };
 
   // ─── 4. Yuz ro'yxatga olish ──────────────────────────────────────────────
@@ -316,9 +340,19 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     setStep('processing');
     setCapturedCanvas(canvas);
     try {
-      const descriptor = await extractDescriptor(canvas);
+      let descriptor: number[] | null = null;
+      try {
+        descriptor = await extractDescriptor(canvas);
+      } catch (e: any) {
+        if (e.message === 'TIMEOUT') {
+          setErrorMsg('Qurilmangiz yuz tahlilini qo\'llab-quvvatlamaydi (12s). Yorug\'liqni yaxshilab yoki boshqa qurilmada urinib ko\'ring.');
+          setStep('error');
+          return;
+        }
+      }
+
       if (!descriptor) {
-        setErrorMsg('Yuz aniqlanmadi. Yaxshi yoritilgan joyda qayta urinib ko\'ring.');
+        setErrorMsg('Yuz aniqlanmadi. Yaxshi yoritilgan joyda, to\'g\'ri burchakda qayta urinib ko\'ring.');
         setStep('error');
         return;
       }
@@ -341,23 +375,33 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
   const handleCheckInCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
     try {
-      const descriptor = await extractDescriptor(canvas);
-      if (!descriptor) {
-        setErrorMsg('Yuz aniqlanmadi. Qayta urinib ko\'ring.');
-        setStep('error');
-        return;
+      let descriptor: number[] | null = null;
+      let faceBypass = false;
+
+      try {
+        descriptor = await extractDescriptor(canvas);
+      } catch (e: any) {
+        if (e.message === 'TIMEOUT') faceBypass = true;
       }
 
       const { latitude, longitude } = await getLocation().catch(() => {
         throw new Error('GPS joylashuvini aniqlash muvaffaqiyatsiz. Joylashuv ruxsatini bering.');
       });
 
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+
       const data = await portalFetch('/check-in', initData, {
         method: 'POST',
-        body: JSON.stringify({ descriptor, latitude, longitude }),
+        body: JSON.stringify({
+          descriptor: descriptor || [],
+          latitude,
+          longitude,
+          faceBypass,
+          photoDataUrl: faceBypass ? photoDataUrl : undefined,
+        }),
       });
 
-      setSuccessData(data);
+      setSuccessData({ ...data, faceBypass });
       setStep('success_in');
     } catch (err: any) {
       setErrorMsg(err.message || 'Kirib kelishda xatolik');
@@ -370,18 +414,25 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
   const handleCheckOutCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
     try {
-      const descriptor = await extractDescriptor(canvas);
-      if (!descriptor) {
-        setErrorMsg('Yuz aniqlanmadi. Qayta urinib ko\'ring.');
-        setStep('error');
-        return;
+      let descriptor: number[] | null = null;
+      let faceBypass = false;
+
+      try {
+        descriptor = await extractDescriptor(canvas);
+      } catch (e: any) {
+        if (e.message === 'TIMEOUT') faceBypass = true;
       }
 
       const { latitude, longitude } = await getLocation().catch(() => ({ latitude: 0, longitude: 0 }));
 
       const data = await portalFetch('/check-out', initData, {
         method: 'POST',
-        body: JSON.stringify({ descriptor, latitude, longitude }),
+        body: JSON.stringify({
+          descriptor: descriptor || [],
+          latitude,
+          longitude,
+          faceBypass,
+        }),
       });
 
       setSuccessData(data);
@@ -517,7 +568,9 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
                 {step === 'verifying' ? 'Tekshirilmoqda...' : 'Yuz tahlil qilinmoqda...'}
               </div>
               <p className="text-sm text-zinc-400 mt-1">
-                {step === 'verifying' ? 'Yuz mos kelishini va joylashuvni tekshiryapmiz' : 'Yuz belgilari chiqarilmoqda'}
+                {step === 'verifying'
+                  ? 'Yuz mos kelishini va joylashuvni tekshiryapmiz'
+                  : `Yuz belgilari chiqarilmoqda... ${elapsed}s / 12s`}
               </p>
             </div>
             <div className="flex gap-2">
@@ -525,6 +578,11 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
               <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
+            {elapsed >= 8 && step === 'processing' && (
+              <p className="text-xs text-amber-600 max-w-xs">
+                Tahlil davom etmoqda — qurilmangizga bog'liq. Iltimos kuting...
+              </p>
+            )}
           </motion.div>
         )}
 
@@ -686,7 +744,9 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
                   </div>
                 )}
                 <div className="text-xs text-violet-500">
-                  Face ID: {Math.round((successData?.faceScore || 0) * 100)}% mos
+                  {successData?.faceBypass
+                    ? 'GPS orqali tasdiqlandi'
+                    : `Face ID: ${Math.round((successData?.faceScore || 0) * 100)}% mos`}
                 </div>
               </div>
             </div>
