@@ -144,6 +144,45 @@ function sanitizeForPrisma(modelName: string, data: any): any {
     return sanitized;
 }
 
+// ─── Staff → User (login akkaunt) ─────────────────────────────────────────────
+// Xodim lavozimini CRM User roliga moslashtirish (ruxsat lavozimdan keladi)
+function mapStaffRoleToUserRole(position: string): string {
+    const p = (position || '').toLowerCase();
+    if (p.includes('direktor') || p.includes('director')) return 'ADMIN';
+    if (p.includes('admin')) return 'ADMIN';
+    if (p.includes('menejer') || p.includes('manager') || p.includes('hr')) return 'MANAGER';
+    if (p.includes("o'qituvchi") || p.includes('oqituvchi') || p.includes("o'qutuvchi") ||
+        p.includes('ustoz') || p.includes('teacher')) return 'TEACHER';
+    return 'TEACHER'; // eng past ruxsat — default
+}
+
+function normalizePhone(raw: string): string {
+    return String(raw || '').replace(/\s/g, '').trim();
+}
+
+// Xodim uchun login (User) hisobini yaratadi. Telefon ikkala jadvalni bog'laydi.
+// Mavjud User bo'lsa — TEGILMAYDI (admin parolini tasodifan o'zgartirmaslik uchun).
+async function ensureStaffLoginAccount(staff: any, rawPassword?: string) {
+    const phone = normalizePhone(staff.phone);
+    if (!phone) return null;
+
+    const existing = await prisma.user.findUnique({ where: { phone } });
+    if (existing) return existing; // allaqachon mavjud — o'zgartirmaymiz
+
+    const role = mapStaffRoleToUserRole(staff.role);
+    const hashed = await bcrypt.hash(rawPassword || '123456', 12);
+    return await prisma.user.create({
+        data: {
+            phone,
+            name: staff.name || 'Xodim',
+            password: hashed,
+            role,
+            isActive: true,
+            permissions: '[]',
+        } as any,
+    });
+}
+
 // ─── Collection Middleware ────────────────────────────────────────────────────
 router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
     const { collection } = req.params;
@@ -173,6 +212,11 @@ router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
 
     // Global Sanitization + Normalization on writes
     if (req.method === 'POST' || req.method === 'PUT') {
+        // Staff uchun login ma'lumotini saqlab qolamiz (sanitize uni o'chiradi)
+        if (modelName === 'staffMember') {
+            (req as any).staffLoginPassword = req.body.password;
+            (req as any).staffCreateLogin = req.body.createLogin !== false; // default true
+        }
         req.body = sanitizeForPrisma(modelName, req.body);
         req.body = normalizeData(modelName, req.body);
     }
@@ -268,6 +312,21 @@ router.post('/:collection', async (req, res) => {
         } else {
             // @ts-ignore
             finalData = await prisma[(req as any).modelName].create({ data: req.body });
+        }
+
+        // ─── Staff → login (User) hisobi ──────────────────────────────
+        // Xodim telefon bilan qo'shilsa, botga kirish uchun User yaratiladi
+        if ((req as any).modelName === 'staffMember' && (req as any).staffCreateLogin && finalData?.phone) {
+            try {
+                const loginUser = await ensureStaffLoginAccount(finalData, (req as any).staffLoginPassword);
+                if (loginUser) {
+                    finalData.loginCreated = true;
+                    finalData.loginRole = loginUser.role;
+                }
+            } catch (e) {
+                console.error('[CRUD] Staff login account error:', e);
+                // Xodim yaratildi — login xatosi jim o'tkaziladi
+            }
         }
 
         // ─── System Notifications ──────────────────────────────────────

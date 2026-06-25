@@ -21,21 +21,31 @@ async function getFaceApi() {
 // O'z serverimizdan — CDN muammosi yo'q
 const MODEL_URL = '/models';
 
-async function loadModels() {
-  if (modelsReady) return;
-  const api = await getFaceApi();
-  // WebGL backend (GPU) — JS threadni bloklamaydi
+// Model yuklash — har doim natija qaytaradi (osilib qolmaydi).
+// true = blink detection ishlaydi, false = oddiy suratga olish (GPS asosiy)
+async function loadModels(timeoutMs = 12000): Promise<boolean> {
+  if (modelsReady) return true;
   try {
-    await api.tf.setBackend('webgl');
-    await api.tf.ready();
-  } catch { /* webgl yo'q bo'lsa davom etadi */ }
+    const work = (async () => {
+      const api = await getFaceApi();
+      try {
+        await api.tf.setBackend('webgl');
+        await api.tf.ready();
+      } catch { /* webgl yo'q bo'lsa davom etadi */ }
+      // FAQAT 2 ta yengil model: 280KB jami
+      await Promise.all([
+        api.nets.tinyFaceDetector.loadFromUri(MODEL_URL),      // 190KB — yuz topish
+        api.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL), // 75KB  — ko'z nuqtalari
+      ]);
+      modelsReady = true;
+      return true;
+    })();
 
-  // FAQAT 2 ta yengil model: 280KB jami
-  await Promise.all([
-    api.nets.tinyFaceDetector.loadFromUri(MODEL_URL),      // 190KB — yuz topish
-    api.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL), // 75KB  — ko'z nuqtalari
-  ]);
-  modelsReady = true;
+    const timeout = new Promise<boolean>(resolve => setTimeout(() => resolve(false), timeoutMs));
+    return await Promise.race([work, timeout]);
+  } catch {
+    return false; // model yuklanmadi — fallback rejimi
+  }
 }
 
 // ─── Ko'z aspekt nisbati (Eye Aspect Ratio) — ko'z yumish aniqlash ──────────
@@ -102,11 +112,12 @@ function getLocation() {
 type BlinkState = 'waiting_face' | 'show_instruction' | 'blinked' | 'fallback';
 
 function CameraView({
-  onCapture, onCancel, instruction,
+  onCapture, onCancel, instruction, blinkEnabled = true,
 }: {
   onCapture: (canvas: HTMLCanvasElement) => void;
   onCancel: () => void;
   instruction: string;
+  blinkEnabled?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -154,11 +165,27 @@ function CameraView({
     };
   }, []);
 
-  // Yuz + ko'z yumish aniqlash
+  // Yuz + ko'z yumish aniqlash (faqat modellar yuklangan bo'lsa)
   useEffect(() => {
     if (!ready) return;
+    // Model yuklanmagan — blink detection o'tkazib yuboriladi, oddiy suratga olish
+    if (!blinkEnabled) {
+      blinkStateRef.current = 'fallback';
+      setBlinkState('fallback');
+      return;
+    }
     let fallbackTimer: ReturnType<typeof setInterval>;
     let secs = 0;
+
+    // MASTER fallback: kamera tayyor bo'lgach 8s ichida blink bo'lmasa
+    // (model hali yuklanmagan yoki yuz topilmagan) — qo'lda tugma chiqadi.
+    const masterFallback = setTimeout(() => {
+      if (!capturedRef.current && blinkStateRef.current !== 'blinked') {
+        clearInterval(fallbackTimer);
+        blinkStateRef.current = 'fallback';
+        setBlinkState('fallback');
+      }
+    }, 8000);
 
     detectRef.current = setInterval(async () => {
       if (capturedRef.current || !videoRef.current) return;
@@ -225,8 +252,9 @@ function CameraView({
     return () => {
       if (detectRef.current) clearInterval(detectRef.current);
       clearInterval(fallbackTimer);
+      clearTimeout(masterFallback);
     };
-  }, [ready, doCapture]);
+  }, [ready, doCapture, blinkEnabled]);
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -317,20 +345,17 @@ function CameraView({
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function FaceIdCheckin({ initData, staffName }: Props) {
-  const [step, setStep] = useState<Step>('loading_models');
+  const [step, setStep] = useState<Step>('loading_profile');
   const [attendanceState, setAttendanceState] = useState<AttendanceState | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [successData, setSuccessData] = useState<any>(null);
+  const [blinkEnabled, setBlinkEnabled] = useState(true); // model yuklanmasa false
 
-  // 1. Modellarni yuklash (280KB jami — tez yuklaydi)
+  // Modellarni FONDA yuklash — UI ni bloklamaydi. Foydalanuvchi darhol
+  // davomat ekranini ko'radi; model kamera ochilganda kerak bo'ladi.
+  // Yuklansa: blink (tiriklik) tekshiruvi. Yuklanmasa: oddiy suratga olish.
   useEffect(() => {
-    loadModels()
-      .then(() => setStep('loading_profile'))
-      .catch(err => {
-        console.error('[FaceID] model load error:', err);
-        setErrorMsg('Model yuklanmadi. Internetni tekshiring.');
-        setStep('error');
-      });
+    loadModels(12000).then(setBlinkEnabled);
   }, []);
 
   // 2. Profil yuklanishi
@@ -473,7 +498,10 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
         {step === 'capturing' && (
           <motion.div key="cap" {...fade} className="flex-1 flex flex-col justify-center">
             <CameraView
-              instruction="Yuzingizni aylana ichiga joylashtiring va ko'zingizni bir marta yuming"
+              blinkEnabled={blinkEnabled}
+              instruction={blinkEnabled
+                ? "Yuzingizni aylana ichiga joylashtiring va ko'zingizni bir marta yuming"
+                : "Yuzingizni aylana ichiga joylashtiring va suratga oling"}
               onCapture={handleRegisterCapture}
               onCancel={() => setStep('no_profile')}
             />
@@ -483,7 +511,10 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
         {step === 'checkin_capture' && (
           <motion.div key="cin" {...fade} className="flex-1 flex flex-col justify-center">
             <CameraView
-              instruction="Kirib kelish uchun ko'zingizni bir marta yuming"
+              blinkEnabled={blinkEnabled}
+              instruction={blinkEnabled
+                ? "Kirib kelish uchun ko'zingizni bir marta yuming"
+                : "Kirib kelish uchun suratga oling"}
               onCapture={handleCheckInCapture}
               onCancel={() => setStep('ready_checkin')}
             />
@@ -493,7 +524,10 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
         {step === 'checkout_capture' && (
           <motion.div key="cout" {...fade} className="flex-1 flex flex-col justify-center">
             <CameraView
-              instruction="Chiqib ketish uchun ko'zingizni bir marta yuming"
+              blinkEnabled={blinkEnabled}
+              instruction={blinkEnabled
+                ? "Chiqib ketish uchun ko'zingizni bir marta yuming"
+                : "Chiqib ketish uchun suratga oling"}
               onCapture={handleCheckOutCapture}
               onCancel={() => setStep('ready_checkout')}
             />

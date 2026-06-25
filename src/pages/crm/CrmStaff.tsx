@@ -41,6 +41,7 @@ export default function CrmStaff() {
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
   const [editingSubItemIndex, setEditingSubItemIndex] = useState<number | null>(null);
   const [subFormData, setSubFormData] = useState<any>({});
+  const [loginPassword, setLoginPassword] = useState(''); // yangi xodim uchun login paroli
   const [formData, setFormData] = useState<Partial<StaffMember>>({
     name: '',
     role: '',
@@ -68,9 +69,16 @@ export default function CrmStaff() {
           tasks: [],
           performanceReviews: [],
           documents: [],
-          ...formData
+          ...formData,
+          // Telefon + parol bilan login (User) hisobi ham yaratiladi
+          ...(formData.phone ? { password: loginPassword || undefined, createLogin: true } : {}),
         } as any);
-        showToast('Yangi xodim qo\'shildi', 'success');
+        showToast(
+          formData.phone
+            ? 'Yangi xodim qo\'shildi — botga kirish uchun login hisobi yaratildi'
+            : 'Yangi xodim qo\'shildi',
+          'success'
+        );
       }
       closeModal();
     } catch (error) {
@@ -95,6 +103,7 @@ export default function CrmStaff() {
   };
 
   const openModal = (member: StaffMember | null = null) => {
+    setLoginPassword('');
     if (member) {
       setEditingMember(member);
       setFormData(member);
@@ -956,7 +965,7 @@ export default function CrmStaff() {
                   <div className="space-y-4">
                     <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Aloqa va Ish</h4>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefon</label>
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefon (login uchun)</label>
                       <input
                         type="text"
                         value={formData.phone}
@@ -965,6 +974,23 @@ export default function CrmStaff() {
                         placeholder="+998 90 123 45 67"
                       />
                     </div>
+                    {!editingMember && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1">
+                          <ShieldCheck size={11} className="text-emerald-500" /> Login paroli
+                        </label>
+                        <input
+                          type="text"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all dark:text-white"
+                          placeholder="Bo'sh qoldirilsa: 123456"
+                        />
+                        <p className="text-[10px] text-zinc-400 leading-tight">
+                          Telefon + parol bilan xodim botga (Mini App) kira oladi. Ruxsatlar lavozimiga qarab beriladi.
+                        </p>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Email</label>
                       <input
