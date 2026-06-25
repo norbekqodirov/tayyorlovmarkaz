@@ -14,6 +14,8 @@ let faceapi: any = null;
 let modelsReady = false;      // yengil modellar (blink)
 let recognitionReady = false; // faceRecognitionNet (descriptor)
 let webglActive = false;
+let recognitionPromise: Promise<boolean> | null = null; // takror yuklamaslik uchun
+let lastModelError = '';      // haqiqiy xato (diagnostika)
 
 async function getFaceApi() {
   if (faceapi) return faceapi;
@@ -45,34 +47,45 @@ async function loadModels(timeoutMs = 12000): Promise<boolean> {
     })();
     const timeout = new Promise<boolean>(resolve => setTimeout(() => resolve(false), timeoutMs));
     const ok = await Promise.race([work, timeout]);
-    // Tanish modelini fonda yuklaymiz (descriptor uchun kerak)
-    if (ok) loadRecognitionNet().catch(() => {});
     return ok;
   } catch {
     return false;
   }
 }
 
-// faceRecognitionNet — descriptor (128-o'lcham) chiqarish uchun. Fonda yuklanadi.
-async function loadRecognitionNet(timeoutMs = 30000): Promise<boolean> {
-  if (recognitionReady) return true;
-  try {
-    const api = await getFaceApi();
-    const work = (async () => {
+// faceRecognitionNet — descriptor uchun. Bitta marta yuklaydi (takror chaqirsa kutadi).
+function startRecognitionLoad(): Promise<boolean> {
+  if (recognitionReady) return Promise.resolve(true);
+  if (recognitionPromise) return recognitionPromise;
+  recognitionPromise = (async () => {
+    try {
+      const api = await getFaceApi();
       await api.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
       recognitionReady = true;
       return true;
-    })();
-    const timeout = new Promise<boolean>(resolve => setTimeout(() => resolve(false), timeoutMs));
-    return await Promise.race([work, timeout]);
-  } catch {
-    return false;
-  }
+    } catch (e: any) {
+      lastModelError = (e?.message || String(e)).slice(0, 80);
+      recognitionPromise = null; // qayta urinishga ruxsat
+      return false;
+    }
+  })();
+  return recognitionPromise;
+}
+
+// timeout bilan: model yuklanguncha (yoki vaqt tugaguncha) kutadi
+async function loadRecognitionNet(timeoutMs = 60000): Promise<boolean> {
+  if (recognitionReady) return true;
+  const work = startRecognitionLoad();
+  let timer: any;
+  const timeout = new Promise<boolean>(resolve => { timer = setTimeout(() => { lastModelError = lastModelError || 'timeout'; resolve(false); }, timeoutMs); });
+  const r = await Promise.race([work, timeout]);
+  clearTimeout(timer);
+  return r;
 }
 
 // Suratdan 128-o'lchamli yuz descriptorini chiqaradi.
 // Xato bo'lsa ANIQ sabab bilan throw qiladi (diagnostika uchun).
-async function extractDescriptor(canvas: HTMLCanvasElement, timeoutMs = 30000): Promise<number[]> {
+async function extractDescriptor(canvas: HTMLCanvasElement, timeoutMs = 60000): Promise<number[]> {
   const api = await getFaceApi();
 
   // 1. Yengil modellar (detector + landmarks) — yuz topish uchun
@@ -83,7 +96,7 @@ async function extractDescriptor(canvas: HTMLCanvasElement, timeoutMs = 30000): 
   // 2. Tanish modeli (descriptor) — 6.2MB
   if (!recognitionReady) {
     const ok = await loadRecognitionNet(timeoutMs);
-    if (!ok) throw new Error('MODEL: tanish modeli yuklanmadi (internet sekin?)');
+    if (!ok) throw new Error('MODEL: tanish yuklanmadi — ' + (lastModelError || 'noma\'lum'));
   }
 
   // 3. Yuz topish + landmark + descriptor — bir nechta o'lcham bilan urinish
@@ -423,6 +436,8 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
   // Yuklansa: blink (tiriklik) tekshiruvi. Yuklanmasa: oddiy suratga olish.
   useEffect(() => {
     loadModels(12000).then(setBlinkEnabled);
+    // 6.2MB tanish modelini DARHOL fonda yuklab boshlaymiz (kamera ochilguncha tayyor bo'lsin)
+    startRecognitionLoad();
   }, []);
 
   // 2. Profil yuklanishi
