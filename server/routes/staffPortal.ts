@@ -621,10 +621,13 @@ router.get('/face-profile', staffPortalAuth, async (req: any, res) => {
 });
 
 // POST /api/staff-portal/face-profile — yuz profilini ro'yxatdan o'tkazish
-// Body: { descriptor: number[] (bo'sh bo'lishi mumkin), photoDataUrl: string }
+// Body: { descriptor: number[128], photoDataUrl: string }
 router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
     try {
         const { descriptor, photoDataUrl } = req.body;
+        if (!Array.isArray(descriptor) || descriptor.length !== 128) {
+            return res.status(400).json({ error: 'Yuz aniqlanmadi. Yorug\'roq joyda qayta urinib ko\'ring.' });
+        }
         if (!photoDataUrl) {
             return res.status(400).json({ error: 'Yuz rasmi (photoDataUrl) kerak' });
         }
@@ -651,13 +654,16 @@ router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
     }
 });
 
-// POST /api/staff-portal/check-in — GPS + liveness photo bilan kirib kelish
-// Body: { descriptor: number[], latitude: number, longitude: number, faceBypass?: boolean, photoDataUrl?: string }
+// POST /api/staff-portal/check-in — yuz solishtirish + GPS bilan kirib kelish
+// Body: { descriptor: number[128], latitude, longitude, faceBypass?: boolean, photoDataUrl?: string }
 router.post('/check-in', staffPortalAuth, async (req: any, res) => {
     try {
-        const { descriptor, latitude, longitude, photoDataUrl, faceBypass = true } = req.body;
+        const { descriptor, latitude, longitude, photoDataUrl, faceBypass = false } = req.body;
         if (latitude == null || longitude == null) {
             return res.status(400).json({ error: 'GPS joylashuvi kerak' });
+        }
+        if (!faceBypass && (!Array.isArray(descriptor) || descriptor.length !== 128)) {
+            return res.status(400).json({ error: 'Yuz aniqlanmadi. Qayta urinib ko\'ring.' });
         }
 
         // 1. Xodimni topish (yoki yaratish)
@@ -674,17 +680,23 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
             return res.status(400).json({ error: 'Yuz profili ro\'yxatdan o\'tilmagan. Avval yuzingizni ro\'yxatdan o\'tkazing.' });
         }
 
-        // 3. Face match tekshirish (bypass bo'lmasa)
+        // 3. Face match — kirayotgan yuz ro'yxatdagi yuzga mos kelishi shart
         let faceScore = 1.0;
         if (!faceBypass) {
-            const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
+            const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor || '[]');
+            if (!Array.isArray(storedDescriptor) || storedDescriptor.length !== 128) {
+                return res.status(409).json({
+                    error: 'Yuz profili eskirgan. Iltimos yuzingizni qaytadan ro\'yxatdan o\'tkazing.',
+                    needReregister: true,
+                });
+            }
             const distance = faceDistance(descriptor, storedDescriptor);
             faceScore = Math.max(0, 1 - distance);
-            const THRESHOLD = 0.6;
+            const THRESHOLD = 0.5; // qattiqroq — boshqa odam o'ta olmasligi uchun
 
             if (distance >= THRESHOLD) {
                 return res.status(403).json({
-                    error: 'Yuz mos kelmadi. Qayta urinib ko\'ring.',
+                    error: 'Yuz mos kelmadi. Bu profil boshqa xodimga tegishli.',
                     faceScore: parseFloat(faceScore.toFixed(3)),
                 });
             }
@@ -767,11 +779,11 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
     }
 });
 
-// POST /api/staff-portal/check-out — chiqib ketish (GPS bilan)
-// Body: { latitude: number, longitude: number, faceBypass?: boolean }
+// POST /api/staff-portal/check-out — yuz solishtirish + chiqib ketish
+// Body: { descriptor: number[128], latitude, longitude, faceBypass?: boolean }
 router.post('/check-out', staffPortalAuth, async (req: any, res) => {
     try {
-        const { descriptor, latitude, longitude, faceBypass = true } = req.body;
+        const { descriptor, latitude, longitude, faceBypass = false } = req.body;
 
         const staffMember = await prisma.staffMember.findFirst({
             where: { telegramChatId: req.staffUser.telegramChatId },
@@ -783,9 +795,15 @@ router.post('/check-out', staffPortalAuth, async (req: any, res) => {
         if (!faceProfile) return res.status(400).json({ error: 'Yuz profili yo\'q' });
 
         if (!faceBypass) {
-            const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor);
+            if (!Array.isArray(descriptor) || descriptor.length !== 128) {
+                return res.status(400).json({ error: 'Yuz aniqlanmadi. Qayta urinib ko\'ring.' });
+            }
+            const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor || '[]');
+            if (!Array.isArray(storedDescriptor) || storedDescriptor.length !== 128) {
+                return res.status(409).json({ error: 'Yuz profili eskirgan. Qaytadan ro\'yxatdan o\'ting.', needReregister: true });
+            }
             const distance = faceDistance(descriptor, storedDescriptor);
-            if (distance >= 0.6) {
+            if (distance >= 0.5) {
                 return res.status(403).json({ error: 'Yuz mos kelmadi', faceScore: Math.max(0, 1 - distance) });
             }
         }
@@ -842,7 +860,7 @@ router.get('/my-attendance', staffPortalAuth, async (req: any, res) => {
             }),
             prisma.staffFaceProfile.findUnique({
                 where: { staffId: staffMember.id },
-                select: { id: true, photoUrl: true, registeredAt: true },
+                select: { id: true, photoUrl: true, registeredAt: true, descriptor: true },
             }),
         ]);
 
@@ -853,7 +871,19 @@ router.get('/my-attendance', staffPortalAuth, async (req: any, res) => {
             total:   records.length,
         };
 
-        res.json({ month, today: todayRec, stats, records, faceRegistered: !!faceProfile, faceProfile });
+        // Profil bor, lekin descriptor 128-o'lcham bo'lmasa (eski/bo'sh) — qaytadan ro'yxat kerak
+        let validProfile = false;
+        if (faceProfile) {
+            try {
+                const d = JSON.parse(faceProfile.descriptor || '[]');
+                validProfile = Array.isArray(d) && d.length === 128;
+            } catch { validProfile = false; }
+        }
+        const profileOut = faceProfile
+            ? { id: faceProfile.id, photoUrl: faceProfile.photoUrl, registeredAt: faceProfile.registeredAt }
+            : null;
+
+        res.json({ month, today: todayRec, stats, records, faceRegistered: validProfile, faceProfile: profileOut });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

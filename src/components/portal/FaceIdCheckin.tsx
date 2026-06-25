@@ -6,10 +6,14 @@ import {
   Shield, Eye,
 } from 'lucide-react';
 
-// ─── face-api.js — faqat yengil modellar (280KB, faceRecognitionNet yo'q) ───
+// ─── face-api.js modellar ─────────────────────────────────────────────────
+//  Yengil (blink uchun): tinyFaceDetector + faceLandmark68TinyNet (280KB)
+//  Tanish (identifikatsiya uchun): faceRecognitionNet (6.2MB) — WebGL (GPU) da
 
 let faceapi: any = null;
-let modelsReady = false;
+let modelsReady = false;      // yengil modellar (blink)
+let recognitionReady = false; // faceRecognitionNet (descriptor)
+let webglActive = false;
 
 async function getFaceApi() {
   if (faceapi) return faceapi;
@@ -21,8 +25,7 @@ async function getFaceApi() {
 // O'z serverimizdan — CDN muammosi yo'q
 const MODEL_URL = '/models';
 
-// Model yuklash — har doim natija qaytaradi (osilib qolmaydi).
-// true = blink detection ishlaydi, false = oddiy suratga olish (GPS asosiy)
+// Yengil modellarni yuklash (blink uchun) — har doim natija qaytaradi.
 async function loadModels(timeoutMs = 12000): Promise<boolean> {
   if (modelsReady) return true;
   try {
@@ -31,8 +34,8 @@ async function loadModels(timeoutMs = 12000): Promise<boolean> {
       try {
         await api.tf.setBackend('webgl');
         await api.tf.ready();
-      } catch { /* webgl yo'q bo'lsa davom etadi */ }
-      // FAQAT 2 ta yengil model: 280KB jami
+        webglActive = api.tf.getBackend() === 'webgl';
+      } catch { webglActive = false; }
       await Promise.all([
         api.nets.tinyFaceDetector.loadFromUri(MODEL_URL),      // 190KB — yuz topish
         api.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL), // 75KB  — ko'z nuqtalari
@@ -40,11 +43,54 @@ async function loadModels(timeoutMs = 12000): Promise<boolean> {
       modelsReady = true;
       return true;
     })();
+    const timeout = new Promise<boolean>(resolve => setTimeout(() => resolve(false), timeoutMs));
+    const ok = await Promise.race([work, timeout]);
+    // Tanish modelini fonda yuklaymiz (descriptor uchun kerak)
+    if (ok) loadRecognitionNet().catch(() => {});
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
+// faceRecognitionNet — descriptor (128-o'lcham) chiqarish uchun. Fonda yuklanadi.
+async function loadRecognitionNet(timeoutMs = 30000): Promise<boolean> {
+  if (recognitionReady) return true;
+  try {
+    const api = await getFaceApi();
+    const work = (async () => {
+      await api.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      recognitionReady = true;
+      return true;
+    })();
     const timeout = new Promise<boolean>(resolve => setTimeout(() => resolve(false), timeoutMs));
     return await Promise.race([work, timeout]);
   } catch {
-    return false; // model yuklanmadi — fallback rejimi
+    return false;
+  }
+}
+
+// Suratdan 128-o'lchamli yuz descriptorini chiqaradi. WebGL bo'lsa thread bloklanmaydi.
+// Muvaffaqiyatsiz bo'lsa null (timeout yoki yuz topilmadi).
+async function extractDescriptor(canvas: HTMLCanvasElement, timeoutMs = 20000): Promise<number[] | null> {
+  const api = await getFaceApi();
+  if (!recognitionReady) {
+    const ok = await loadRecognitionNet(timeoutMs);
+    if (!ok) return null;
+  }
+  try {
+    const work = (async () => {
+      const det = await api
+        .detectSingleFace(canvas, new api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 }))
+        .withFaceLandmarks(true)   // tiny landmarks
+        .withFaceDescriptor();
+      if (!det) return null;
+      return Array.from(det.descriptor as Float32Array) as number[];
+    })();
+    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs));
+    return await Promise.race([work, timeout]);
+  } catch {
+    return null;
   }
 }
 
@@ -373,14 +419,22 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
 
   useEffect(() => { if (step === 'loading_profile') loadProfile(); }, [step, loadProfile]);
 
-  // 3. Ro'yxatga olish — foto saqlanadi, descriptor kerak emas
+  const FACE_FAIL_MSG = 'Yuzni aniqlab bo\'lmadi. Yorug\'roq joyda, yuzingizni to\'liq ko\'rsatib qayta urinib ko\'ring.';
+
+  // 3. Ro'yxatga olish — haqiqiy descriptor saqlanadi (keyin solishtirish uchun)
   const handleRegisterCapture = async (canvas: HTMLCanvasElement) => {
     setStep('processing');
     try {
+      const descriptor = await extractDescriptor(canvas);
+      if (!descriptor || descriptor.length !== 128) {
+        setErrorMsg(FACE_FAIL_MSG);
+        setStep('error');
+        return;
+      }
       const photoDataUrl = canvas.toDataURL('image/jpeg', 0.85);
       await portalFetch('/face-profile', initData, {
         method: 'POST',
-        body: JSON.stringify({ descriptor: [], photoDataUrl }),
+        body: JSON.stringify({ descriptor, photoDataUrl }),
       });
       setStep('registered');
     } catch (err: any) {
@@ -389,17 +443,23 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     }
   };
 
-  // 4. Check-in — GPS asosiy tasdiqlash, foto rekord uchun
+  // 4. Check-in — yuz solishtiriladi (mos kelmasa server rad etadi)
   const handleCheckInCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
     try {
+      const descriptor = await extractDescriptor(canvas);
+      if (!descriptor || descriptor.length !== 128) {
+        setErrorMsg(FACE_FAIL_MSG);
+        setStep('error');
+        return;
+      }
       const { latitude, longitude } = await getLocation().catch(() => {
         throw new Error('GPS joylashuvini aniqlash muvaffaqiyatsiz. Joylashuv ruxsatini bering.');
       });
       const photoDataUrl = canvas.toDataURL('image/jpeg', 0.7);
       const data = await portalFetch('/check-in', initData, {
         method: 'POST',
-        body: JSON.stringify({ descriptor: [], latitude, longitude, faceBypass: true, photoDataUrl }),
+        body: JSON.stringify({ descriptor, latitude, longitude, faceBypass: false, photoDataUrl }),
       });
       setSuccessData(data);
       setStep('success_in');
@@ -409,14 +469,20 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     }
   };
 
-  // 5. Check-out
+  // 5. Check-out — yuz solishtiriladi
   const handleCheckOutCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
     try {
+      const descriptor = await extractDescriptor(canvas);
+      if (!descriptor || descriptor.length !== 128) {
+        setErrorMsg(FACE_FAIL_MSG);
+        setStep('error');
+        return;
+      }
       const { latitude, longitude } = await getLocation().catch(() => ({ latitude: 0, longitude: 0 }));
       const data = await portalFetch('/check-out', initData, {
         method: 'POST',
-        body: JSON.stringify({ descriptor: [], latitude, longitude, faceBypass: true }),
+        body: JSON.stringify({ descriptor, latitude, longitude, faceBypass: false }),
       });
       setSuccessData(data);
       setStep('success_out');
@@ -540,7 +606,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
               <Fingerprint size={32} className="text-blue-600 animate-pulse" />
             </div>
             <div className="font-bold text-slate-800 dark:text-white">
-              {step === 'verifying' ? 'Joylashuv tekshirilmoqda...' : 'Saqlanmoqda...'}
+              {step === 'verifying' ? 'Yuz tekshirilmoqda...' : 'Yuz tahlil qilinmoqda...'}
             </div>
             <div className="flex gap-2">
               {[0, 150, 300].map(d => (
