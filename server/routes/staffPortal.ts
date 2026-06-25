@@ -68,6 +68,46 @@ async function staffPortalAuth(req: any, res: any, next: any) {
     next();
 }
 
+// ─── Helper: portal foydalanuvchisi uchun StaffMember topadi yoki yaratadi ─────
+// CRM User va StaffMember telegramChatId orqali bog'lanadi. Agar foydalanuvchi
+// (masalan Super Admin) StaffMember sifatida ro'yxatdan o'tmagan bo'lsa,
+// davomat tizimi ishlashi uchun avtomatik StaffMember yaratiladi.
+async function getOrCreateStaffMember(staffUser: any) {
+    const chatId = staffUser.telegramChatId;
+    if (!chatId) {
+        throw new Error('Telegram hisobi ulanmagan — davomatdan foydalanish uchun Staff bot orqali kiring');
+    }
+
+    const existing = await prisma.staffMember.findFirst({
+        where: { telegramChatId: chatId },
+    });
+    if (existing) return existing;
+
+    const roleMap: Record<string, string> = {
+        SUPER_ADMIN: 'Administrator',
+        ADMIN: 'Administrator',
+        MANAGER: 'Menejer',
+        TEACHER: "O'qituvchi",
+    };
+    const role = roleMap[staffUser.role] || staffUser.role || 'Xodim';
+
+    try {
+        return await prisma.staffMember.create({
+            data: {
+                name: staffUser.name || 'Xodim',
+                role,
+                telegramChatId: chatId,
+                photo: staffUser.avatar || null,
+            },
+        });
+    } catch {
+        // Race condition: bir vaqtda yaratilgan bo'lsa — qayta o'qish
+        const again = await prisma.staffMember.findFirst({ where: { telegramChatId: chatId } });
+        if (again) return again;
+        throw new Error('Xodim yozuvini yaratib bo\'lmadi');
+    }
+}
+
 // ─── GET /api/staff-portal/me ─────────────────────────────────────────────────
 
 router.get('/me', staffPortalAuth, async (req: any, res) => {
@@ -589,10 +629,8 @@ router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
             return res.status(400).json({ error: 'Yuz rasmi (photoDataUrl) kerak' });
         }
 
-        const staffMember = await prisma.staffMember.findFirst({
-            where: { telegramChatId: req.staffUser.telegramChatId },
-        });
-        const staffId = staffMember?.id || req.staffUser.id;
+        const staffMember = await getOrCreateStaffMember(req.staffUser);
+        const staffId = staffMember.id;
 
         const profile = await prisma.staffFaceProfile.upsert({
             where: { staffId },
@@ -622,13 +660,13 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
             return res.status(400).json({ error: 'GPS joylashuvi kerak' });
         }
 
-        // 1. Xodimni topish
+        // 1. Xodimni topish (yoki yaratish)
         const staffMember = await prisma.staffMember.findFirst({
             where: { telegramChatId: req.staffUser.telegramChatId },
             include: { faceProfile: true },
         });
         const staffId = staffMember?.id;
-        if (!staffId) return res.status(404).json({ error: 'Xodim topilmadi' });
+        if (!staffId) return res.status(404).json({ error: 'Xodim topilmadi. Avval yuzingizni ro\'yxatdan o\'tkazing.' });
 
         // 2. Yuz profilini tekshirish
         const faceProfile = staffMember.faceProfile;
