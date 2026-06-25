@@ -1,13 +1,3 @@
-/**
- * Face ID Davomat komponenti — Staff Bot Mini App da ishlatiladi.
- *
- * Oqim:
- * 1. face-api.js modellarini CDN dan yuklash
- * 2. Yuz profilini tekshirish — ro'yxatdan o'tganmi?
- * 3. Ro'yxatdan o'tmagan bo'lsa → Yuz ro'yxatga olish rejimi
- * 4. Ro'yxatdan o'tgan bo'lsa → Kirib kelish / Chiqib ketish
- */
-
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -16,9 +6,10 @@ import {
   UserCheck, Navigation, Shield,
 } from 'lucide-react';
 
-// ─── face-api.js lazy import ─────────────────────────────────────────────────
+// ─── face-api.js — modellar o'z serverimizdan yuklanadi ─────────────────────
 
 let faceapi: any = null;
+let modelsReady = false;
 
 async function loadFaceApi() {
   if (faceapi) return faceapi;
@@ -27,16 +18,29 @@ async function loadFaceApi() {
   return faceapi;
 }
 
-// CDN dan model yuklash (jsdelivr)
-const MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights';
+// O'z serverimizdan yuklaymiz (CDN yo'q — ishonchli va tez)
+const MODEL_URL = '/models';
 
 async function loadModels() {
   const api = await loadFaceApi();
+  if (modelsReady) return;
+
+  // WebGL backend — GPU ni ishlatish (JS threadni bloklamaydi)
+  try {
+    if (api.tf && typeof api.tf.setBackend === 'function') {
+      await api.tf.setBackend('webgl');
+      await api.tf.ready();
+    }
+  } catch {
+    // webgl yo'q bo'lsa wasm/cpu bilan davom etadi
+  }
+
   await Promise.all([
     api.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-    api.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+    api.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),  // 80KB (kichik)
     api.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
   ]);
+  modelsReady = true;
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -59,22 +63,22 @@ interface AttendanceState {
 }
 
 type Step =
-  | 'loading_models'   // face-api yuklanyapti
-  | 'loading_profile'  // profil yuklanmoqda
-  | 'no_profile'       // hali ro'yxatdan o'tmagan
-  | 'register_start'   // ro'yxatga olish boshlanmoqda
-  | 'capturing'        // kamera ochiq
-  | 'processing'       // descriptor chiqarilmoqda
-  | 'registered'       // muvaffaqiyatli ro'yxatdan o'tdi
-  | 'today_done'       // bugun allaqachon kirib kelgan
-  | 'ready_checkin'    // kirib kelishga tayyor
-  | 'ready_checkout'   // chiqib ketishga tayyor
-  | 'checkin_capture'  // kamera: check-in uchun
-  | 'checkout_capture' // kamera: check-out uchun
-  | 'verifying'        // server bilan tekshirilmoqda
-  | 'success_in'       // kirib keldi
-  | 'success_out'      // chiqib ketdi
-  | 'error';           // xatolik
+  | 'loading_models'
+  | 'loading_profile'
+  | 'no_profile'
+  | 'register_start'
+  | 'capturing'
+  | 'processing'
+  | 'registered'
+  | 'today_done'
+  | 'ready_checkin'
+  | 'ready_checkout'
+  | 'checkin_capture'
+  | 'checkout_capture'
+  | 'verifying'
+  | 'success_in'
+  | 'success_out'
+  | 'error';
 
 const API_BASE = '/api/staff-portal';
 
@@ -95,8 +99,6 @@ async function portalFetch(endpoint: string, initData: string, opts?: RequestIni
   }
   return res.json();
 }
-
-// ─── GPS helper ──────────────────────────────────────────────────────────────
 
 function getLocation(): Promise<{ latitude: number; longitude: number }> {
   return new Promise((resolve, reject) => {
@@ -120,66 +122,61 @@ function CameraView({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const detectRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [ready, setReady] = useState(false);
   const [detected, setDetected] = useState(false);
-  const [manualAllowed, setManualAllowed] = useState(false);
-  const detectTimer = useRef<any>(null);
-  const manualTimer = useRef<any>(null);
 
   useEffect(() => {
     let active = true;
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } })
-      .then(stream => {
-        if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
-            setReady(true);
-          };
-        }
-      })
-      .catch(console.error);
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+    }).then(stream => {
+      if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play();
+          setReady(true);
+        };
+      }
+    }).catch(err => console.error('[FaceID] camera:', err));
 
     return () => {
       active = false;
-      if (detectTimer.current) clearInterval(detectTimer.current);
-      if (manualTimer.current) clearTimeout(manualTimer.current);
+      if (detectRef.current) clearInterval(detectRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
 
-  // Real-time yuz aniqlash
+  // Real-time yuz aniqlash — faqat TinyFaceDetector (yengil model)
   useEffect(() => {
     if (!ready || !videoRef.current) return;
     let running = true;
 
-    const detect = async () => {
+    detectRef.current = setInterval(async () => {
       if (!running || !videoRef.current) return;
       try {
         const api = await loadFaceApi();
-        const result = await api.detectSingleFace(
+        const r = await api.detectSingleFace(
           videoRef.current,
-          new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
+          new api.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.25 })
         );
-        if (running) setDetected(!!result);
-      } catch (e) {
-        console.warn('[FaceID] Detection error:', e);
-      }
-    };
+        if (running) setDetected(!!r);
+      } catch { /* ignore detection errors */ }
+    }, 400);
 
-    detectTimer.current = setInterval(detect, 500);
-    // 8 soniya o'tsa qo'lda olishga ruxsat
-    manualTimer.current = setTimeout(() => { if (running) setManualAllowed(true); }, 8000);
-    return () => { running = false; clearInterval(detectTimer.current); clearTimeout(manualTimer.current); };
+    return () => {
+      running = false;
+      if (detectRef.current) clearInterval(detectRef.current);
+    };
   }, [ready]);
 
-  const capture = async () => {
+  const capture = () => {
     if (!videoRef.current) return;
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
     canvas.getContext('2d')!.drawImage(videoRef.current, 0, 0);
     streamRef.current?.getTracks().forEach(t => t.stop());
     onCapture(canvas);
@@ -192,15 +189,9 @@ function CameraView({
       <div className="relative w-64 h-64 rounded-2xl overflow-hidden bg-black">
         <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
 
-        {/* Face detection overlay */}
         <div className={`absolute inset-4 rounded-full border-4 transition-colors duration-300 ${
-          detected ? 'border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.4)]' : 'border-white/30'
+          detected ? 'border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.4)]' : 'border-white/40'
         }`} />
-
-        {/* Corner markers */}
-        {['-top-0 -left-0', '-top-0 -right-0', '-bottom-0 -left-0', '-bottom-0 -right-0'].map((pos, i) => (
-          <div key={i} className={`absolute ${pos} w-6 h-6 border-l-0 border-t-0`} />
-        ))}
 
         {!ready && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70">
@@ -208,11 +199,8 @@ function CameraView({
           </div>
         )}
 
-        {/* Status */}
         <div className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-bold transition-all ${
-          detected
-            ? 'bg-emerald-500 text-white'
-            : 'bg-black/50 text-white/70'
+          detected ? 'bg-emerald-500 text-white' : 'bg-black/50 text-white/60'
         }`}>
           {detected ? '✓ Yuz aniqlandi' : 'Yuzingizni yo\'naltiring'}
         </div>
@@ -227,20 +215,19 @@ function CameraView({
         </button>
         <button
           onClick={capture}
-          disabled={!ready || (!detected && !manualAllowed)}
+          disabled={!ready}
           className={`flex-1 py-3 rounded-2xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all ${
-            detected ? 'bg-blue-600 hover:bg-blue-700' :
-            manualAllowed ? 'bg-amber-500 hover:bg-amber-600' :
-            'bg-blue-600 opacity-40 cursor-not-allowed'
+            !ready ? 'bg-blue-600 opacity-40 cursor-not-allowed' :
+            detected ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
           }`}
         >
           <Camera size={16} />
-          {detected ? 'Suratga olish' : manualAllowed ? 'Qo\'lda olish' : 'Suratga olish'}
+          {detected ? 'Suratga olish' : 'Davom etish →'}
         </button>
       </div>
-      {manualAllowed && !detected && (
-        <p className="text-xs text-amber-600 text-center px-4 -mt-2">
-          Yuz aniqlanmadi — yorug'likni yaxshilang yoki boshqa qurilmada urinib ko'ring
+      {!detected && ready && (
+        <p className="text-xs text-zinc-400 text-center px-4 -mt-2">
+          Yuz aniqlanmasa ham davom etishingiz mumkin
         </p>
       )}
     </div>
@@ -251,36 +238,29 @@ function CameraView({
 
 export default function FaceIdCheckin({ initData, staffName }: Props) {
   const [step, setStep] = useState<Step>('loading_models');
-  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [attendanceState, setAttendanceState] = useState<AttendanceState | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [successData, setSuccessData] = useState<any>(null);
-  const [capturedCanvas, setCapturedCanvas] = useState<HTMLCanvasElement | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
-  // ─── 1. Modellarni yuklash ────────────────────────────────────────────────
-
-  useEffect(() => {
-    loadModels()
-      .then(() => {
-        setModelsLoaded(true);
-        setStep('loading_profile');
-      })
-      .catch(err => {
-        setErrorMsg('Yuz aniqlash modeli yuklanmadi. Internet aloqasini tekshiring.');
-        setStep('error');
-      });
-  }, []);
-
-  // ─── Elapsed timer (processing/verifying) ───────────────────────────────
+  // Elapsed timer during processing
   useEffect(() => {
     if (step !== 'processing' && step !== 'verifying') { setElapsed(0); return; }
     const t = setInterval(() => setElapsed(s => s + 1), 1000);
     return () => clearInterval(t);
   }, [step]);
 
-  // ─── 2. Profil va bugungi holat ──────────────────────────────────────────
+  // 1. Modellarni yuklash
+  useEffect(() => {
+    loadModels()
+      .then(() => setStep('loading_profile'))
+      .catch(() => {
+        setErrorMsg('Yuz aniqlash modeli yuklanmadi. Internet aloqasini tekshiring.');
+        setStep('error');
+      });
+  }, []);
 
+  // 2. Profil va bugungi holat
   const loadProfile = useCallback(async () => {
     setStep('loading_profile');
     try {
@@ -305,23 +285,30 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     if (step === 'loading_profile') loadProfile();
   }, [step, loadProfile]);
 
-  // ─── 3. Descriptor olish (12s timeout bilan) ─────────────────────────────
-
+  // 3. Descriptor olish — faceRecognitionNet ishlatadi
   const extractDescriptor = async (canvas: HTMLCanvasElement): Promise<number[] | null> => {
     const api = await loadFaceApi();
 
+    // WebGL backend ni ta'minlash
+    try {
+      if (api.tf?.getBackend() !== 'webgl') {
+        await api.tf.setBackend('webgl');
+        await api.tf.ready();
+      }
+    } catch { /* ok */ }
+
     let timer: ReturnType<typeof setTimeout>;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('TIMEOUT')), 12000);
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('TIMEOUT')), 20000);
     });
 
     try {
       const detection = await Promise.race([
         api.detectSingleFace(
           canvas,
-          new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
-        ).withFaceLandmarks().withFaceDescriptor(),
-        timeoutPromise,
+          new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 })
+        ).withFaceLandmarks(true).withFaceDescriptor(),  // true = tiny landmarks
+        timeout,
       ]);
       clearTimeout(timer!);
       if (!detection) return null;
@@ -329,35 +316,33 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     } catch (e: any) {
       clearTimeout(timer!);
       if (e.message === 'TIMEOUT') throw e;
-      console.warn('[FaceID] extractDescriptor:', e);
+      console.warn('[FaceID] descriptor error:', e);
       return null;
     }
   };
 
-  // ─── 4. Yuz ro'yxatga olish ──────────────────────────────────────────────
-
+  // 4. Yuz ro'yxatga olish
   const handleRegisterCapture = async (canvas: HTMLCanvasElement) => {
     setStep('processing');
-    setCapturedCanvas(canvas);
     try {
       let descriptor: number[] | null = null;
       try {
         descriptor = await extractDescriptor(canvas);
       } catch (e: any) {
         if (e.message === 'TIMEOUT') {
-          setErrorMsg('Qurilmangiz yuz tahlilini qo\'llab-quvvatlamaydi (12s). Yorug\'liqni yaxshilab yoki boshqa qurilmada urinib ko\'ring.');
+          setErrorMsg('Yuz tahlili juda uzoq vaqt oldi. Qayta urinib ko\'ring yoki yorug\'likni yaxshilang.');
           setStep('error');
           return;
         }
       }
 
       if (!descriptor) {
-        setErrorMsg('Yuz aniqlanmadi. Yaxshi yoritilgan joyda, to\'g\'ri burchakda qayta urinib ko\'ring.');
+        setErrorMsg('Yuz aniqlanmadi. To\'g\'ri yoritilgan joyda, yuzingizni markazga yo\'naltirib qayta urinib ko\'ring.');
         setStep('error');
         return;
       }
 
-      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.85);
       await portalFetch('/face-profile', initData, {
         method: 'POST',
         body: JSON.stringify({ descriptor, photoDataUrl }),
@@ -370,8 +355,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     }
   };
 
-  // ─── 5. Check-in ─────────────────────────────────────────────────────────
-
+  // 5. Check-in — descriptor muvaffaqiyatsiz bo'lsa GPS bypass
   const handleCheckInCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
     try {
@@ -409,8 +393,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     }
   };
 
-  // ─── 6. Check-out ────────────────────────────────────────────────────────
-
+  // 6. Check-out
   const handleCheckOutCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
     try {
@@ -443,13 +426,12 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
     }
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <div className="p-4 min-h-[60vh] flex flex-col">
       <AnimatePresence mode="wait">
 
-        {/* Loading models */}
         {step === 'loading_models' && (
           <motion.div key="loading_models" {...fade} className="flex-1 flex flex-col items-center justify-center gap-4 text-center">
             <div className="w-16 h-16 rounded-2xl bg-violet-100 dark:bg-violet-500/20 flex items-center justify-center">
@@ -457,20 +439,18 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
             </div>
             <div>
               <div className="font-bold text-slate-800 dark:text-white">Face ID yuklanmoqda</div>
-              <p className="text-sm text-zinc-400 mt-1">Yuz aniqlash modeli internet orqali yuklanmoqda...</p>
+              <p className="text-sm text-zinc-400 mt-1">Yuz aniqlash modeli yuklanmoqda...</p>
             </div>
             <Loader2 className="animate-spin text-violet-600" size={24} />
           </motion.div>
         )}
 
-        {/* Loading profile */}
         {step === 'loading_profile' && (
           <motion.div key="loading_profile" {...fade} className="flex-1 flex items-center justify-center">
             <Loader2 className="animate-spin text-blue-600" size={28} />
           </motion.div>
         )}
 
-        {/* No face profile */}
         {step === 'no_profile' && (
           <motion.div key="no_profile" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <div className="w-20 h-20 rounded-3xl bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center">
@@ -480,7 +460,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
               <h3 className="font-bold text-lg text-slate-800 dark:text-white">Yuz ID ro'yxatdan o'tilmagan</h3>
               <p className="text-sm text-zinc-400 mt-2 max-w-xs">
                 Davomat tizimidan foydalanish uchun avval yuzingizni bir marta ro'yxatdan o'tkazing.
-                Bu faqat bir marta amalga oshiriladi.
               </p>
             </div>
             <button
@@ -495,7 +474,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Register start */}
         {step === 'register_start' && (
           <motion.div key="register_start" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <div className="w-20 h-20 rounded-3xl bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
@@ -514,28 +492,23 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
             </div>
             <div className="flex gap-3 w-full">
               <button onClick={() => setStep('no_profile')} className="flex-1 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-300">Bekor</button>
-              <button
-                onClick={() => setStep('capturing')}
-                className="flex-1 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold"
-              >
+              <button onClick={() => setStep('capturing')} className="flex-1 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold">
                 Boshlash →
               </button>
             </div>
           </motion.div>
         )}
 
-        {/* Camera for registration */}
         {step === 'capturing' && (
           <motion.div key="capturing" {...fade} className="flex-1 flex flex-col justify-center">
             <CameraView
-              instruction="Yuzingizni aylana ichiga joylashtiring va 'Suratga olish' tugmasini bosing"
+              instruction="Yuzingizni aylana ichiga joylashtiring"
               onCapture={handleRegisterCapture}
               onCancel={() => setStep('no_profile')}
             />
           </motion.div>
         )}
 
-        {/* Camera for check-in */}
         {step === 'checkin_capture' && (
           <motion.div key="checkin_capture" {...fade} className="flex-1 flex flex-col justify-center">
             <CameraView
@@ -546,7 +519,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Camera for check-out */}
         {step === 'checkout_capture' && (
           <motion.div key="checkout_capture" {...fade} className="flex-1 flex flex-col justify-center">
             <CameraView
@@ -557,7 +529,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Processing */}
         {(step === 'processing' || step === 'verifying') && (
           <motion.div key="processing" {...fade} className="flex-1 flex flex-col items-center justify-center gap-4 text-center">
             <div className="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
@@ -568,9 +539,9 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
                 {step === 'verifying' ? 'Tekshirilmoqda...' : 'Yuz tahlil qilinmoqda...'}
               </div>
               <p className="text-sm text-zinc-400 mt-1">
-                {step === 'verifying'
-                  ? 'Yuz mos kelishini va joylashuvni tekshiryapmiz'
-                  : `Yuz belgilari chiqarilmoqda... ${elapsed}s / 12s`}
+                {step === 'processing'
+                  ? `Yuz belgilari aniqlanmoqda... ${elapsed}s`
+                  : 'Joylashuv va yuz tekshirilmoqda'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -578,15 +549,9 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
               <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
-            {elapsed >= 8 && step === 'processing' && (
-              <p className="text-xs text-amber-600 max-w-xs">
-                Tahlil davom etmoqda — qurilmangizga bog'liq. Iltimos kuting...
-              </p>
-            )}
           </motion.div>
         )}
 
-        {/* Registered */}
         {step === 'registered' && (
           <motion.div key="registered" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <motion.div
@@ -600,19 +565,14 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
               <h3 className="font-bold text-lg text-slate-800 dark:text-white">Ro'yxatdan o'tildi!</h3>
               <p className="text-sm text-zinc-400 mt-1">Yuz ID muvaffaqiyatli saqlandi</p>
             </div>
-            <button
-              onClick={() => loadProfile()}
-              className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-emerald-500/25"
-            >
+            <button onClick={() => loadProfile()} className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-emerald-500/25">
               Davom etish <ChevronRight size={16} />
             </button>
           </motion.div>
         )}
 
-        {/* Ready check-in */}
         {step === 'ready_checkin' && (
           <motion.div key="ready_checkin" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5">
-            {/* Profile info */}
             {attendanceState?.faceProfile?.photoUrl && (
               <div className="w-20 h-20 rounded-full overflow-hidden ring-4 ring-blue-200 dark:ring-blue-800">
                 <img src={attendanceState.faceProfile.photoUrl} alt="" className="w-full h-full object-cover" />
@@ -636,7 +596,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
                   <div className="text-xs text-blue-600/70 dark:text-blue-400/70">Face ID bilan kirish tasdiqlang</div>
                 </div>
               </div>
-
               <div className="flex items-center gap-2 text-xs text-zinc-400 justify-center">
                 <Navigation size={11} /> GPS avtomatik aniqlanadi
                 <Shield size={11} className="ml-2" /> Face ID tekshiradi
@@ -652,7 +611,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Ready check-out */}
         {step === 'ready_checkout' && (
           <motion.div key="ready_checkout" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5">
             {attendanceState?.faceProfile?.photoUrl && (
@@ -688,7 +646,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Today done */}
         {step === 'today_done' && (
           <motion.div key="today_done" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <div className="w-20 h-20 rounded-3xl bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center">
@@ -716,7 +673,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Success check-in */}
         {step === 'success_in' && (
           <motion.div key="success_in" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <motion.div
@@ -745,7 +701,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
                 )}
                 <div className="text-xs text-violet-500">
                   {successData?.faceBypass
-                    ? 'GPS orqali tasdiqlandi'
+                    ? '📍 GPS orqali tasdiqlandi'
                     : `Face ID: ${Math.round((successData?.faceScore || 0) * 100)}% mos`}
                 </div>
               </div>
@@ -756,7 +712,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Success check-out */}
         {step === 'success_out' && (
           <motion.div key="success_out" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <motion.div
@@ -777,7 +732,6 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
           </motion.div>
         )}
 
-        {/* Error */}
         {step === 'error' && (
           <motion.div key="error" {...fade} className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
             <div className="w-20 h-20 rounded-3xl bg-red-100 dark:bg-red-500/20 flex items-center justify-center">
@@ -788,10 +742,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
               <p className="text-sm text-zinc-400 mt-2 max-w-xs">{errorMsg}</p>
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={() => loadProfile()}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm flex items-center gap-2"
-              >
+              <button onClick={() => loadProfile()} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm flex items-center gap-2">
                 <RefreshCw size={14} /> Qayta urinish
               </button>
             </div>
