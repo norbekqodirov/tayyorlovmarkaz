@@ -70,28 +70,49 @@ async function loadRecognitionNet(timeoutMs = 30000): Promise<boolean> {
   }
 }
 
-// Suratdan 128-o'lchamli yuz descriptorini chiqaradi. WebGL bo'lsa thread bloklanmaydi.
-// Muvaffaqiyatsiz bo'lsa null (timeout yoki yuz topilmadi).
-async function extractDescriptor(canvas: HTMLCanvasElement, timeoutMs = 20000): Promise<number[] | null> {
+// Suratdan 128-o'lchamli yuz descriptorini chiqaradi.
+// Xato bo'lsa ANIQ sabab bilan throw qiladi (diagnostika uchun).
+async function extractDescriptor(canvas: HTMLCanvasElement, timeoutMs = 30000): Promise<number[]> {
   const api = await getFaceApi();
+
+  // 1. Yengil modellar (detector + landmarks) — yuz topish uchun
+  if (!modelsReady) {
+    const ok = await loadModels(timeoutMs);
+    if (!ok || !modelsReady) throw new Error('MODEL: detektor yuklanmadi');
+  }
+  // 2. Tanish modeli (descriptor) — 6.2MB
   if (!recognitionReady) {
     const ok = await loadRecognitionNet(timeoutMs);
-    if (!ok) return null;
+    if (!ok) throw new Error('MODEL: tanish modeli yuklanmadi (internet sekin?)');
   }
-  try {
-    const work = (async () => {
+
+  // 3. Yuz topish + landmark + descriptor — bir nechta o'lcham bilan urinish
+  let descriptor: number[] | null = null;
+  let sawFace = false;
+
+  const work = (async () => {
+    for (const inputSize of [416, 320, 224, 512]) {
       const det = await api
-        .detectSingleFace(canvas, new api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 }))
-        .withFaceLandmarks(true)   // tiny landmarks
-        .withFaceDescriptor();
-      if (!det) return null;
-      return Array.from(det.descriptor as Float32Array) as number[];
-    })();
-    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs));
-    return await Promise.race([work, timeout]);
-  } catch {
-    return null;
-  }
+        .detectSingleFace(canvas, new api.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.2 }))
+        .withFaceLandmarks(true)        // tiny landmarks
+        .withFaceDescriptor();          // faceRecognitionNet
+      if (det && det.descriptor) {
+        descriptor = Array.from(det.descriptor as Float32Array) as number[];
+        return;
+      }
+      // descriptorsiz ham yuz topilganini bilish uchun
+      const faceOnly = await api.detectSingleFace(canvas, new api.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.2 }));
+      if (faceOnly) sawFace = true;
+    }
+  })();
+  const timeout = new Promise<void>((_, rej) =>
+    setTimeout(() => rej(new Error(`TIMEOUT: tahlil cho'zildi (WebGL: ${webglActive ? 'ha' : 'yoq'})`)), timeoutMs)
+  );
+  await Promise.race([work, timeout]);
+
+  if (descriptor && (descriptor as number[]).length === 128) return descriptor;
+  if (sawFace) throw new Error('NODESC: yuz topildi, lekin descriptor chiqmadi');
+  throw new Error('NOFACE: yuz topilmadi (yorug\'lik/burchak)');
 }
 
 // ─── Ko'z aspekt nisbati (Eye Aspect Ratio) — ko'z yumish aniqlash ──────────
@@ -419,18 +440,20 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
 
   useEffect(() => { if (step === 'loading_profile') loadProfile(); }, [step, loadProfile]);
 
-  const FACE_FAIL_MSG = 'Yuzni aniqlab bo\'lmadi. Yorug\'roq joyda, yuzingizni to\'liq ko\'rsatib qayta urinib ko\'ring.';
+  const faceErr = (e: any) => `Yuzni aniqlab bo'lmadi. Yorug'roq joyda qayta urining.\n[${e?.message || 'xato'}]`;
 
   // 3. Ro'yxatga olish — haqiqiy descriptor saqlanadi (keyin solishtirish uchun)
   const handleRegisterCapture = async (canvas: HTMLCanvasElement) => {
     setStep('processing');
+    let descriptor: number[];
     try {
-      const descriptor = await extractDescriptor(canvas);
-      if (!descriptor || descriptor.length !== 128) {
-        setErrorMsg(FACE_FAIL_MSG);
-        setStep('error');
-        return;
-      }
+      descriptor = await extractDescriptor(canvas);
+    } catch (e: any) {
+      setErrorMsg(faceErr(e));
+      setStep('error');
+      return;
+    }
+    try {
       const photoDataUrl = canvas.toDataURL('image/jpeg', 0.85);
       await portalFetch('/face-profile', initData, {
         method: 'POST',
@@ -446,13 +469,15 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
   // 4. Check-in — yuz solishtiriladi (mos kelmasa server rad etadi)
   const handleCheckInCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
+    let descriptor: number[];
     try {
-      const descriptor = await extractDescriptor(canvas);
-      if (!descriptor || descriptor.length !== 128) {
-        setErrorMsg(FACE_FAIL_MSG);
-        setStep('error');
-        return;
-      }
+      descriptor = await extractDescriptor(canvas);
+    } catch (e: any) {
+      setErrorMsg(faceErr(e));
+      setStep('error');
+      return;
+    }
+    try {
       const { latitude, longitude } = await getLocation().catch(() => {
         throw new Error('GPS joylashuvini aniqlash muvaffaqiyatsiz. Joylashuv ruxsatini bering.');
       });
@@ -472,13 +497,15 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
   // 5. Check-out — yuz solishtiriladi
   const handleCheckOutCapture = async (canvas: HTMLCanvasElement) => {
     setStep('verifying');
+    let descriptor: number[];
     try {
-      const descriptor = await extractDescriptor(canvas);
-      if (!descriptor || descriptor.length !== 128) {
-        setErrorMsg(FACE_FAIL_MSG);
-        setStep('error');
-        return;
-      }
+      descriptor = await extractDescriptor(canvas);
+    } catch (e: any) {
+      setErrorMsg(faceErr(e));
+      setStep('error');
+      return;
+    }
+    try {
       const { latitude, longitude } = await getLocation().catch(() => ({ latitude: 0, longitude: 0 }));
       const data = await portalFetch('/check-out', initData, {
         method: 'POST',
@@ -772,7 +799,7 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
             </div>
             <div>
               <h3 className="font-bold text-lg text-slate-800 dark:text-white">Xatolik</h3>
-              <p className="text-sm text-zinc-400 mt-2 max-w-xs">{errorMsg}</p>
+              <p className="text-sm text-zinc-400 mt-2 max-w-xs whitespace-pre-line">{errorMsg}</p>
             </div>
             <button onClick={loadProfile} className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm flex items-center gap-2">
               <RefreshCw size={14} /> Qayta urinish
