@@ -1,68 +1,76 @@
-import { LRUCache } from 'lru-cache';
+// Simple LRU-style in-memory cache — no external dependencies.
+// 500 max entries, 60s default TTL.
 
-// Universal in-memory cache for analytics & expensive queries.
-// 200 max entries, 60s default TTL.
-const cache = new LRUCache<string, any>({
-    max: 500,
-    ttl: 60_000, // 1 minute default
-});
+interface CacheEntry<T> {
+    value: T;
+    expiresAt: number;
+}
 
-/**
- * Wrap an async function with cache. Returns cached value if available,
- * otherwise calls the function and caches the result.
- */
+const store = new Map<string, CacheEntry<any>>();
+const MAX_ENTRIES = 500;
+
+function evictExpired() {
+    const now = Date.now();
+    for (const [k, e] of store) {
+        if (e.expiresAt <= now) store.delete(k);
+    }
+}
+
+function set<T>(key: string, value: T, ttl = 60_000) {
+    if (store.size >= MAX_ENTRIES) evictExpired();
+    if (store.size >= MAX_ENTRIES) {
+        const firstKey = store.keys().next().value;
+        if (firstKey) store.delete(firstKey);
+    }
+    store.set(key, { value, expiresAt: Date.now() + ttl });
+}
+
+function get<T>(key: string): T | undefined {
+    const entry = store.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= Date.now()) { store.delete(key); return undefined; }
+    return entry.value as T;
+}
+
 export async function cached<T>(
     key: string,
     fn: () => Promise<T>,
     ttl?: number
 ): Promise<T> {
-    const hit = cache.get(key);
-    if (hit !== undefined) return hit as T;
+    const hit = get<T>(key);
+    if (hit !== undefined) return hit;
     const value = await fn();
     if (value !== undefined && value !== null) {
-        cache.set(key, value, ttl ? { ttl } : undefined);
+        set(key, value, ttl ?? 60_000);
     }
     return value;
 }
 
-/**
- * Invalidate all cache entries that start with the given prefix.
- * Use this after CRUD operations to keep cache fresh.
- */
 export function invalidate(prefix: string): void {
-    const keys = Array.from(cache.keys()) as string[];
-    for (const k of keys) {
-        if (k.startsWith(prefix)) cache.delete(k);
+    for (const k of Array.from(store.keys())) {
+        if (k.startsWith(prefix)) store.delete(k);
     }
 }
 
-/**
- * Clear the entire cache. Useful in tests or when schema changes.
- */
 export function clearCache(): void {
-    cache.clear();
+    store.clear();
 }
 
-/**
- * Get cache statistics for monitoring.
- */
 export function getCacheStats() {
     return {
-        size: cache.size,
-        max: cache.max,
-        calculatedSize: cache.calculatedSize,
+        size: store.size,
+        max: MAX_ENTRIES,
+        calculatedSize: store.size,
     };
 }
 
-// TTL presets (seconds) for common cache scenarios.
 export const TTL = {
-    SHORT: 30_000,        // 30s — high-mutation data (dashboard counters)
-    MEDIUM: 60_000,       // 1min — moderate (recent transactions)
-    LONG: 5 * 60_000,     // 5min — slow-changing (monthly aggregates)
-    EXTRA_LONG: 30 * 60_000, // 30min — historical (cohort retention)
+    SHORT: 30_000,
+    MEDIUM: 60_000,
+    LONG: 5 * 60_000,
+    EXTRA_LONG: 30 * 60_000,
 };
 
-// Common cache key namespaces — use these to keep keys consistent.
 export const NS = {
     ANALYTICS: 'analytics:',
     REPORTS: 'reports:',

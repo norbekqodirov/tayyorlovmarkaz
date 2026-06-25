@@ -102,8 +102,8 @@ model Course {
 model Group {
   id        String   @id @default(uuid())
   name      String
-  courseId   String
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId   String?
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
   teacherId String?
   teacher   User?    @relation("TeacherGroups", fields: [teacherId], references: [id], onDelete: SetNull)
   status    String   @default("active") // active, completed, paused
