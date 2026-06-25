@@ -581,12 +581,12 @@ router.get('/face-profile', staffPortalAuth, async (req: any, res) => {
 });
 
 // POST /api/staff-portal/face-profile — yuz profilini ro'yxatdan o'tkazish
-// Body: { descriptor: number[128], photoDataUrl: string }
+// Body: { descriptor: number[] (bo'sh bo'lishi mumkin), photoDataUrl: string }
 router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
     try {
         const { descriptor, photoDataUrl } = req.body;
-        if (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128) {
-            return res.status(400).json({ error: 'Noto\'g\'ri descriptor (128-element array kerak)' });
+        if (!photoDataUrl) {
+            return res.status(400).json({ error: 'Yuz rasmi (photoDataUrl) kerak' });
         }
 
         const staffMember = await prisma.staffMember.findFirst({
@@ -613,15 +613,11 @@ router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
     }
 });
 
-// POST /api/staff-portal/check-in — Face ID + GPS bilan kirib kelish
-// Body: { descriptor: number[128], latitude: number, longitude: number, faceBypass?: boolean, photoDataUrl?: string }
+// POST /api/staff-portal/check-in — GPS + liveness photo bilan kirib kelish
+// Body: { descriptor: number[], latitude: number, longitude: number, faceBypass?: boolean, photoDataUrl?: string }
 router.post('/check-in', staffPortalAuth, async (req: any, res) => {
     try {
-        const { descriptor, latitude, longitude, photoDataUrl, faceBypass = false } = req.body;
-
-        if (!faceBypass && (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128)) {
-            return res.status(400).json({ error: 'Yuz descriptor kerak' });
-        }
+        const { descriptor, latitude, longitude, photoDataUrl, faceBypass = true } = req.body;
         if (latitude == null || longitude == null) {
             return res.status(400).json({ error: 'GPS joylashuvi kerak' });
         }
@@ -733,15 +729,11 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
     }
 });
 
-// POST /api/staff-portal/check-out — chiqib ketish (face ID bilan)
-// Body: { descriptor: number[128], latitude: number, longitude: number, faceBypass?: boolean }
+// POST /api/staff-portal/check-out — chiqib ketish (GPS bilan)
+// Body: { latitude: number, longitude: number, faceBypass?: boolean }
 router.post('/check-out', staffPortalAuth, async (req: any, res) => {
     try {
-        const { descriptor, latitude, longitude, faceBypass = false } = req.body;
-
-        if (!faceBypass && (!descriptor || !Array.isArray(descriptor) || descriptor.length !== 128)) {
-            return res.status(400).json({ error: 'Yuz descriptor kerak' });
-        }
+        const { descriptor, latitude, longitude, faceBypass = true } = req.body;
 
         const staffMember = await prisma.staffMember.findFirst({
             where: { telegramChatId: req.staffUser.telegramChatId },
