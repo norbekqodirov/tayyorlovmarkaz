@@ -230,8 +230,24 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string) {
     });
 }
 
+// Ommaviy sayt (Home/About/Blog/Teachers) shu kolleksiyalarni O'QISH uchun login
+// talab qilmasligi kerak — aks holda haqiqiy (login qilmagan) tashrif buyuruvchi
+// uchun bosh sahifa matni, galereya, yangiliklar va ustozlar ro'yxati HECH QACHON
+// yuklanmaydi (401). Faqat GET uchun; yozish (POST/PUT/DELETE) hamon requireAuth talab qiladi.
+const PUBLIC_READ_COLLECTIONS = new Set(['pageContent', 'gallery', 'news', 'teachers']);
+
+function authForCollection(req: express.Request, res: express.Response, next: express.NextFunction) {
+    if (req.method === 'GET' && PUBLIC_READ_COLLECTIONS.has(req.params.collection)) {
+        return next();
+    }
+    requireAuth(req, res, (err?: any) => {
+        if (err) return next(err);
+        requireRole(req, res, next);
+    });
+}
+
 // ─── Collection Middleware ────────────────────────────────────────────────────
-router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
+router.use('/:collection', authForCollection, async (req, res, next) => {
     const { collection } = req.params;
     let modelName = MODEL_MAP[collection];
 
