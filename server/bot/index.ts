@@ -16,6 +16,7 @@
 
 import { Bot, webhookCallback, InlineKeyboard, Keyboard } from 'grammy';
 import prisma from '../db.js';
+import { monthRangeStr, todayDateStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 
@@ -203,9 +204,7 @@ bot.command('attendance', async (ctx) => {
         return;
     }
 
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+    const { start: monthStart, end: monthEnd } = monthRangeStr(0);
 
     const records = await prisma.attendanceRecord.findMany({
         where: {
@@ -222,9 +221,9 @@ bot.command('attendance', async (ctx) => {
     const rate = total > 0 ? Math.round((present / total) * 100) : 0;
 
     const monthNames = ['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
-    const monthName = monthNames[now.getMonth()];
+    const monthName = monthNames[Number(monthStart.slice(5, 7)) - 1];
 
-    let text = `📅 <b>${monthName} ${now.getFullYear()} — Davomat</b>\n\n`;
+    let text = `📅 <b>${monthName} ${monthStart.slice(0, 4)} — Davomat</b>\n\n`;
     text += `👤 ${student.name}\n`;
     text += `✅ Keldi: <b>${present}</b>\n`;
     text += `❌ Kelmadi: <b>${absent}</b>\n`;
@@ -285,8 +284,7 @@ bot.command('pay', async (ctx) => {
 // ─── /leads (admin) ──────────────────────────────────────────────────────────
 
 bot.command('leads', async (ctx) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = tashkentMidnightInstant(todayDateStr());
 
     try {
         const [todayLeads, total, won] = await Promise.all([
@@ -322,9 +320,7 @@ bot.command('leads', async (ctx) => {
 
 bot.command('stats', async (ctx) => {
     try {
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
+        const monthStart = tashkentMidnightInstant(monthRangeStr(0).start);
 
         const [students, groups, leads, allRevenue, monthRevenue] = await Promise.all([
             prisma.student.count({ where: { status: 'active' } }),
@@ -400,8 +396,7 @@ bot.callbackQuery('attendance', async (ctx) => {
     await ctx.answerCallbackQuery();
     const student = await findStudentByChatId(ctx.chat!.id);
     if (!student) { await ctx.reply('❌ Tizimga ulanmadingiz.'); return; }
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const monthStart = monthRangeStr(0).start;
     const records = await prisma.attendanceRecord.findMany({
         where: { studentId: student.id, date: { gte: monthStart } }
     });

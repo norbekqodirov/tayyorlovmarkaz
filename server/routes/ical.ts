@@ -1,5 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -45,7 +46,7 @@ router.get('/group/:groupId.ics', async (req, res) => {
         for (const schedule of group.schedules) {
             const uid = `group-${groupId}-schedule-${schedule.id}@tayyorlov`;
             const summary = group.name + (group.course ? ` — ${group.course.name}` : '');
-            const startDate = group.startDate || new Date().toISOString().split('T')[0];
+            const startDate = group.startDate || todayDateStr();
             const endDate = group.endDate || '2027-01-01';
             const dayName = DAY_NAMES[schedule.dayOfWeek] || 'MO';
             const roomName = schedule.room?.name || '';
@@ -100,7 +101,7 @@ router.get('/teacher/:userId.ics', async (req, res) => {
         for (const group of groups) {
             for (const schedule of group.schedules) {
                 const uid = `teacher-${userId}-group-${group.id}-schedule-${schedule.id}@tayyorlov`;
-                const startDate = group.startDate || new Date().toISOString().split('T')[0];
+                const startDate = group.startDate || todayDateStr();
                 const endDate = group.endDate || '2027-01-01';
                 const dayName = DAY_NAMES[schedule.dayOfWeek] || 'MO';
                 const roomName = schedule.room?.name || '';

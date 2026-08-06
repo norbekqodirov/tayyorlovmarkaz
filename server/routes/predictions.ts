@@ -10,6 +10,7 @@
 
 import express from 'express';
 import prisma from '../db.js';
+import { monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -108,18 +109,18 @@ router.get('/revenue-forecast', async (_req, res) => {
     try {
         // So'nggi 6 oy ma'lumotlari
         const months: { month: string; actual: number; label: string }[] = [];
-        const now = new Date();
 
         for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const nextD = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-            const monthStr = d.toISOString().split('T')[0].slice(0, 7);
+            const { start, end } = monthRangeStr(-i);
+            const monthStr = start.slice(0, 7);
+            const monthIdx = Number(start.slice(5, 7)) - 1;
+            const yearNum = Number(start.slice(0, 4));
 
             const income = await prisma.transaction.aggregate({
                 _sum: { amount: true },
                 where: {
                     type: 'income',
-                    date: { gte: monthStr + '-01', lt: nextD.toISOString().split('T')[0] }
+                    date: { gte: start, lte: end }
                 }
             });
 
@@ -127,7 +128,7 @@ router.get('/revenue-forecast', async (_req, res) => {
             months.push({
                 month: monthStr,
                 actual: income._sum.amount ?? 0,
-                label: `${monthNames[d.getMonth()]} ${d.getFullYear()}`
+                label: `${monthNames[monthIdx]} ${yearNum}`
             });
         }
 
@@ -152,18 +153,20 @@ router.get('/revenue-forecast', async (_req, res) => {
         const activeStudents = await prisma.student.count({ where: { status: 'active' } });
         const avgFee = await prisma.payment.aggregate({
             _avg: { amount: true },
-            where: { status: 'paid', createdAt: { gte: new Date(now.getFullYear(), now.getMonth() - 3, 1) } }
+            where: { status: 'paid', createdAt: { gte: tashkentMidnightInstant(monthRangeStr(-3).start) } }
         });
         const studentBasedForecast = activeStudents * (avgFee._avg.amount ?? 300000);
 
         const nextMonthNames = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
-        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const nextMonthStart = monthRangeStr(1).start;
+        const nextMonthIdx = Number(nextMonthStart.slice(5, 7)) - 1;
+        const nextMonthYear = Number(nextMonthStart.slice(0, 4));
 
         res.json({
             historical: months,
             forecast: {
                 amount: forecast || studentBasedForecast,
-                month: `${nextMonthNames[nextMonth.getMonth()]} ${nextMonth.getFullYear()}`,
+                month: `${nextMonthNames[nextMonthIdx]} ${nextMonthYear}`,
                 trend: Math.round(trend),
                 confidence: validMonths.length >= 4 ? 'high' : validMonths.length >= 2 ? 'medium' : 'low',
                 activeStudents,

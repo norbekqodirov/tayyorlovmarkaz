@@ -11,6 +11,7 @@
 
 import express from 'express';
 import prisma from '../db.js';
+import { monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -78,11 +79,10 @@ router.delete('/:id', async (req, res) => {
 
 // Auto-sync: CRM dan joriy ko'rsatkichlarni yuklash
 router.post('/auto-sync', async (req, res) => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const monthStart = new Date(year, month - 1, 1).toISOString().split('T')[0];
-    const monthEnd = new Date(year, month, 0).toISOString().split('T')[0];
+    const { start: monthStart, end: monthEnd } = monthRangeStr(0);
+    const year = Number(monthStart.slice(0, 4));
+    const month = Number(monthStart.slice(5, 7));
+    const nextMonthStart = monthRangeStr(1).start;
 
     try {
         // 1. Daromad
@@ -93,7 +93,7 @@ router.post('/auto-sync', async (req, res) => {
 
         // 2. Yangi o'quvchilar
         const newStudents = await prisma.student.count({
-            where: { createdAt: { gte: new Date(year, month - 1, 1), lte: new Date(year, month, 0) } }
+            where: { createdAt: { gte: tashkentMidnightInstant(monthStart), lt: tashkentMidnightInstant(nextMonthStart) } }
         });
 
         // 3. Jami faol o'quvchilar
@@ -101,7 +101,7 @@ router.post('/auto-sync', async (req, res) => {
 
         // 4. Yangi lidlar
         const newLeads = await prisma.lead.count({
-            where: { createdAt: { gte: new Date(year, month - 1, 1) } }
+            where: { createdAt: { gte: tashkentMidnightInstant(monthStart) } }
         });
 
         // 5. Konversiya

@@ -107,6 +107,12 @@ const LeadDetailPanel: React.FC<Props> = ({
                 {new Date(lead.date).toLocaleDateString('uz-UZ')}
               </p>
             </div>
+            {lead.extraField && (
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Qo'shimcha</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">{lead.extraField}</p>
+              </div>
+            )}
           </div>
 
           {/* Score bar */}

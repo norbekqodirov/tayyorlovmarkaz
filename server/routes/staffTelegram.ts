@@ -8,6 +8,7 @@ import {
     extractPhoneDigits,
 } from '../services/telegramService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { todayDateStr, tashkentDayOfWeek } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -193,7 +194,7 @@ router.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            const todayNum = new Date().getDay() || 7; // 0=Sun→7, 1=Mon, ... 6=Sat
+            const todayNum = tashkentDayOfWeek();
             const dayMap: Record<number, string> = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun' };
             const dayUz: Record<number, string> = {
                 1: 'Dushanba', 2: 'Seshanba', 3: 'Chorshanba', 4: 'Payshanba',
@@ -292,7 +293,7 @@ router.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            const today = new Date().toISOString().split('T')[0];
+            const today = todayDateStr();
             const [studentCount, groupCount, todayAttendance, unpaidCount] = await Promise.all([
                 prisma.student.count({ where: { status: 'active', deletedAt: null } }),
                 prisma.group.count({ where: { status: 'active', deletedAt: null } }),

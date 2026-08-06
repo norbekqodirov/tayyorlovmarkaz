@@ -112,6 +112,7 @@ model Group {
   startDate String?
   endDate   String?
   maxSize   Int      @default(20)
+  price     Float?   // Shu guruhga xos narx (masalan sinf bo'yicha tarif) — bo'sh bo'lsa Course.price ishlatiladi
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -300,6 +301,7 @@ model Lead {
   status    String   @default("warm") // hot, warm, cold
   date      String?
   notes     String?
+  extraField String? // Sozlamalarda tanlangan qo'shimcha maydon qiymati (yosh yoki sinf)
   deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

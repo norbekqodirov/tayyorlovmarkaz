@@ -13,6 +13,7 @@ import { useFirestore } from '../../hooks/useFirestore';
 import { useCrmData } from '../../hooks/useCrmData';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import api from '../../api/client';
 
 import LeadStatsBar from '../../components/leads/LeadStatsBar';
 import KanbanBoard from '../../components/leads/KanbanBoard';
@@ -38,7 +39,8 @@ export default function CrmLeads() {
   // ─── Data ────────────────────────────────────────────────────────────────────
   const { data: leads = [], addDocument, updateDocument, deleteDocument } = useFirestore<Lead>('leads');
   const { addDocument: addStudent } = useFirestore<any>('students');
-  const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
+  const { data: groups = [] } = useFirestore<any>('groups');
+  const { addDocument: addLeadActivity } = useFirestore<any>('leadActivities');
   const { courses } = useCrmData();
   const { showToast } = useToast();
 
@@ -82,14 +84,23 @@ export default function CrmLeads() {
     if (!formData.name || !formData.phone) {
       showToast('Ism va telefon raqami majburiy!', 'error'); return;
     }
-    if (editingLead) {
-      const data = { ...formData, date: formData.date || editingLead.date, activities: editingLead.activities || [] };
-      await updateDocument(editingLead.id, data);
-      if (selectedLead?.id === editingLead.id) setSelectedLead({ ...selectedLead, ...data } as Lead);
-    } else {
-      await addDocument({ date: new Date().toISOString(), ...formData as any });
+    // "activities" Lead modelida yo'q (alohida LeadActivity jadvali) — yuborilsa
+    // serverda jimgina tashlab yuboriladi, shuning uchun to'g'ridan-to'g'ri olib tashlaymiz.
+    const { activities: _omit, ...rest } = formData as any;
+    try {
+      if (editingLead) {
+        const data = { ...rest, date: formData.date || editingLead.date };
+        await updateDocument(editingLead.id, data);
+        if (selectedLead?.id === editingLead.id) setSelectedLead({ ...selectedLead, ...data } as Lead);
+        showToast('Lid yangilandi', 'success');
+      } else {
+        await addDocument({ date: new Date().toISOString(), ...rest });
+        showToast('Yangi lid qo\'shildi', 'success');
+      }
+      closeModal();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lidni saqlashda xatolik yuz berdi', 'error');
     }
-    closeModal();
   };
 
   const confirmDelete = async () => {
@@ -109,33 +120,49 @@ export default function CrmLeads() {
   };
 
   // ─── Activities ───────────────────────────────────────────────────────────────
+  // LeadActivity Lead'ning JSON maydoni emas, alohida jadval — shuning uchun
+  // to'g'ridan-to'g'ri /api/leadActivities ga yoziladi (avval Lead.activities'ni
+  // yangilashga urinardi, bu maydon sxemada yo'q va serverda jimgina tashlanardi).
   const addActivity = async (leadId: string, type: LeadActivity['type'], content: string) => {
-    const newAct: LeadActivity = { id: Date.now().toString(), type, content, date: new Date().toISOString(), user: 'Admin' };
-    const lead = (leads || []).find(l => l.id === leadId);
-    if (!lead) return;
-    const activities = [newAct, ...(lead.activities || [])];
-    await updateDocument(leadId, { activities });
-    if (selectedLead?.id === leadId) setSelectedLead({ ...selectedLead, activities });
+    try {
+      const userName = (() => {
+        try { return JSON.parse(localStorage.getItem('crm_user') || '{}').name || 'Admin'; } catch { return 'Admin'; }
+      })();
+      const date = new Date().toISOString();
+      const newId = await addLeadActivity({ leadId, type, content, date, user: userName });
+      if (selectedLead?.id === leadId) {
+        const newAct: LeadActivity = { id: newId, type, content, date, user: userName };
+        setSelectedLead({ ...selectedLead, activities: [newAct, ...(selectedLead.activities || [])] });
+      }
+    } catch {
+      showToast('Faollikni saqlashda xatolik yuz berdi', 'error');
+    }
   };
 
   // ─── Convert lead → student ───────────────────────────────────────────────────
   const handleConvertToStudent = async (lead: Lead) => {
     if (!selectedGroupId) { showToast('Iltimos, guruhni tanlang!', 'error'); return; }
     const grp = (groups || []).find((g: any) => g.id === selectedGroupId);
-    const studentId = await addStudent({
-      name: lead.name, phone: lead.phone, email: lead.email || '',
-      address: '', birthDate: '', parentName: '', parentPhone: '',
-      course: lead.course, group: grp?.name || '',
-      paymentStatus: 'Kutilmoqda', balance: 0, status: 'Faol',
-      joinedDate: new Date().toISOString().split('T')[0],
-      notes: lead.notes || `Lid manbasi: ${lead.source}`,
-    });
-    if (grp) await updateGroup(selectedGroupId, { students: [...(grp.students || []), studentId] });
-    await updateDocument(lead.id, { stage: 'won' });
-    showToast(`${lead.name} o'quvchilar ro'yxatiga va guruhga qo'shildi!`, 'success');
-    setIsConvertModalOpen(false);
-    setIsDetailOpen(false);
-    setSelectedGroupId('');
+    try {
+      const studentId = await addStudent({
+        name: lead.name, phone: lead.phone, email: lead.email || '',
+        address: '', birthDate: '', parentName: '', parentPhone: '',
+        course: lead.course, group: grp?.name || '',
+        paymentStatus: 'Kutilmoqda', balance: 0, status: 'Faol',
+        joinedDate: new Date().toISOString().split('T')[0],
+        notes: lead.notes || `Lid manbasi: ${lead.source}`,
+      });
+      // Group.students maydoni sxemada yo'q — haqiqiy ro'yxatga olish Enrollment
+      // jadvali orqali amalga oshadi (bda0add'gacha bo'lgan kod buni tashlab ketardi).
+      await api.post('/enrollments', { studentId, groupId: selectedGroupId });
+      await updateDocument(lead.id, { stage: 'won' });
+      showToast(`${lead.name} o'quvchilar ro'yxatiga va guruhga qo'shildi!`, 'success');
+      setIsConvertModalOpen(false);
+      setIsDetailOpen(false);
+      setSelectedGroupId('');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "O'quvchiga aylantirishda xatolik yuz berdi", 'error');
+    }
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────────
@@ -268,8 +295,8 @@ export default function CrmLeads() {
                     className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
                   >
                     <option value="">Tanlang...</option>
-                    {(groups || []).filter((g: any) => g.status === 'Faol' || g.status === 'Yangi').map((g: any) => (
-                      <option key={g.id} value={g.id}>{g.name} ({g.subject})</option>
+                    {(groups || []).filter((g: any) => ['Faol', 'Yangi', 'active'].includes(g.status)).map((g: any) => (
+                      <option key={g.id} value={g.id}>{g.name} ({g.course?.name || 'Kurssiz'})</option>
                     ))}
                   </select>
                 </div>

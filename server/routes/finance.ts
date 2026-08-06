@@ -5,9 +5,68 @@
 
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { todayDateStr } from '../utils/timezone.js';
+import { getBillingSettings, calculateStudentMonthlyDue, calculateTeacherMonthlyRevenue } from '../services/billing.js';
 
 const router = express.Router();
+
+// ─── OYLIK TO'LOV HISOB-KITOBI (davomat asosida) ──────────────────────────────
+
+// GET /api/finance/billing-settings
+router.get('/billing-settings', requireAuth, async (_req, res) => {
+    try {
+        res.json(await getBillingSettings());
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// PUT /api/finance/billing-settings — faqat ADMIN
+router.put('/billing-settings', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+    try {
+        const { lessonsPerMonth, absenceThreshold, teacherSalaryPercent } = req.body as Record<string, number>;
+        const updates: Array<{ key: string; value: string }> = [];
+        if (lessonsPerMonth !== undefined) updates.push({ key: 'monthly_lessons_count', value: String(lessonsPerMonth) });
+        if (absenceThreshold !== undefined) updates.push({ key: 'absence_discount_threshold', value: String(absenceThreshold) });
+        if (teacherSalaryPercent !== undefined) updates.push({ key: 'teacher_salary_percent', value: String(teacherSalaryPercent) });
+
+        for (const u of updates) {
+            await prisma.setting.upsert({ where: { key: u.key }, update: { value: u.value }, create: u });
+        }
+        res.json(await getBillingSettings());
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET /api/finance/monthly-due/:studentId?year=&month=
+router.get('/monthly-due/:studentId', requireAuth, async (req, res) => {
+    try {
+        const now = new Date();
+        const year = Number(req.query.year) || now.getFullYear();
+        const month = Number(req.query.month) || now.getMonth() + 1;
+        const due = await calculateStudentMonthlyDue(req.params.studentId, year, month);
+        res.json(due);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET /api/finance/teacher-monthly-revenue/:teacherId?year=&month=
+// O'qituvchining shu oydagi HAQIQIY (davomat chegirmasidan keyingi) daromadi va
+// shundan hisoblangan oyligi — naiv "narx * o'quvchilar soni" o'rniga.
+router.get('/teacher-monthly-revenue/:teacherId', requireAuth, async (req, res) => {
+    try {
+        const now = new Date();
+        const year = Number(req.query.year) || now.getFullYear();
+        const month = Number(req.query.month) || now.getMonth() + 1;
+        const result = await calculateTeacherMonthlyRevenue(req.params.teacherId, year, month);
+        res.json(result);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // ─── INVOICE ──────────────────────────────────────────────────────────────────
 
@@ -58,7 +117,7 @@ router.post('/invoices', requireAuth, async (req, res) => {
 
         // Generate invoice number: INV-YYYY-NNNN
         const count = await prisma.invoice.count();
-        const year = new Date().getFullYear();
+        const year = todayDateStr().slice(0, 4);
         const number = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
 
         const invoice = await prisma.invoice.create({
@@ -104,7 +163,7 @@ router.patch('/invoices/:id', requireAuth, async (req, res) => {
 
         // If paid, create payment record and update student balance
         if (status === 'paid') {
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = todayDateStr();
             await prisma.payment.create({
                 data: {
                     studentId: invoice.studentId,
@@ -249,8 +308,9 @@ router.delete('/expenses/:id', requireAuth, async (req, res) => {
 // GET /api/finance/budget?month=&year=
 router.get('/budget', requireAuth, async (req, res) => {
     try {
-        const year = Number(req.query.year) || new Date().getFullYear();
-        const month = Number(req.query.month) || new Date().getMonth() + 1;
+        const todayParts = todayDateStr().split('-');
+        const year = Number(req.query.year) || Number(todayParts[0]);
+        const month = Number(req.query.month) || Number(todayParts[1]);
         const budgets = await prisma.budget.findMany({ where: { year, month } });
         res.json({ year, month, budgets });
     } catch (err: any) {

@@ -24,6 +24,7 @@ export interface Lead {
   date: string;
   activities: LeadActivity[];
   notes: string;
+  extraField?: string | null;
 }
 
 export const STAGES = [

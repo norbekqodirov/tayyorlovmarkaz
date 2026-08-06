@@ -31,6 +31,14 @@ export async function applyUnicodeFont(doc: jsPDF): Promise<void> {
     const fontBase64 = await loadRobotoFont();
     doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
     doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    // Faqat bitta shrift fayli bor (Regular) — lekin jsPDF/autoTable "bold" uslub
+    // so'ralganda, agar shu nom uchun 'bold' variant ro'yxatdan o'tmagan bo'lsa,
+    // standart (Unicode'siz) Helvetica-Bold'ga qaytadi — natijada jadval sarlavhalarida
+    // o'zbek harflari (o', g') buziladi. Shuning uchun 'bold'/'italic' so'rovlari ham
+    // xuddi shu Unicode faylga yo'naltiriladi (vizual qalinlashmaydi, lekin matn buzilmaydi).
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'bold');
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'italic');
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'bolditalic');
     doc.setFont('Roboto');
   } catch (error) {
     console.warn('Could not apply Unicode font, falling back to default:', error);

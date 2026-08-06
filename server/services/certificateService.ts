@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import prisma from '../db.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'certificates');
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -32,7 +33,7 @@ export interface CertTemplateConfig {
  * Format: CRT-YYYY-NNNN
  */
 export async function generateSerialNumber(): Promise<string> {
-    const year = new Date().getFullYear();
+    const year = todayDateStr().slice(0, 4);
     const count = await prisma.certificate.count({
         where: { serialNumber: { startsWith: `CRT-${year}-` } },
     });

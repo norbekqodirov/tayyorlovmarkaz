@@ -1,37 +1,43 @@
 import { motion } from 'framer-motion';
 import { MapPin, Phone, Mail, Clock, ArrowUpRight } from 'lucide-react';
-import { useState } from 'react';
-import { useFirestore } from '../hooks/useFirestore';
+import { useState, useEffect } from 'react';
+import api from '../api/client';
 
 export default function Contact() {
-  const [formData, setFormData] = useState({ name: '', phone: '', message: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', message: '', extra: '' });
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const { addDocument } = useFirestore('leads');
+  const [submitting, setSubmitting] = useState(false);
+  const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
+
+  useEffect(() => {
+    api.get('/public/lead-form-config').then(res => setExtraField(res.data)).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const newLead = {
-      name: formData.name,
-      phone: formData.phone,
-      course: 'Boshqa',
-      stage: 'new',
-      date: new Date().toISOString(),
-      source: 'Aloqa sahifasi',
-      message: formData.message
-    };
-    
+    setSubmitting(true);
     try {
-      await addDocument(newLead);
+      // Bu ommaviy (login talab qilmaydigan) endpoint — avval /api/leads (generic CRUD)
+      // ga yuborilardi, u esa har doim login talab qilib, tashrif buyuruvchi uchun
+      // jimgina 401 bilan barbod bo'lardi.
+      await api.post('/public/lead', {
+        name: formData.name,
+        phone: formData.phone,
+        course: 'Boshqa',
+        source: 'Aloqa sahifasi',
+        notes: formData.message,
+        extraField: extraField.type !== 'none' ? formData.extra : undefined,
+      });
       setIsSubmitted(true);
-      setFormData({ name: '', phone: '', message: '' });
-      
+      setFormData({ name: '', phone: '', message: '', extra: '' });
+
       setTimeout(() => {
         setIsSubmitted(false);
       }, 3000);
     } catch (error) {
       console.error("Error adding lead:", error);
-      // Optionally handle error state here
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -143,15 +149,22 @@ export default function Contact() {
               </div>
               <div>
                 <label htmlFor="phone" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2 uppercase tracking-wider">Telefon raqamingiz</label>
-                <input 
-                  type="tel" 
-                  id="phone" 
-                  required
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  className="w-full px-6 py-4 bg-zinc-100 dark:bg-zinc-950 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-500 text-zinc-900 dark:text-white font-medium transition-shadow"
-                  placeholder="+998 90 123 45 67"
-                />
+                <div className="flex items-stretch rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-950 focus-within:ring-2 focus-within:ring-blue-600 dark:focus-within:ring-blue-500 transition-shadow">
+                  <span className="flex items-center px-4 text-zinc-500 dark:text-zinc-400 font-bold select-none">+998</span>
+                  <input
+                    type="tel"
+                    id="phone"
+                    required
+                    maxLength={9}
+                    value={formData.phone.replace(/\D/g, '').replace(/^998/, '')}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 9);
+                      setFormData({ ...formData, phone: digits ? `+998${digits}` : '' });
+                    }}
+                    className="w-full pr-6 py-4 bg-transparent border-none outline-none text-zinc-900 dark:text-white font-medium"
+                    placeholder="90 123 45 67"
+                  />
+                </div>
               </div>
               <div>
                 <label htmlFor="message" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2 uppercase tracking-wider">Xabaringiz</label>
@@ -165,11 +178,26 @@ export default function Contact() {
                   placeholder="Farzandimni ro'yxatdan o'tkazmoqchi edim..."
                 ></textarea>
               </div>
-              <button 
-                type="submit" 
-                className="w-full py-5 px-8 bg-zinc-900 dark:bg-white text-white dark:text-black font-black rounded-2xl hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors flex items-center justify-center gap-2 text-lg group"
+              {extraField.type !== 'none' && (
+                <div>
+                  <label htmlFor="extra" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2 uppercase tracking-wider">{extraField.label}</label>
+                  <input
+                    type={extraField.type === 'age' ? 'number' : 'text'}
+                    id="extra"
+                    required
+                    value={formData.extra}
+                    onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
+                    className="w-full px-6 py-4 bg-zinc-100 dark:bg-zinc-950 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-500 text-zinc-900 dark:text-white font-medium transition-shadow"
+                    placeholder={extraField.type === 'age' ? '10' : "Masalan: 5-sinf"}
+                  />
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-5 px-8 bg-zinc-900 dark:bg-white text-white dark:text-black font-black rounded-2xl hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors flex items-center justify-center gap-2 text-lg group disabled:opacity-60"
               >
-                Yuborish <ArrowUpRight className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                {submitting ? 'Yuborilmoqda...' : 'Yuborish'} <ArrowUpRight className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </button>
             </form>
           )}

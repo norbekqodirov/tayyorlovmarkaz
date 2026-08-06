@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import { validateStaffInitData } from '../services/telegramService.js';
+import { todayDateStr, nowTimeStr, nowMinutesOfDay, tashkentDayOfWeek, addDaysDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-key';
@@ -117,8 +118,8 @@ router.get('/me', staffPortalAuth, async (req: any, res) => {
         let stats: any = {};
 
         if (role === 'TEACHER') {
-            const today = new Date().toISOString().split('T')[0];
-            const todayNum = new Date().getDay() || 7;
+            const today = todayDateStr();
+            const todayNum = tashkentDayOfWeek();
             const [groupCount, todayLessons] = await Promise.all([
                 prisma.group.count({ where: { teacherId: id, status: 'active', deletedAt: null } }),
                 prisma.schedule.count({ where: { dayOfWeek: todayNum, group: { teacherId: id, deletedAt: null } } }),
@@ -132,7 +133,7 @@ router.get('/me', staffPortalAuth, async (req: any, res) => {
             });
             stats = { groupCount, todayLessons, attendanceMarkedToday: marked };
         } else if (['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(role)) {
-            const today = new Date().toISOString().split('T')[0];
+            const today = todayDateStr();
             const [studentCount, groupCount, todayPresent, unpaidCount] = await Promise.all([
                 prisma.student.count({ where: { status: 'active', deletedAt: null } }),
                 prisma.group.count({ where: { status: 'active', deletedAt: null } }),
@@ -156,7 +157,7 @@ router.get('/me', staffPortalAuth, async (req: any, res) => {
 router.get('/today', staffPortalAuth, async (req: any, res) => {
     try {
         const { id, role } = req.staffUser;
-        const todayNum = new Date().getDay() || 7; // 0=Sun→7
+        const todayNum = tashkentDayOfWeek();
         const dayUz: Record<number, string> = {
             1: 'Dushanba', 2: 'Seshanba', 3: 'Chorshanba', 4: 'Payshanba',
             5: 'Juma', 6: 'Shanba', 7: 'Yakshanba',
@@ -185,7 +186,7 @@ router.get('/today', staffPortalAuth, async (req: any, res) => {
             orderBy: { startTime: 'asc' },
         });
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = todayDateStr();
         // For each schedule, check if attendance already marked
         const groupIds = [...new Set(schedules.map(s => s.groupId))];
         const markedGroups = await prisma.attendanceRecord.findMany({
@@ -240,9 +241,7 @@ router.get('/groups', staffPortalAuth, async (req: any, res) => {
         });
 
         // Attendance % for each group (last 30 days)
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const fromStr = thirtyDaysAgo.toISOString().split('T')[0];
+        const fromStr = addDaysDateStr(-30);
 
         const groupIds = groups.map(g => g.id);
         const attendanceCounts = await prisma.attendanceRecord.groupBy({
@@ -426,7 +425,7 @@ router.get('/stats', staffPortalAuth, async (req: any, res) => {
             return res.status(403).json({ error: 'Bu sahifaga ruxsat yo\'q' });
         }
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = todayDateStr();
         const firstOfMonth = today.substring(0, 8) + '01';
 
         const [
@@ -717,13 +716,13 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
 
         // 5. Kechikkan yoki o'z vaqtida?
         const now = new Date();
-        const timeStr = now.toTimeString().slice(0, 5); // "HH:MM"
-        const date = now.toISOString().split('T')[0];
+        const timeStr = nowTimeStr(now); // "HH:MM" — Toshkent vaqti
+        const date = todayDateStr(now);
 
         const [startH, startM] = matchedLocation.workStartTime.split(':').map(Number);
         const lateMinutes = matchedLocation.lateAfterMin;
         const startMinutes = startH * 60 + startM;
-        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        const nowMinutes = nowMinutesOfDay(now);
         const status = nowMinutes <= startMinutes + lateMinutes ? 'present' : 'late';
 
         // 6. Avval kirib kelganmi?
@@ -808,8 +807,8 @@ router.post('/check-out', staffPortalAuth, async (req: any, res) => {
             }
         }
 
-        const date = new Date().toISOString().split('T')[0];
-        const timeStr = new Date().toTimeString().slice(0, 5);
+        const date = todayDateStr();
+        const timeStr = nowTimeStr();
 
         const existing = await prisma.staffAttendance.findUnique({
             where: { staffId_date: { staffId: staffMember.id, date } },
@@ -845,8 +844,8 @@ router.get('/my-attendance', staffPortalAuth, async (req: any, res) => {
         });
         if (!staffMember) return res.status(404).json({ error: 'Xodim topilmadi' });
 
-        const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
-        const today = new Date().toISOString().split('T')[0];
+        const month = (req.query.month as string) || todayDateStr().slice(0, 7);
+        const today = todayDateStr();
 
         const [records, todayRec, faceProfile] = await Promise.all([
             prisma.staffAttendance.findMany({

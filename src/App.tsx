@@ -54,6 +54,7 @@ const CrmCertificates    = React.lazy(() => import('./pages/crm/CrmCertificates'
 const CrmReports         = React.lazy(() => import('./pages/crm/CrmReports'));
 const VerifyCert         = React.lazy(() => import('./pages/VerifyCert'));
 const CrmMessages        = React.lazy(() => import('./pages/crm/CrmMessages'));
+const CrmParentChat      = React.lazy(() => import('./pages/crm/CrmParentChat'));
 const CrmAnnouncements   = React.lazy(() => import('./pages/crm/CrmAnnouncements'));
 const CrmBranches        = React.lazy(() => import('./pages/crm/CrmBranches'));
 const CrmDiscounts       = React.lazy(() => import('./pages/crm/CrmDiscounts'));
@@ -135,6 +136,7 @@ export default function App() {
 
               {/* ─── Kommunikatsiya ─── */}
               <Route path="messages"      element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmMessages /></ProtectedRoute>} />
+              <Route path="parent-chat"   element={<ProtectedRoute requiredPermission="parent_chat" allowedRoles={['ADMIN','MANAGER','TEACHER']}><CrmParentChat /></ProtectedRoute>} />
               <Route path="announcements" element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmAnnouncements /></ProtectedRoute>} />
               <Route path="telegram"      element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTelegram /></ProtectedRoute>} />
 

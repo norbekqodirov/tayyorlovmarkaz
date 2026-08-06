@@ -46,6 +46,25 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
+// GET /api/tests/submissions?studentId=X — bitta talabaning barcha testlar bo'yicha
+// natijalari (CrmStudentDetail "Testlar" tabi shuni chaqiradi). /:id dan OLDIN
+// ro'yxatdan o'tishi shart — aks holda "submissions" testId sifatida talqin qilinadi.
+router.get('/submissions', requireAuth, async (req, res) => {
+    try {
+        const { studentId } = req.query as Record<string, string>;
+        if (!studentId) return res.status(400).json({ message: 'studentId kiritilishi shart' });
+
+        const submissions = await prisma.testSubmission.findMany({
+            where: { studentId, status: { in: ['submitted', 'graded'] } },
+            include: { test: { select: { id: true, title: true, passingScore: true } } },
+            orderBy: { submittedAt: 'desc' },
+        });
+        res.json(submissions);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
     try {
         const test = await prisma.test.findUnique({

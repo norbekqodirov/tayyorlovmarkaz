@@ -21,6 +21,7 @@
 
 import express from 'express';
 import prisma from '../db.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -349,7 +350,7 @@ router.post('/attempts/:aid/finish', async (req, res) => {
                     type: 'test',
                     score,
                     maxScore: attempt.maxScore,
-                    date: new Date().toISOString().split('T')[0],
+                    date: todayDateStr(),
                     notes: `Quiz ID: ${attempt.quiz.id}`
                 }
             }).catch(() => {}); // Non-critical

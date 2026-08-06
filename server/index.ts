@@ -3,6 +3,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
+import publicRoutes from './routes/public.js';
 import crudRoutes from './routes/crud.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
@@ -24,6 +25,7 @@ import salaryRoutes from './routes/salary.js';
 import reportsRoutes from './routes/reports.js';
 import announcementsRoutes from './routes/announcements.js';
 import messagesRoutes from './routes/messages.js';
+import parentChatRoutes from './routes/parentChat.js';
 import backupRoutes from './routes/backup.js';
 import bulkRoutes from './routes/bulk.js';
 import curriculumRoutes from './routes/curriculum.js';
@@ -80,6 +82,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')
 
 // Routers
 app.use('/api/auth', authRoutes);
+app.use('/api/public', publicRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/telegram', telegramRoutes);
@@ -101,6 +104,7 @@ app.use('/api/salary', salaryRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/announcements', announcementsRoutes);
 app.use('/api/messages', messagesRoutes);
+app.use('/api/parent-chat', parentChatRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/curriculum', curriculumRoutes);

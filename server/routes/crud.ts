@@ -50,9 +50,9 @@ const FORCE_GENERIC: Set<string> = new Set([
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Core entities ────────────────────────────────────────────────────────
-    'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes'],
+    'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes', 'extraField'],
     'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'balance', 'joinedDate'],
-    'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize'],
+    'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'price'],
     'room': ['name', 'capacity', 'color'],
     'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status'],
     'transaction': ['type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
@@ -61,7 +61,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'post': ['title', 'content', 'excerpt', 'imageUrl', 'author', 'status', 'category', 'date'],
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
     'task': ['title', 'completed', 'userId'],
-    'targetForm': ['title', 'description', 'course', 'url', 'isActive'],
+    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions'],
     // ── Academic (Faza 0.2) ──────────────────────────────────────────────────
     'groupSchedule':   ['groupId', 'groupName', 'teacher', 'room', 'startTime', 'endTime', 'days', 'color'],
     'attendance':      ['groupId', 'date', 'records'],
@@ -71,6 +71,53 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'campaign':        ['name', 'platform', 'budget', 'spent', 'leads', 'startDate', 'endDate', 'status', 'notes'],
     'leadActivity':    ['leadId', 'type', 'content', 'date', 'user'],
 };
+
+// Fields stored as JSON-in-Text columns (Prisma schema comment: "JSON representation").
+// The frontend sends/expects real arrays — these must be stringified before writing to
+// Prisma and parsed back after reading, or Prisma throws (String column, Array value).
+const JSON_TEXT_FIELDS: Record<string, string[]> = {
+    'attendance':    ['records'],
+    'groupSchedule': ['days'],
+};
+
+function stringifyJsonFields(modelName: string, data: any): any {
+    const fields = JSON_TEXT_FIELDS[modelName];
+    if (!fields) return data;
+    for (const field of fields) {
+        if (Object.prototype.hasOwnProperty.call(data, field) && typeof data[field] !== 'string') {
+            data[field] = JSON.stringify(data[field] ?? []);
+        }
+    }
+    return data;
+}
+
+// Ba'zi modellar frontend uchun bog'liq nom/hisoblarni ham qaytarishi kerak
+// (masalan guruh ro'yxatida kurs nomi, o'qituvchi ismi, o'quvchilar soni).
+// Generic CRUD hech qanday include ishlatmagani uchun bular avval UI'da bo'sh
+// ko'rinardi (CrmGroups.tsx jadvali courseId/teacherId'ni ko'rsata olmasdi).
+const RELATION_INCLUDES: Record<string, any> = {
+    'group': {
+        course: { select: { id: true, name: true, price: true, lessonDuration: true, duration: true } },
+        teacher: { select: { id: true, name: true } },
+        _count: { select: { enrollments: true } },
+    },
+    'lead': {
+        activities: { orderBy: { date: 'desc' } },
+    },
+};
+
+function parseJsonFields(modelName: string, row: any): any {
+    const fields = JSON_TEXT_FIELDS[modelName];
+    if (!fields || !row) return row;
+    const parsed = { ...row };
+    for (const field of fields) {
+        if (typeof parsed[field] === 'string') {
+            try { parsed[field] = JSON.parse(parsed[field]); }
+            catch { parsed[field] = []; }
+        }
+    }
+    return parsed;
+}
 
 // Status normalizers: convert Uzbek UI values to English DB values
 const COURSE_STATUS_MAP: Record<string, string> = {
@@ -219,6 +266,7 @@ router.use('/:collection', requireAuth, requireRole, async (req, res, next) => {
         }
         req.body = sanitizeForPrisma(modelName, req.body);
         req.body = normalizeData(modelName, req.body);
+        req.body = stringifyJsonFields(modelName, req.body);
     }
 
     next();
@@ -248,26 +296,27 @@ router.get('/:collection', async (req, res) => {
         }
 
         const modelName = (req as any).modelName;
+        const include = RELATION_INCLUDES[modelName];
         if (page > 0 && limit > 0) {
             // @ts-ignore
             const [total, data] = await Promise.all([
                 // @ts-ignore
                 prisma[modelName].count(),
                 // @ts-ignore
-                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(include && { include }) }),
             ]);
-            return res.json({ data, total, page, limit });
+            return res.json({ data: data.map((row: any) => parseJsonFields(modelName, row)), total, page, limit });
         }
 
         try {
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' } });
-            res.json(data);
+            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, ...(include && { include }) });
+            res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
-            const data = await prisma[modelName].findMany();
-            res.json(data);
+            const data = await prisma[modelName].findMany({ ...(include && { include }) });
+            res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         }
     } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -283,10 +332,12 @@ router.get('/:collection/:id', async (req, res) => {
             try { return res.json({ id: doc.id, ...JSON.parse(doc.data) }); }
             catch { return res.json({ id: doc.id }); }
         }
+        const modelName = (req as any).modelName;
+        const include = RELATION_INCLUDES[modelName];
         // @ts-ignore
-        const data = await prisma[(req as any).modelName].findUnique({ where: { id: req.params.id } });
+        const data = await prisma[modelName].findUnique({ where: { id: req.params.id }, ...(include && { include }) });
         if (!data) return res.status(404).json({ message: 'Topilmadi' });
-        res.json(data);
+        res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }
@@ -310,8 +361,11 @@ router.post('/:collection', async (req, res) => {
             try { finalData = { id: doc.id, ...JSON.parse(doc.data) }; }
             catch { finalData = { id: doc.id }; }
         } else {
+            const modelName = (req as any).modelName;
+            const include = RELATION_INCLUDES[modelName];
             // @ts-ignore
-            finalData = await prisma[(req as any).modelName].create({ data: req.body });
+            finalData = await prisma[modelName].create({ data: req.body, ...(include && { include }) });
+            finalData = parseJsonFields(modelName, finalData);
         }
 
         // ─── Staff → login (User) hisobi ──────────────────────────────
@@ -375,9 +429,11 @@ router.put('/:collection/:id', async (req, res) => {
             try { return res.json({ id: doc.id, ...JSON.parse(doc.data) }); }
             catch { return res.json({ id: doc.id }); }
         }
+        const modelName = (req as any).modelName;
+        const include = RELATION_INCLUDES[modelName];
         // @ts-ignore
-        const data = await prisma[(req as any).modelName].update({ where: { id: req.params.id }, data: req.body });
-        res.json(data);
+        const data = await prisma[modelName].update({ where: { id: req.params.id }, data: req.body, ...(include && { include }) });
+        res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }

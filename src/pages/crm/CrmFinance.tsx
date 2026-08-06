@@ -18,6 +18,7 @@ import { printReceipt } from '../../components/ReceiptPrint';
 import { exportToExcel, exportToPDF, exportReceiptToPDF } from '../../utils/export';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { MoneyInput } from '../../components/ui/MoneyInput';
 import { Modal } from '../../components/ui/Modal';
 import api from '../../api/client';
 
@@ -705,12 +706,10 @@ export default function CrmFinance() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Summa (so'm)</label>
-              <input
-                type="number" placeholder="500000"
-                value={invoiceForm.amount}
-                onChange={e => setInvoiceForm(f => ({ ...f, amount: e.target.value }))}
-                className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+              <MoneyInput
+                label="Summa (so'm)"
+                value={Number(invoiceForm.amount) || 0}
+                onChange={amount => setInvoiceForm(f => ({ ...f, amount: String(amount) }))}
               />
             </div>
             <div>
@@ -1045,8 +1044,8 @@ export default function CrmFinance() {
             </button>
           </div>
 
-          <Input type="number" label="Summa (UZS)" leftIcon={<DollarSign size={16} />}
-            value={form.amount || ''} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} placeholder="0" />
+          <MoneyInput label="Summa (UZS)"
+            value={form.amount} onChange={amount => setForm({ ...form, amount })} />
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>

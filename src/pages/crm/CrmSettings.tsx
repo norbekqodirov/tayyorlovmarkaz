@@ -3,6 +3,7 @@ import { Save, User, Lock, Bell, Globe, Database, Download, HardDrive } from 'lu
 import { useFirestore } from '../../hooks/useFirestore';
 import api from '../../api/client';
 import { useToast } from '../../components/Toast';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 export default function CrmSettings() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -12,6 +13,10 @@ export default function CrmSettings() {
   const [backupLoading, setBackupLoading] = useState(false);
   const { documents: pageDocs, updateDocument: updatePage, addDocument: addPage } = useFirestore<any>('pageContent');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [leadExtraFieldType, setLeadExtraFieldType] = useState<'none' | 'age' | 'grade'>('none');
+  const [leadFieldSaving, setLeadFieldSaving] = useState(false);
+  const [billingSettings, setBillingSettings] = useState({ lessonsPerMonth: 12, absenceThreshold: 3, teacherSalaryPercent: 40 });
+  const [billingSaving, setBillingSaving] = useState(false);
 
   const [profileData, setProfileData] = useState({
     name: '',
@@ -72,6 +77,14 @@ export default function CrmSettings() {
     }
   }, [pageDocs]);
 
+  useEffect(() => {
+    api.get('/public/lead-form-config').then(res => setLeadExtraFieldType(res.data?.type || 'none')).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.get('/finance/billing-settings').then(res => setBillingSettings(res.data)).catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     try {
       if (activeTab === 'profile') {
@@ -126,6 +139,23 @@ export default function CrmSettings() {
           await addPage({ id: 'home', ...landingData });
         }
         showToast("Bosh sahifa ma'lumotlari saqlandi!", 'success');
+      } else if (activeTab === 'leads') {
+        setLeadFieldSaving(true);
+        try {
+          await api.put('/public/lead-form-config', { type: leadExtraFieldType });
+          showToast("Lid forma sozlamasi saqlandi!", 'success');
+        } finally {
+          setLeadFieldSaving(false);
+        }
+      } else if (activeTab === 'billing') {
+        setBillingSaving(true);
+        try {
+          const res = await api.put('/finance/billing-settings', billingSettings);
+          setBillingSettings(res.data);
+          showToast("To'lov hisob-kitobi sozlamalari saqlandi!", 'success');
+        } finally {
+          setBillingSaving(false);
+        }
       }
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -190,6 +220,20 @@ export default function CrmSettings() {
             <Database size={18} />
             Backup
           </button>
+          <button
+            onClick={() => setActiveTab('leads')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors text-left ${activeTab === 'leads' ? 'bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-sm border border-zinc-200 dark:border-zinc-700' : 'bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400'}`}
+          >
+            <Bell size={18} />
+            Lid Forma
+          </button>
+          <button
+            onClick={() => setActiveTab('billing')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors text-left ${activeTab === 'billing' ? 'bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-sm border border-zinc-200 dark:border-zinc-700' : 'bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400'}`}
+          >
+            <Database size={18} />
+            To'lov / Davomat
+          </button>
         </div>
 
         {/* Settings Content */}
@@ -215,8 +259,7 @@ export default function CrmSettings() {
                     <input type="text" value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Telefon raqam</label>
-                    <input type="tel" value={profileData.phone} onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                    <PhoneInput label="Telefon raqam" value={profileData.phone} onChange={(phone) => setProfileData({ ...profileData, phone })} />
                   </div>
                 </div>
 
@@ -237,8 +280,7 @@ export default function CrmSettings() {
                   <input type="text" value={siteData.siteName} onChange={(e) => setSiteData({ ...siteData, siteName: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Aloqa telefoni</label>
-                  <input type="tel" value={siteData.contactPhone} onChange={(e) => setSiteData({ ...siteData, contactPhone: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                  <PhoneInput label="Aloqa telefoni" value={siteData.contactPhone} onChange={(contactPhone) => setSiteData({ ...siteData, contactPhone })} />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Manzil</label>
@@ -369,6 +411,90 @@ export default function CrmSettings() {
             </>
           )}
 
+          {activeTab === 'leads' && (
+            <>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Lid Forma Sozlamalari</h2>
+              <p className="text-sm text-zinc-500 mb-6">
+                Yangi lid (qiziquvchi) qo'shilganda ism/telefon/kursdan tashqari yana qanday
+                qo'shimcha ma'lumot so'ralishini tanlang. Bu barcha lid formalarga
+                (CRM, sayt "Aloqa" va target formalar) birdek qo'llanadi.
+              </p>
+              <div className="space-y-3 max-w-md">
+                {[
+                  { value: 'none', label: "Qo'shimcha maydon yo'q", desc: "Faqat ism, telefon va kurs so'raladi" },
+                  { value: 'age', label: 'Yosh', desc: 'Lid qo\'shishda "Yosh" maydoni ko\'rinadi' },
+                  { value: 'grade', label: 'Sinf', desc: 'Lid qo\'shishda "Sinf" maydoni ko\'rinadi (masalan: 5-sinf)' },
+                ].map(opt => (
+                  <label
+                    key={opt.value}
+                    className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${leadExtraFieldType === opt.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="leadExtraField"
+                      value={opt.value}
+                      checked={leadExtraFieldType === opt.value}
+                      onChange={() => setLeadExtraFieldType(opt.value as any)}
+                      className="mt-1"
+                    />
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{opt.label}</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">{opt.desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              {leadFieldSaving && <p className="text-xs text-zinc-400 mt-4">Saqlanmoqda...</p>}
+            </>
+          )}
+
+          {activeTab === 'billing' && (
+            <>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">To'lov / Davomat Hisob-kitobi</h2>
+              <p className="text-sm text-zinc-500 mb-6">
+                Har bir o'quvchining oylik to'lovi davomat asosida avtomatik hisoblanadi:
+                agar shu oy ichida bir kursdan pastdagi chegaradan ko'p dars qoldirsa,
+                qoldirgan kunlari uchun pul avtomatik ayriladi.
+              </p>
+              <div className="space-y-5 max-w-md">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Oyiga nechta dars (standart)</label>
+                  <input
+                    type="number" min="1"
+                    value={billingSettings.lessonsPerMonth}
+                    onChange={e => setBillingSettings({ ...billingSettings, lessonsPerMonth: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
+                  <p className="text-xs text-zinc-400 mt-1">Kurs narxi shu songa bo'linib, bitta dars narxi topiladi.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Nechta darsdan ko'p qoldirilsa chegirma ishlaydi</label>
+                  <input
+                    type="number" min="0"
+                    value={billingSettings.absenceThreshold}
+                    onChange={e => setBillingSettings({ ...billingSettings, absenceThreshold: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Masalan {billingSettings.absenceThreshold} bo'lsa: {billingSettings.absenceThreshold} tagacha qoldirsa to'liq narx,
+                    {' '}{billingSettings.absenceThreshold + 1}+ qoldirsa barcha qoldirgan kunlari uchun chegirma.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">O'qituvchi stavkasi (% tushumdan)</label>
+                  <input
+                    type="number" min="0" max="100"
+                    value={billingSettings.teacherSalaryPercent}
+                    onChange={e => setBillingSettings({ ...billingSettings, teacherSalaryPercent: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
+                  <p className="text-xs text-zinc-400 mt-1">O'qituvchi oyligi shu foizda, davomat chegirmasidan keyingi haqiqiy tushumdan hisoblanadi.</p>
+                </div>
+              </div>
+              {billingSaving && <p className="text-xs text-zinc-400 mt-4">Saqlanmoqda...</p>}
+            </>
+          )}
+
           {activeTab === 'backup' && (
             <>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Ma'lumotlar Bazasi Backup</h2>
@@ -409,16 +535,19 @@ export default function CrmSettings() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-bold text-slate-900 dark:text-white">Ma'lumotlar bazasini yuklab olish</h3>
-                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">Barcha ma'lumotlar SQLite faylida saqlanadi. Backup faylni xavfsiz joyda saqlang.</p>
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">To'liq baza nusxasi (.db yoki .sql) yuklab olinadi. Backup faylni xavfsiz joyda saqlang.</p>
                       <button
                         onClick={async () => {
                           setBackupLoading(true);
                           try {
                             const res = await api.get('/auth/backup', { responseType: 'blob' });
+                            const disposition: string = res.headers?.['content-disposition'] || '';
+                            const match = disposition.match(/filename="?([^"]+)"?/);
+                            const filename = match?.[1] || `tayyorlov-backup-${new Date().toISOString().slice(0, 10)}.db`;
                             const url = window.URL.createObjectURL(new Blob([res.data]));
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `tayyorlov-backup-${new Date().toISOString().slice(0, 10)}.db`;
+                            a.download = filename;
                             a.click();
                             window.URL.revokeObjectURL(url);
                             showToast("Backup muvaffaqiyatli yuklab olindi!", 'success');

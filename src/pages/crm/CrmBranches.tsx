@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Building2, Trash2, Edit2, CheckCircle2, MapPin, Phone } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import api from '../../api/client';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 export default function CrmBranches() {
   const [branches, setBranches] = useState<any[]>([]);
@@ -174,10 +175,7 @@ export default function CrmBranches() {
                       placeholder="Ko'cha, uy" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Telefon</label>
-                    <input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="+998 ..." />
+                    <PhoneInput label="Telefon" value={form.phone} onChange={(phone) => setForm(p => ({ ...p, phone }))} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Holati</label>

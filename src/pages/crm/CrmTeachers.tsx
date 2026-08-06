@@ -7,7 +7,9 @@ import api from '../../api/client';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useFirestore } from '../../hooks/useFirestore';
+import { useCrmData } from '../../hooks/useCrmData';
 import { Input } from '../../components/ui/Input';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 
@@ -37,10 +39,29 @@ export default function CrmTeachers() {
   const { data: groups = [] } = useFirestore<any>('groups');
   const { data: students = [] } = useFirestore<any>('students');
   const { addDocument: addFinance } = useFirestore<any>('finance');
+  const { courses: courseList } = useCrmData();
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
     name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: ''
   });
+
+  // O'qituvchining haqiqiy (davomat chegirmasidan keyingi) daromadi va oyligi —
+  // client-side "narx * o'quvchilar soni" o'rniga serverdan hisoblab olinadi
+  // (chunki Group.students maydoni sxemada yo'q va davomat chegirmasini hisobga olmaydi).
+  const [teacherRevenue, setTeacherRevenue] = useState<{ revenue: number; salary: number; salaryPercent: number; groups: any[] } | null>(null);
+  const [teacherRevenueLoading, setTeacherRevenueLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedTeacher?.id) {
+      setTeacherRevenueLoading(true);
+      api.get(`/finance/teacher-monthly-revenue/${selectedTeacher.id}`)
+        .then(res => setTeacherRevenue(res.data))
+        .catch(() => setTeacherRevenue(null))
+        .finally(() => setTeacherRevenueLoading(false));
+    } else {
+      setTeacherRevenue(null);
+    }
+  }, [selectedTeacher?.id]);
 
   const loadTeachers = async () => {
     try {
@@ -322,20 +343,13 @@ export default function CrmTeachers() {
               className="fixed right-0 top-0 h-full w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl z-50 overflow-y-auto border-l border-zinc-200 dark:border-zinc-800"
             >
               {(() => {
-                 const teacherGroups = (groups || []).filter((g: any) => g.teacher === selectedTeacher.name);
-                 const studentIds = new Set<string>();
-                 teacherGroups.forEach((g: any) => (g.students || []).forEach((s: string) => studentIds.add(s)));
-                 const activeStudentsCount = studentIds.size;
-                 
-                 // Estimated KPI Logic: Assumes fixed proportion per student e.g 150000 UZS or based on group prices
-                 let totalEstRevenue = 0;
-                 teacherGroups.forEach((g: any) => {
-                    const price = g.price || 0;
-                    totalEstRevenue += price * (g.students || []).length;
-                 });
-                 // Teacher KPI = 40% of generated revenue (Example metric)
-                 const estimatedSalary = totalEstRevenue * 0.4;
-                 
+                 const teacherGroups = teacherRevenue?.groups || (groups || []).filter((g: any) => g.teacherId === selectedTeacher.id);
+                 const activeStudentsCount = teacherRevenue
+                   ? teacherRevenue.groups.reduce((s, g) => s + g.studentCount, 0)
+                   : teacherGroups.reduce((s: number, g: any) => s + (g._count?.enrollments || 0), 0);
+                 const estimatedSalary = teacherRevenue?.salary || 0;
+                 const salaryPercent = teacherRevenue?.salaryPercent ?? 40;
+
                  return (
                   <div className="p-6 space-y-8">
                     <div className="flex items-center justify-between">
@@ -385,10 +399,10 @@ export default function CrmTeachers() {
                        <div className="relative z-10">
                          <div className="flex items-center gap-2 mb-1">
                             <TrendingUp size={16} className="text-indigo-200" />
-                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Taxminiy Oylik KPI (40% Stavka)</p>
+                            <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Bu oylik KPI ({salaryPercent}% Stavka)</p>
                          </div>
-                         <h2 className="text-3xl font-black tracking-tight">{new Intl.NumberFormat('uz-UZ').format(estimatedSalary)} UZS</h2>
-                         <p className="text-xs font-medium text-indigo-200 mt-2">Guruhlar tushumidan olingan ulush</p>
+                         <h2 className="text-3xl font-black tracking-tight">{teacherRevenueLoading ? '...' : new Intl.NumberFormat('uz-UZ').format(estimatedSalary)} UZS</h2>
+                         <p className="text-xs font-medium text-indigo-200 mt-2">Davomat chegirmasidan keyingi haqiqiy tushumdan olingan ulush</p>
                        </div>
                     </div>
 
@@ -454,12 +468,7 @@ export default function CrmTeachers() {
           <div className="space-y-6">
             <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50 rounded-2xl">
               {(() => {
-                const teacherGroups = (groups || []).filter((g: any) => g.teacher === selectedTeacher.name);
-                let totalEstRevenue = 0;
-                teacherGroups.forEach((g: any) => {
-                  const p = Number(g.price) || 0;
-                  totalEstRevenue += p * (g.students || []).length;
-                });
+                const totalEstRevenue = teacherRevenue?.revenue || 0;
                 const finalSalary = totalEstRevenue * (payrollRate / 100);
 
                 const handlePay = async () => {
@@ -485,7 +494,7 @@ export default function CrmTeachers() {
                 return (
                   <div className="space-y-4">
                      <div className="flex justify-between items-center text-sm font-bold text-slate-700 dark:text-zinc-300">
-                       <span>Teacher Guruhlari (Revenue)</span>
+                       <span>Bu oylik haqiqiy tushum (davomat chegirmasi bilan)</span>
                        <span>{new Intl.NumberFormat('uz-UZ').format(totalEstRevenue)} so'm</span>
                      </div>
                      <div className="flex items-center gap-4">
@@ -523,20 +532,27 @@ export default function CrmTeachers() {
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="Masalan: Aliyev Vali"
             />
-            <Input
-              label="Fan / Mutaxassislik"
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-              placeholder="Masalan: Matematika"
-            />
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Fan / Kurs</label>
+              <select
+                value={formData.role || ''}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Fanni tanlang...</option>
+                {courseList.map((c: any) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+              {courseList.length === 0 && <p className="text-xs text-amber-600">Avval "Kurslar" bo'limida kurs qo'shing</p>}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
+            <PhoneInput
               label="Telefon"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+998 90 123 45 67"
+              value={formData.phone || ''}
+              onChange={(phone) => setFormData({ ...formData, phone })}
             />
             <Input
               label="Tajriba"

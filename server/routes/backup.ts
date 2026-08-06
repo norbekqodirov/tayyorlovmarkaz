@@ -4,6 +4,7 @@ import fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { getDbConfig } from '../services/dbBackup.js';
 
 const router = express.Router();
 const execFileAsync = promisify(execFile);
@@ -17,33 +18,12 @@ function ensureBackupDir() {
     }
 }
 
-function getDbConfig() {
-    const url = process.env.DATABASE_URL || '';
-    // postgresql://user:password@host:port/dbname?schema=public
-    // URL parser query (?schema=...) va kodlangan belgilarni to'g'ri ajratadi
-    try {
-        const u = new URL(url);
-        if (!u.protocol.startsWith('postgres')) return null;
-        const database = decodeURIComponent(u.pathname.replace(/^\//, '')).split('?')[0];
-        if (!database) return null;
-        return {
-            user: decodeURIComponent(u.username),
-            password: decodeURIComponent(u.password),
-            host: u.hostname,
-            port: u.port || '5432',
-            database,
-        };
-    } catch {
-        return null;
-    }
-}
-
 // GET /api/backup/status
 router.get('/status', requireAuth, requireMinRole('ADMIN'), (_req, res) => {
     try {
         ensureBackupDir();
         const files = fs.readdirSync(BACKUP_DIR)
-            .filter(f => f.endsWith('.sql') || f.endsWith('.backup'))
+            .filter(f => f.endsWith('.sql') || f.endsWith('.backup') || f.endsWith('.db'))
             .map(f => {
                 const stat = fs.statSync(path.join(BACKUP_DIR, f));
                 return { name: f, size: stat.size, sizeMB: (stat.size / 1024 / 1024).toFixed(2), createdAt: stat.birthtime };
@@ -52,8 +32,9 @@ router.get('/status', requireAuth, requireMinRole('ADMIN'), (_req, res) => {
 
         const db = getDbConfig();
         res.json({
+            engine: db?.type || 'unknown',
             database: db?.database || 'unknown',
-            host: db?.host || 'unknown',
+            host: db?.type === 'postgres' ? db.host : 'local file',
             backups: files,
             backupCount: files.length,
             maxBackups: MAX_BACKUPS,
@@ -71,18 +52,33 @@ router.post('/create', requireAuth, requireMinRole('ADMIN'), async (_req, res) =
 
         ensureBackupDir();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const backupPath = path.join(BACKUP_DIR, `backup-${timestamp}.sql`);
 
-        const env = { ...process.env, PGPASSWORD: db.password };
-        await execFileAsync(
-            'pg_dump',
-            ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p', '-f', backupPath, db.database],
-            { env }
-        );
+        let backupPath: string;
+        let backupName: string;
+
+        if (db.type === 'postgres') {
+            backupName = `backup-${timestamp}.sql`;
+            backupPath = path.join(BACKUP_DIR, backupName);
+            const env = { ...process.env, PGPASSWORD: db.password };
+            await execFileAsync(
+                'pg_dump',
+                ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p', '-f', backupPath, db.database],
+                { env }
+            );
+        } else {
+            // SQLite — root/pg_dump yo'q production'da. Fayl nusxasi orqali backup
+            // olinadi (bu kichik hajmli, past yozuv trafikli CRM bazasi uchun xavfsiz).
+            if (!fs.existsSync(db.filePath)) {
+                return res.status(500).json({ message: `SQLite fayl topilmadi: ${db.filePath}` });
+            }
+            backupName = `backup-${timestamp}.db`;
+            backupPath = path.join(BACKUP_DIR, backupName);
+            fs.copyFileSync(db.filePath, backupPath);
+        }
 
         // Eski backuplarni o'chirish
         const files = fs.readdirSync(BACKUP_DIR)
-            .filter(f => f.startsWith('backup-') && f.endsWith('.sql'))
+            .filter(f => f.startsWith('backup-') && (f.endsWith('.sql') || f.endsWith('.db')))
             .sort().reverse();
         if (files.length > MAX_BACKUPS) {
             files.slice(MAX_BACKUPS).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
@@ -92,14 +88,14 @@ router.post('/create', requireAuth, requireMinRole('ADMIN'), async (_req, res) =
         res.json({
             message: 'Backup muvaffaqiyatli yaratildi',
             backup: {
-                name: `backup-${timestamp}.sql`,
+                name: backupName,
                 size: stat.size,
                 sizeMB: (stat.size / 1024 / 1024).toFixed(2),
                 createdAt: new Date(),
             },
         });
     } catch (err: any) {
-        res.status(500).json({ message: `pg_dump xatoligi: ${err.message}` });
+        res.status(500).json({ message: `Backup xatoligi: ${err.message}` });
     }
 });
 

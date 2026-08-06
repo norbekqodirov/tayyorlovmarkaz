@@ -4,6 +4,8 @@ import { Plus, Search, MoreVertical, User, Mail, Phone, Briefcase, DollarSign, X
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { PhoneInput } from '../../components/ui/PhoneInput';
+import { MoneyInput } from '../../components/ui/MoneyInput';
 import api from '../../api/client';
 
 interface StaffMember {
@@ -824,8 +826,7 @@ export default function CrmStaff() {
                       <input type="date" value={subFormData.date} onChange={(e) => setSubFormData({ ...subFormData, date: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Summa (UZS)</label>
-                      <input type="number" value={subFormData.amount} onChange={(e) => setSubFormData({ ...subFormData, amount: Number(e.target.value) })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
+                      <MoneyInput label="Summa (UZS)" value={subFormData.amount} onChange={(amount) => setSubFormData({ ...subFormData, amount })} />
                     </div>
                   </>
                 )}
@@ -965,13 +966,10 @@ export default function CrmStaff() {
                   <div className="space-y-4">
                     <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Aloqa va Ish</h4>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Telefon (login uchun)</label>
-                      <input
-                        type="text"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="+998 90 123 45 67"
+                      <PhoneInput
+                        label="Telefon (login uchun)"
+                        value={formData.phone || ''}
+                        onChange={(phone) => setFormData({ ...formData, phone })}
                       />
                     </div>
                     {!editingMember && (
@@ -1002,13 +1000,7 @@ export default function CrmStaff() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Maosh (UZS)</label>
-                      <input
-                        type="number"
-                        value={formData.salary}
-                        onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                      />
+                      <MoneyInput label="Maosh (UZS)" value={formData.salary} onChange={(salary) => setFormData({ ...formData, salary })} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Bo'lim</label>

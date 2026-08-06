@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { todayDateStr, monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -13,6 +14,17 @@ async function getGenericDocs(collection: string): Promise<any[]> {
     });
 }
 
+// Helper: attendance now lives in the native `Attendance` table (Faza 0.2 migration),
+// not GenericDocument — `records` is stored as a JSON string and must be parsed back.
+async function getAttendanceDocs(): Promise<any[]> {
+    const rows = await prisma.attendance.findMany();
+    return rows.map((a: any) => {
+        let records: any[] = [];
+        try { records = JSON.parse(a.records || '[]'); } catch { records = []; }
+        return { id: a.id, groupId: a.groupId, date: a.date, records, createdAt: a.createdAt, updatedAt: a.updatedAt };
+    });
+}
+
 // GET /api/analytics/dashboard — aggregated dashboard stats
 router.get('/dashboard', requireAuth, async (_req, res) => {
     try {
@@ -22,13 +34,12 @@ router.get('/dashboard', requireAuth, async (_req, res) => {
             prisma.transaction.findMany(),
             prisma.group.findMany(),
             prisma.user.findMany({ where: { role: 'TEACHER' } }),
-            getGenericDocs('attendance'),
+            getAttendanceDocs(),
         ]);
 
-        const now = new Date();
-        const currentMonth = now.getMonth();
+        const today = todayDateStr();
+        const currentMonth = Number(today.slice(5, 7)) - 1; // 0-indeksli, getMonth() bilan mos
         const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-        const today = now.toISOString().split('T')[0];
 
         // Revenue
         const thisMonthIncome = transactions
@@ -201,15 +212,15 @@ router.get('/lead-sources', requireAuth, async (_req, res) => {
 // GET /api/analytics/reports/manager-summary?from=&to=
 router.get('/reports/manager-summary', requireAuth, async (req, res) => {
     try {
-        const from = req.query.from ? new Date(req.query.from as string) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        const from = req.query.from ? new Date(req.query.from as string) : tashkentMidnightInstant(monthRangeStr(0).start);
         const to = req.query.to ? new Date(req.query.to as string) : new Date();
         const prevFrom = new Date(from); prevFrom.setMonth(prevFrom.getMonth() - 1);
         const prevTo = new Date(to); prevTo.setMonth(prevTo.getMonth() - 1);
 
-        const fromStr = from.toISOString().split('T')[0];
-        const toStr = to.toISOString().split('T')[0];
-        const prevFromStr = prevFrom.toISOString().split('T')[0];
-        const prevToStr = prevTo.toISOString().split('T')[0];
+        const fromStr = todayDateStr(from);
+        const toStr = todayDateStr(to);
+        const prevFromStr = todayDateStr(prevFrom);
+        const prevToStr = todayDateStr(prevTo);
 
         const [txCur, txPrev, students, groups, leads, expenses] = await Promise.all([
             prisma.transaction.findMany({ where: { date: { gte: fromStr, lte: toStr } } }),
@@ -255,8 +266,9 @@ router.get('/reports/manager-summary', requireAuth, async (req, res) => {
 // GET /api/analytics/reports/income-ledger?month=&year=
 router.get('/reports/income-ledger', requireAuth, async (req, res) => {
     try {
-        const year = Number(req.query.year) || new Date().getFullYear();
-        const month = req.query.month !== undefined ? Number(req.query.month) : new Date().getMonth() + 1;
+        const todayParts = todayDateStr().split('-');
+        const year = Number(req.query.year) || Number(todayParts[0]);
+        const month = req.query.month !== undefined ? Number(req.query.month) : Number(todayParts[1]);
         const pad = (n: number) => String(n).padStart(2, '0');
         const fromStr = `${year}-${pad(month)}-01`;
         const lastDay = new Date(year, month, 0).getDate();
@@ -354,8 +366,9 @@ router.get('/reports/group-profitability', requireAuth, async (req, res) => {
 // GET /api/analytics/reports/salary-sheet?month=&year=
 router.get('/reports/salary-sheet', requireAuth, async (req, res) => {
     try {
-        const year = Number(req.query.year) || new Date().getFullYear();
-        const month = Number(req.query.month) || new Date().getMonth() + 1;
+        const todayParts = todayDateStr().split('-');
+        const year = Number(req.query.year) || Number(todayParts[0]);
+        const month = Number(req.query.month) || Number(todayParts[1]);
 
         const [staff, teachers] = await Promise.all([
             prisma.staffMember.findMany({ where: { status: { in: ['Faol', 'active'] } } }),
@@ -453,8 +466,9 @@ router.get('/reports/payment-methods', requireAuth, async (req, res) => {
 // GET /api/analytics/reports/expense-breakdown?month=&year=
 router.get('/reports/expense-breakdown', requireAuth, async (req, res) => {
     try {
-        const year = Number(req.query.year) || new Date().getFullYear();
-        const month = Number(req.query.month) || new Date().getMonth() + 1;
+        const todayParts = todayDateStr().split('-');
+        const year = Number(req.query.year) || Number(todayParts[0]);
+        const month = Number(req.query.month) || Number(todayParts[1]);
         const pad = (n: number) => String(n).padStart(2, '0');
         const fromStr = `${year}-${pad(month)}-01`;
         const toStr = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
@@ -500,7 +514,7 @@ router.get('/teacher-performance', requireAuth, async (_req, res) => {
             prisma.student.findMany(),
             prisma.group.findMany(),
             prisma.enrollment.findMany(),
-            getGenericDocs('attendance'),
+            getAttendanceDocs(),
         ]);
 
         const data = users.map((teacher: any) => {

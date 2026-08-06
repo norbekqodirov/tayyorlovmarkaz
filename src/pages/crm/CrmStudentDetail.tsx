@@ -44,7 +44,6 @@ interface StudentDetail {
   attendance: { total: number; present: number; absent: number; late: number; rate: number };
   grades: any[];
   payments: any[];
-  testResults: any[];
   certificates: any[];
   trend: Array<{ date: string; attendance: number; grades: number }>;
   group?: any;
@@ -152,7 +151,6 @@ export default function CrmStudentDetail() {
           attendance: { total, present, absent, late, rate },
           grades,
           payments,
-          testResults: [], // TODO: fetch from /tests/submissions
           certificates: certsRaw,
           trend,
           group: student.group,
@@ -280,7 +278,7 @@ export default function CrmStudentDetail() {
         {activeTab === 'attendance'   && <AttendanceTab attendance={data.attendance} trend={data.trend} />}
         {activeTab === 'statistics'   && <StatisticsTab data={data} analytics={analytics} />}
         {activeTab === 'analytics'    && <AnalyticsTab data={data} analytics={analytics} />}
-        {activeTab === 'payments'     && <PaymentsTab payments={data.payments} balance={student.balance} />}
+        {activeTab === 'payments'     && <PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} />}
         {activeTab === 'tests'        && <TestsTab studentId={id!} />}
         {activeTab === 'certificates' && <CertificatesTab certificates={data.certificates} />}
       </motion.div>
@@ -617,36 +615,71 @@ function AnalyticsTab({ data, analytics }: any) {
 }
 
 // ── Payments ─────────────────────────────────────────────────────────────────
-function PaymentsTab({ payments, balance }: any) {
-  if (!payments.length) {
-    return <EmptyState icon={<Wallet size={24} />} title="To'lovlar ro'yxati bo'sh" />;
-  }
+function PaymentsTab({ payments, balance, studentId }: any) {
+  const [monthlyDue, setMonthlyDue] = useState<any>(null);
+  useEffect(() => {
+    if (studentId) {
+      api.get(`/finance/monthly-due/${studentId}`).then(res => setMonthlyDue(res.data)).catch(() => setMonthlyDue(null));
+    }
+  }, [studentId]);
+
   const totalIncome = payments.filter((p: any) => p.type === 'income').reduce((s: number, p: any) => s + (p.amount || 0), 0);
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Jami to'langan" value={formatMoney(totalIncome)} icon={Wallet} color="emerald" />
-        <StatCard label="Balans" value={formatMoney(balance || 0)} icon={Wallet} color={(balance || 0) < 0 ? 'rose' : 'green'} />
-        <StatCard label="Tranzaksiyalar" value={payments.length} icon={FileText} color="blue" />
-      </div>
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05]">
-          <p className="text-xs font-black text-slate-900 dark:text-white">To'lovlar Tarixi</p>
+      {monthlyDue?.byGroup?.length > 0 && (
+        <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05] flex items-center justify-between">
+            <p className="text-xs font-black text-slate-900 dark:text-white">Bu oy uchun hisoblangan to'lov ({monthlyDue.month}) — davomat asosida</p>
+            <p className="text-sm font-black text-blue-600">{formatMoney(monthlyDue.total)}</p>
+          </div>
+          <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
+            {monthlyDue.byGroup.map((g: any) => (
+              <div key={g.groupId} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{g.courseName}</p>
+                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                    {g.absences} dars qoldirilgan{g.discountApplied ? ` · ${formatMoney(g.discount)} chegirma` : ''}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{formatMoney(g.finalPrice)}</p>
+                  {g.discountApplied && <p className="text-[10px] text-zinc-400 line-through">{formatMoney(g.basePrice)}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
-          {payments.map((p: any) => (
-            <div key={p.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-zinc-50 dark:hover:bg-white/[0.02]">
-              <div>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">{p.category || 'To\'lov'}</p>
-                <p className="text-[10px] text-zinc-400 mt-0.5">{formatDate(p.date)} · {p.method}</p>
-              </div>
-              <div className={`text-sm font-black ${p.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {p.type === 'income' ? '+' : '−'}{formatMoney(p.amount)}
-              </div>
+      )}
+
+      {!payments.length ? (
+        <EmptyState icon={<Wallet size={24} />} title="To'lovlar tarixi bo'sh" />
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Jami to'langan" value={formatMoney(totalIncome)} icon={Wallet} color="emerald" />
+            <StatCard label="Balans" value={formatMoney(balance || 0)} icon={Wallet} color={(balance || 0) < 0 ? 'rose' : 'green'} />
+            <StatCard label="Tranzaksiyalar" value={payments.length} icon={FileText} color="blue" />
+          </div>
+          <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05]">
+              <p className="text-xs font-black text-slate-900 dark:text-white">To'lovlar Tarixi</p>
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
+              {payments.map((p: any) => (
+                <div key={p.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-zinc-50 dark:hover:bg-white/[0.02]">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{p.category || 'To\'lov'}</p>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">{formatDate(p.date)} · {p.method}</p>
+                  </div>
+                  <div className={`text-sm font-black ${p.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {p.type === 'income' ? '+' : '−'}{formatMoney(p.amount)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -673,13 +706,14 @@ function TestsTab({ studentId }: { studentId: string }) {
       </div>
       <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
         {submissions.map((sub: any) => {
-          const pct = sub.score && sub.maxScore ? Math.round((sub.score / sub.maxScore) * 100) : 0;
+          // TestSubmission.score allaqachon foiz (0-100) sifatida saqlanadi (tests.ts submit handler)
+          const pct = Math.round(sub.score || 0);
           const letter = toLetterGrade(pct);
           return (
             <div key={sub.id} className="flex items-center justify-between px-5 py-3.5">
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-white">{sub.test?.title || 'Test'}</p>
-                <p className="text-[10px] text-zinc-400 mt-0.5">{formatDate(sub.submittedAt)} · {sub.score}/{sub.maxScore}</p>
+                <p className="text-[10px] text-zinc-400 mt-0.5">{formatDate(sub.submittedAt)}</p>
               </div>
               <span className={`px-2.5 py-1 rounded-lg border text-xs font-black ${getGradeBgColor(letter)}`}>
                 {letter} ({pct}%)

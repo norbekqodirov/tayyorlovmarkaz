@@ -2,11 +2,13 @@
  * LeadFormModal.tsx
  * Add / Edit lead modal using the shared Modal + Button + Input UI components.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { PhoneInput } from '../ui/PhoneInput';
+import api from '../../api/client';
 import { SOURCES } from './types';
 import type { Lead } from './types';
 
@@ -22,7 +24,16 @@ interface Props {
 
 const LeadFormModal: React.FC<Props> = ({
   isOpen, editingLead, formData, courses, onClose, onSave, onChange,
-}) => (
+}) => {
+  const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
+
+  useEffect(() => {
+    if (isOpen) {
+      api.get('/public/lead-form-config').then(res => setExtraField(res.data)).catch(() => {});
+    }
+  }, [isOpen]);
+
+  return (
   <Modal
     isOpen={isOpen}
     onClose={onClose}
@@ -32,7 +43,7 @@ const LeadFormModal: React.FC<Props> = ({
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-6">
         <Input label="Ism Familiya" value={formData.name} onChange={e => onChange({ name: e.target.value })} placeholder="Masalan: Alisher Navoiy" />
-        <Input label="Telefon" value={formData.phone} onChange={e => onChange({ phone: e.target.value })} placeholder="+998 90 123 45 67" />
+        <PhoneInput label="Telefon" value={formData.phone || ''} onChange={phone => onChange({ phone })} />
       </div>
 
       <div className="grid grid-cols-2 gap-6">
@@ -75,6 +86,16 @@ const LeadFormModal: React.FC<Props> = ({
         </div>
       </div>
 
+      {extraField.type !== 'none' && (
+        <Input
+          label={extraField.label || ''}
+          type={extraField.type === 'age' ? 'number' : 'text'}
+          value={formData.extraField || ''}
+          onChange={e => onChange({ extraField: e.target.value })}
+          placeholder={extraField.type === 'age' ? '10' : "Masalan: 5-sinf"}
+        />
+      )}
+
       <div className="space-y-1.5 flex flex-col gap-1.5">
         <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Eslatma</label>
         <textarea
@@ -92,6 +113,7 @@ const LeadFormModal: React.FC<Props> = ({
       </div>
     </div>
   </Modal>
-);
+  );
+};
 
 export default LeadFormModal;

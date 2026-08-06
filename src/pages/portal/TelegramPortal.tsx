@@ -9,6 +9,7 @@ import {
     BookOpen, Calendar, CreditCard, BarChart2,
     CheckCircle2, XCircle, Clock, AlertCircle,
     ChevronRight, RefreshCw, User, Phone,
+    MessageCircle, Send, ArrowLeft,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,11 +29,16 @@ interface AttendanceSummary { present: number; absent: number; late: number; exc
 
 interface PaymentItem { id: string; amount: number; dueDate?: string; month?: string; status: string; notes?: string; }
 interface PaidItem { id: string; amount: number; date: string; method: string; month?: string; }
+interface MonthlyDueGroup { groupId: string; groupName: string; courseName: string; basePrice: number; absences: number; discountApplied: boolean; discount: number; finalPrice: number; }
+interface MonthlyDue { month: string; total: number; totalBeforeDiscount: number; byGroup: MonthlyDueGroup[]; }
 
 interface Assessment { id: string; title: string; type: string; score: number; maxScore: number; percent: number; date: string; subject?: string; }
 
 interface ScheduleDay { day: number; dayName: string; items: ScheduleItem[]; }
 interface ScheduleItem { groupName: string; course: string; teacher: string; startTime: string; endTime: string; room: string; }
+
+interface ChatThread { key: string; title: string; subtitle: string; lastMessage: string | null; lastMessageAt: string | null; unread: number; }
+interface ChatMessage { id: string; content: string; createdAt: string; fromMe: boolean; }
 
 // ─── Telegram WebApp types ─────────────────────────────────────────────────────
 
@@ -108,6 +114,20 @@ async function portalFetch(endpoint: string, initData: string) {
     return res.json();
 }
 
+async function portalPost(endpoint: string, initData: string, body: any) {
+    const urlToken = getUrlToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (urlToken) headers['x-portal-token'] = urlToken;
+    else if (initData) headers['x-telegram-init-data'] = initData;
+
+    const sep = endpoint.includes('?') ? '&' : '?';
+    const tokenSuffix = urlToken ? `${sep}t=${encodeURIComponent(urlToken)}` : '';
+
+    const res = await fetch(`${API_BASE}${endpoint}${tokenSuffix}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.json();
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(n: number) { return n.toLocaleString('uz-UZ') + ' so\'m'; }
@@ -128,7 +148,7 @@ const DAY_SHORT = ['', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'];
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'home' | 'attendance' | 'payments' | 'grades' | 'schedule';
+type Tab = 'home' | 'attendance' | 'payments' | 'grades' | 'schedule' | 'chat';
 
 const TABS: { id: Tab; label: string; icon: typeof BookOpen }[] = [
     { id: 'home', label: 'Asosiy', icon: User },
@@ -136,6 +156,7 @@ const TABS: { id: Tab; label: string; icon: typeof BookOpen }[] = [
     { id: 'payments', label: "To'lovlar", icon: CreditCard },
     { id: 'grades', label: 'Baholar', icon: BarChart2 },
     { id: 'schedule', label: 'Jadval', icon: Calendar },
+    { id: 'chat', label: 'Xabar', icon: MessageCircle },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -153,10 +174,18 @@ export default function TelegramPortal() {
 
     // Tab data
     const [attendance, setAttendance] = useState<{ records: AttendanceRecord[]; summary: AttendanceSummary } | null>(null);
-    const [payments, setPayments] = useState<{ unpaid: PaymentItem[]; recent: PaidItem[]; totalUnpaid: number } | null>(null);
+    const [payments, setPayments] = useState<{ unpaid: PaymentItem[]; recent: PaidItem[]; totalUnpaid: number; monthlyDue?: MonthlyDue } | null>(null);
     const [grades, setGrades] = useState<{ assessments: Assessment[]; avgScore: number | null } | null>(null);
     const [schedule, setSchedule] = useState<{ schedule: ScheduleDay[] } | null>(null);
     const [tabLoading, setTabLoading] = useState(false);
+
+    // Chat
+    const [chatThreads, setChatThreads] = useState<ChatThread[] | null>(null);
+    const [activeChatKey, setActiveChatKey] = useState<string | null>(null);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[] | null>(null);
+    const [chatInput, setChatInput] = useState('');
+    const [chatSending, setChatSending] = useState(false);
+    const [chatLoading, setChatLoading] = useState(false);
 
     // Init Telegram WebApp
     useEffect(() => {
@@ -227,10 +256,35 @@ export default function TelegramPortal() {
                 setGrades(await portalFetch('/grades', initData));
             } else if (t === 'schedule' && !schedule) {
                 setSchedule(await portalFetch('/schedule', initData));
+            } else if (t === 'chat' && !chatThreads) {
+                setChatThreads(await portalFetch('/chat-threads', initData));
             }
         } catch { /* silently fail - data just won't show */ }
         finally { setTabLoading(false); }
-    }, [initData, meData, attendance, payments, grades, schedule]);
+    }, [initData, meData, attendance, payments, grades, schedule, chatThreads]);
+
+    const openChatThread = useCallback(async (key: string) => {
+        setActiveChatKey(key);
+        setChatMessages(null);
+        setChatLoading(true);
+        try {
+            const msgs = await portalFetch(`/chat-threads/${key}`, initData ?? '');
+            setChatMessages(msgs);
+        } catch { setChatMessages([]); }
+        finally { setChatLoading(false); }
+    }, [initData]);
+
+    const sendChatMessage = useCallback(async () => {
+        if (!activeChatKey || !chatInput.trim()) return;
+        setChatSending(true);
+        try {
+            const msg = await portalPost(`/chat-threads/${activeChatKey}`, initData ?? '', { content: chatInput.trim() });
+            setChatMessages(prev => [...(prev || []), { ...msg, fromMe: true }]);
+            setChatInput('');
+            setChatThreads(null); // ro'yxatni keyingi ochilishda yangilash uchun
+        } catch { /* ignore */ }
+        finally { setChatSending(false); }
+    }, [activeChatKey, chatInput, initData]);
 
     const switchTab = (t: Tab) => {
         setTab(t);
@@ -476,6 +530,38 @@ export default function TelegramPortal() {
                                 {tabLoading && <Spinner />}
                                 {!tabLoading && payments && (
                                     <>
+                                        {payments.monthlyDue && payments.monthlyDue.byGroup.length > 0 && (
+                                            <section>
+                                                <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
+                                                    Bu oy uchun hisoblangan to'lov ({payments.monthlyDue.month})
+                                                </h2>
+                                                <div className={`rounded-2xl border p-4 mb-3 ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                                                    <p className="text-2xl font-black text-blue-600 dark:text-blue-400">{formatMoney(payments.monthlyDue.total)}</p>
+                                                    {payments.monthlyDue.total < payments.monthlyDue.totalBeforeDiscount && (
+                                                        <p className="text-xs text-zinc-400 line-through mt-0.5">{formatMoney(payments.monthlyDue.totalBeforeDiscount)}</p>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {payments.monthlyDue.byGroup.map(g => (
+                                                        <div key={g.groupId} className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="font-bold text-sm">{g.courseName}</p>
+                                                                <p className="text-xs text-zinc-500">
+                                                                    {g.discountApplied
+                                                                        ? `${g.absences} dars qoldirilgan — ${formatMoney(g.discount)} chegirma`
+                                                                        : g.absences > 0 ? `${g.absences} dars qoldirilgan` : 'Barcha darslarda qatnashgan'}
+                                                                </p>
+                                                            </div>
+                                                            <div className="text-right flex-shrink-0">
+                                                                <p className="font-bold text-sm">{formatMoney(g.finalPrice)}</p>
+                                                                {g.discountApplied && <p className="text-[10px] text-zinc-400 line-through">{formatMoney(g.basePrice)}</p>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </section>
+                                        )}
+
                                         {payments.totalUnpaid > 0 && (
                                             <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -635,6 +721,91 @@ export default function TelegramPortal() {
                                             </div>
                                         )}
                                     </>
+                                )}
+                            </>
+                        )}
+
+                        {/* CHAT TAB */}
+                        {tab === 'chat' && (
+                            <>
+                                {!activeChatKey ? (
+                                    <>
+                                        {tabLoading && <Spinner />}
+                                        {!tabLoading && chatThreads && (
+                                            chatThreads.length === 0 ? (
+                                                <EmptyState icon={MessageCircle} text="Suhbatlar mavjud emas" />
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {chatThreads.map(th => (
+                                                        <button
+                                                            key={th.key}
+                                                            onClick={() => openChatThread(th.key)}
+                                                            className={`w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-colors ${isDark ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800' : 'bg-white border-zinc-200 hover:bg-zinc-50'}`}
+                                                        >
+                                                            <div className="w-11 h-11 rounded-xl bg-blue-500 flex items-center justify-center flex-shrink-0 text-white font-black">
+                                                                {th.title.charAt(0)}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <p className="font-bold text-sm truncate">{th.title}</p>
+                                                                    {th.unread > 0 && (
+                                                                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center">{th.unread}</span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-xs text-zinc-500 truncate">{th.subtitle}</p>
+                                                                {th.lastMessage && <p className="text-xs text-zinc-400 truncate mt-0.5">{th.lastMessage}</p>}
+                                                            </div>
+                                                            <ChevronRight size={16} className="text-zinc-400 flex-shrink-0" />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col" style={{ height: 'calc(100vh - 180px)' }}>
+                                        <button
+                                            onClick={() => { setActiveChatKey(null); setChatMessages(null); }}
+                                            className="flex items-center gap-2 text-sm font-bold text-blue-500 mb-3 flex-shrink-0"
+                                        >
+                                            <ArrowLeft size={16} /> {chatThreads?.find(t => t.key === activeChatKey)?.title || 'Orqaga'}
+                                        </button>
+
+                                        <div className="flex-1 overflow-y-auto space-y-2 pb-3">
+                                            {chatLoading && <Spinner />}
+                                            {!chatLoading && chatMessages && chatMessages.length === 0 && (
+                                                <EmptyState icon={MessageCircle} text="Hali xabar yo'q. Birinchi xabarni yozing." />
+                                            )}
+                                            {!chatLoading && chatMessages && chatMessages.map(m => (
+                                                <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+                                                    <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm ${m.fromMe ? 'bg-blue-500 text-white rounded-br-md' : (isDark ? 'bg-zinc-800 text-white rounded-bl-md' : 'bg-zinc-100 text-slate-900 rounded-bl-md')}`}>
+                                                        <p>{m.content}</p>
+                                                        <p className={`text-[10px] mt-1 ${m.fromMe ? 'text-blue-100' : 'text-zinc-400'}`}>
+                                                            {new Date(m.createdAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex items-center gap-2 flex-shrink-0 pt-2">
+                                            <input
+                                                type="text"
+                                                value={chatInput}
+                                                onChange={e => setChatInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && !chatSending) sendChatMessage(); }}
+                                                placeholder="Xabar yozing..."
+                                                className={`flex-1 px-4 py-3 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-slate-900'}`}
+                                            />
+                                            <button
+                                                onClick={sendChatMessage}
+                                                disabled={chatSending || !chatInput.trim()}
+                                                className="w-11 h-11 rounded-xl bg-blue-500 text-white flex items-center justify-center flex-shrink-0 disabled:opacity-50"
+                                            >
+                                                <Send size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
                                 )}
                             </>
                         )}

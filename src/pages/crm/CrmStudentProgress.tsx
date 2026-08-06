@@ -58,17 +58,34 @@ export default function CrmStudentProgress() {
     </div>
   );
 
-  const { student, attendance, assessments, testResults, homework, payments, certificates } = data;
+  const { student, attendance, certificates } = data;
+
+  // Backend /api/progress/:id "assessments"/"tests" ob'ekt sifatida qaytaradi
+  // ({ total, avgScore/passed, items }) — tekis massiv emas. "homework" alohida
+  // maydon sifatida kelmaydi, u Assessment.type === 'homework' orqali ajratiladi.
+  const assessmentItems: any[] = data.assessments?.items || [];
+  const assessments = assessmentItems.filter((a) => a.type !== 'homework');
+  const homework = assessmentItems
+    .filter((a) => a.type === 'homework')
+    .map((a) => ({ title: a.title || 'Uy vazifasi', dueDate: a.date, submittedAt: a.date, grade: a.score }));
+
+  const testResults = (data.tests?.items || []).map((t: any) => ({
+    testName: t.quiz?.title,
+    date: t.startedAt,
+    score: t.maxScore > 0 ? Math.round((t.score / t.maxScore) * 100) : 0,
+  }));
+
+  const payments = data.payments
+    ? { paid: data.payments.totalPaid, debt: data.payments.pendingAmount, count: data.payments.count }
+    : null;
 
   const attPct    = attendance?.total > 0 ? Math.round((attendance.present / attendance.total) * 100) : 0;
-  const avgGrade  = assessments?.length > 0
-    ? Math.round(assessments.reduce((s: number, a: any) => s + (a.score || 0), 0) / assessments.length)
-    : 0;
-  const testAvg   = testResults?.length > 0
+  const avgGrade  = data.assessments?.avgScore || 0;
+  const testAvg   = testResults.length > 0
     ? Math.round(testResults.reduce((s: number, t: any) => s + (t.score || 0), 0) / testResults.length)
     : 0;
-  const hwDone    = homework?.filter((h: any) => h.grade !== null && h.grade !== undefined).length || 0;
-  const hwTotal   = homework?.length || 0;
+  const hwDone    = homework.filter((h: any) => h.grade !== null && h.grade !== undefined).length;
+  const hwTotal   = homework.length;
 
   return (
     <div className="space-y-6">
@@ -157,11 +174,11 @@ export default function CrmStudentProgress() {
             </div>
 
             {/* Trend */}
-            {attendance.trend?.length > 0 && (
+            {attendance.monthlyTrend?.length > 0 && (
               <div className="mt-4">
                 <p className="text-xs font-bold text-zinc-500 mb-2">Oylik trend</p>
                 <div className="flex items-end gap-1 h-16">
-                  {attendance.trend.map((t: any, i: number) => {
+                  {attendance.monthlyTrend.map((t: any, i: number) => {
                     const pct = t.total > 0 ? (t.present / t.total) * 100 : 0;
                     return (
                       <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${t.month}: ${Math.round(pct)}%`}>
@@ -200,8 +217,8 @@ export default function CrmStudentProgress() {
                       <td className="py-2.5 px-2 text-slate-900 dark:text-white">{a.groupName || '—'}</td>
                       <td className="py-2.5 px-2 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black ${
-                          a.score >= 4 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
-                          a.score >= 3 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
+                          a.score >= 80 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
+                          a.score >= 60 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
                           'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
                         }`}>
                           {a.score}

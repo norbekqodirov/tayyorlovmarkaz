@@ -15,6 +15,7 @@ import {
 import GlobalSearch from './GlobalSearch';
 import ShortcutsHelp from './ShortcutsHelp';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useSocket } from '../hooks/useSocket';
 import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Module definitions ────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ const MODULES: NavModule[] = [
       {
         links: [
           { name: "Xabarlar",    path: '/crmtayyorlovmarkaz/messages',      icon: MessageSquare, permission: 'marketing' },
+          { name: "Ota-ona xabarlari", path: '/crmtayyorlovmarkaz/parent-chat', icon: MessageSquare, permission: 'parent_chat' },
           { name: "E'lonlar",    path: '/crmtayyorlovmarkaz/announcements', icon: Bell,          permission: 'marketing' },
           { name: 'Telegram Bot', path: '/crmtayyorlovmarkaz/telegram',     icon: Bot,           permission: undefined   },
         ],
@@ -297,6 +299,15 @@ export default function CrmLayout() {
     const t = setInterval(loadNotifications, 30000);
     return () => clearInterval(t);
   }, [loadNotifications]);
+
+  // Real-time push — yangi bildirishnoma kelganda ro'yxatni darhol yangilaydi
+  // (30s polling'ni to'ldiradi, socket uzilib qolsa ham polling captured qiladi)
+  useSocket<any>('notification:new', (notif) => {
+    setNotifications(prev => [
+      { ...notif, id: notif.id || `tmp-${Date.now()}`, isRead: false, createdAt: notif.createdAt || new Date().toISOString() },
+      ...prev,
+    ].slice(0, 8));
+  });
 
   // Escape — barcha ochiq dropdownlarni yopadi
   useEffect(() => {

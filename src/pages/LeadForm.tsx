@@ -1,60 +1,58 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { useFirestore } from '../hooks/useFirestore';
+import api from '../api/client';
 import { useToast } from '../components/Toast';
 
 export default function LeadForm() {
   const { formId } = useParams();
   const navigate = useNavigate();
-  const { documents: forms, updateDocument: updateForm } = useFirestore<any>('forms');
-  const { addDocument: addLead } = useFirestore<any>('leads');
   const { showToast } = useToast();
   const [formName, setFormName] = useState('Ro\'yxatdan o\'tish');
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [currentForm, setCurrentForm] = useState<any>(null);
-  
+  const [submitting, setSubmitting] = useState(false);
+  const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    course: 'Prezident maktabi'
+    course: 'Prezident maktabi',
+    extra: '',
   });
 
+  // Bu ommaviy (login talab qilmaydigan) endpointlar — chunki bu sahifani ochadigan
+  // odam hali CRM'ga kirmagan haqiqiy tashrif buyuruvchi (avval /api/leads generic
+  // CRUD orqali yuborilardi, u esa har doim requireAuth talab qiladi va login
+  // qilmagan foydalanuvchi uchun 401 bilan jimgina barbod bo'lardi).
   useEffect(() => {
-    if (forms && forms.length > 0) {
-      const foundForm = forms.find((f: any) => f.url && f.url.endsWith(`/l/${formId}`));
-      if (foundForm) {
-        setCurrentForm(foundForm);
-        setFormName(foundForm.name);
-        // Increment view count
-        updateForm(foundForm.id, { views: (foundForm.views || 0) + 1 });
-      }
+    if (formId) {
+      api.get(`/public/forms/${formId}`)
+        .then(res => { if (res.data?.title) setFormName(res.data.title); })
+        .catch(() => {});
     }
-  }, [formId, forms]);
+    api.get('/public/lead-form-config')
+      .then(res => setExtraField(res.data))
+      .catch(() => {});
+  }, [formId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
+    setSubmitting(true);
     try {
-      // Save lead
-      await addLead({
+      await api.post('/public/lead', {
         name: formData.name,
         phone: formData.phone,
         course: formData.course,
-        stage: 'new',
-        date: new Date().toISOString(),
-        source: `Forma: ${formName}`
+        source: `Forma: ${formName}`,
+        extraField: extraField.type !== 'none' ? formData.extra : undefined,
+        formId,
       });
-
-      // Increment conversion count
-      if (currentForm) {
-        await updateForm(currentForm.id, { conversions: (currentForm.conversions || 0) + 1 });
-      }
-
       setIsSubmitted(true);
     } catch (error) {
       console.error("Error submitting form:", error);
       showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -112,14 +110,21 @@ export default function LeadForm() {
           
           <div>
             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Telefon raqam</label>
-            <input 
-              type="tel" 
-              required
-              value={formData.phone}
-              onChange={(e) => setFormData({...formData, phone: e.target.value})}
-              className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
-              placeholder="+998 90 123 45 67"
-            />
+            <div className="flex items-stretch rounded-xl overflow-hidden bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus-within:ring-2 focus-within:ring-blue-500">
+              <span className="flex items-center px-4 text-zinc-500 dark:text-zinc-400 font-bold select-none">+998</span>
+              <input
+                type="tel"
+                required
+                maxLength={9}
+                value={formData.phone.replace(/\D/g, '').replace(/^998/, '')}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 9);
+                  setFormData({ ...formData, phone: digits ? `+998${digits}` : '' });
+                }}
+                className="w-full pr-5 py-4 bg-transparent border-none outline-none text-slate-900 dark:text-white"
+                placeholder="90 123 45 67"
+              />
+            </div>
           </div>
 
           <div>
@@ -136,11 +141,26 @@ export default function LeadForm() {
             </select>
           </div>
 
-          <button 
-            type="submit" 
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-blue-600/20"
+          {extraField.type !== 'none' && (
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{extraField.label}</label>
+              <input
+                type={extraField.type === 'age' ? 'number' : 'text'}
+                required
+                value={formData.extra}
+                onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
+                className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                placeholder={extraField.type === 'age' ? '10' : "Masalan: 5-sinf"}
+              />
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-60"
           >
-            Arizani yuborish
+            {submitting ? 'Yuborilmoqda...' : 'Arizani yuborish'}
           </button>
         </form>
       </div>

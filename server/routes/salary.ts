@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { invalidate, NS } from '../services/cache.js';
 import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -103,7 +104,7 @@ router.put('/:id/pay', requireAuth, requireRole, async (req, res) => {
                     amount: salary.total,
                     category: 'Oylik',
                     description: `${salary.staff.name} - ${salary.month} oyligi`,
-                    date: new Date().toISOString().split('T')[0],
+                    date: todayDateStr(),
                     method: req.body.method || 'Bank',
                     staffId: salary.staffId,
                     staffName: salary.staff.name,

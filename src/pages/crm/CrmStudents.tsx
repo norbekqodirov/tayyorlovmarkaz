@@ -15,6 +15,7 @@ import Pagination from '../../components/Pagination';
 import { SkeletonTable } from '../../components/Skeleton';
 import { EmptyState, ErrorState } from '../../components/States';
 import { Input } from '../../components/ui/Input';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { exportToExcel, exportToPDF, exportCertificateToPDF } from '../../utils/export';
@@ -713,13 +714,12 @@ export default function CrmStudents() {
                   placeholder="Aliyev Vali"
                 />
                 <div className="grid grid-cols-2 gap-3">
-                  <Input 
+                  <PhoneInput
                     label="Telefon"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    placeholder="+998 90 123 45 67"
+                    value={formData.phone || ''}
+                    onChange={(phone) => setFormData({...formData, phone})}
                   />
-                  <Input 
+                  <Input
                     type="date"
                     label="Tug'ilgan sana"
                     value={formData.birthDate}
@@ -745,11 +745,10 @@ export default function CrmStudents() {
                   onChange={(e) => setFormData({...formData, parentName: e.target.value})}
                   placeholder="Aliyev G'ani"
                 />
-                <Input 
+                <PhoneInput
                   label="Ota-ona telefoni"
-                  value={formData.parentPhone}
-                  onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
-                  placeholder="+998 90 111 22 33"
+                  value={formData.parentPhone || ''}
+                  onChange={(parentPhone) => setFormData({...formData, parentPhone})}
                 />
               </div>
             </div>

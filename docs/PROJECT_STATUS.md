@@ -5,7 +5,7 @@
 >
 > Ishchi katalog: `D:\tayyorlovmarkaz`
 > Ishlab chiqarish (production) serveri: `E:\tayyorlovmarkaz`
-> Oxirgi yangilanish: 2026-06-25
+> Oxirgi yangilanish: 2026-08-05 (texnik qarz tozalash sessiyasi — §7 ga q.)
 
 ---
 
@@ -209,25 +209,19 @@ POST /api/telegram/webhook         — grammY webhook
 
 ## 7. MA'LUM MUAMMOLAR / TEXNIK QARZ
 
-### 7.1 `backup.ts` — PostgreSQL'ga moslanmagan
-SQLite `dev.db` faylni ko'chiradi, lekin loyiha PostgreSQL'da. Frontend sahifasi yo'q (foydalanuvchiga ko'rinmaydi). `pg_dump` asosida qayta yozish yoki olib tashlash kerak.
-
-### 7.2 Ulanmagan komponentlar/hooklar (E:\ dan ko'chirilgan, hali integratsiya qilinmagan)
-Bular **hech qayerda import qilinmagan** — ishlaydi, lekin foydalanilmaydi. Kerak bo'lsa ulang, kerak bo'lmasa o'chiring (xavfsiz):
-- `src/components/ImportWizard.tsx` — ommaviy import sehrgari
-- `src/components/ReceiptPrint.tsx` — to'lov cheki chop etish
-- `src/components/ShortcutsHelp.tsx` — klaviatura yorliqlari oynasi
-- `src/components/SWRProvider.tsx` — global SWR konfiguratsiyasi
-- `src/components/LazyChart.tsx` — recharts uchun Suspense o'rami
-- `src/components/SavedFiltersDropdown.tsx` — saqlangan filtrlar
-- `src/components/NotificationCenter.tsx` — bildirishnoma markazi (CrmLayout'da o'rnatilgan inline versiya bor)
-- `src/hooks/useApiQuery.ts` — SWR asosidagi data hook
-- `src/hooks/useKeyboardShortcuts.ts` — klaviatura yorliqlari hooki
-
-> Tavsiya: yangi sahifalarda data olishda `useApiQuery` (SWR) ni standart qilib joriy etish va yuqoridagilarni bosqichma-bosqich ulash yoki o'chirish.
-
-### 7.3 `CrmStudentProgress.tsx` ↔ `/api/progress`
-`progress.ts` `quizAttempt` ishlatadi. Frontend E:\ formatini kutishi mumkin — real ma'lumot bilan tekshirib ko'ring.
+> **2026-08-05 yangilanish: §7.1–7.3 va BUG_AUDIT.md dagi barcha High/Critical bug'lar tuzatildi.**
+> Tafsilotlar uchun `docs/BUG_AUDIT.md` ga qarang. Qisqacha:
+> - `backup.ts` + `auth.ts`ning `/backup` — endi `server/services/dbBackup.ts` orqali Postgres (`pg_dump`) va SQLite (fayl nusxa) ikkalasini ham to'g'ri qo'llab-quvvatlaydi.
+> - `crud.ts`da **jiddiy** bug topildi va tuzatildi: `Attendance.records`/`GroupSchedule.days` JSON-string maydonlariga frontend'dan massiv to'g'ridan-to'g'ri yozilardi (Prisma validatsiya xatosi) — bu **davomat belgilash va dars jadvali yaratishni butunlay ishlamas qilardi**. Endi `stringifyJsonFields`/`parseJsonFields` bor.
+> - Ulanmagan komponentlar (§7.2 eski ro'yxati): `useKeyboardShortcuts`/`ShortcutsHelp`/`ImportWizard`/`ReceiptPrint`/`SWRProvider` aslida ALLAQACHON ulangan ekan (ro'yxat eskirgan edi). `NotificationCenter`ning real-time (socket) qismi `CrmLayout`ga ko'chirildi, standalone fayl o'chirildi. `LazyChart`, `SavedFiltersDropdown`, `useApiQuery` hech qayerda ishlatilmagani va ulash muhim yangi feature talab qilgani uchun **o'chirildi**.
+> - `CrmStudentProgress.tsx` (§7.3) — backend javobi bilan mos kelmasligi tasdiqlandi va tuzatildi (assessments/tests obyekt vs massiv, `monthlyTrend`, `payments.totalPaid/pendingAmount`, homework ajratish).
+> - Bonus: Face ID xodim davomatida server UTC vaqt zonasi bug'i (`soat 5 soat siljiydi`) — `server/utils/timezone.ts` bilan tuzatildi.
+>
+> Hali OCHIQ (kelgusi sessiyaga qoldirilgan, kattaroq refaktorlar):
+> - CrmFinance/CrmDashboard client-side hisoblash → server-side ga o'tkazish (Faza 1.1)
+> - CrmGroupDetail (~40KB) bo'linishi (Faza 0.3)
+> - CrmLeads Kanban optimallashtirish (Faza 0.3)
+> - Vaqt zonasi (UTC) muammosi loyihaning boshqa fayllarida ham bor: `scheduler.ts`, `analytics.ts`, `portal.ts` — `server/utils/timezone.ts` yordamchilarini shu yerlarga ham qo'llash kerak.
 
 ---
 
@@ -263,7 +257,8 @@ pm2 restart tayyorlovmarkaz
 6. Ish yakunida **shu faylni yangilang** — keyingi AI to'liq tushunib, sifatli davom etsin.
 
 ### Keyingi tavsiya etilgan ishlar
-1. §7.1 — `backup.ts` ni `pg_dump` ga moslash yoki olib tashlash.
-2. §7.2 — ulanmagan komponentlarni ulash yoki o'chirish bo'yicha qaror.
-3. §7.3 — `CrmStudentProgress` ni real ma'lumotda sinash.
+1. Vaqt zonasi (UTC) muammosini `scheduler.ts`/`analytics.ts`/`portal.ts` da ham tuzatish (§7 ga q., `server/utils/timezone.ts` allaqachon bor).
+2. CrmFinance/CrmDashboard hisoblashni server-side ga o'tkazish (Faza 1.1).
+3. CrmGroupDetail (~40KB) sub-komponentlarga bo'lish (Faza 0.3).
 4. Ruxsat (`permission`) mosligini barcha modul/route bo'yicha audit qilish.
+5. Face ID xodim davomatini real qurilmada sinab ko'rish (mobil Telegram WebView).

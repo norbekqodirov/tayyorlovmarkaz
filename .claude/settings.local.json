@@ -16,7 +16,11 @@
       "Bash(npm install *)",
       "Bash(grep -v \"^$\\\\|version\\\\|prisma\\\\|follow\\\\|update\\\\|└\\\\|┌\\\\|│\\\\|─\\\\|please\")",
       "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.quiz.count\\(\\).then\\(n => { console.log\\('\\\\''Quiz count:'\\\\'', n\\); p.$disconnect\\(\\); }\\).catch\\(e => { console.error\\('\\\\''Error:'\\\\'', e.message\\); p.$disconnect\\(\\); }\\);')",
-      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.goal.count\\(\\).then\\(n => { console.log\\('\\\\''Goal table OK, count:'\\\\'', n\\); p.$disconnect\\(\\); }\\).catch\\(e => console.error\\(e.message\\)\\);')"
+      "Bash(node -e 'const { PrismaClient } = require\\('\\\\''@prisma/client'\\\\''\\); const p = new PrismaClient\\(\\); p.goal.count\\(\\).then\\(n => { console.log\\('\\\\''Goal table OK, count:'\\\\'', n\\); p.$disconnect\\(\\); }\\).catch\\(e => console.error\\(e.message\\)\\);')",
+      "Bash(git fetch *)",
+      "Bash(gh repo *)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)"
     ]
   }
 }

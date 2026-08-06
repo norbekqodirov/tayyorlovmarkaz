@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -66,7 +67,7 @@ router.post('/validate', requireAuth, async (req, res) => {
         if (!discount) return res.status(404).json({ valid: false, message: 'Promo-kod topilmadi' });
         if (!discount.isActive) return res.status(400).json({ valid: false, message: 'Promo-kod faol emas' });
 
-        const now = new Date().toISOString().split('T')[0];
+        const now = todayDateStr();
         if (discount.validFrom && discount.validFrom > now) {
             return res.status(400).json({ valid: false, message: 'Promo-kod hali amal qilmaydi' });
         }

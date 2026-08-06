@@ -14,6 +14,7 @@ router.get('/:studentId', requireAuth, async (req, res) => {
             select: {
                 id: true, name: true, phone: true, email: true,
                 status: true, source: true, createdAt: true,
+                group: true, course: true,
                 enrollments: {
                     include: {
                         group: {
@@ -39,6 +40,7 @@ router.get('/:studentId', requireAuth, async (req, res) => {
         const presentCount  = attendanceRecords.filter(r => r.status === 'present').length;
         const absentCount   = attendanceRecords.filter(r => r.status === 'absent').length;
         const lateCount     = attendanceRecords.filter(r => r.status === 'late').length;
+        const excusedCount  = attendanceRecords.filter(r => r.status === 'excused').length;
         const attendanceRate = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 0;
 
         const assessments = await prisma.assessment.findMany({
@@ -92,6 +94,7 @@ router.get('/:studentId', requireAuth, async (req, res) => {
                 present: presentCount,
                 absent: absentCount,
                 late: lateCount,
+                excused: excusedCount,
                 rate: attendanceRate,
                 records: attendanceRecords.slice(-50),
                 monthlyTrend,

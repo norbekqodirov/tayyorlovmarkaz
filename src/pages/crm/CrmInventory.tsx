@@ -9,6 +9,7 @@ import {
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../components/Toast';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { MoneyInput } from '../../components/ui/MoneyInput';
 import { exportToExcel } from '../../utils/export';
 
 interface InventoryItem {
@@ -355,12 +356,10 @@ export default function CrmInventory() {
 
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Narxi (dona)</label>
-                    <input 
-                      type="number" 
+                    <MoneyInput
+                      label="Narxi (dona)"
                       value={formData.price}
-                      onChange={(e) => setFormData({...formData, price: Number(e.target.value)})}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+                      onChange={(price) => setFormData({...formData, price})}
                     />
                   </div>
                   <div className="space-y-2">

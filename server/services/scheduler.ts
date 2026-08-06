@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import prisma from '../db.js';
 import { sendMessage, sendPaymentReminder, sendAttendanceAlert, sendBroadcast, sendStaffMessage } from './telegramService.js';
+import { todayDateStr, addDaysDateStr, tashkentDayOfWeek } from '../utils/timezone.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -40,12 +41,10 @@ async function runPaymentReminders() {
     }
 
     try {
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        const todayStr = todayDateStr();
 
         // 3 kun ichida muddati tugaydigan to'lovlar
-        const in3Days = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const in3Days = addDaysDateStr(3);
 
         const upcomingPayments = await prisma.payment.findMany({
             where: {
@@ -139,7 +138,7 @@ async function runAttendanceMonitoring() {
     }
 
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = todayDateStr();
 
         // Bugun kelmagan o'quvchilar
         const absentRecords = await prisma.attendanceRecord.findMany({
@@ -168,7 +167,7 @@ async function runAttendanceMonitoring() {
         // 3 kun ketma-ket kelmagan o'quvchilar → managerga
         const adminChatId = await getSetting('telegram_admin_chat_id');
         if (adminChatId) {
-            const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const threeDaysAgo = addDaysDateStr(-3);
             const absentStudents = await prisma.attendanceRecord.findMany({
                 where: { date: { gte: threeDaysAgo, lte: today }, status: 'absent' },
                 select: { studentId: true },
@@ -268,8 +267,8 @@ async function runGroupLifecycle() {
 
     try {
         const adminChatId = await getSetting('telegram_admin_chat_id');
-        const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const today = new Date().toISOString().split('T')[0];
+        const in7Days = addDaysDateStr(7);
+        const today = todayDateStr();
 
         // 7 kun ichida tugaydigan guruhlar
         const endingSoon = await prisma.group.findMany({
@@ -395,7 +394,7 @@ export async function startScheduler() {
 
 async function runStaffDailyBriefing() {
     try {
-        const todayNum = new Date().getDay() || 7; // 0=Sun→7
+        const todayNum = tashkentDayOfWeek();
         const DAY_UZ: Record<number, string> = {
             1: 'Dushanba', 2: 'Seshanba', 3: 'Chorshanba', 4: 'Payshanba',
             5: 'Juma', 6: 'Shanba', 7: 'Yakshanba',
@@ -445,8 +444,8 @@ async function runStaffDailyBriefing() {
 
 async function runStaffAttendanceAlert() {
     try {
-        const today = new Date().toISOString().split('T')[0];
-        const todayNum = new Date().getDay() || 7;
+        const today = todayDateStr();
+        const todayNum = tashkentDayOfWeek();
 
         // Groups with today's schedule that have NO attendance records yet
         const groups = await prisma.group.findMany({

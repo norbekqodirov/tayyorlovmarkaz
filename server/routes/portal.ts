@@ -2,6 +2,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import { validateInitData } from '../services/telegramService.js';
+import { addDaysDateStr } from '../utils/timezone.js';
+import { calculateStudentMonthlyDue } from '../services/billing.js';
+import { MANAGER_KEY, teacherKey, studentKey, notifyStaffOfParentMessage } from './parentChat.js';
 
 const router = express.Router();
 
@@ -132,9 +135,7 @@ router.get('/attendance', portalAuth, async (req: any, res) => {
                 orderBy: { date: 'desc' },
             });
         } else {
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            const fromStr = thirtyDaysAgo.toISOString().split('T')[0];
+            const fromStr = addDaysDateStr(-30);
 
             records = await prisma.attendanceRecord.findMany({
                 where: {
@@ -198,6 +199,12 @@ router.get('/payments', portalAuth, async (req: any, res) => {
 
         const totalUnpaid = unpaid.reduce((sum, p) => sum + p.amount, 0);
 
+        // Shu oy uchun davomat asosida hisoblangan to'lov (real vaqtda, Payment
+        // yozuvidan mustaqil — 3 kundan ortiq qoldirilgan darslar uchun avtomatik
+        // chegirma bilan). Ota-onaga "bu oy qancha to'lash kerak" ko'rsatish uchun.
+        const now = new Date();
+        const monthlyDue = await calculateStudentMonthlyDue(student.id, now.getFullYear(), now.getMonth() + 1);
+
         res.json({
             unpaid: unpaid.map(p => ({
                 id: p.id,
@@ -215,6 +222,7 @@ router.get('/payments', portalAuth, async (req: any, res) => {
                 month: p.month,
             })),
             totalUnpaid,
+            monthlyDue,
         });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -317,6 +325,138 @@ router.get('/schedule', portalAuth, async (req: any, res) => {
                 items,
             })).filter(d => d.items.length > 0),
         });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Ota-ona ↔ Xodim chat (2 xil: Menejer va har bir o'qituvchi alohida) ───────
+
+// GET /api/portal/chat-threads — mavjud suhbat turlari ro'yxati
+router.get('/chat-threads', portalAuth, async (req: any, res) => {
+    try {
+        const chatId = req.portalChatId;
+        const student = await prisma.student.findFirst({
+            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
+            include: {
+                enrollments: {
+                    include: { group: { include: { course: { select: { name: true } }, teacher: { select: { id: true, name: true } } } } },
+                },
+            },
+        });
+        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+
+        const sKey = studentKey(student.id);
+
+        async function threadInfo(partnerKey: string) {
+            const last = await prisma.message.findFirst({
+                where: { OR: [{ senderId: sKey, receiverId: partnerKey }, { senderId: partnerKey, receiverId: sKey }] },
+                orderBy: { createdAt: 'desc' },
+            });
+            const unread = await prisma.message.count({ where: { senderId: partnerKey, receiverId: sKey, readAt: null } });
+            return { lastMessage: last?.content || null, lastMessageAt: last?.createdAt || null, unread };
+        }
+
+        // Menejer ismi bilan ko'rsatiladi (masalan "Charos"), rol pastda yoziladi —
+        // Ustoz kabi shaxsiylashtirilgan ko'rinish uchun.
+        const managerUser = await prisma.user.findFirst({
+            where: { role: { in: ['MANAGER', 'ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+            orderBy: { role: 'asc' }, // MANAGER < ADMIN alifboda — imkon qadar aynan menejerni tanlaydi
+            select: { name: true },
+        });
+
+        const threads = [];
+        threads.push({
+            key: 'manager',
+            title: managerUser?.name || 'Menejer',
+            subtitle: "Menejer — umumiy savollar, to'lov, ro'yxatdan o'tish",
+            ...(await threadInfo(MANAGER_KEY)),
+        });
+
+        const seenTeachers = new Set<string>();
+        for (const e of student.enrollments) {
+            const teacher = e.group.teacher;
+            if (!teacher || seenTeachers.has(teacher.id)) continue;
+            seenTeachers.add(teacher.id);
+            threads.push({
+                key: `teacher:${teacher.id}`,
+                title: teacher.name,
+                subtitle: `${e.group.course?.name || e.group.name} o'qituvchisi`,
+                ...(await threadInfo(teacherKey(teacher.id))),
+            });
+        }
+
+        res.json(threads);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+function resolvePartnerKey(key: string): string | null {
+    if (key === 'manager') return MANAGER_KEY;
+    if (key.startsWith('teacher:')) return teacherKey(key.replace('teacher:', ''));
+    return null;
+}
+
+// GET /api/portal/chat-threads/:key — suhbat tarixi (key: "manager" | "teacher:<id>")
+router.get('/chat-threads/:key', portalAuth, async (req: any, res) => {
+    try {
+        const chatId = req.portalChatId;
+        const student = await prisma.student.findFirst({
+            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
+            select: { id: true },
+        });
+        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+
+        const partnerKey = resolvePartnerKey(req.params.key);
+        if (!partnerKey) return res.status(400).json({ error: "Noto'g'ri suhbat turi" });
+        const sKey = studentKey(student.id);
+
+        const messages = await prisma.message.findMany({
+            where: { OR: [{ senderId: sKey, receiverId: partnerKey }, { senderId: partnerKey, receiverId: sKey }] },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+        });
+
+        await prisma.message.updateMany({
+            where: { senderId: partnerKey, receiverId: sKey, readAt: null },
+            data: { readAt: new Date() },
+        });
+
+        res.json(messages.map(m => ({ ...m, fromMe: m.senderId === sKey })));
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/portal/chat-threads/:key — ota-ona xabar yozadi
+router.post('/chat-threads/:key', portalAuth, async (req: any, res) => {
+    try {
+        const chatId = req.portalChatId;
+        const { content } = req.body as { content: string };
+        if (!content?.trim()) return res.status(400).json({ error: 'Xabar matni kiritilishi shart' });
+
+        const student = await prisma.student.findFirst({
+            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
+            select: { id: true, name: true },
+        });
+        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+
+        const partnerKey = resolvePartnerKey(req.params.key);
+        if (!partnerKey) return res.status(400).json({ error: "Noto'g'ri suhbat turi" });
+
+        const message = await prisma.message.create({
+            data: {
+                senderId: studentKey(student.id),
+                receiverId: partnerKey,
+                senderType: 'parent',
+                content: content.trim(),
+            },
+        });
+
+        await notifyStaffOfParentMessage(partnerKey, student.name, content.trim());
+
+        res.status(201).json(message);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

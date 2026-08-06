@@ -3,8 +3,10 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getDbConfig } from '../services/dbBackup.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-for-local';
@@ -274,20 +276,48 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
 });
 
 // ─── BACKUP (SUPER_ADMIN only) ────────────────────────────────────────────────
+// DATABASE_URL orqali aniqlanadi — Postgres (lokal/ba'zi serverlar) da pg_dump
+// oqimi to'g'ridan-to'g'ri javobga yuboriladi; SQLite (root'siz production) da
+// haqiqiy baza fayli (DATABASE_URL dan, "dev.db" qattiq yozilmagan) ko'chiriladi.
 router.get('/backup', requireAuth, async (req, res) => {
     try {
         const user = (req as any).user;
         if (!isSuperAdmin(user.role) && !isAdminOrAbove(user.role)) {
             return res.status(403).json({ message: "Faqat admin backup olishi mumkin" });
         }
-        const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
-        if (!fs.existsSync(dbPath)) return res.status(404).json({ message: "Ma'lumotlar bazasi topilmadi" });
-        const filename = `tayyorlov-backup-${new Date().toISOString().slice(0, 10)}.db`;
+
+        const db = getDbConfig();
+        if (!db) return res.status(500).json({ message: "DATABASE_URL konfiguratsiya qilinmagan" });
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+
+        if (db.type === 'sqlite') {
+            if (!fs.existsSync(db.filePath)) return res.status(404).json({ message: "Ma'lumotlar bazasi fayli topilmadi" });
+            const filename = `tayyorlov-backup-${dateStr}.db`;
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.setHeader('Content-Type', 'application/octet-stream');
+            fs.createReadStream(db.filePath).pipe(res);
+            return;
+        }
+
+        // Postgres — pg_dump chiqishini to'g'ridan-to'g'ri javobga oqizamiz (vaqtinchalik fayl kerak emas)
+        const filename = `tayyorlov-backup-${dateStr}.sql`;
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Type', 'application/octet-stream');
-        fs.createReadStream(dbPath).pipe(res);
-    } catch {
-        res.status(500).json({ message: "Backup olishda xatolik" });
+        res.setHeader('Content-Type', 'application/sql');
+        const child = spawn(
+            'pg_dump',
+            ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p', db.database],
+            { env: { ...process.env, PGPASSWORD: db.password } }
+        );
+        child.stdout.pipe(res);
+        child.stderr.on('data', (d) => console.error('[Backup] pg_dump stderr:', d.toString()));
+        child.on('error', (err) => {
+            console.error('[Backup] pg_dump spawn error:', err);
+            if (!res.headersSent) res.status(500).json({ message: "pg_dump ishga tushmadi (o'rnatilganmi tekshiring)" });
+        });
+    } catch (err) {
+        console.error('[Backup] error:', err);
+        if (!res.headersSent) res.status(500).json({ message: "Backup olishda xatolik" });
     }
 });
 
@@ -301,8 +331,17 @@ router.get('/stats', requireAuth, async (req, res) => {
             prisma.user.count(),
             prisma.payment.count(),
         ]);
-        const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
-        const dbSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
+
+        let dbSize = 0;
+        const db = getDbConfig();
+        if (db?.type === 'sqlite') {
+            dbSize = fs.existsSync(db.filePath) ? fs.statSync(db.filePath).size : 0;
+        } else if (db?.type === 'postgres') {
+            try {
+                const rows = await prisma.$queryRawUnsafe<{ size: bigint }[]>('SELECT pg_database_size(current_database()) AS size');
+                dbSize = Number(rows[0]?.size || 0);
+            } catch { dbSize = 0; }
+        }
         res.json({ students, groups, leads, users, payments, dbSize: (dbSize / 1024 / 1024).toFixed(2) + ' MB' });
     } catch {
         res.status(500).json({ message: "Statistika olishda xatolik" });

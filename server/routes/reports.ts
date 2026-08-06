@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { JOBS } from '../services/scheduler.js';
+import { todayDateStr, monthRangeStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -9,8 +10,8 @@ const router = express.Router();
 router.get('/summary', requireAuth, async (req, res) => {
     try {
         const { from, to } = req.query;
-        const fromDate = from ? String(from) : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-        const toDate = to ? String(to) : new Date().toISOString().split('T')[0];
+        const fromDate = from ? String(from) : monthRangeStr(0).start;
+        const toDate = to ? String(to) : todayDateStr();
 
         const [
             newStudents, transactions, attendance, newLeads, wonLeads,
@@ -84,8 +85,8 @@ router.get('/summary', requireAuth, async (req, res) => {
 router.get('/financial', requireAuth, async (req, res) => {
     try {
         const { from, to } = req.query;
-        const fromDate = from ? String(from) : `${new Date().getFullYear()}-01-01`;
-        const toDate = to ? String(to) : new Date().toISOString().split('T')[0];
+        const fromDate = from ? String(from) : `${todayDateStr().slice(0, 4)}-01-01`;
+        const toDate = to ? String(to) : todayDateStr();
 
         const transactions = await prisma.transaction.findMany({
             where: { date: { gte: fromDate, lte: toDate } },
@@ -129,8 +130,8 @@ router.get('/financial', requireAuth, async (req, res) => {
 router.get('/attendance', requireAuth, async (req, res) => {
     try {
         const { groupId, from, to } = req.query;
-        const fromDate = from ? String(from) : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-        const toDate = to ? String(to) : new Date().toISOString().split('T')[0];
+        const fromDate = from ? String(from) : monthRangeStr(0).start;
+        const toDate = to ? String(to) : todayDateStr();
 
         const where: any = { date: { gte: fromDate, lte: toDate } };
         if (groupId) where.groupId = String(groupId);
@@ -242,8 +243,8 @@ router.get('/students', requireAuth, async (req, res) => {
 router.get('/teachers', requireAuth, async (req, res) => {
     try {
         const { from, to } = req.query;
-        const fromDate = from ? String(from) : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-        const toDate = to ? String(to) : new Date().toISOString().split('T')[0];
+        const fromDate = from ? String(from) : monthRangeStr(0).start;
+        const toDate = to ? String(to) : todayDateStr();
 
         const teachers = await prisma.user.findMany({
             where: { role: 'TEACHER', isActive: true },

@@ -7,6 +7,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import prisma from '../db.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -287,7 +288,7 @@ router.post('/payme', async (req, res) => {
                             }
                         });
 
-                        const todayStr = new Date().toISOString().split('T')[0];
+                        const todayStr = todayDateStr();
 
                         // Create Payment
                         await prisma.payment.create({
@@ -426,7 +427,7 @@ router.post('/payme', async (req, res) => {
                             }
                         });
 
-                        const todayStr = new Date().toISOString().split('T')[0];
+                        const todayStr = todayDateStr();
 
                         // Create refund transaction log (expense)
                         await prisma.transaction.create({
@@ -667,7 +668,7 @@ router.post('/click', async (req, res) => {
                     }
                 });
 
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = todayDateStr();
 
                 // Create Payment
                 await prisma.payment.create({
@@ -735,7 +736,7 @@ router.post('/click', async (req, res) => {
                 }
             });
 
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = todayDateStr();
 
             // Create Payment
             await prisma.payment.create({

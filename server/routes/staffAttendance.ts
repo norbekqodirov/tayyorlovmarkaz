@@ -1,15 +1,17 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function todayStr() {
-    return new Date().toISOString().split('T')[0];
-}
+// Toshkent vaqti bo'yicha "bugun" — check-in/check-out staffPortal.ts'da xuddi
+// shu Toshkent sanasi bilan yoziladi, shuning uchun bu yerda ham mos kelishi shart
+// (server UTC'da ishlasa, ikkalasi mos kelmay qolib, "bugungi" davomat bo'sh chiqardi).
+const todayStr = todayDateStr;
 
 // ─── GET /api/staff-attendance — HR dashboard: bugun yoki sana bo'yicha ───────
 
@@ -62,7 +64,7 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.get('/report', requireAuth, async (req, res) => {
     try {
-        const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+        const month = (req.query.month as string) || todayDateStr().slice(0, 7);
         const staffId = req.query.staffId as string | undefined;
 
         const records = await prisma.staffAttendance.findMany({
