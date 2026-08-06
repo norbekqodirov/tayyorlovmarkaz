@@ -282,6 +282,9 @@ router.get('/schedule', portalAuth, async (req: any, res) => {
         });
         if (!student) return res.status(404).json({ error: 'Topilmadi' });
 
+        // Haqiqiy dars jadvali GroupSchedule modelida ("schedule" kolleksiyasi,
+        // CrmGroups.tsx/CrmSchedule.tsx to'ldiradi) — Group.schedules (alohida
+        // "Schedule" modeli) hech qayerda yozilmaydi, shuning uchun ishlatilmaydi.
         const enrollments = await prisma.enrollment.findMany({
             where: { studentId: student.id },
             include: {
@@ -289,26 +292,31 @@ router.get('/schedule', portalAuth, async (req: any, res) => {
                     include: {
                         course: { select: { name: true } },
                         teacher: { select: { name: true } },
-                        schedules: {
-                            include: { room: { select: { name: true, capacity: true } } },
-                        },
                     },
                 },
             },
         });
+        const groupIds = enrollments.map(e => e.groupId);
+        const groupSchedules = groupIds.length
+            ? await prisma.groupSchedule.findMany({ where: { groupId: { in: groupIds } } })
+            : [];
 
         const days: Record<number, any[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
 
         for (const e of enrollments) {
-            for (const sch of e.group.schedules) {
-                days[sch.dayOfWeek]?.push({
+            const sch = groupSchedules.find(s => s.groupId === e.groupId);
+            if (!sch) continue;
+            let dayNums: number[] = [];
+            try { dayNums = JSON.parse(sch.days || '[]'); } catch { dayNums = []; }
+            for (const d of dayNums) {
+                days[d]?.push({
                     groupId: e.group.id,
                     groupName: e.group.name,
                     course: e.group.course?.name || '',
                     teacher: e.group.teacher?.name || '',
                     startTime: sch.startTime,
                     endTime: sch.endTime,
-                    room: sch.room?.name || (e.group as any).room || '',
+                    room: sch.room || '',
                 });
             }
         }

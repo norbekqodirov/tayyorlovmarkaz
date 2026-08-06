@@ -201,39 +201,38 @@ router.post('/webhook', async (req, res) => {
                 5: 'Juma', 6: 'Shanba', 7: 'Yakshanba',
             };
 
-            const where: any = {
-                group: { deletedAt: null },
-                dayOfWeek: todayNum,
-            };
-            if (user.role === 'TEACHER') {
-                where.group = { ...where.group, teacherId: user.id };
-            }
-
-            const schedules = await prisma.schedule.findMany({
-                where,
-                include: {
-                    group: {
-                        include: {
-                            course: { select: { name: true } },
-                            teacher: { select: { name: true } },
-                        },
-                    },
-                    room: { select: { name: true } },
-                },
-                orderBy: { startTime: 'asc' },
+            // Haqiqiy dars jadvali GroupSchedule modelida ("schedule" kolleksiyasi) —
+            // Group.schedules (alohida "Schedule" modeli) hech qayerda yozilmaydi.
+            const allSchedules = await prisma.groupSchedule.findMany();
+            const todaySchedules = allSchedules.filter(s => {
+                try { return (JSON.parse(s.days || '[]') as number[]).includes(todayNum); }
+                catch { return false; }
             });
+            const groupIds = [...new Set(todaySchedules.map(s => s.groupId))];
+            const groupWhere: any = { id: { in: groupIds }, deletedAt: null };
+            if (user.role === 'TEACHER') groupWhere.teacherId = user.id;
+            const groupsData = groupIds.length ? await prisma.group.findMany({
+                where: groupWhere,
+                include: { course: { select: { name: true } }, teacher: { select: { name: true } } },
+            }) : [];
+            const groupMap = new Map(groupsData.map(g => [g.id, g]));
+
+            const schedules = todaySchedules
+                .filter(s => groupMap.has(s.groupId))
+                .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
             if (schedules.length === 0) {
                 await sendStaffMessage(chatId, `📅 <b>${dayUz[todayNum]}</b>\n\nBugun darslar yo'q.`, 'HTML');
                 return res.sendStatus(200);
             }
 
-            const lines = schedules.map(s =>
-                `• <b>${s.startTime}–${s.endTime}</b> | ${s.group.name}` +
-                (s.group.course ? ` (${s.group.course.name})` : '') +
-                (s.room ? ` | 🚪 ${s.room.name}` : (s.group as any).room ? ` | 🚪 ${(s.group as any).room}` : '') +
-                (user.role !== 'TEACHER' && s.group.teacher ? ` | 👤 ${s.group.teacher.name}` : ''),
-            );
+            const lines = schedules.map(s => {
+                const g = groupMap.get(s.groupId)!;
+                return `• <b>${s.startTime}–${s.endTime}</b> | ${g.name}` +
+                    (g.course ? ` (${g.course.name})` : '') +
+                    (s.room ? ` | 🚪 ${s.room}` : '') +
+                    (user.role !== 'TEACHER' && g.teacher ? ` | 👤 ${g.teacher.name}` : '');
+            });
 
             await sendStaffMessage(
                 chatId,

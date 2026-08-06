@@ -120,10 +120,17 @@ router.get('/me', staffPortalAuth, async (req: any, res) => {
         if (role === 'TEACHER') {
             const today = todayDateStr();
             const todayNum = tashkentDayOfWeek();
-            const [groupCount, todayLessons] = await Promise.all([
+            const [groupCount, teacherGroups, allSchedules] = await Promise.all([
                 prisma.group.count({ where: { teacherId: id, status: 'active', deletedAt: null } }),
-                prisma.schedule.count({ where: { dayOfWeek: todayNum, group: { teacherId: id, deletedAt: null } } }),
+                prisma.group.findMany({ where: { teacherId: id, deletedAt: null }, select: { id: true } }),
+                prisma.groupSchedule.findMany(),
             ]);
+            const teacherGroupIds = new Set(teacherGroups.map(g => g.id));
+            const todayLessons = allSchedules.filter(s => {
+                if (!teacherGroupIds.has(s.groupId)) return false;
+                try { return (JSON.parse(s.days || '[]') as number[]).includes(todayNum); }
+                catch { return false; }
+            }).length;
             // attendance marked today
             const marked = await prisma.attendanceRecord.count({
                 where: {
@@ -163,56 +170,62 @@ router.get('/today', staffPortalAuth, async (req: any, res) => {
             5: 'Juma', 6: 'Shanba', 7: 'Yakshanba',
         };
 
-        const where: any = {
-            dayOfWeek: todayNum,
-            group: { deletedAt: null, status: 'active' },
-        };
-        if (role === 'TEACHER') {
-            where.group.teacherId = id;
-        }
-
-        const schedules = await prisma.schedule.findMany({
-            where,
-            include: {
-                group: {
-                    include: {
-                        course: { select: { name: true } },
-                        teacher: { select: { id: true, name: true } },
-                        _count: { select: { enrollments: true } },
-                    },
-                },
-                room: { select: { name: true } },
-            },
-            orderBy: { startTime: 'asc' },
+        // Haqiqiy dars jadvali GroupSchedule modelida ("schedule" kolleksiyasi,
+        // CrmGroups.tsx/CrmSchedule.tsx to'ldiradi) — Group.schedules (alohida
+        // "Schedule" modeli, dayOfWeek) hech qayerda yozilmaydi, shuning uchun
+        // bo'sh natija berardi.
+        const allSchedules = await prisma.groupSchedule.findMany();
+        const todaySchedules = allSchedules.filter(s => {
+            try { return (JSON.parse(s.days || '[]') as number[]).includes(todayNum); }
+            catch { return false; }
         });
 
+        const groupIds = [...new Set(todaySchedules.map(s => s.groupId))];
+        const groupWhere: any = { id: { in: groupIds }, deletedAt: null, status: 'active' };
+        if (role === 'TEACHER') groupWhere.teacherId = id;
+        const groupsData = groupIds.length ? await prisma.group.findMany({
+            where: groupWhere,
+            include: {
+                course: { select: { name: true } },
+                teacher: { select: { id: true, name: true } },
+                _count: { select: { enrollments: true } },
+            },
+        }) : [];
+        const groupMap = new Map(groupsData.map(g => [g.id, g]));
+
         const today = todayDateStr();
-        // For each schedule, check if attendance already marked
-        const groupIds = [...new Set(schedules.map(s => s.groupId))];
-        const markedGroups = await prisma.attendanceRecord.findMany({
+        const markedGroups = groupIds.length ? await prisma.attendanceRecord.findMany({
             where: { date: today, groupId: { in: groupIds } },
             select: { groupId: true },
             distinct: ['groupId'],
-        });
+        }) : [];
         const markedSet = new Set(markedGroups.map(m => m.groupId));
+
+        const lessons = todaySchedules
+            .filter(s => groupMap.has(s.groupId))
+            .map(s => {
+                const g = groupMap.get(s.groupId)!;
+                return {
+                    scheduleId: s.id,
+                    groupId: s.groupId,
+                    groupName: g.name,
+                    course: g.course?.name || '',
+                    teacher: g.teacher?.name || '',
+                    teacherId: g.teacher?.id || '',
+                    startTime: s.startTime,
+                    endTime: s.endTime,
+                    room: s.room || '',
+                    studentCount: g._count.enrollments,
+                    attendanceMarked: markedSet.has(s.groupId),
+                };
+            })
+            .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
         res.json({
             dayName: dayUz[todayNum] || '',
             day: todayNum,
             date: today,
-            lessons: schedules.map(s => ({
-                scheduleId: s.id,
-                groupId: s.groupId,
-                groupName: s.group.name,
-                course: s.group.course?.name || '',
-                teacher: s.group.teacher?.name || '',
-                teacherId: s.group.teacher?.id || '',
-                startTime: s.startTime,
-                endTime: s.endTime,
-                room: s.room?.name || (s.group as any).room || '',
-                studentCount: s.group._count.enrollments,
-                attendanceMarked: markedSet.has(s.groupId),
-            })),
+            lessons,
         });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
