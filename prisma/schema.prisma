@@ -296,6 +296,9 @@ model StaffMember {
   staffAttendances StaffAttendance[]
   leaveRequests    LeaveRequest[]
   faceProfile      StaffFaceProfile?
+  tasks             Task[]
+  performanceReviews PerformanceReview[]
+  documents         StaffDocument[]
 }
 
 // ============================================
@@ -477,8 +480,35 @@ model Task {
   title     String
   completed Boolean  @default(false)
   userId    String?
+  staffId   String?
+  staff     StaffMember? @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  priority  String   @default("Medium") // Low, Medium, High
+  deadline  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Xodimga oid ishlash bahosi (menejer tomonidan qoldiriladi)
+model PerformanceReview {
+  id        String   @id @default(uuid())
+  staffId   String
+  staff     StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      String
+  reviewer  String
+  feedback  String   @db.Text
+  rating    Int      @default(5) // 1-5
+  createdAt DateTime @default(now())
+}
+
+// Xodimga tegishli hujjat metama'lumoti (fayl yuklash hozircha yo'q — nom/tur/sana)
+model StaffDocument {
+  id         String   @id @default(uuid())
+  staffId    String
+  staff      StaffMember @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  name       String
+  type       String
+  uploadDate String
+  createdAt  DateTime @default(now())
 }
 
 // ============================================

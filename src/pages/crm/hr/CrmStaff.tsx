@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, MoreVertical, User, Mail, Phone, Briefcase, DollarSign, X, Edit2, Trash2, ShieldCheck, Clock, Users, Building2 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
@@ -22,12 +22,18 @@ interface StaffMember {
   passport?: string;
   education?: string;
   experience?: string;
-  salaryHistory?: { date: string; amount: number; status: string }[];
-  attendance?: { date: string; status: 'Present' | 'Absent' | 'Late'; checkIn?: string; checkOut?: string }[];
-  tasks?: { id: string; title: string; status: 'Pending' | 'Completed'; priority: 'Low' | 'Medium' | 'High'; deadline: string }[];
-  performanceReviews?: { date: string; reviewer: string; feedback: string; rating: number }[];
-  documents?: { id: string; name: string; type: string; uploadDate: string }[];
 }
+
+// Quyidagi 5 ta yordamchi turdagi ma'lumot (davomat, maosh, vazifa, fikr,
+// hujjat) StaffMember'ning O'ZIDA saqlanmaydi — har biri alohida haqiqiy
+// jadvalga (StaffAttendance, Salary, Task, PerformanceReview, StaffDocument)
+// yoziladi. Avval bular soxta JSON-massiv sifatida saqlanardi (sxemada bunday
+// maydon yo'q edi) — "saqlandi" deb ko'rsatib, aslida hech narsa yozmasdi.
+interface AttendanceRow { id: string; date: string; status: string; checkIn?: string; checkOut?: string; notes?: string; }
+interface SalaryRow { id: string; month: string; baseSalary: number; bonus: number; deduction: number; total: number; paid: boolean; notes?: string; }
+interface TaskRow { id: string; title: string; completed: boolean; priority: 'Low' | 'Medium' | 'High'; deadline?: string; }
+interface ReviewRow { id: string; date: string; reviewer: string; feedback: string; rating: number; }
+interface DocRow { id: string; name: string; type: string; uploadDate: string; }
 
 export default function CrmStaff() {
   const { data: staff = [], loading, error, addDocument, updateDocument, deleteDocument } = useFirestore<StaffMember>('staff');
@@ -40,6 +46,11 @@ export default function CrmStaff() {
   const [isSubModalOpen, setIsSubModalOpen] = useState<{ type: string; isOpen: boolean }>({ type: '', isOpen: false });
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'salary' | 'tasks' | 'reviews' | 'docs'>('overview');
   const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
+  const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
+  const [salaryRows, setSalaryRows] = useState<SalaryRow[]>([]);
+  const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
+  const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
+  const [docRows, setDocRows] = useState<DocRow[]>([]);
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
   const [editingSubItemIndex, setEditingSubItemIndex] = useState<number | null>(null);
   const [subFormData, setSubFormData] = useState<any>({});
@@ -134,25 +145,58 @@ export default function CrmStaff() {
     setEditingMember(null);
   };
 
+  const loadStaffExtras = useCallback(async (staffId: string) => {
+    try {
+      const [att, sal, tasks, reviews, docs] = await Promise.all([
+        api.get(`/salary/attendance?staffId=${staffId}`),
+        api.get(`/salary/staff/${staffId}`),
+        api.get('/tasks'),
+        api.get('/performanceReviews'),
+        api.get('/staffDocuments'),
+      ]);
+      setAttendanceRows(att.data || []);
+      setSalaryRows(sal.data || []);
+      setTaskRows((tasks.data || []).filter((t: any) => t.staffId === staffId));
+      setReviewRows((reviews.data || []).filter((r: any) => r.staffId === staffId));
+      setDocRows((docs.data || []).filter((d: any) => d.staffId === staffId));
+    } catch (error) {
+      console.error('Error loading staff extras:', error);
+    }
+  }, []);
+
   const openDetail = (member: StaffMember) => {
     setSelectedMember(member);
     setActiveTab('overview');
     setIsDetailOpen(true);
+    loadStaffExtras(member.id);
+  };
+
+  // type bo'yicha lokal ro'yxat + uni bevosita yangilaydigan setter — har bir
+  // "sub-item" turi endi haqiqiy jadvalga (StaffAttendance/Salary/Task/
+  // PerformanceReview/StaffDocument) yoziladi, StaffMember'ning o'ziga emas.
+  const subItemRows = (type: string): any[] =>
+    type === 'attendance' ? attendanceRows : type === 'salary' ? salaryRows
+    : type === 'tasks' ? taskRows : type === 'reviews' ? reviewRows : docRows;
+  const setSubItemRows = (type: string, rows: any[]) => {
+    if (type === 'attendance') setAttendanceRows(rows);
+    else if (type === 'salary') setSalaryRows(rows);
+    else if (type === 'tasks') setTaskRows(rows);
+    else if (type === 'reviews') setReviewRows(rows);
+    else setDocRows(rows);
   };
 
   const handleAddSubItem = (type: string, index: number | null = null) => {
     setEditingSubItemIndex(index);
-    if (index !== null && selectedMember) {
-      const items = (selectedMember as any)[type === 'salary' ? 'salaryHistory' : type === 'docs' ? 'documents' : type === 'reviews' ? 'performanceReviews' : type];
-      setSubFormData(items[index]);
+    if (index !== null) {
+      setSubFormData(subItemRows(type)[index]);
     } else {
       setSubFormData({});
       if (type === 'attendance') {
-        setSubFormData({ date: new Date().toISOString().split('T')[0], status: 'Present', checkIn: '09:00', checkOut: '18:00' });
+        setSubFormData({ date: new Date().toISOString().split('T')[0], status: 'present', checkIn: '09:00', checkOut: '18:00' });
       } else if (type === 'salary') {
-        setSubFormData({ date: new Date().toISOString().split('T')[0], amount: selectedMember?.salary || 0, status: 'To\'landi' });
+        setSubFormData({ month: new Date().toISOString().slice(0, 7), baseSalary: selectedMember?.salary || 0, bonus: 0, deduction: 0, notes: '' });
       } else if (type === 'tasks') {
-        setSubFormData({ title: '', status: 'Pending', priority: 'Medium', deadline: new Date().toISOString().split('T')[0] });
+        setSubFormData({ title: '', completed: false, priority: 'Medium', deadline: new Date().toISOString().split('T')[0] });
       } else if (type === 'reviews') {
         setSubFormData({ date: new Date().toISOString().split('T')[0], reviewer: 'Admin', feedback: '', rating: 5 });
       } else if (type === 'docs') {
@@ -163,22 +207,18 @@ export default function CrmStaff() {
   };
 
   const handleDeleteSubItem = (type: string, index: number) => {
-    if (!selectedMember) return;
     setDeleteSubConfirm({ open: true, type, index });
   };
 
   const confirmDeleteSubItem = async () => {
     if (!selectedMember) return;
     const { type, index } = deleteSubConfirm;
-    const updatedMember = { ...selectedMember };
-    const key = type === 'salary' ? 'salaryHistory' : type === 'docs' ? 'documents' : type === 'reviews' ? 'performanceReviews' : type;
-    const items = [...((updatedMember as any)[key] || [])];
-    items.splice(index, 1);
-    (updatedMember as any)[key] = items;
-
+    const row = subItemRows(type)[index];
     try {
-      await updateDocument(selectedMember.id, { [key]: items });
-      setSelectedMember(updatedMember);
+      if (type === 'attendance') await api.delete(`/staff-attendance/${row.id}`);
+      else if (type === 'salary') await api.delete(`/salary/${row.id}`);
+      else await api.delete(`/${type === 'tasks' ? 'tasks' : type === 'reviews' ? 'performanceReviews' : 'staffDocuments'}/${row.id}`);
+      setSubItemRows(type, subItemRows(type).filter((_, i) => i !== index));
       showToast('Ma\'lumot o\'chirildi', 'success');
     } catch (error) {
       console.error("Error deleting sub item:", error);
@@ -189,50 +229,60 @@ export default function CrmStaff() {
 
   const saveSubItem = async () => {
     if (!selectedMember) return;
-
-    const updatedMember = { ...selectedMember };
     const type = isSubModalOpen.type;
-    const key = type === 'salary' ? 'salaryHistory' : type === 'docs' ? 'documents' : type === 'reviews' ? 'performanceReviews' : type;
-    const items = [...((updatedMember as any)[key] || [])];
-
-    if (editingSubItemIndex !== null) {
-      items[editingSubItemIndex] = subFormData;
-    } else {
-      if (type === 'tasks' || type === 'docs') {
-        items.push({ ...subFormData, id: Date.now().toString(), uploadDate: type === 'docs' ? new Date().toISOString().split('T')[0] : undefined });
-      } else {
-        items.push(subFormData);
-      }
-    }
-
-    (updatedMember as any)[key] = items;
-
-    if (type === 'salary' && editingSubItemIndex === null) {
-      // Sync with Finance if possible (optional enhancement)
-      try {
-        await api.post('/transactions', {
-          type: 'expense',
-          amount: subFormData.amount,
-          category: 'Ish haqi',
-          description: `${selectedMember.name} uchun ish haqi to'lovi`,
-          date: subFormData.date,
-          method: 'Naqd',
-          staffId: selectedMember.id
-        });
-      } catch (error) {
-        console.error("Error adding transaction:", error);
-      }
-    }
+    const editingRow = editingSubItemIndex !== null ? subItemRows(type)[editingSubItemIndex] : null;
 
     try {
-      await updateDocument(selectedMember.id, { [key]: items });
-      setSelectedMember(updatedMember);
+      let saved: any;
+      if (type === 'attendance') {
+        const res = await api.post('/salary/attendance', { staffId: selectedMember.id, ...subFormData });
+        saved = res.data;
+      } else if (type === 'salary') {
+        const res = await api.post('/salary', { staffId: selectedMember.id, ...subFormData });
+        saved = res.data;
+      } else if (type === 'tasks') {
+        const res = editingRow
+          ? await api.put(`/tasks/${editingRow.id}`, subFormData)
+          : await api.post('/tasks', { ...subFormData, staffId: selectedMember.id });
+        saved = res.data;
+      } else if (type === 'reviews') {
+        const res = editingRow
+          ? await api.put(`/performanceReviews/${editingRow.id}`, subFormData)
+          : await api.post('/performanceReviews', { ...subFormData, staffId: selectedMember.id });
+        saved = res.data;
+      } else {
+        const payload = { ...subFormData, uploadDate: subFormData.uploadDate || new Date().toISOString().split('T')[0] };
+        const res = editingRow
+          ? await api.put(`/staffDocuments/${editingRow.id}`, payload)
+          : await api.post('/staffDocuments', { ...payload, staffId: selectedMember.id });
+        saved = res.data;
+      }
+
+      const rows = subItemRows(type);
+      if (editingSubItemIndex !== null && editingRow) {
+        // attendance/salary — upsert kaliti (staffId+date / staffId+month) bo'yicha
+        // qayta yozilishi mumkin, shuning uchun ID o'zgarmagan bo'lishi kerak
+        setSubItemRows(type, rows.map((r, i) => i === editingSubItemIndex ? saved : r));
+      } else {
+        setSubItemRows(type, [saved, ...rows]);
+      }
+
       setIsSubModalOpen({ type: '', isOpen: false });
       setEditingSubItemIndex(null);
       showToast('Ma\'lumot saqlandi', 'success');
     } catch (error) {
       console.error("Error saving sub item:", error);
       showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
+    }
+  };
+
+  const markSalaryPaid = async (salaryId: string) => {
+    try {
+      const res = await api.put(`/salary/${salaryId}/pay`, {});
+      setSalaryRows(rows => rows.map(r => r.id === salaryId ? res.data : r));
+      showToast("Oylik to'landi deb belgilandi va moliyaga yozildi", 'success');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Xatolik yuz berdi', 'error');
     }
   };
 
@@ -538,13 +588,13 @@ export default function CrmStaff() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                          {(selectedMember.attendance || []).map((a, i) => (
-                            <tr key={i} className="group">
+                          {attendanceRows.map((a, i) => (
+                            <tr key={a.id || i} className="group">
                               <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.date}</td>
                               <td className="px-6 py-4">
-                                <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${a.status === 'Present' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                                <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${a.status === 'present' ? 'bg-emerald-100 text-emerald-600' : a.status === 'late' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'
                                   }`}>
-                                  {a.status === 'Present' ? 'Kelgan' : 'Kelmagan'}
+                                  {a.status === 'present' ? 'Kelgan' : a.status === 'late' ? 'Kechikkan' : 'Kelmagan'}
                                 </span>
                               </td>
                               <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.checkIn || '--:--'}</td>
@@ -561,9 +611,9 @@ export default function CrmStaff() {
                               </td>
                             </tr>
                           ))}
-                          {(!selectedMember.attendance || (selectedMember.attendance || []).length === 0) && (
+                          {attendanceRows.length === 0 && (
                             <tr>
-                              <td colSpan={4} className="px-6 py-12 text-center text-zinc-500 font-bold italic">Davomat ma'lumotlari mavjud emas</td>
+                              <td colSpan={5} className="px-6 py-12 text-center text-zinc-500 font-bold italic">Davomat ma'lumotlari mavjud emas</td>
                             </tr>
                           )}
                         </tbody>
@@ -587,19 +637,29 @@ export default function CrmStaff() {
                       <table className="w-full text-left text-sm">
                         <thead className="bg-zinc-50 dark:bg-zinc-800">
                           <tr>
-                            <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sana</th>
-                            <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Summa</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Oy</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Asosiy + Bonus − Ushlab qolish</th>
+                            <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jami</th>
                             <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
                             <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                          {(selectedMember.salaryHistory || []).map((h, i) => (
-                            <tr key={i} className="group">
-                              <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{h.date}</td>
-                              <td className="px-6 py-4 font-black text-slate-900 dark:text-white">{new Intl.NumberFormat('uz-UZ').format(h.amount)} UZS</td>
+                          {salaryRows.map((h, i) => (
+                            <tr key={h.id || i} className="group">
+                              <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{h.month}</td>
+                              <td className="px-6 py-4 text-xs font-bold text-zinc-500">
+                                {new Intl.NumberFormat('uz-UZ').format(h.baseSalary)} + {new Intl.NumberFormat('uz-UZ').format(h.bonus)} − {new Intl.NumberFormat('uz-UZ').format(h.deduction)}
+                              </td>
+                              <td className="px-6 py-4 font-black text-slate-900 dark:text-white">{new Intl.NumberFormat('uz-UZ').format(h.total)} UZS</td>
                               <td className="px-6 py-4">
-                                <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">{h.status}</span>
+                                {h.paid ? (
+                                  <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">To'landi</span>
+                                ) : (
+                                  <button onClick={() => markSalaryPaid(h.id)} className="px-2 py-1 bg-amber-100 text-amber-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-amber-200 transition-colors">
+                                    To'lash
+                                  </button>
+                                )}
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -613,9 +673,9 @@ export default function CrmStaff() {
                               </td>
                             </tr>
                           ))}
-                          {(!selectedMember.salaryHistory || (selectedMember.salaryHistory || []).length === 0) && (
+                          {salaryRows.length === 0 && (
                             <tr>
-                              <td colSpan={3} className="px-6 py-12 text-center text-zinc-500 font-bold italic">To'lovlar tarixi mavjud emas</td>
+                              <td colSpan={5} className="px-6 py-12 text-center text-zinc-500 font-bold italic">To'lovlar tarixi mavjud emas</td>
                             </tr>
                           )}
                         </tbody>
@@ -636,13 +696,20 @@ export default function CrmStaff() {
                       </button>
                     </div>
                     <div className="grid grid-cols-1 gap-4">
-                      {(selectedMember.tasks || []).map((task, i) => (
+                      {taskRows.map((task, i) => (
                         <div key={task.id} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-between group">
                           <div className="flex items-center gap-4">
-                            <div className={`w-2 h-2 rounded-full ${task.status === 'Completed' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                            <button
+                              onClick={async () => {
+                                const res = await api.put(`/tasks/${task.id}`, { completed: !task.completed });
+                                setTaskRows(rows => rows.map(r => r.id === task.id ? res.data : r));
+                              }}
+                              className={`w-4 h-4 rounded-full border-2 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-amber-400'}`}
+                              title={task.completed ? 'Bajarilgan' : 'Bajarilmagan'}
+                            />
                             <div>
-                              <p className="font-bold text-slate-900 dark:text-white">{task.title}</p>
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Muddati: {task.deadline}</p>
+                              <p className={`font-bold text-slate-900 dark:text-white ${task.completed ? 'line-through opacity-50' : ''}`}>{task.title}</p>
+                              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Muddati: {task.deadline || '—'}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
@@ -661,7 +728,7 @@ export default function CrmStaff() {
                           </div>
                         </div>
                       ))}
-                      {(!selectedMember.tasks || (selectedMember.tasks || []).length === 0) && (
+                      {taskRows.length === 0 && (
                         <div className="py-12 text-center text-zinc-500 font-bold italic">Vazifalar mavjud emas</div>
                       )}
                     </div>
@@ -680,8 +747,8 @@ export default function CrmStaff() {
                       </button>
                     </div>
                     <div className="space-y-4">
-                      {(selectedMember.performanceReviews || []).map((review, i) => (
-                        <div key={i} className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 group relative">
+                      {reviewRows.map((review, i) => (
+                        <div key={review.id || i} className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 group relative">
                           <div className="absolute top-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => handleAddSubItem('reviews', i)} className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 rounded-lg">
                               <Edit2 size={14} />
@@ -704,7 +771,7 @@ export default function CrmStaff() {
                           <p className="text-sm text-slate-700 dark:text-zinc-300 font-medium leading-relaxed">{review.feedback}</p>
                         </div>
                       ))}
-                      {(!selectedMember.performanceReviews || (selectedMember.performanceReviews || []).length === 0) && (
+                      {reviewRows.length === 0 && (
                         <div className="py-12 text-center text-zinc-500 font-bold italic">Fikrlar mavjud emas</div>
                       )}
                     </div>
@@ -714,17 +781,20 @@ export default function CrmStaff() {
                 {activeTab === 'docs' && (
                   <div className="space-y-6">
                     <div className="flex justify-between items-center">
-                      <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Hujjatlar</h4>
+                      <div>
+                        <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Hujjatlar</h4>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">Fayl saqlanmaydi — faqat nom/tur/sana yozuvi</p>
+                      </div>
                       <button
                         onClick={() => handleAddSubItem('docs')}
                         className="px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/20"
                       >
-                        Hujjat Yuklash
+                        Hujjat Qo'shish
                       </button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(selectedMember.documents || []).map((doc, i) => (
-                        <div key={doc.id} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-between group hover:border-blue-500 transition-colors">
+                      {docRows.map((doc, i) => (
+                        <div key={doc.id || i} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-between group hover:border-blue-500 transition-colors">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 group-hover:text-blue-600 transition-colors">
                               <ShieldCheck size={20} />
@@ -734,20 +804,17 @@ export default function CrmStaff() {
                               <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{doc.type} • {doc.uploadDate}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Yuklab olish</button>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => handleAddSubItem('docs', i)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg">
-                                <Edit2 size={14} />
-                              </button>
-                              <button onClick={() => handleDeleteSubItem('docs', i)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleAddSubItem('docs', i)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg">
+                              <Edit2 size={14} />
+                            </button>
+                            <button onClick={() => handleDeleteSubItem('docs', i)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg">
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </div>
                       ))}
-                      {(!selectedMember.documents || (selectedMember.documents || []).length === 0) && (
+                      {docRows.length === 0 && (
                         <div className="md:col-span-2 py-12 text-center text-zinc-500 font-bold italic">Hujjatlar mavjud emas</div>
                       )}
                     </div>
@@ -801,9 +868,9 @@ export default function CrmStaff() {
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
                       <select value={subFormData.status} onChange={(e) => setSubFormData({ ...subFormData, status: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
-                        <option value="Present">Kelgan</option>
-                        <option value="Absent">Kelmagan</option>
-                        <option value="Late">Kechikkan</option>
+                        <option value="present">Kelgan</option>
+                        <option value="absent">Kelmagan</option>
+                        <option value="late">Kechikkan</option>
                       </select>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -822,11 +889,17 @@ export default function CrmStaff() {
                 {isSubModalOpen.type === 'salary' && (
                   <>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sana</label>
-                      <input type="date" value={subFormData.date} onChange={(e) => setSubFormData({ ...subFormData, date: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Oy</label>
+                      <input type="month" value={subFormData.month} onChange={(e) => setSubFormData({ ...subFormData, month: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <MoneyInput label="Asosiy" value={subFormData.baseSalary} onChange={(baseSalary) => setSubFormData({ ...subFormData, baseSalary })} />
+                      <MoneyInput label="Bonus" value={subFormData.bonus} onChange={(bonus) => setSubFormData({ ...subFormData, bonus })} />
+                      <MoneyInput label="Ushlab qolish" value={subFormData.deduction} onChange={(deduction) => setSubFormData({ ...subFormData, deduction })} />
                     </div>
                     <div className="space-y-2">
-                      <MoneyInput label="Summa (UZS)" value={subFormData.amount} onChange={(amount) => setSubFormData({ ...subFormData, amount })} />
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Izoh (ixtiyoriy)</label>
+                      <input type="text" value={subFormData.notes || ''} onChange={(e) => setSubFormData({ ...subFormData, notes: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
                     </div>
                   </>
                 )}
