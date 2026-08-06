@@ -8,6 +8,7 @@ import {
   AlertCircle, Download, Send, ExternalLink, Copy, Upload
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
+import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import ImportWizard from '../../../components/ImportWizard';
@@ -42,7 +43,7 @@ interface Student {
 export default function CrmStudents() {
   const navigate = useNavigate();
   const { data: students = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
-  const { data: groups = [], updateDocument: updateGroup } = useFirestore<any>('groups');
+  const { data: groups = [] } = useFirestore<any>('groups');
   const { courses: liveCourses, groups: liveGroups } = useCrmData();
   const courseOptions = liveCourses.length > 0 ? liveCourses : [];
   const groupOptions = liveGroups.length > 0 ? liveGroups : (groups || []);
@@ -59,8 +60,9 @@ export default function CrmStudents() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [importOpen, setImportOpen] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
   const itemsPerPage = 20;
-  
+
   const [formData, setFormData] = useState<Partial<Student>>({
     name: '',
     phone: '',
@@ -91,37 +93,26 @@ export default function CrmStudents() {
     try {
       const studentData = { ...formData } as Omit<Student, 'id'>;
       if (formData.id) {
-        // Handle group change: remove from old group, add to new group
+        // Guruh o'zgargan bo'lsa — haqiqiy Enrollment yozuvini yangilaymiz
+        // (Group.students maydoni sxemada yo'q, shuning uchun bevosita
+        // /api/enrollments orqali ishlaymiz — billing, davomat va bot shu
+        // jadvalga qaraydi, faqat Student.group matn maydoniga emas).
         const oldStudent = (students || []).find((s: any) => s.id === formData.id) as any;
-        const oldGroupName = oldStudent?.group || '';
-        const newGroupName = formData.group || '';
-        if (oldGroupName !== newGroupName) {
-          // Remove from old group
-          if (oldGroupName) {
-            const oldGroup = (groups || []).find((g: any) => g.name === oldGroupName);
-            if (oldGroup) {
-              const updated = (oldGroup.students || []).filter((sid: string) => sid !== formData.id);
-              await updateGroup(oldGroup.id, { students: updated });
-            }
+        const oldGroup = groupOptions.find((g: any) => g.name === oldStudent?.group);
+        if (oldGroup?.id !== selectedGroupId) {
+          if (oldGroup?.id) {
+            await api.delete('/enrollments/remove', { data: { studentId: formData.id, groupId: oldGroup.id } });
           }
-          // Add to new group
-          if (newGroupName) {
-            const newGroup = (groups || []).find((g: any) => g.name === newGroupName);
-            if (newGroup && !(newGroup.students || []).includes(formData.id)) {
-              await updateGroup(newGroup.id, { students: [...(newGroup.students || []), formData.id] });
-            }
+          if (selectedGroupId) {
+            await api.post('/enrollments', { studentId: formData.id, groupId: selectedGroupId });
           }
         }
         await updateDocument(formData.id, studentData);
         showToast("O'quvchi ma'lumotlari yangilandi", 'success');
       } else {
         const newId = await addDocument(studentData);
-        // Add student to group's students array
-        if (formData.group && newId) {
-          const group = (groups || []).find((g: any) => g.name === formData.group);
-          if (group) {
-            await updateGroup(group.id, { students: [...(group.students || []), newId] });
-          }
+        if (selectedGroupId && newId) {
+          await api.post('/enrollments', { studentId: newId, groupId: selectedGroupId });
         }
         showToast("Yangi o'quvchi qo'shildi", 'success');
       }
@@ -140,14 +131,8 @@ export default function CrmStudents() {
     const id = deleteConfirm.id;
     setDeleteConfirm({ open: false, id: '' });
     try {
-      const student = (students || []).find(s => s.id === id);
-      if (student && student.group) {
-        const group = (groups || []).find((g: any) => g.name === student.group);
-        if (group) {
-          const updatedStudents = (group.students || []).filter((sid: string) => sid !== id);
-          await updateGroup(group.id, { students: updatedStudents });
-        }
-      }
+      // Enrollment yozuvlari Student o'chirilganda avtomatik cascade bilan
+      // o'chadi (schema.prisma: Enrollment.student onDelete: Cascade).
       await deleteDocument(id);
       if (selectedStudent?.id === id) setIsDetailOpen(false);
       showToast("O'quvchi o'chirildi", 'success');
@@ -160,6 +145,7 @@ export default function CrmStudents() {
   const openModal = (student: Student | null = null) => {
     if (student) {
       setFormData(student);
+      setSelectedGroupId(groupOptions.find((g: any) => g.name === student.group)?.id || '');
     } else {
       setFormData({
         name: '',
@@ -177,6 +163,7 @@ export default function CrmStudents() {
         joinedDate: new Date().toISOString().split('T')[0],
         notes: ''
       });
+      setSelectedGroupId('');
     }
     setIsModalOpen(true);
   };
@@ -757,39 +744,31 @@ export default function CrmStudents() {
             <div className="space-y-4">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">O'qish Ma'lumotlari</h4>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5 flex flex-col gap-1.5">
-                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Kurs</label>
-                    <select
-                      value={formData.course}
-                      onChange={(e) => setFormData({...formData, course: e.target.value, group: ''})}
-                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
-                    >
-                      <option value="">Kursni tanlang...</option>
-                      {courseOptions.map((c: any) => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1.5 flex flex-col gap-1.5">
-                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Guruh</label>
-                    <select
-                      value={formData.group}
-                      onChange={(e) => {
-                        const g = groupOptions.find((g: any) => g.name === e.target.value);
-                        setFormData({...formData, group: e.target.value, balance: g?.price ? -g.price : (formData.balance || 0)});
-                      }}
-                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
-                    >
-                      <option value="">Guruhni tanlang...</option>
-                      {groupOptions
-                        .filter((g: any) => !formData.course || g.subject === formData.course)
-                        .map((g: any) => (
-                          <option key={g.id} value={g.name}>{g.name} ({g.teacher || 'Ustoz yo\'q'})</option>
-                        ))
-                      }
-                    </select>
-                  </div>
+                <div className="space-y-1.5 flex flex-col gap-1.5">
+                  <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Guruh</label>
+                  <select
+                    value={selectedGroupId}
+                    onChange={(e) => {
+                      const g = groupOptions.find((g: any) => g.id === e.target.value);
+                      setSelectedGroupId(e.target.value);
+                      const price = g?.price ?? g?.course?.price;
+                      setFormData({
+                        ...formData,
+                        group: g?.name || '',
+                        course: g?.course?.name || '',
+                        balance: price ? -price : (formData.balance || 0),
+                      });
+                    }}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+                  >
+                    <option value="">Guruhni tanlang...</option>
+                    {groupOptions.map((g: any) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} — {g.course?.name || 'Kurssiz'} ({g.teacher?.name || "O'qituvchi yo'q"})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-zinc-400">Kurs guruh orqali avtomatik aniqlanadi</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5 flex flex-col gap-1.5">

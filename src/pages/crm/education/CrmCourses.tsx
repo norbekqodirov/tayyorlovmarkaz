@@ -11,6 +11,13 @@ import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { exportToExcel } from '../../../utils/export';
+import api from '../../../api/client';
+
+interface CourseTier {
+  id?: string;
+  name: string;
+  price: number;
+}
 
 interface Course {
   id: string;
@@ -23,6 +30,7 @@ interface Course {
   lessonsPerWeek: number;
   status: 'Faol' | 'Qoralama' | 'Arxiv';
   image?: string;
+  tiers?: CourseTier[];
 }
 
 const CATEGORIES = [
@@ -72,6 +80,9 @@ export default function CrmCourses() {
     status: 'Faol',
     image: '',
   });
+  // Kurs ichidagi tariflar (masalan "2-sinf" — 500 000, "3-sinf" — 600 000).
+  // Har biri alohida narxga ega — guruh yaratishda shundan tanlanadi.
+  const [tiers, setTiers] = useState<CourseTier[]>([]);
 
   // Per course student count (from students collection)
   const studentCountByCourse = useMemo(() => {
@@ -101,9 +112,35 @@ export default function CrmCourses() {
     reader.readAsDataURL(file);
   };
 
+  // Tariflarni serverdagi holat bilan solishtirib, faqat farqni yozadi
+  // (yangi qatorlar yaratiladi, o'zgarganlari yangilanadi, olib tashlanganlari o'chiriladi).
+  const syncTiers = async (courseId: string) => {
+    const existing = editingCourse?.tiers || [];
+    const existingIds = new Set(existing.map(t => t.id));
+    const keptIds = new Set(tiers.filter(t => t.id).map(t => t.id));
+
+    for (const old of existing) {
+      if (old.id && !keptIds.has(old.id)) {
+        await api.delete(`/courseTiers/${old.id}`).catch(() => {});
+      }
+    }
+    for (const t of tiers) {
+      if (!t.name.trim() || !t.price) continue;
+      if (t.id && existingIds.has(t.id)) {
+        await api.put(`/courseTiers/${t.id}`, { name: t.name.trim(), price: t.price });
+      } else {
+        await api.post('/courseTiers', { courseId, name: t.name.trim(), price: t.price });
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (!formData.name) {
       showToast('Kurs nomini kiriting!', 'error');
+      return;
+    }
+    if (tiers.some(t => !t.name.trim() || !t.price)) {
+      showToast("Har bir tarif uchun nom va narx to'ldirilishi shart!", 'error');
       return;
     }
     setIsSaving(true);
@@ -121,9 +158,11 @@ export default function CrmCourses() {
       };
       if (editingCourse) {
         await updateDocument(editingCourse.id, payload);
+        await syncTiers(editingCourse.id);
         showToast('Kurs yangilandi ✓', 'success');
       } else {
-        await addDocument(payload as any);
+        const newId = await addDocument(payload as any);
+        if (tiers.length > 0) await syncTiers(newId);
         showToast('Yangi kurs qo\'shildi ✓', 'success');
       }
       closeModal();
@@ -152,12 +191,19 @@ export default function CrmCourses() {
     if (course) {
       setEditingCourse(course);
       setFormData({ ...course, imagePreview: course.image });
+      setTiers((course.tiers || []).map(t => ({ id: t.id, name: t.name, price: t.price })));
     } else {
       setEditingCourse(null);
       setFormData({ name: '', category: 'Tillar', duration: '3 oy', lessonDuration: 90, price: 0, description: '', lessonsPerWeek: 3, status: 'Faol', image: '' });
+      setTiers([]);
     }
     setIsModalOpen(true);
   };
+
+  const addTier = () => setTiers(t => [...t, { name: '', price: 0 }]);
+  const updateTier = (idx: number, patch: Partial<CourseTier>) =>
+    setTiers(t => t.map((row, i) => i === idx ? { ...row, ...patch } : row));
+  const removeTier = (idx: number) => setTiers(t => t.filter((_, i) => i !== idx));
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -362,7 +408,21 @@ export default function CrmCourses() {
                   </div>
 
                   <div className="flex items-center justify-between pt-1">
-                    <div className="text-base font-black text-blue-600">{formatMoney(course.price)}</div>
+                    <div>
+                      {course.tiers && course.tiers.length > 0 ? (
+                        <>
+                          <div className="text-base font-black text-blue-600">
+                            {formatMoney(Math.min(...course.tiers.map(t => t.price)))}
+                            {course.tiers.length > 1 && ` – ${formatMoney(Math.max(...course.tiers.map(t => t.price)))}`}
+                          </div>
+                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
+                            {course.tiers.length} ta tarif
+                          </p>
+                        </>
+                      ) : (
+                        <div className="text-base font-black text-blue-600">{formatMoney(course.price)}</div>
+                      )}
+                    </div>
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusInfo.cls}`}>
                       {statusInfo.label}
                     </span>
@@ -443,11 +503,57 @@ export default function CrmCourses() {
                   </div>
                   <div className="space-y-2">
                     <MoneyInput
-                      label="Narxi (oyiga)"
+                      label={tiers.length > 0 ? "Standart narx (tarif tanlanmasa)" : "Narxi (oyiga)"}
                       value={formData.price}
                       onChange={(price) => setFormData({ ...formData, price })}
                     />
                   </div>
+                </div>
+
+                {/* Tariflar — masalan "2-sinf", "3-sinf", har biri o'z narxida */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                      Tariflar (ixtiyoriy)
+                    </label>
+                    <button
+                      onClick={addTier}
+                      className="flex items-center gap-1 text-[10px] font-black text-blue-600 hover:text-blue-700 transition-colors"
+                    >
+                      <Plus size={12} /> Tarif qo'shish
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 -mt-1">
+                    Bir kurs bir nechta narxda bo'lishi mumkin (masalan sinf bo'yicha) — guruh yaratishda shundan tanlanadi.
+                  </p>
+                  {tiers.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      {tiers.map((tier, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={tier.name}
+                            onChange={(e) => updateTier(idx, { name: e.target.value })}
+                            placeholder="Masalan: 2-sinf"
+                            className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                          />
+                          <div className="w-40">
+                            <MoneyInput
+                              value={tier.price || undefined}
+                              onChange={(price) => updateTier(idx, { price: price || 0 })}
+                              placeholder="Narx"
+                            />
+                          </div>
+                          <button
+                            onClick={() => removeTier(idx)}
+                            className="p-2 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors shrink-0"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">

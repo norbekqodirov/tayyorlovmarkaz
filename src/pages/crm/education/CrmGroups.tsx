@@ -598,12 +598,32 @@ export default function CrmGroups() {
               value={formData.startDate}
               onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
             />
-            <MoneyInput
-              label="Narxi (Oylik)"
-              value={formData.price}
-              onChange={(price) => setFormData({ ...formData, price })}
-              placeholder={selectedCourseData?.price ? new Intl.NumberFormat('uz-UZ').format(selectedCourseData.price) : '0'}
-            />
+            <div className="space-y-1.5">
+              <MoneyInput
+                label="Narxi (Oylik)"
+                value={formData.price}
+                onChange={(price) => setFormData({ ...formData, price })}
+                placeholder={selectedCourseData?.price ? new Intl.NumberFormat('uz-UZ').format(selectedCourseData.price) : '0'}
+              />
+              {selectedCourseData?.tiers?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedCourseData.tiers.map((tier: any) => (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, price: tier.price })}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                        formData.price === tier.price
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {tier.name} — {new Intl.NumberFormat('uz-UZ').format(tier.price)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1.5 flex flex-col w-full">

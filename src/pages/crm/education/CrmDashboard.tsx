@@ -165,7 +165,7 @@ export default function CrmDashboard() {
       case 'chart_lead_funnel':
         return <LeadFunnelChart leads={leads} />;
       case 'table_upcoming':
-        return <UpcomingLessons groups={groups} schedules={schedule} />;
+        return <UpcomingLessons schedules={schedule} />;
       case 'table_debtors':
         return <DebtorsTable students={students} />;
       case 'table_top_students':

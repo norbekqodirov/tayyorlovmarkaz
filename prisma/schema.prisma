@@ -97,6 +97,19 @@ model Course {
   certificates Certificate[]
   levels       CourseLevel[]
   tests        Test[]
+  tiers        CourseTier[]
+}
+
+// Bitta kurs ichida bir nechta narx tarifi (masalan "2-sinf", "3-sinf" —
+// har biri o'z narxiga ega). Kurs yaratish/tahrirlash formasida boshqariladi.
+model CourseTier {
+  id        String   @id @default(uuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  name      String   // "2-sinf", "Standart", "VIP" va h.k.
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Group {

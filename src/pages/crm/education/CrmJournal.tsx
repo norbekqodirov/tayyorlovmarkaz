@@ -6,11 +6,12 @@ import { BookOpen, Users, Calendar, MapPin } from 'lucide-react';
 export default function CrmJournal() {
   const navigate = useNavigate();
   const { data: groups = [] } = useFirestore<any>('groups');
+  const { data: schedules = [] } = useFirestore<any>('schedule');
   const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
 
   const teacherGroups = useMemo(() => {
     if (user.role === 'TEACHER') {
-      return groups.filter((g: any) => g.teacherId === user.uid || g.teacher === user.name);
+      return groups.filter((g: any) => g.teacherId === user.id);
     }
     return groups;
   }, [groups, user]);
@@ -32,45 +33,50 @@ export default function CrmJournal() {
             <p className="text-sm font-bold text-zinc-400 mt-1">Guruh biriktirilgandan so'ng bu yerda paydo bo'ladi.</p>
           </div>
         ) : (
-          teacherGroups.map((group: any) => (
-            <div
-              key={group.id}
-              onClick={() => navigate(`/crmtayyorlovmarkaz/groups/${group.id}`)}
-              className="bg-white dark:bg-zinc-900 p-6 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md cursor-pointer transition-all hover:-translate-y-1 group"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors">{group.name}</h3>
-                  <p className="text-[10px] font-black text-blue-500 tracking-widest uppercase mt-0.5">{group.subject}</p>
+          teacherGroups.map((group: any) => {
+            const sched = schedules.find((s: any) => s.groupId === group.id);
+            const studentCount = group._count?.enrollments ?? 0;
+            const maxSize = group.maxSize || 15;
+            return (
+              <div
+                key={group.id}
+                onClick={() => navigate(`/crmtayyorlovmarkaz/groups/${group.id}`)}
+                className="bg-white dark:bg-zinc-900 p-6 rounded-[24px] border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md cursor-pointer transition-all hover:-translate-y-1 group"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors">{group.name}</h3>
+                    <p className="text-[10px] font-black text-blue-500 tracking-widest uppercase mt-0.5">{group.course?.name || 'Kurssiz'}</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-500 flex items-center justify-center">
+                    <BookOpen size={20} />
+                  </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-500 flex items-center justify-center">
-                  <BookOpen size={20} />
-                </div>
-              </div>
 
-              <div className="space-y-2 mb-6">
-                <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
-                  <MapPin size={16} className="text-zinc-400" />
-                  {typeof group.room === 'object' ? group.room.name : group.room}
+                <div className="space-y-2 mb-6">
+                  <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
+                    <MapPin size={16} className="text-zinc-400" />
+                    {sched?.room || "Xona belgilanmagan"}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
+                    <Calendar size={16} className="text-zinc-400" />
+                    {sched ? `${sched.startTime} - ${sched.endTime}` : 'Jadval belgilanmagan'}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
+                    <Users size={16} className="text-zinc-400" />
+                    {studentCount} o'quvchi
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
-                  <Calendar size={16} className="text-zinc-400" />
-                  {group.time} ({(group.days || []).join(', ')})
-                </div>
-                <div className="flex items-center gap-2 text-sm font-bold text-zinc-500">
-                  <Users size={16} className="text-zinc-400" />
-                  {(group.students || []).length} o'quvchi
-                </div>
-              </div>
 
-              <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
-                <div 
-                  className="bg-blue-500 h-full rounded-full"
-                  style={{ width: `${Math.min(100, ((group.students || []).length / (group.maxStudents || 15)) * 100)}%` }}
-                />
+                <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-blue-500 h-full rounded-full"
+                    style={{ width: `${Math.min(100, (studentCount / maxSize) * 100)}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

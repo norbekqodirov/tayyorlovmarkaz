@@ -1,36 +1,23 @@
 import { Calendar, Clock, BookOpen } from 'lucide-react';
 
-export function UpcomingLessons({ groups, schedules }: { groups: any[]; schedules: any[] }) {
+// `schedules` — GroupSchedule yozuvlari ("schedule" kolleksiyasi). `days` har
+// birida 1..7 (Dush..Yak) raqamlar massivi sifatida saqlanadi (CrmGroups.tsx
+// bilan bir xil konvensiya) — guruhning o'zida emas, shu yerda haqiqiy jadval bor.
+export function UpcomingLessons({ schedules }: { schedules: any[] }) {
   const today = new Date();
-  const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay(); // 1=Mon, 7=Sun
-  const dayMap: Record<number, string> = { 1: 'Dush', 2: 'Sesh', 3: 'Chor', 4: 'Pay', 5: 'Jum', 6: 'Shan', 7: 'Yak' };
-  const todayDay = dayMap[dayOfWeek];
+  const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay(); // 1=Dush...7=Yak
 
-  // Try from schedule data first, then fallback to groups
-  const todaySchedule = schedules.filter(s => {
-    const dow = s.dayOfWeek;
-    return dow === dayOfWeek;
-  }).slice(0, 6);
-
-  const todayGroups = groups.filter(g =>
-    (g.days || []).includes(todayDay) && (g.status === 'Faol' || g.status === 'active')
-  ).slice(0, 5);
-
-  const items = todaySchedule.length > 0
-    ? todaySchedule.map(s => ({
-        id: s.id,
-        name: groups.find(g => g.id === s.groupId)?.name || s.groupId || 'Guruh',
-        teacher: groups.find(g => g.id === s.groupId)?.teacher || '',
-        time: `${s.startTime} - ${s.endTime}`,
-        room: s.room || '',
-      }))
-    : todayGroups.map(g => ({
-        id: g.id,
-        name: g.name,
-        teacher: g.teacher,
-        time: g.time,
-        room: g.room,
-      }));
+  const items = schedules
+    .filter(s => Array.isArray(s.days) && s.days.includes(dayOfWeek))
+    .slice(0, 6)
+    .map(s => ({
+      id: s.id,
+      name: s.groupName || 'Guruh',
+      teacher: s.teacher || '',
+      time: s.startTime && s.endTime ? `${s.startTime} - ${s.endTime}` : '',
+      room: s.room || '',
+    }))
+    .sort((a, b) => a.time.localeCompare(b.time));
 
   const now = today.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
 
@@ -51,7 +38,6 @@ export function UpcomingLessons({ groups, schedules }: { groups: any[]; schedule
           <div className="py-8 text-center">
             <Calendar size={24} className="mx-auto text-zinc-300 mb-2" />
             <p className="text-[11px] font-bold text-zinc-400">Bugun dars yo'q</p>
-            <p className="text-[10px] text-zinc-300 mt-0.5">{todayDay} kuni bo'sh</p>
           </div>
         ) : items.map((g, i) => (
           <div key={g.id || i} className="flex items-center gap-2.5 p-2.5 bg-zinc-50 dark:bg-white/[0.03] rounded-xl hover:bg-blue-50/50 dark:hover:bg-blue-500/5 transition-colors group">

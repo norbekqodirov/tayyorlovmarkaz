@@ -28,6 +28,7 @@ export default function CrmGroupDetail() {
   // ─── Data sources ───────────────────────────────────────────────────────────
   const { data: groups = [] } = useFirestore<any>('groups');
   const { data: students = [] } = useFirestore<any>('students');
+  const { data: schedules = [] } = useFirestore<any>('schedule');
   const { data: attendanceDocs = [], addDocument: addAtt, updateDocument: updateAtt } = useFirestore<any>('attendance');
   const { data: assessmentDocs = [], addDocument: addAssess, updateDocument: updateAssess } = useFirestore<any>('assessment');
   const { data: examDocs = [], addDocument: addExam, updateDocument: updateExam } = useFirestore<any>('exams');
@@ -43,8 +44,31 @@ export default function CrmGroupDetail() {
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null);
 
   const group = useMemo(() => groups.find((g: any) => g.id === id) || null, [groups, id]);
+  // Vaqt/kunlar/xona Group modelida emas, alohida GroupSchedule ("schedule"
+  // kolleksiyasi) da saqlanadi — shu yozuvni topib group bilan birlashtiramiz,
+  // shunda AttendanceTab/AssessmentTab/GroupSidebar haqiqiy dars kunlarini
+  // ko'radi (avval group.days doim undefined bo'lgani uchun "yakshanbadan
+  // boshqa har kuni" degan noto'g'ri standart holatga tushib qolardi).
+  const groupSchedule = useMemo(() => schedules.find((s: any) => s.groupId === id) || null, [schedules, id]);
+  const groupWithSchedule = useMemo(() => {
+    if (!group) return null;
+    // GroupSchedule.days raqam sifatida saqlanadi (1=Dush...7=Yak, CrmGroups.tsx
+    // DAY_MAP bilan bir xil), lekin Attendance/Assessment tab'lari o'zbekcha
+    // qisqartma kod kutadi ('Dush','Sesh',...) — shu yerda mos ravishda o'giramiz.
+    const NUM_TO_DAY: Record<number, string> = { 1: 'Dush', 2: 'Sesh', 3: 'Chor', 4: 'Pay', 5: 'Jum', 6: 'Shan', 7: 'Yak' };
+    const days = Array.isArray(groupSchedule?.days) ? groupSchedule.days.map((n: number) => NUM_TO_DAY[n]).filter(Boolean) : [];
+    return {
+      ...group,
+      days,
+      time: groupSchedule ? `${groupSchedule.startTime} - ${groupSchedule.endTime}` : '',
+      room: groupSchedule?.room || group.room,
+    };
+  }, [group, groupSchedule]);
 
   // ─── Fetch enrolled students ────────────────────────────────────────────────
+  // Enrollment — Group.students kabi maydon sxemada yo'q (haqiqiy ro'yxatga
+  // olish faqat Enrollment jadvali orqali). Xato bo'lsa bo'sh ro'yxat ko'rsatib,
+  // sababini toast bilan aytamiz — jimgina "hech kim yo'q" deb ko'rsatmaymiz.
   const fetchEnrollments = useCallback(async () => {
     if (!id) return;
     setEnrollmentsLoading(true);
@@ -52,15 +76,12 @@ export default function CrmGroupDetail() {
       const res = await api.get(`/enrollments/group/${id}`);
       setEnrolledStudents((res.data || []).map((e: any) => e.student || { id: e.studentId }));
     } catch {
-      if (group?.students && Array.isArray(group.students)) {
-        setEnrolledStudents(students.filter((s: any) => group.students.includes(s.id)));
-      } else {
-        setEnrolledStudents([]);
-      }
+      setEnrolledStudents([]);
+      showToast("O'quvchilar ro'yxatini yuklashda xatolik yuz berdi", 'error');
     } finally {
       setEnrollmentsLoading(false);
     }
-  }, [id, group, students]);
+  }, [id, showToast]);
 
   useEffect(() => { fetchEnrollments(); }, [fetchEnrollments]);
 
@@ -191,7 +212,7 @@ export default function CrmGroupDetail() {
       {/* Left Sidebar — admin/manager only */}
       {!isTeacher && (
         <GroupSidebar
-          group={group}
+          group={groupWithSchedule}
           groupStudents={enrolledStudents}
           enrollmentsLoading={enrollmentsLoading}
           showAddStudent={showAddStudent}
@@ -229,7 +250,7 @@ export default function CrmGroupDetail() {
         <div className="flex-1 p-6 overflow-hidden flex flex-col">
           {activeTab === 'Davomat' && (
             <AttendanceTab
-              group={group}
+              group={groupWithSchedule}
               groupStudents={enrolledStudents}
               attendanceDocs={attendanceDocs}
               currentDate={currentDate}
@@ -240,7 +261,7 @@ export default function CrmGroupDetail() {
 
           {activeTab === 'Baholash' && (
             <AssessmentTab
-              group={group}
+              group={groupWithSchedule}
               groupStudents={enrolledStudents}
               assessmentDocs={assessmentDocs}
               currentDate={currentDate}

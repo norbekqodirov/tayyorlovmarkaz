@@ -61,7 +61,7 @@ export default function CrmSchedule() {
     useFirestore<Omit<ScheduleItem, 'id'>>('schedule');
   const { data: roomsData = [], addDocument: addRoomDoc } = useFirestore<any>('rooms');
   const { data: groups = [] } = useFirestore<any>('groups');
-  const { courses, teachers: liveTeachers, getEndTime } = useCrmData();
+  const { teachers: liveTeachers, getEndTime } = useCrmData();
   const { showToast } = useToast();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ export default function CrmSchedule() {
     (groups || []).forEach((g: any) => {
       if (!seen.has(g.name)) {
         seen.add(g.name);
-        result.push({ name: g.name, teacher: g.teacher || '' });
+        result.push({ name: g.name, teacher: g.teacher?.name || '' });
       }
     });
     return result;
@@ -168,7 +168,7 @@ export default function CrmSchedule() {
     } else {
       setEditingItem(null);
       const fg = (groups || [])[0];
-      setFormData({ ...defaultForm(), groupName: fg?.name || '', teacher: fg?.teacher || liveTeachers[0]?.name || '', room: getRoomName(rooms[0]) });
+      setFormData({ ...defaultForm(), groupName: fg?.name || '', teacher: fg?.teacher?.name || liveTeachers[0]?.name || '', room: getRoomName(rooms[0]) });
     }
     setConflicts([]);
     setIsModalOpen(true);
@@ -406,9 +406,8 @@ export default function CrmSchedule() {
             <select value={formData.groupName}
               onChange={e => {
                 const g = (groups || []).find((g: any) => g.name === e.target.value);
-                const course = courses.find((c: any) => c.name === g?.subject);
-                const et = getEndTime(formData.startTime || '09:00', course?.lessonDuration || 90);
-                setFormData({ ...formData, groupName: e.target.value, teacher: g?.teacher || formData.teacher, room: getRoomName(g?.room) || formData.room, endTime: et });
+                const et = getEndTime(formData.startTime || '09:00', g?.course?.lessonDuration || 90);
+                setFormData({ ...formData, groupName: e.target.value, teacher: g?.teacher?.name || formData.teacher, endTime: et });
               }}
               className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Guruhni tanlang...</option>
@@ -443,8 +442,7 @@ export default function CrmSchedule() {
               <input type="time" value={formData.startTime}
                 onChange={e => {
                   const g = (groups || []).find((g: any) => g.name === formData.groupName);
-                  const course = courses.find((c: any) => c.name === g?.subject);
-                  setFormData({ ...formData, startTime: e.target.value, endTime: getEndTime(e.target.value, course?.lessonDuration || 90) });
+                  setFormData({ ...formData, startTime: e.target.value, endTime: getEndTime(e.target.value, g?.course?.lessonDuration || 90) });
                 }}
                 className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
             </div>

@@ -10,6 +10,7 @@ const router = express.Router();
 const MODEL_MAP: Record<string, string> = {
     // ── Core entities ────────────────────────────────────────────────────────
     'courses':        'course',
+    'courseTiers':    'courseTier',
     'groups':         'group',
     'students':       'student',
     'rooms':          'room',
@@ -55,6 +56,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'price'],
     'room': ['name', 'capacity', 'color'],
     'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status'],
+    'courseTier': ['courseId', 'name', 'price'],
     'transaction': ['type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
     'payment': ['studentId', 'amount', 'method', 'date', 'month', 'dueDate', 'status', 'notes'],
     'staffMember': ['name', 'role', 'email', 'phone', 'salary', 'joinedDate', 'status', 'department', 'address', 'passport', 'education', 'experience', 'photo'],
@@ -97,12 +99,15 @@ function stringifyJsonFields(modelName: string, data: any): any {
 // ko'rinardi (CrmGroups.tsx jadvali courseId/teacherId'ni ko'rsata olmasdi).
 const RELATION_INCLUDES: Record<string, any> = {
     'group': {
-        course: { select: { id: true, name: true, price: true, lessonDuration: true, duration: true } },
+        course: { select: { id: true, name: true, price: true, lessonDuration: true, duration: true, tiers: true } },
         teacher: { select: { id: true, name: true } },
         _count: { select: { enrollments: true } },
     },
     'lead': {
         activities: { orderBy: { date: 'desc' } },
+    },
+    'course': {
+        tiers: { orderBy: { price: 'asc' } },
     },
 };
 
