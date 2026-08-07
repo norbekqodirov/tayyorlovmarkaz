@@ -5,14 +5,15 @@
  */
 import { useState, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { motion } from 'framer-motion';
-import { Search, Filter, Plus, Download, X, GraduationCap } from 'lucide-react';
+import { Search, Plus, Download, GraduationCap } from 'lucide-react';
 
 import { exportToExcel, exportToPDF } from '../../../utils/export';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
 import api from '../../../api/client';
 
 import LeadStatsBar from '../../../components/leads/LeadStatsBar';
@@ -220,9 +221,6 @@ export default function CrmLeads() {
             className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
           />
         </div>
-        <button className="flex items-center gap-2 px-6 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-          <Filter size={18} /> Filtrlar
-        </button>
         <button
           onClick={() => exportToExcel(filteredLeads, EXCEL_COLS, 'Lidlar')}
           className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
@@ -270,50 +268,39 @@ export default function CrmLeads() {
       </AnimatePresence>
 
       {/* Convert to student modal */}
-      <AnimatePresence>
-        {isConvertModalOpen && selectedLead && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white">O'quvchiga aylantirish</h3>
-                <button onClick={() => setIsConvertModalOpen(false)}><X size={20} /></button>
-              </div>
-              <div className="p-6 space-y-4">
-                <p className="text-sm font-bold text-zinc-500">
-                  {selectedLead.name}ni o'quvchilar bazasiga qo'shish uchun guruhni tanlang:
-                </p>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruhni tanlang</label>
-                  <select
-                    value={selectedGroupId}
-                    onChange={e => setSelectedGroupId(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                  >
-                    <option value="">Tanlang...</option>
-                    {(groups || []).filter((g: any) => ['Faol', 'Yangi', 'active'].includes(g.status)).map((g: any) => (
-                      <option key={g.id} value={g.id}>{g.name} ({g.course?.name || 'Kurssiz'})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
-                <button onClick={() => setIsConvertModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500">Bekor qilish</button>
-                <button
-                  onClick={() => handleConvertToStudent(selectedLead)}
-                  className="px-6 py-2 bg-emerald-600 text-white rounded-xl font-black text-sm shadow-lg shadow-emerald-600/20 flex items-center gap-2"
-                >
-                  <GraduationCap size={16} /> Aylantirish
-                </button>
-              </div>
-            </motion.div>
+      {selectedLead && (
+        <Modal
+          isOpen={isConvertModalOpen}
+          onClose={() => setIsConvertModalOpen(false)}
+          title="O'quvchiga aylantirish"
+          width="sm"
+        >
+          <div className="space-y-4">
+            <p className="text-sm font-bold text-zinc-500">
+              {selectedLead.name}ni o'quvchilar bazasiga qo'shish uchun guruhni tanlang:
+            </p>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruhni tanlang</label>
+              <select
+                value={selectedGroupId}
+                onChange={e => setSelectedGroupId(e.target.value)}
+                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="">Tanlang...</option>
+                {(groups || []).filter((g: any) => ['Faol', 'Yangi', 'active'].includes(g.status)).map((g: any) => (
+                  <option key={g.id} value={g.id}>{g.name} ({g.course?.name || 'Kurssiz'})</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+              <Button variant="secondary" onClick={() => setIsConvertModalOpen(false)}>Bekor qilish</Button>
+              <Button variant="primary" className="!bg-emerald-600 hover:!bg-emerald-700 !shadow-emerald-600/20" onClick={() => handleConvertToStudent(selectedLead)} leftIcon={<GraduationCap size={16} />}>
+                Aylantirish
+              </Button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </Modal>
+      )}
 
       {/* Form modal */}
       <LeadFormModal

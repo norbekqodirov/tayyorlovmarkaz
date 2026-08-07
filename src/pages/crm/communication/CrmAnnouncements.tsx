@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Plus, Megaphone, Pin, Trash2, Edit2, Clock, Users, AlertTriangle, Calendar, Wrench } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 import api from '../../../api/client';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 
 const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   general:     { label: 'Umumiy',       icon: Megaphone,     color: 'text-blue-600',   bg: 'bg-blue-50 dark:bg-blue-500/10' },
@@ -20,6 +23,7 @@ export default function CrmAnnouncements() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [form, setForm] = useState({
     title: '', content: '', type: 'general', audience: 'all',
     priority: 'normal', pinned: false, expiresAt: '',
@@ -72,9 +76,11 @@ export default function CrmAnnouncements() {
     setSaving(false);
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("O'chirilsinmi?")) return;
-    await api.delete(`/announcements/${id}`);
+  const remove = (id: string) => setDeleteConfirm({ open: true, id });
+
+  const confirmRemove = async () => {
+    await api.delete(`/announcements/${deleteConfirm.id}`);
+    setDeleteConfirm({ open: false, id: '' });
     load();
   };
 
@@ -83,15 +89,22 @@ export default function CrmAnnouncements() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="E'lonni o'chirish"
+        message="Haqiqatan ham ushbu e'lonni o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmRemove}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white">E'lonlar Taxtasi</h1>
           <p className="text-sm text-zinc-500 mt-0.5">{items.length} ta e'lon</p>
         </div>
-        <button onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-md">
-          <Plus size={15} strokeWidth={2.5} /> Yangi E'lon
-        </button>
+        <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
+          Yangi E'lon
+        </Button>
       </div>
 
       {loading ? (
@@ -129,80 +142,56 @@ export default function CrmAnnouncements() {
         </div>
       )}
 
-      <AnimatePresence>
-        {showModal && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowModal(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl w-full max-w-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
-                  <h2 className="text-base font-black text-slate-900 dark:text-white">
-                    {editing ? "E'lonni tahrirlash" : "Yangi E'lon"}
-                  </h2>
-                </div>
-                <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Sarlavha *</label>
-                    <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="E'lon sarlavhasi" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Matn *</label>
-                    <textarea value={form.content} onChange={e => setForm(p => ({ ...p, content: e.target.value }))} rows={4}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      placeholder="E'lon matni..." />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Turi</label>
-                      <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="general">Umumiy</option>
-                        <option value="urgent">Shoshilinch</option>
-                        <option value="event">Tadbir</option>
-                        <option value="maintenance">Ta'mirlash</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Kimga</label>
-                      <select value={form.audience} onChange={e => setForm(p => ({ ...p, audience: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="all">Hammaga</option>
-                        <option value="students">O'quvchilarga</option>
-                        <option value="staff">Xodimlarga</option>
-                        <option value="teachers">O'qituvchilarga</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Amal qilish muddati</label>
-                    <input type="datetime-local" value={form.expiresAt} onChange={e => setForm(p => ({ ...p, expiresAt: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" checked={form.pinned} onChange={e => setForm(p => ({ ...p, pinned: e.target.checked }))}
-                      className="w-4 h-4 rounded accent-blue-600" />
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white">Yuqoriga qadalsin (pinned)</span>
-                  </label>
-                </div>
-                <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
-                  <button onClick={() => setShowModal(false)}
-                    className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                    Bekor
-                  </button>
-                  <button onClick={save} disabled={saving || !form.title.trim() || !form.content.trim()}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all">
-                    {saving ? 'Saqlanmoqda...' : (editing ? 'Saqlash' : "Qo'shish")}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? "E'lonni tahrirlash" : "Yangi E'lon"}
+        width="lg"
+      >
+        <div className="space-y-4">
+          <Input label="Sarlavha *" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="E'lon sarlavhasi" />
+          <div>
+            <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Matn *</label>
+            <textarea value={form.content} onChange={e => setForm(p => ({ ...p, content: e.target.value }))} rows={4}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="E'lon matni..." />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Turi</label>
+              <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
+                className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="general">Umumiy</option>
+                <option value="urgent">Shoshilinch</option>
+                <option value="event">Tadbir</option>
+                <option value="maintenance">Ta'mirlash</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">Kimga</label>
+              <select value={form.audience} onChange={e => setForm(p => ({ ...p, audience: e.target.value }))}
+                className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="all">Hammaga</option>
+                <option value="students">O'quvchilarga</option>
+                <option value="staff">Xodimlarga</option>
+                <option value="teachers">O'qituvchilarga</option>
+              </select>
+            </div>
+          </div>
+          <Input type="datetime-local" label="Amal qilish muddati" value={form.expiresAt} onChange={e => setForm(p => ({ ...p, expiresAt: e.target.value }))} />
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={form.pinned} onChange={e => setForm(p => ({ ...p, pinned: e.target.checked }))}
+              className="w-4 h-4 rounded accent-blue-600" />
+            <span className="text-sm font-semibold text-slate-900 dark:text-white">Yuqoriga qadalsin (pinned)</span>
+          </label>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Bekor</Button>
+            <Button onClick={save} isLoading={saving} disabled={!form.title.trim() || !form.content.trim()}>
+              {editing ? 'Saqlash' : "Qo'shish"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
