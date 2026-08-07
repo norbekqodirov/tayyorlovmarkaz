@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   DollarSign, TrendingUp, TrendingDown, Download, Plus,
-  Search, ArrowUpRight, ArrowDownRight, CreditCard, Wallet,
+  Search, CreditCard, Wallet,
   X, Calendar, FileText, User, Trash2, AlertTriangle,
   CheckCircle2, BarChart3, PieChart as PieChartIcon, Filter, Check, Send,
   Copy, ExternalLink, Receipt, Clock, XCircle, ChevronDown
@@ -20,6 +20,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import api from '../../../api/client';
 
 interface Invoice {
@@ -153,7 +154,6 @@ export default function CrmFinance() {
     }
   };
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
-  const [isDebtorsModalOpen, setIsDebtorsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 20;
 
@@ -339,47 +339,24 @@ export default function CrmFinance() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          {
-            label: 'Bu Oy Kirim', value: formatCompact(monthIncome),
-            sub: `${monthGrowth >= 0 ? '+' : ''}${monthGrowth}% o'tgan oyga`,
-            icon: TrendingUp, gradient: 'from-emerald-500 to-teal-600', up: monthGrowth >= 0
-          },
-          {
-            label: 'Bu Oy Chiqim', value: formatCompact(monthExpense),
-            sub: 'Joriy oy xarajati',
-            icon: TrendingDown, gradient: 'from-rose-500 to-red-600', up: false
-          },
-          {
-            label: 'Umumiy Balans', value: formatCompact(balance),
-            sub: 'Jami kirim - chiqim',
-            icon: Wallet, gradient: 'from-blue-600 to-indigo-700', up: balance >= 0
-          },
-          {
-            label: 'Jami Qarz', value: formatCompact(totalDebt),
-            sub: `${debtors.length} ta qarzdor o'quvchi`,
-            icon: AlertTriangle, gradient: 'from-amber-500 to-orange-600', up: debtors.length === 0
-          },
-        ].map((stat, i) => (
-          <div 
-            key={i} 
-            onClick={i === 3 ? () => setIsDebtorsModalOpen(true) : undefined}
-            className={`bg-gradient-to-br ${stat.gradient} p-4 rounded-2xl shadow-lg text-white relative overflow-hidden ${i === 3 ? 'cursor-pointer hover:scale-[1.02] transition-transform shadow-amber-500/20 ring-2 ring-amber-500/50' : ''}`}
-          >
-            <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
-            <div className="relative flex items-center justify-between mb-3">
-              <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                <stat.icon size={18} />
-              </div>
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">
-                {stat.up ? <ArrowUpRight size={9} /> : <ArrowDownRight size={9} />}
-              </div>
-            </div>
-            <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
-            <p className="text-xl font-black text-white mt-0.5">{stat.value} so'm</p>
-            <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
-          </div>
-        ))}
+        <StatCard
+          variant="gradient" color="emerald" label="Bu Oy Kirim" value={`${formatCompact(monthIncome)} so'm`}
+          sub={`${monthGrowth >= 0 ? '+' : ''}${monthGrowth}% o'tgan oyga`} icon={<TrendingUp size={18} />}
+        />
+        <StatCard
+          variant="gradient" color="rose" label="Bu Oy Chiqim" value={`${formatCompact(monthExpense)} so'm`}
+          sub="Joriy oy xarajati" icon={<TrendingDown size={18} />}
+        />
+        <StatCard
+          variant="gradient" color="blue" label="Umumiy Balans" value={`${formatCompact(balance)} so'm`}
+          sub="Jami kirim - chiqim" icon={<Wallet size={18} />}
+        />
+        <StatCard
+          variant="gradient" color="amber" label="Jami Qarz" value={`${formatCompact(totalDebt)} so'm`}
+          sub={`${debtors.length} ta qarzdor o'quvchi — bosing`} icon={<AlertTriangle size={18} />}
+          onClick={() => setActiveTab('debtors')}
+          className="ring-2 ring-amber-500/50"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

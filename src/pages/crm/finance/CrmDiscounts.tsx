@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Plus, Tag, Copy, Trash2, Edit2, CheckCircle2, XCircle, Percent, DollarSign } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
 import api from '../../../api/client';
+import { useToast } from '../../../components/Toast';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 
 export default function CrmDiscounts() {
+  const { showToast } = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [form, setForm] = useState({
     code: '', name: '', type: 'percent', value: '', maxUses: '',
     validFrom: '', validTo: '', minAmount: '', isActive: true,
@@ -60,14 +66,16 @@ export default function CrmDiscounts() {
       setShowModal(false);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Xatolik');
+      showToast(err.response?.data?.message || 'Xatolik', 'error');
     }
     setSaving(false);
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("O'chirilsinmi?")) return;
-    await api.delete(`/discounts/${id}`);
+  const remove = (id: string) => setDeleteConfirm({ open: true, id });
+
+  const confirmRemove = async () => {
+    await api.delete(`/discounts/${deleteConfirm.id}`);
+    setDeleteConfirm({ open: false, id: '' });
     load();
   };
 
@@ -82,14 +90,22 @@ export default function CrmDiscounts() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Chegirmani o'chirish"
+        message="Haqiqatan ham ushbu chegirmani o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmRemove}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white">Chegirmalar & Promo-kodlar</h1>
           <p className="text-sm text-zinc-500 mt-0.5">{items.length} ta chegirma</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-md">
-          <Plus size={15} strokeWidth={2.5} /> Yangi Chegirma
-        </button>
+        <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
+          Yangi Chegirma
+        </Button>
       </div>
 
       {loading ? (
@@ -168,100 +184,59 @@ export default function CrmDiscounts() {
         </div>
       )}
 
-      <AnimatePresence>
-        {showModal && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowModal(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl w-full max-w-md">
-                <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
-                  <h2 className="font-black text-slate-900 dark:text-white">{editing ? 'Chegirmani tahrirlash' : 'Yangi chegirma'}</h2>
-                </div>
-                <div className="px-6 py-5 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Kod *</label>
-                      <input
-                        value={form.code}
-                        onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase() }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase tracking-wider"
-                        placeholder="SALE20"
-                        disabled={!!editing}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Nomi</label>
-                      <input
-                        value={form.name}
-                        onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Yoz chegirmasi"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Turi</label>
-                      <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="percent">Foiz (%)</option>
-                        <option value="fixed">Belgilangan so'm</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">
-                        Qiymat {form.type === 'percent' ? '(%)' : "(so'm)"} *
-                      </label>
-                      <input type="number" value={form.value} onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder={form.type === 'percent' ? '20' : '50000'} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Boshlanish sanasi</label>
-                      <input type="date" value={form.validFrom} onChange={e => setForm(p => ({ ...p, validFrom: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Tugash sanasi</label>
-                      <input type="date" value={form.validTo} onChange={e => setForm(p => ({ ...p, validTo: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Max ishlatish soni</label>
-                      <input type="number" value={form.maxUses} onChange={e => setForm(p => ({ ...p, maxUses: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Cheksiz" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Min miqdor</label>
-                      <input type="number" value={form.minAmount} onChange={e => setForm(p => ({ ...p, minAmount: e.target.value }))}
-                        className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="0" />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" checked={form.isActive} onChange={e => setForm(p => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white">Faol</span>
-                  </label>
-                </div>
-                <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
-                  <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bekor</button>
-                  <button onClick={save} disabled={saving || !form.code || !form.value}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all">
-                    {saving ? 'Saqlanmoqda...' : (editing ? 'Saqlash' : "Qo'shish")}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? 'Chegirmani tahrirlash' : 'Yangi chegirma'}
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Kod *"
+              value={form.code}
+              onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase() }))}
+              className="font-mono uppercase tracking-wider"
+              placeholder="SALE20"
+              disabled={!!editing}
+            />
+            <Input label="Nomi" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Yoz chegirmasi" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Turi</label>
+              <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
+                className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="percent">Foiz (%)</option>
+                <option value="fixed">Belgilangan so'm</option>
+              </select>
+            </div>
+            <Input
+              type="number"
+              label={`Qiymat ${form.type === 'percent' ? '(%)' : "(so'm)"} *`}
+              value={form.value} onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
+              placeholder={form.type === 'percent' ? '20' : '50000'}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input type="date" label="Boshlanish sanasi" value={form.validFrom} onChange={e => setForm(p => ({ ...p, validFrom: e.target.value }))} />
+            <Input type="date" label="Tugash sanasi" value={form.validTo} onChange={e => setForm(p => ({ ...p, validTo: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input type="number" label="Max ishlatish soni" value={form.maxUses} onChange={e => setForm(p => ({ ...p, maxUses: e.target.value }))} placeholder="Cheksiz" />
+            <Input type="number" label="Min miqdor" value={form.minAmount} onChange={e => setForm(p => ({ ...p, minAmount: e.target.value }))} placeholder="0" />
+          </div>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={form.isActive} onChange={e => setForm(p => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
+            <span className="text-sm font-semibold text-slate-900 dark:text-white">Faol</span>
+          </label>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Bekor</Button>
+            <Button onClick={save} isLoading={saving} disabled={!form.code || !form.value}>
+              {editing ? 'Saqlash' : "Qo'shish"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
