@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CalendarCheck, Clock, CheckCircle2, XCircle, User, Filter } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { CalendarCheck, Clock, CheckCircle2, XCircle, User } from 'lucide-react';
 import api from '../../../api/client';
 
 const TYPE_LABELS: Record<string, string> = {

@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MapPin, Plus, Edit2, Trash2, Clock, Radio, Building2,
-  CheckCircle2, XCircle, Navigation, Users, ChevronRight,
-  AlertCircle, Save, X, Eye, EyeOff,
+  MapPin, Plus, Edit2, Trash2, CheckCircle2, Navigation, Users, ChevronRight,
+  AlertCircle, Save, Eye, EyeOff,
 } from 'lucide-react';
 import api from '../../../api/client';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 
 interface WorkLocation {
   id: string;
@@ -57,6 +60,7 @@ export default function CrmWorkLocations() {
   const [faceProfiles, setFaceProfiles] = useState<any[]>([]);
   const [showProfiles, setShowProfiles] = useState(false);
   const [deletingProfile, setDeletingProfile] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   useEffect(() => { load(); loadFaceProfiles(); }, []);
 
@@ -153,9 +157,11 @@ export default function CrmWorkLocations() {
     } catch { /* ignore */ }
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("Ish joyini o'chirilsinmi? (Davomat yozuvlari saqlanib qoladi)")) return;
-    await api.delete(`/work-locations/${id}`);
+  const remove = (id: string) => setDeleteConfirm({ open: true, id });
+
+  const confirmRemove = async () => {
+    await api.delete(`/work-locations/${deleteConfirm.id}`);
+    setDeleteConfirm({ open: false, id: '' });
     load();
   };
 
@@ -174,6 +180,14 @@ export default function CrmWorkLocations() {
 
   return (
     <div className="space-y-6 pb-8">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Ish joyini o'chirish"
+        message="Ish joyini o'chirilsinmi? (Davomat yozuvlari saqlanib qoladi)"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmRemove}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -182,12 +196,9 @@ export default function CrmWorkLocations() {
             {locations.filter(l => l.isActive).length} ta faol joylashuv
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-md"
-        >
-          <Plus size={15} strokeWidth={2.5} /> Yangi Joy
-        </button>
+        <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
+          Yangi Joy
+        </Button>
       </div>
 
       {/* Locations grid */}
@@ -401,159 +412,88 @@ export default function CrmWorkLocations() {
       </div>
 
       {/* Modal */}
-      <AnimatePresence>
-        {showModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-            onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
-            >
-              <div className="flex items-center justify-between p-5 border-b border-zinc-100 dark:border-zinc-800">
-                <h2 className="font-bold text-slate-900 dark:text-white">
-                  {editing ? 'Ish joyini tahrirlash' : 'Yangi ish joyi'}
-                </h2>
-                <button onClick={() => setShowModal(false)} className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg">
-                  <X size={18} />
-                </button>
-              </div>
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? 'Ish joyini tahrirlash' : 'Yangi ish joyi'}
+      >
+        <div className="space-y-4">
+          <Input label="Nom *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Masalan: Bosh ofis, 1-filial" />
+          <Input label="Manzil" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Ko'cha, shahar" />
 
-              <div className="p-5 space-y-4">
-                {/* Nom */}
-                <div>
-                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Nom *</label>
-                  <input
-                    value={form.name}
-                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    placeholder="Masalan: Bosh ofis, 1-filial"
-                    className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+          {/* Koordinatalar */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Koordinatalar *</label>
+              <button
+                onClick={detectLocation}
+                disabled={locating}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+              >
+                <Navigation size={11} className={locating ? 'animate-spin' : ''} />
+                {locating ? 'Aniqlanmoqda...' : 'Joylashuvni aniqlash'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                step="0.0000001"
+                value={form.latitude}
+                onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))}
+                placeholder="Kenglik (lat)"
+              />
+              <Input
+                type="number"
+                step="0.0000001"
+                value={form.longitude}
+                onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))}
+                placeholder="Uzunlik (lng)"
+              />
+            </div>
+            <p className="mt-1 text-xs text-zinc-400">
+              Google Maps dan koordinatani nusxa oling yoki yuqoridagi tugmani bosing
+            </p>
+          </div>
 
-                {/* Manzil */}
-                <div>
-                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Manzil</label>
-                  <input
-                    value={form.address}
-                    onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                    placeholder="Ko'cha, shahar"
-                    className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+          {/* Radius */}
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+              Radius: <span className="text-blue-600">{form.radius}m</span>
+            </label>
+            <input
+              type="range"
+              min="50"
+              max="1000"
+              step="50"
+              value={form.radius}
+              onChange={e => setForm(f => ({ ...f, radius: e.target.value }))}
+              className="mt-2 w-full accent-blue-600"
+            />
+            <div className="flex justify-between text-xs text-zinc-400 mt-1">
+              <span>50m</span><span>500m</span><span>1km</span>
+            </div>
+          </div>
 
-                {/* Koordinatalar */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Koordinatalar *</label>
-                    <button
-                      onClick={detectLocation}
-                      disabled={locating}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold"
-                    >
-                      <Navigation size={11} className={locating ? 'animate-spin' : ''} />
-                      {locating ? 'Aniqlanmoqda...' : 'Joylashuvni aniqlash'}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="number"
-                      step="0.0000001"
-                      value={form.latitude}
-                      onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))}
-                      placeholder="Kenglik (lat)"
-                      className="px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <input
-                      type="number"
-                      step="0.0000001"
-                      value={form.longitude}
-                      onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))}
-                      placeholder="Uzunlik (lng)"
-                      className="px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Google Maps dan koordinatani nusxa oling yoki yuqoridagi tugmani bosing
-                  </p>
-                </div>
+          {/* Ish vaqti */}
+          <div className="grid grid-cols-2 gap-3">
+            <Input type="time" label="Ish boshlanishi" value={form.workStartTime} onChange={e => setForm(f => ({ ...f, workStartTime: e.target.value }))} />
+            <Input type="number" min="0" max="120" label="Kechikish (daqiqa)" value={form.lateAfterMin} onChange={e => setForm(f => ({ ...f, lateAfterMin: e.target.value }))} />
+          </div>
 
-                {/* Radius */}
-                <div>
-                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
-                    Radius: <span className="text-blue-600">{form.radius}m</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="50"
-                    max="1000"
-                    step="50"
-                    value={form.radius}
-                    onChange={e => setForm(f => ({ ...f, radius: e.target.value }))}
-                    className="mt-2 w-full accent-blue-600"
-                  />
-                  <div className="flex justify-between text-xs text-zinc-400 mt-1">
-                    <span>50m</span><span>500m</span><span>1km</span>
-                  </div>
-                </div>
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-500/10 rounded-xl text-sm text-red-600 dark:text-red-400">
+              <AlertCircle size={14} /> {error}
+            </div>
+          )}
 
-                {/* Ish vaqti */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Ish boshlanishi</label>
-                    <input
-                      type="time"
-                      value={form.workStartTime}
-                      onChange={e => setForm(f => ({ ...f, workStartTime: e.target.value }))}
-                      className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Kechikish (daqiqa)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="120"
-                      value={form.lateAfterMin}
-                      onChange={e => setForm(f => ({ ...f, lateAfterMin: e.target.value }))}
-                      className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-500/10 rounded-xl text-sm text-red-600 dark:text-red-400">
-                    <AlertCircle size={14} /> {error}
-                  </div>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    Bekor
-                  </button>
-                  <button
-                    onClick={save}
-                    disabled={saving}
-                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={14} />}
-                    {editing ? 'Saqlash' : 'Qo\'shish'}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Bekor</Button>
+            <Button onClick={save} isLoading={saving} leftIcon={<Save size={14} />}>
+              {editing ? 'Saqlash' : "Qo'shish"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

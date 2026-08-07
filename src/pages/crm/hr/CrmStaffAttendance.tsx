@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle2, Clock, XCircle, AlertCircle,
   RefreshCw, Calendar, ChevronLeft, ChevronRight,
-  MapPin, Fingerprint, Shield, Edit2, Save, X,
-  Download, BarChart2, UserCheck, TrendingUp,
+  MapPin, Fingerprint, Shield, Edit2, Save,
 } from 'lucide-react';
 import api from '../../../api/client';
+import { Modal } from '../../../components/ui/Modal';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,18 +58,25 @@ function VerifyBadge({ by }: { by: string }) {
 
 // ─── Edit modal ──────────────────────────────────────────────────────────────
 
-function EditModal({ row, onClose, onSave }: {
-  row: AttRow;
+function EditModal({ row, isOpen, onClose, onSave }: {
+  row: AttRow | null;
+  isOpen: boolean;
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
 }) {
-  const [form, setForm] = useState({
-    status: row.record?.status || 'present',
-    checkIn: row.record?.checkIn || '',
-    checkOut: row.record?.checkOut || '',
-    notes: row.record?.notes || '',
-  });
+  const [form, setForm] = useState({ status: 'present', checkIn: '', checkOut: '', notes: '' });
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (row) {
+      setForm({
+        status: row.record?.status || 'present',
+        checkIn: row.record?.checkIn || '',
+        checkOut: row.record?.checkOut || '',
+        notes: row.record?.notes || '',
+      });
+    }
+  }, [row]);
 
   const handle = async () => {
     setSaving(true);
@@ -77,65 +85,37 @@ function EditModal({ row, onClose, onSave }: {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4"
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-slate-900 dark:text-white">{row.staff.name}</h3>
-          <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg"><X size={16} /></button>
+    <Modal isOpen={isOpen} onClose={onClose} title={row?.staff.name || ''} width="sm">
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Status</label>
+          <select
+            value={form.status}
+            onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+            className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+          >
+            <option value="present">Keldi</option>
+            <option value="late">Kechikdi</option>
+            <option value="absent">Kelmadi</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Input type="time" label="Kirish vaqti" value={form.checkIn} onChange={e => setForm(f => ({ ...f, checkIn: e.target.value }))} />
+          <Input type="time" label="Chiqish vaqti" value={form.checkOut} onChange={e => setForm(f => ({ ...f, checkOut: e.target.value }))} />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Izoh</label>
+          <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            rows={2} placeholder="Ixtiyoriy..."
+            className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm resize-none" />
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Status</label>
-            <select
-              value={form.status}
-              onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-              className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
-            >
-              <option value="present">Keldi</option>
-              <option value="late">Kechikdi</option>
-              <option value="absent">Kelmadi</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Kirish vaqti</label>
-              <input type="time" value={form.checkIn} onChange={e => setForm(f => ({ ...f, checkIn: e.target.value }))}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Chiqish vaqti</label>
-              <input type="time" value={form.checkOut} onChange={e => setForm(f => ({ ...f, checkOut: e.target.value }))}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Izoh</label>
-            <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              rows={2} placeholder="Ixtiyoriy..."
-              className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm resize-none" />
-          </div>
+        <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+          <Button variant="secondary" onClick={onClose}>Bekor</Button>
+          <Button onClick={handle} isLoading={saving} leftIcon={<Save size={14} />}>Saqlash</Button>
         </div>
-
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-300">
-            Bekor
-          </button>
-          <button onClick={handle} disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-bold flex items-center justify-center gap-2">
-            {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={14} />}
-            Saqlash
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </Modal>
   );
 }
 
@@ -453,15 +433,12 @@ export default function CrmStaffAttendance() {
       )}
 
       {/* Edit modal */}
-      <AnimatePresence>
-        {editRow && (
-          <EditModal
-            row={editRow}
-            onClose={() => setEditRow(null)}
-            onSave={formData => handleEdit(editRow, formData)}
-          />
-        )}
-      </AnimatePresence>
+      <EditModal
+        row={editRow}
+        isOpen={!!editRow}
+        onClose={() => setEditRow(null)}
+        onSave={formData => editRow && handleEdit(editRow, formData)}
+      />
     </div>
   );
 }
