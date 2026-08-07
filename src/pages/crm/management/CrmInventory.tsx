@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, Package,
-  Tag, MapPin, Calendar, DollarSign,
-  X, Save, CheckCircle2, AlertCircle,
-  Hash, Info, MoreVertical, Download
+  MapPin, DollarSign, CheckCircle2, AlertCircle,
+  Download
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
+import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { exportToExcel } from '../../../utils/export';
 
@@ -146,38 +148,18 @@ export default function CrmInventory() {
           >
             <Download size={16} />
           </button>
-          <button
-            onClick={() => openModal()}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
-          >
-            <Plus size={20} />
+          <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
             Yangi Jihoz
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Jami Jihoz', value: safeItems.length, icon: Package, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
-          { label: 'Umumiy Qiymat', value: new Intl.NumberFormat('uz-UZ').format(totalValue), icon: DollarSign, gradient: 'from-emerald-500 to-teal-600', sub: 'so\'m' },
-          { label: 'Yaxshi Holatda', value: safeItems.filter(i => i.status === 'Yaxshi').length, icon: CheckCircle2, gradient: 'from-violet-500 to-purple-600', sub: 'Ishlaydigan' },
-          { label: 'Ta\'mirda', value: safeItems.filter(i => i.status === 'Ta\'mirda' || i.status === 'Eskirgan').length, icon: AlertCircle, gradient: 'from-amber-500 to-orange-600', sub: 'Diqqat kerak' }
-        ].map((stat, i) => (
-          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
-            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
-            <div className="relative flex items-start justify-between">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
-                <stat.icon size={17} strokeWidth={2.5} />
-              </div>
-            </div>
-            <div className="relative mt-3">
-              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
-              <p className="text-xl font-black text-white mt-0.5 truncate">{stat.value}</p>
-              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
-            </div>
-          </div>
-        ))}
+        <StatCard variant="gradient" color="blue" label="Jami Jihoz" value={safeItems.length} sub="Ro'yxatda" icon={<Package size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="emerald" label="Umumiy Qiymat" value={new Intl.NumberFormat('uz-UZ').format(totalValue)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="violet" label="Yaxshi Holatda" value={safeItems.filter(i => i.status === 'Yaxshi').length} sub="Ishlaydigan" icon={<CheckCircle2 size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="amber" label="Ta'mirda" value={safeItems.filter(i => i.status === 'Ta\'mirda' || i.status === 'Eskirgan').length} sub="Diqqat kerak" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -280,131 +262,94 @@ export default function CrmInventory() {
       </div>
 
       {/* Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {editingItem ? 'Jihozni Tahrirlash' : 'Yangi Jihoz Qo\'shish'}
-                </h3>
-                <button onClick={closeModal} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                  <X size={24} />
-                </button>
-              </div>
-              
-              <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jihoz Nomi</label>
-                  <input 
-                    type="text" 
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    placeholder="Masalan: Ofis stoli"
-                  />
-                </div>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingItem ? 'Jihozni Tahrirlash' : "Yangi Jihoz Qo'shish"}
+        width="lg"
+      >
+        <div className="space-y-6">
+          <Input
+            label="Jihoz Nomi"
+            value={formData.name}
+            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            placeholder="Masalan: Ofis stoli"
+          />
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
-                    <select 
-                      value={formData.category}
-                      onChange={(e) => setFormData({...formData, category: e.target.value})}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Joylashuv</label>
-                    <select 
-                      value={formData.location}
-                      onChange={(e) => setFormData({...formData, location: e.target.value})}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sotib olingan sana</label>
-                    <input 
-                      type="date" 
-                      value={formData.purchaseDate}
-                      onChange={(e) => setFormData({...formData, purchaseDate: e.target.value})}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Soni</label>
-                    <input 
-                      type="number" 
-                      value={formData.quantity}
-                      onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <MoneyInput
-                      label="Narxi (dona)"
-                      value={formData.price}
-                      onChange={(price) => setFormData({...formData, price})}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</label>
-                    <select 
-                      value={formData.status}
-                      onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    >
-                      <option value="Yaxshi">Yaxshi</option>
-                      <option value="Ta'mirda">Ta'mirda</option>
-                      <option value="Eskirgan">Eskirgan</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>
-                  <textarea 
-                    value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white min-h-[100px]"
-                    placeholder="Jihoz haqida batafsil..."
-                  />
-                </div>
-              </div>
-
-              <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-900/50">
-                <button 
-                  onClick={closeModal}
-                  className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Bekor qilish
-                </button>
-                <button 
-                  onClick={handleSave}
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20"
-                >
-                  Saqlash
-                </button>
-              </div>
-            </motion.div>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Joylashuv</label>
+              <select
+                value={formData.location}
+                onChange={(e) => setFormData({...formData, location: e.target.value})}
+                className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+
+          <div className="grid grid-cols-2 gap-6">
+            <Input
+              type="date"
+              label="Sotib olingan sana"
+              value={formData.purchaseDate}
+              onChange={(e) => setFormData({...formData, purchaseDate: e.target.value})}
+            />
+            <Input
+              type="number"
+              label="Soni"
+              value={formData.quantity}
+              onChange={(e) => setFormData({...formData, quantity: Number(e.target.value)})}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+            <MoneyInput
+              label="Narxi (dona)"
+              value={formData.price}
+              onChange={(price) => setFormData({...formData, price})}
+            />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="Yaxshi">Yaxshi</option>
+                <option value="Ta'mirda">Ta'mirda</option>
+                <option value="Eskirgan">Eskirgan</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white min-h-[100px]"
+              placeholder="Jihoz haqida batafsil..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={closeModal}>Bekor qilish</Button>
+            <Button onClick={handleSave}>Saqlash</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

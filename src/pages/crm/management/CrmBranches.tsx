@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Plus, Building2, Trash2, Edit2, CheckCircle2, MapPin, Phone } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { Plus, Building2, Trash2, Edit2, MapPin, Phone } from 'lucide-react';
 import api from '../../../api/client';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
 
 export default function CrmBranches() {
@@ -12,6 +15,7 @@ export default function CrmBranches() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', phone: '', status: 'active', managerId: '' });
   const [stats, setStats] = useState<Record<string, any>>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   useEffect(() => { load(); }, []);
 
@@ -57,22 +61,32 @@ export default function CrmBranches() {
     setSaving(false);
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("O'chirilsinmi?")) return;
-    await api.delete(`/branches/${id}`);
+  const remove = (id: string) => setDeleteConfirm({ open: true, id });
+
+  const confirmRemove = async () => {
+    await api.delete(`/branches/${deleteConfirm.id}`);
+    setDeleteConfirm({ open: false, id: '' });
     load();
   };
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Filialni o'chirish"
+        message="Haqiqatan ham ushbu filialni o'chirmoqchimisiz?"
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmRemove}
+        onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white">Filiallar</h1>
           <p className="text-sm text-zinc-500 mt-0.5">{branches.length} ta filial</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-md">
-          <Plus size={15} strokeWidth={2.5} /> Yangi Filial
-        </button>
+        <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
+          Yangi Filial
+        </Button>
       </div>
 
       {loading ? (
@@ -150,54 +164,31 @@ export default function CrmBranches() {
         </div>
       )}
 
-      <AnimatePresence>
-        {showModal && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowModal(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl w-full max-w-md">
-                <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
-                  <h2 className="font-black text-slate-900 dark:text-white">{editing ? 'Filialni tahrirlash' : 'Yangi filial'}</h2>
-                </div>
-                <div className="px-6 py-5 space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Nomi *</label>
-                    <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Markaziy filial" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Manzil</label>
-                    <input value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Ko'cha, uy" />
-                  </div>
-                  <div>
-                    <PhoneInput label="Telefon" value={form.phone} onChange={(phone) => setForm(p => ({ ...p, phone }))} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Holati</label>
-                    <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="active">Faol</option>
-                      <option value="inactive">Faol emas</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
-                  <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bekor</button>
-                  <button onClick={save} disabled={saving || !form.name.trim()}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold">
-                    {saving ? 'Saqlanmoqda...' : (editing ? 'Saqlash' : "Qo'shish")}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? 'Filialni tahrirlash' : 'Yangi filial'}
+      >
+        <div className="space-y-4">
+          <Input label="Nomi *" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Markaziy filial" />
+          <Input label="Manzil" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Ko'cha, uy" />
+          <PhoneInput label="Telefon" value={form.phone} onChange={(phone) => setForm(p => ({ ...p, phone }))} />
+          <div>
+            <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Holati</label>
+            <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="active">Faol</option>
+              <option value="inactive">Faol emas</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={() => setShowModal(false)}>Bekor</Button>
+            <Button onClick={save} isLoading={saving} disabled={!form.name.trim()}>
+              {editing ? 'Saqlash' : "Qo'shish"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

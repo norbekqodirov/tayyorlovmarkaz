@@ -4,6 +4,8 @@ import { useFirestore } from '../../../hooks/useFirestore';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 
 export default function CrmSettings() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -166,10 +168,9 @@ export default function CrmSettings() {
     <div className="space-y-6 max-w-4xl">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Sozlamalar</h1>
-        <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm">
-          <Save size={18} />
+        <Button onClick={handleSave} leftIcon={<Save size={18} />}>
           Saqlash
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -254,19 +255,11 @@ export default function CrmSettings() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">To'liq ism</label>
-                    <input type="text" value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                  </div>
-                  <div>
-                    <PhoneInput label="Telefon raqam" value={profileData.phone} onChange={(phone) => setProfileData({ ...profileData, phone })} />
-                  </div>
+                  <Input label="To'liq ism" value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} />
+                  <PhoneInput label="Telefon raqam" value={profileData.phone} onChange={(phone) => setProfileData({ ...profileData, phone })} />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Email</label>
-                  <input type="email" value={profileData.email} onChange={(e) => setProfileData({ ...profileData, email: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
+                <Input type="email" label="Email" value={profileData.email} onChange={(e) => setProfileData({ ...profileData, email: e.target.value })} />
               </div>
             </>
           )}
@@ -275,25 +268,11 @@ export default function CrmSettings() {
             <>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Sayt ma'lumotlari</h2>
               <div className="space-y-5">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Sayt nomi</label>
-                  <input type="text" value={siteData.siteName} onChange={(e) => setSiteData({ ...siteData, siteName: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
-                <div>
-                  <PhoneInput label="Aloqa telefoni" value={siteData.contactPhone} onChange={(contactPhone) => setSiteData({ ...siteData, contactPhone })} />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Manzil</label>
-                  <input type="text" value={siteData.address} onChange={(e) => setSiteData({ ...siteData, address: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Instagram URL</label>
-                  <input type="url" value={siteData.instagram} onChange={(e) => setSiteData({ ...siteData, instagram: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Telegram URL</label>
-                  <input type="url" value={siteData.telegram} onChange={(e) => setSiteData({ ...siteData, telegram: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
+                <Input label="Sayt nomi" value={siteData.siteName} onChange={(e) => setSiteData({ ...siteData, siteName: e.target.value })} />
+                <PhoneInput label="Aloqa telefoni" value={siteData.contactPhone} onChange={(contactPhone) => setSiteData({ ...siteData, contactPhone })} />
+                <Input label="Manzil" value={siteData.address} onChange={(e) => setSiteData({ ...siteData, address: e.target.value })} />
+                <Input type="url" label="Instagram URL" value={siteData.instagram} onChange={(e) => setSiteData({ ...siteData, instagram: e.target.value })} />
+                <Input type="url" label="Telegram URL" value={siteData.telegram} onChange={(e) => setSiteData({ ...siteData, telegram: e.target.value })} />
               </div>
             </>
           )}
@@ -302,18 +281,9 @@ export default function CrmSettings() {
             <>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Xavfsizlik</h2>
               <div className="space-y-5">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Joriy parol</label>
-                  <input type="password" value={securityData.currentPassword} onChange={(e) => setSecurityData({ ...securityData, currentPassword: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Yangi parol</label>
-                  <input type="password" value={securityData.newPassword} onChange={(e) => setSecurityData({ ...securityData, newPassword: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Yangi parolni tasdiqlang</label>
-                  <input type="password" value={securityData.confirmPassword} onChange={(e) => setSecurityData({ ...securityData, confirmPassword: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                </div>
+                <Input type="password" label="Joriy parol" value={securityData.currentPassword} onChange={(e) => setSecurityData({ ...securityData, currentPassword: e.target.value })} />
+                <Input type="password" label="Yangi parol" value={securityData.newPassword} onChange={(e) => setSecurityData({ ...securityData, newPassword: e.target.value })} />
+                <Input type="password" label="Yangi parolni tasdiqlang" value={securityData.confirmPassword} onChange={(e) => setSecurityData({ ...securityData, confirmPassword: e.target.value })} />
               </div>
             </>
           )}
@@ -352,10 +322,7 @@ export default function CrmSettings() {
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">Asosiy Qism (Hero)</h3>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Asosiy Sarlavha</label>
-                    <input type="text" value={landingData.heroTitle} onChange={(e) => setLandingData({ ...landingData, heroTitle: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
-                  </div>
+                  <Input label="Asosiy Sarlavha" value={landingData.heroTitle} onChange={(e) => setLandingData({ ...landingData, heroTitle: e.target.value })} />
                   <div>
                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Qisqa Ta'rif (Subtitle)</label>
                     <textarea value={landingData.heroSubtitle} onChange={(e) => setLandingData({ ...landingData, heroSubtitle: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all min-h-[100px]" />
@@ -365,46 +332,15 @@ export default function CrmSettings() {
                 <div className="space-y-4">
                   <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200 mt-6">Statistikalar</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 1 - Qiymat</label>
-                        <input type="text" value={landingData.stat1Value} onChange={(e) => setLandingData({ ...landingData, stat1Value: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
+                    {([
+                      ['stat1Value', 'stat1Label', 1], ['stat2Value', 'stat2Label', 2],
+                      ['stat3Value', 'stat3Label', 3], ['stat4Value', 'stat4Label', 4],
+                    ] as const).map(([valueKey, labelKey, n]) => (
+                      <div key={n} className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3">
+                        <Input label={`Qurilma ${n} - Qiymat`} value={landingData[valueKey]} onChange={(e) => setLandingData({ ...landingData, [valueKey]: e.target.value })} />
+                        <Input label={`Qurilma ${n} - Matn`} value={landingData[labelKey]} onChange={(e) => setLandingData({ ...landingData, [labelKey]: e.target.value })} />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 1 - Matn</label>
-                        <input type="text" value={landingData.stat1Label} onChange={(e) => setLandingData({ ...landingData, stat1Label: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                    </div>
-                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 2 - Qiymat</label>
-                        <input type="text" value={landingData.stat2Value} onChange={(e) => setLandingData({ ...landingData, stat2Value: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 2 - Matn</label>
-                        <input type="text" value={landingData.stat2Label} onChange={(e) => setLandingData({ ...landingData, stat2Label: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                    </div>
-                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 3 - Qiymat</label>
-                        <input type="text" value={landingData.stat3Value} onChange={(e) => setLandingData({ ...landingData, stat3Value: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 3 - Matn</label>
-                        <input type="text" value={landingData.stat3Label} onChange={(e) => setLandingData({ ...landingData, stat3Label: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                    </div>
-                    <div className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 4 - Qiymat</label>
-                        <input type="text" value={landingData.stat4Value} onChange={(e) => setLandingData({ ...landingData, stat4Value: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase text-zinc-500 mb-1">Qurilma 4 - Matn</label>
-                        <input type="text" value={landingData.stat4Label} onChange={(e) => setLandingData({ ...landingData, stat4Label: e.target.value })} className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm" />
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -458,22 +394,20 @@ export default function CrmSettings() {
               </p>
               <div className="space-y-5 max-w-md">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Oyiga nechta dars (standart)</label>
-                  <input
+                  <Input
                     type="number" min="1"
+                    label="Oyiga nechta dars (standart)"
                     value={billingSettings.lessonsPerMonth}
                     onChange={e => setBillingSettings({ ...billingSettings, lessonsPerMonth: Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                   <p className="text-xs text-zinc-400 mt-1">Kurs narxi shu songa bo'linib, bitta dars narxi topiladi.</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Nechta darsdan ko'p qoldirilsa chegirma ishlaydi</label>
-                  <input
+                  <Input
                     type="number" min="0"
+                    label="Nechta darsdan ko'p qoldirilsa chegirma ishlaydi"
                     value={billingSettings.absenceThreshold}
                     onChange={e => setBillingSettings({ ...billingSettings, absenceThreshold: Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                   <p className="text-xs text-zinc-400 mt-1">
                     Masalan {billingSettings.absenceThreshold} bo'lsa: {billingSettings.absenceThreshold} tagacha qoldirsa to'liq narx,
@@ -481,12 +415,11 @@ export default function CrmSettings() {
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">O'qituvchi stavkasi (% tushumdan)</label>
-                  <input
+                  <Input
                     type="number" min="0" max="100"
+                    label="O'qituvchi stavkasi (% tushumdan)"
                     value={billingSettings.teacherSalaryPercent}
                     onChange={e => setBillingSettings({ ...billingSettings, teacherSalaryPercent: Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
                   <p className="text-xs text-zinc-400 mt-1">O'qituvchi oyligi shu foizda, davomat chegirmasidan keyingi haqiqiy tushumdan hisoblanadi.</p>
                 </div>
@@ -536,7 +469,7 @@ export default function CrmSettings() {
                     <div className="flex-1">
                       <h3 className="font-bold text-slate-900 dark:text-white">Ma'lumotlar bazasini yuklab olish</h3>
                       <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">To'liq baza nusxasi (.db yoki .sql) yuklab olinadi. Backup faylni xavfsiz joyda saqlang.</p>
-                      <button
+                      <Button
                         onClick={async () => {
                           setBackupLoading(true);
                           try {
@@ -557,12 +490,12 @@ export default function CrmSettings() {
                             setBackupLoading(false);
                           }
                         }}
-                        disabled={backupLoading}
-                        className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                        isLoading={backupLoading}
+                        leftIcon={<Download size={16} />}
+                        className="mt-3"
                       >
-                        <Download size={16} />
-                        {backupLoading ? 'Yuklanmoqda...' : 'Backup yuklab olish'}
-                      </button>
+                        Backup yuklab olish
+                      </Button>
                     </div>
                   </div>
                 </div>
