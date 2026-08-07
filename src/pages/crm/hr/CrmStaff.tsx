@@ -4,6 +4,10 @@ import { Plus, Search, MoreVertical, User, Mail, Phone, Briefcase, DollarSign, X
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
+import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import api from '../../../api/client';
@@ -316,36 +320,16 @@ export default function CrmStaff() {
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Xodimlar Boshqaruvi (HR)</h1>
           <p className="text-zinc-500 text-sm font-medium">O'quv markazi jamoasini boshqarish va nazorat qilish</p>
         </div>
-        <button
-          onClick={() => openModal()}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
-        >
-          <Plus size={20} />
+        <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
           Yangi Xodim
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Jami Xodimlar', value: safeStaff.length, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
-          { label: 'Oylik Fond', value: new Intl.NumberFormat('uz-UZ').format(safeStaff.reduce((acc, s) => acc + (Number(s.salary) || 0), 0)), icon: DollarSign, gradient: 'from-emerald-500 to-teal-600', sub: 'so\'m / oy' },
-          { label: 'Faol Xodimlar', value: safeStaff.filter(s => s.status === 'Faol').length, icon: ShieldCheck, gradient: 'from-violet-500 to-purple-600', sub: 'Ishlayotgan' },
-          { label: 'Bo\'limlar', value: new Set((safeStaff || []).map(s => s.department)).size, icon: Building2, gradient: 'from-amber-500 to-orange-600', sub: 'Unikal bo\'lim' }
-        ].map((stat, i) => (
-          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
-            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
-            <div className="relative flex items-start justify-between">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
-                <stat.icon size={17} strokeWidth={2.5} />
-              </div>
-            </div>
-            <div className="relative mt-3">
-              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
-              <p className="text-xl font-black text-white mt-0.5 truncate">{stat.value}</p>
-              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
-            </div>
-          </div>
-        ))}
+        <StatCard variant="gradient" color="blue" label="Jami Xodimlar" value={safeStaff.length} sub="Ro'yxatda" icon={<Users size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="emerald" label="Oylik Fond" value={new Intl.NumberFormat('uz-UZ').format(safeStaff.reduce((acc, s) => acc + (Number(s.salary) || 0), 0))} sub="so'm / oy" icon={<DollarSign size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="violet" label="Faol Xodimlar" value={safeStaff.filter(s => s.status === 'Faol').length} sub="Ishlayotgan" icon={<ShieldCheck size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="amber" label="Bo'limlar" value={new Set((safeStaff || []).map(s => s.department)).size} sub="Unikal bo'lim" icon={<Building2 size={17} strokeWidth={2.5} />} />
       </div>
 
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
@@ -836,305 +820,190 @@ export default function CrmStaff() {
       </AnimatePresence>
 
       {/* Sub-modals for Attendance, Salary, etc. */}
-      <AnimatePresence>
-        {isSubModalOpen.isOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                  {isSubModalOpen.type === 'attendance' && 'Davomatni belgilash'}
-                  {isSubModalOpen.type === 'salary' && 'To\'lov qo\'shish'}
-                  {isSubModalOpen.type === 'tasks' && 'Vazifa qo\'shish'}
-                  {isSubModalOpen.type === 'reviews' && 'Fikr qoldirish'}
-                  {isSubModalOpen.type === 'docs' && 'Hujjat yuklash'}
-                </h3>
-                <button onClick={() => setIsSubModalOpen({ type: '', isOpen: false })} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                  <X size={20} />
-                </button>
+      <Modal
+        isOpen={isSubModalOpen.isOpen}
+        onClose={() => setIsSubModalOpen({ type: '', isOpen: false })}
+        title={
+          isSubModalOpen.type === 'attendance' ? 'Davomatni belgilash' :
+          isSubModalOpen.type === 'salary' ? "To'lov qo'shish" :
+          isSubModalOpen.type === 'tasks' ? 'Vazifa qo\'shish' :
+          isSubModalOpen.type === 'reviews' ? 'Fikr qoldirish' :
+          'Hujjat yuklash'
+        }
+      >
+        <div className="space-y-4">
+          {isSubModalOpen.type === 'attendance' && (
+            <>
+              <Input type="date" label="Sana" value={subFormData.date} onChange={(e) => setSubFormData({ ...subFormData, date: e.target.value })} />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
+                <select value={subFormData.status} onChange={(e) => setSubFormData({ ...subFormData, status: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
+                  <option value="present">Kelgan</option>
+                  <option value="absent">Kelmagan</option>
+                  <option value="late">Kechikkan</option>
+                </select>
               </div>
-
-              <div className="p-6 space-y-4">
-                {isSubModalOpen.type === 'attendance' && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sana</label>
-                      <input type="date" value={subFormData.date} onChange={(e) => setSubFormData({ ...subFormData, date: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
-                      <select value={subFormData.status} onChange={(e) => setSubFormData({ ...subFormData, status: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
-                        <option value="present">Kelgan</option>
-                        <option value="absent">Kelmagan</option>
-                        <option value="late">Kechikkan</option>
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kelgan vaqti</label>
-                        <input type="time" value={subFormData.checkIn} onChange={(e) => setSubFormData({ ...subFormData, checkIn: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ketgan vaqti</label>
-                        <input type="time" value={subFormData.checkOut} onChange={(e) => setSubFormData({ ...subFormData, checkOut: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {isSubModalOpen.type === 'salary' && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Oy</label>
-                      <input type="month" value={subFormData.month} onChange={(e) => setSubFormData({ ...subFormData, month: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <MoneyInput label="Asosiy" value={subFormData.baseSalary} onChange={(baseSalary) => setSubFormData({ ...subFormData, baseSalary })} />
-                      <MoneyInput label="Bonus" value={subFormData.bonus} onChange={(bonus) => setSubFormData({ ...subFormData, bonus })} />
-                      <MoneyInput label="Ushlab qolish" value={subFormData.deduction} onChange={(deduction) => setSubFormData({ ...subFormData, deduction })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Izoh (ixtiyoriy)</label>
-                      <input type="text" value={subFormData.notes || ''} onChange={(e) => setSubFormData({ ...subFormData, notes: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
-                    </div>
-                  </>
-                )}
-
-                {isSubModalOpen.type === 'tasks' && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Vazifa nomi</label>
-                      <input type="text" value={subFormData.title} onChange={(e) => setSubFormData({ ...subFormData, title: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" placeholder="Masalan: Hisobot tayyorlash" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Muhimlik</label>
-                        <select value={subFormData.priority} onChange={(e) => setSubFormData({ ...subFormData, priority: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
-                          <option value="Low">Past</option>
-                          <option value="Medium">O'rta</option>
-                          <option value="High">Yuqori</option>
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Muddati</label>
-                        <input type="date" value={subFormData.deadline} onChange={(e) => setSubFormData({ ...subFormData, deadline: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" />
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {isSubModalOpen.type === 'reviews' && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Baholash (1-5)</label>
-                      <div className="flex gap-2">
-                        {[1, 2, 3, 4, 5].map(star => (
-                          <button key={star} onClick={() => setSubFormData({ ...subFormData, rating: star })} className={`text-2xl ${star <= subFormData.rating ? 'text-amber-400' : 'text-zinc-300'}`}>★</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fikr-mulohaza</label>
-                      <textarea value={subFormData.feedback} onChange={(e) => setSubFormData({ ...subFormData, feedback: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white resize-none" rows={4} placeholder="Xodim faoliyati haqida fikringiz..." />
-                    </div>
-                  </>
-                )}
-
-                {isSubModalOpen.type === 'docs' && (
-                  <>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Hujjat nomi</label>
-                      <input type="text" value={subFormData.name} onChange={(e) => setSubFormData({ ...subFormData, name: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white" placeholder="Masalan: Passport nusxasi" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Turi</label>
-                      <select value={subFormData.type} onChange={(e) => setSubFormData({ ...subFormData, type: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
-                        <option value="Passport nusxasi">Passport nusxasi</option>
-                        <option value="Diplom">Diplom</option>
-                        <option value="Shartnoma">Shartnoma</option>
-                        <option value="Sertifikat">Sertifikat</option>
-                      </select>
-                    </div>
-                  </>
-                )}
+              <div className="grid grid-cols-2 gap-4">
+                <Input type="time" label="Kelgan vaqti" value={subFormData.checkIn} onChange={(e) => setSubFormData({ ...subFormData, checkIn: e.target.value })} />
+                <Input type="time" label="Ketgan vaqti" value={subFormData.checkOut} onChange={(e) => setSubFormData({ ...subFormData, checkOut: e.target.value })} />
               </div>
+            </>
+          )}
 
-              <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-900/50">
-                <button onClick={() => setIsSubModalOpen({ type: '', isOpen: false })} className="px-4 py-2 text-sm font-bold text-zinc-500 hover:text-zinc-700">Bekor qilish</button>
-                <button onClick={saveSubItem} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black shadow-lg shadow-blue-600/20">Saqlash</button>
+          {isSubModalOpen.type === 'salary' && (
+            <>
+              <Input type="month" label="Oy" value={subFormData.month} onChange={(e) => setSubFormData({ ...subFormData, month: e.target.value })} />
+              <div className="grid grid-cols-3 gap-3">
+                <MoneyInput label="Asosiy" value={subFormData.baseSalary} onChange={(baseSalary) => setSubFormData({ ...subFormData, baseSalary })} />
+                <MoneyInput label="Bonus" value={subFormData.bonus} onChange={(bonus) => setSubFormData({ ...subFormData, bonus })} />
+                <MoneyInput label="Ushlab qolish" value={subFormData.deduction} onChange={(deduction) => setSubFormData({ ...subFormData, deduction })} />
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+              <Input label="Izoh (ixtiyoriy)" value={subFormData.notes || ''} onChange={(e) => setSubFormData({ ...subFormData, notes: e.target.value })} />
+            </>
+          )}
 
-      {/* Edit/Add Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {editingMember ? 'Xodimni Tahrirlash' : 'Yangi Xodim Qo\'shish'}
-                </h3>
-                <button onClick={closeModal} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                  <X size={24} />
-                </button>
+          {isSubModalOpen.type === 'tasks' && (
+            <>
+              <Input label="Vazifa nomi" value={subFormData.title} onChange={(e) => setSubFormData({ ...subFormData, title: e.target.value })} placeholder="Masalan: Hisobot tayyorlash" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Muhimlik</label>
+                  <select value={subFormData.priority} onChange={(e) => setSubFormData({ ...subFormData, priority: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
+                    <option value="Low">Past</option>
+                    <option value="Medium">O'rta</option>
+                    <option value="High">Yuqori</option>
+                  </select>
+                </div>
+                <Input type="date" label="Muddati" value={subFormData.deadline} onChange={(e) => setSubFormData({ ...subFormData, deadline: e.target.value })} />
               </div>
-              <div className="p-6 overflow-y-auto max-h-[70vh]">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Asosiy Ma'lumotlar</h4>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ism Familiya</label>
-                      <input
-                        type="text"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="Masalan: Alisher Navoiy"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Lavozim</label>
-                      <input
-                        type="text"
-                        value={formData.role}
-                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="Masalan: O'qituvchi"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Passport Seriya</label>
-                      <input
-                        type="text"
-                        value={formData.passport}
-                        onChange={(e) => setFormData({ ...formData, passport: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="AA 1234567"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Manzil</label>
-                      <input
-                        type="text"
-                        value={formData.address}
-                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="Toshkent sh, Chilonzor..."
-                      />
-                    </div>
-                  </div>
+            </>
+          )}
 
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Aloqa va Ish</h4>
-                    <div className="space-y-2">
-                      <PhoneInput
-                        label="Telefon (login uchun)"
-                        value={formData.phone || ''}
-                        onChange={(phone) => setFormData({ ...formData, phone })}
-                      />
-                    </div>
-                    {!editingMember && (
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1">
-                          <ShieldCheck size={11} className="text-emerald-500" /> Login paroli
-                        </label>
-                        <input
-                          type="text"
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all dark:text-white"
-                          placeholder="Bo'sh qoldirilsa: 123456"
-                        />
-                        <p className="text-[10px] text-zinc-400 leading-tight">
-                          Telefon + parol bilan xodim botga (Mini App) kira oladi. Ruxsatlar lavozimiga qarab beriladi.
-                        </p>
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Email</label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                        placeholder="example@mail.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <MoneyInput label="Maosh (UZS)" value={formData.salary} onChange={(salary) => setFormData({ ...formData, salary })} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Bo'lim</label>
-                      <select
-                        value={formData.department}
-                        onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                      >
-                        <option value="Ma'muriyat">Ma'muriyat</option>
-                        <option value="Ta'lim">Ta'lim</option>
-                        <option value="Marketing">Marketing</option>
-                        <option value="Xizmat ko'rsatish">Xizmat ko'rsatish</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-2 space-y-4">
-                    <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Qo'shimcha</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ta'lim</label>
-                        <textarea
-                          value={formData.education}
-                          onChange={(e) => setFormData({ ...formData, education: e.target.value })}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white resize-none"
-                          rows={2}
-                          placeholder="Oliy ma'lumot, universitet..."
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tajriba</label>
-                        <textarea
-                          value={formData.experience}
-                          onChange={(e) => setFormData({ ...formData, experience: e.target.value })}
-                          className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white resize-none"
-                          rows={2}
-                          placeholder="Oldingi ish joylari, yutuqlar..."
-                        />
-                      </div>
-                    </div>
-                  </div>
+          {isSubModalOpen.type === 'reviews' && (
+            <>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Baholash (1-5)</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <button key={star} onClick={() => setSubFormData({ ...subFormData, rating: star })} className={`text-2xl ${star <= subFormData.rating ? 'text-amber-400' : 'text-zinc-300'}`}>★</button>
+                  ))}
                 </div>
               </div>
-              <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50 dark:bg-zinc-900/50">
-                <button
-                  onClick={closeModal}
-                  className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20"
-                >
-                  Saqlash
-                </button>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fikr-mulohaza</label>
+                <textarea value={subFormData.feedback} onChange={(e) => setSubFormData({ ...subFormData, feedback: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white resize-none" rows={4} placeholder="Xodim faoliyati haqida fikringiz..." />
               </div>
-            </motion.div>
+            </>
+          )}
+
+          {isSubModalOpen.type === 'docs' && (
+            <>
+              <Input label="Hujjat nomi" value={subFormData.name} onChange={(e) => setSubFormData({ ...subFormData, name: e.target.value })} placeholder="Masalan: Passport nusxasi" />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Turi</label>
+                <select value={subFormData.type} onChange={(e) => setSubFormData({ ...subFormData, type: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
+                  <option value="Passport nusxasi">Passport nusxasi</option>
+                  <option value="Diplom">Diplom</option>
+                  <option value="Shartnoma">Shartnoma</option>
+                  <option value="Sertifikat">Sertifikat</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={() => setIsSubModalOpen({ type: '', isOpen: false })}>Bekor qilish</Button>
+            <Button onClick={saveSubItem}>Saqlash</Button>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
+
+      {/* Edit/Add Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingMember ? 'Xodimni Tahrirlash' : "Yangi Xodim Qo'shish"}
+        width="2xl"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Asosiy Ma'lumotlar</h4>
+            <Input label="Ism Familiya" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Masalan: Alisher Navoiy" />
+            <Input label="Lavozim" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} placeholder="Masalan: O'qituvchi" />
+            <Input label="Passport Seriya" value={formData.passport} onChange={(e) => setFormData({ ...formData, passport: e.target.value })} placeholder="AA 1234567" />
+            <Input label="Manzil" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Toshkent sh, Chilonzor..." />
+          </div>
+
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Aloqa va Ish</h4>
+            <PhoneInput
+              label="Telefon (login uchun)"
+              value={formData.phone || ''}
+              onChange={(phone) => setFormData({ ...formData, phone })}
+            />
+            {!editingMember && (
+              <div className="space-y-2">
+                <Input
+                  label="Login paroli"
+                  leftIcon={<ShieldCheck size={14} className="text-emerald-500" />}
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Bo'sh qoldirilsa: 123456"
+                />
+                <p className="text-[10px] text-zinc-400 leading-tight">
+                  Telefon + parol bilan xodim botga (Mini App) kira oladi. Ruxsatlar lavozimiga qarab beriladi.
+                </p>
+              </div>
+            )}
+            <Input type="email" label="Email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="example@mail.com" />
+            <MoneyInput label="Maosh (UZS)" value={formData.salary} onChange={(salary) => setFormData({ ...formData, salary })} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Bo'lim</label>
+              <select
+                value={formData.department}
+                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+              >
+                <option value="Ma'muriyat">Ma'muriyat</option>
+                <option value="Ta'lim">Ta'lim</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Xizmat ko'rsatish">Xizmat ko'rsatish</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 space-y-4">
+            <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Qo'shimcha</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ta'lim</label>
+                <textarea
+                  value={formData.education}
+                  onChange={(e) => setFormData({ ...formData, education: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white resize-none"
+                  rows={2}
+                  placeholder="Oliy ma'lumot, universitet..."
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tajriba</label>
+                <textarea
+                  value={formData.experience}
+                  onChange={(e) => setFormData({ ...formData, experience: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white resize-none"
+                  rows={2}
+                  placeholder="Oldingi ish joylari, yutuqlar..."
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={closeModal}>Bekor qilish</Button>
+            <Button onClick={handleSave}>Saqlash</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
