@@ -34,6 +34,7 @@ const CrmSchedule   = React.lazy(() => import('./pages/crm/education/CrmSchedule
 const CrmRooms      = React.lazy(() => import('./pages/crm/management/CrmRooms'));
 const CrmMarketing  = React.lazy(() => import('./pages/crm/marketing/CrmMarketing'));
 const CrmStaff      = React.lazy(() => import('./pages/crm/hr/CrmStaff'));
+const CrmStaffDetail = React.lazy(() => import('./pages/crm/hr/CrmStaffDetail'));
 const CrmBI         = React.lazy(() => import('./pages/crm/analytics/CrmBI'));
 const CrmCourses    = React.lazy(() => import('./pages/crm/education/CrmCourses'));
 const CrmInventory  = React.lazy(() => import('./pages/crm/management/CrmInventory'));
@@ -143,6 +144,7 @@ export default function App() {
               {/* ─── HR (admin uchun — maxsus ruxsatlar ro'yxatida emas) ─── */}
               <Route path="teachers"         element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTeachers /></ProtectedRoute>} />
               <Route path="staff"            element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaff /></ProtectedRoute>} />
+              <Route path="staff/:id"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaffDetail /></ProtectedRoute>} />
               <Route path="leave-requests"   element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmLeaveRequests /></ProtectedRoute>} />
               <Route path="staff-attendance" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmStaffAttendance /></ProtectedRoute>} />
               <Route path="work-locations"   element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmWorkLocations /></ProtectedRoute>} />
