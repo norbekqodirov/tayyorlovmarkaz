@@ -90,6 +90,7 @@ model Course {
   lessonsPerWeek Int?     @default(3)
   lessonDuration Int?     @default(90)  // minutes
   status         String   @default("Active") // Active, Draft, Archived
+  image          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

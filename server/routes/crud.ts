@@ -57,7 +57,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'balance', 'joinedDate'],
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'price'],
     'room': ['name', 'capacity', 'color'],
-    'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status'],
+    'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status', 'image'],
     'courseTier': ['courseId', 'name', 'price'],
     'transaction': ['type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
     'payment': ['studentId', 'amount', 'method', 'date', 'month', 'dueDate', 'status', 'notes'],

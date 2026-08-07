@@ -54,7 +54,6 @@ export default function CrmStudents() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('Barchasi');
   const [filterCourse, setFilterCourse] = useState<string>('Barchasi');
-  const [filterGroup, setFilterGroup] = useState<string>('Barchasi');
   const [filterPayment, setFilterPayment] = useState<string>('Barchasi');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -713,11 +712,18 @@ export default function CrmStudents() {
                     onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
                   />
                 </div>
-                <Input 
+                <Input
                   label="Manzil"
                   value={formData.address}
                   onChange={(e) => setFormData({...formData, address: e.target.value})}
                   placeholder="Toshkent sh., Chilonzor tumani"
+                />
+                <Input
+                  type="email"
+                  label="Email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  placeholder="student@mail.uz"
                 />
               </div>
             </div>

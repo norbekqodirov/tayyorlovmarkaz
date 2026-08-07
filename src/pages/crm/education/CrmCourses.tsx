@@ -1,15 +1,15 @@
-import React, { useState, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, BookOpen,
-  Clock, DollarSign, Layers, ChevronRight,
-  X, Save, CheckCircle2, AlertCircle, Users,
-  Image as ImageIcon, Upload, Tag, TrendingUp, Download
+  Clock, DollarSign, Layers,
+  X, CheckCircle2, Users, Download
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
+import ImageUpload from '../../../components/ImageUpload';
 import { exportToExcel } from '../../../utils/export';
 import api from '../../../api/client';
 
@@ -66,10 +66,9 @@ export default function CrmCourses() {
   const [filterCategory, setFilterCategory] = useState('Barchasi');
   const [filterStatus, setFilterStatus] = useState('Barchasi');
   const [isSaving, setIsSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' });
 
-  const [formData, setFormData] = useState<Partial<Course> & { imagePreview?: string }>({
+  const [formData, setFormData] = useState<Partial<Course>>({
     name: '',
     category: 'Tillar',
     duration: '3 oy',
@@ -100,17 +99,6 @@ export default function CrmCourses() {
     totalStudents: students.length,
     avgPrice: courses.length > 0 ? Math.round(courses.reduce((s, c) => s + (c.price || 0), 0) / courses.length) : 0,
   }), [courses, students]);
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setFormData(f => ({ ...f, image: dataUrl, imagePreview: dataUrl }));
-    };
-    reader.readAsDataURL(file);
-  };
 
   // Tariflarni serverdagi holat bilan solishtirib, faqat farqni yozadi
   // (yangi qatorlar yaratiladi, o'zgarganlari yangilanadi, olib tashlanganlari o'chiriladi).
@@ -190,7 +178,7 @@ export default function CrmCourses() {
   const openModal = (course: Course | null = null) => {
     if (course) {
       setEditingCourse(course);
-      setFormData({ ...course, imagePreview: course.image });
+      setFormData({ ...course });
       setTiers((course.tiers || []).map(t => ({ id: t.id, name: t.name, price: t.price })));
     } else {
       setEditingCourse(null);
@@ -453,30 +441,11 @@ export default function CrmCourses() {
 
               <div className="p-6 space-y-5 max-h-[72vh] overflow-y-auto">
                 {/* Image Upload */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs rasmi (ixtiyoriy)</label>
-                  {formData.imagePreview ? (
-                    <div className="relative rounded-xl overflow-hidden h-36">
-                      <img src={formData.imagePreview} alt="preview" className="w-full h-full object-cover" />
-                      <button
-                        onClick={() => setFormData(f => ({ ...f, image: '', imagePreview: '' }))}
-                        className="absolute top-2 right-2 p-1.5 bg-black/50 rounded-lg text-white hover:bg-rose-600 transition-colors"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full h-28 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-xl flex flex-col items-center justify-center gap-2 hover:border-blue-400 dark:hover:border-blue-500 text-zinc-400 hover:text-blue-500 transition-all"
-                    >
-                      <Upload size={22} />
-                      <span className="text-xs font-bold">Rasm yuklash</span>
-                      <span className="text-[10px]">PNG, JPG — max 2MB</span>
-                    </button>
-                  )}
-                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-                </div>
+                <ImageUpload
+                  label="Kurs rasmi (ixtiyoriy)"
+                  value={formData.image || ''}
+                  onChange={(url) => setFormData(f => ({ ...f, image: url }))}
+                />
 
                 {/* Name */}
                 <div className="space-y-2">

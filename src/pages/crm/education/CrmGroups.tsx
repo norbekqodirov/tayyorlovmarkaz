@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, MoreVertical, Users, Calendar, Clock,
-  DoorOpen, BookOpen, X, Edit2, Trash2, Filter, Download,
+  DoorOpen, BookOpen, X, Edit2, Trash2, Download,
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
 } from 'lucide-react';
@@ -323,9 +323,6 @@ export default function CrmGroups() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Button variant="secondary" leftIcon={<Filter size={18} />}>
-          Filtrlar
-        </Button>
         <button onClick={() => {
           const exportData = filteredGroups.map(g => {
             const sched = (schedule || []).find((s: any) => s.groupId === g.id);
@@ -598,6 +595,15 @@ export default function CrmGroups() {
               value={formData.startDate}
               onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
             />
+            <Input
+              type="date"
+              label="Tugash Sanasi"
+              value={formData.endDate || ''}
+              onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <MoneyInput
                 label="Narxi (Oylik)"
@@ -624,19 +630,18 @@ export default function CrmGroups() {
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="space-y-1.5 flex flex-col w-full">
-            <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-              className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="active">Faol</option>
-              <option value="paused">Muzlatilgan</option>
-              <option value="completed">Tugallangan</option>
-            </select>
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="active">Faol</option>
+                <option value="paused">Muzlatilgan</option>
+                <option value="completed">Tugallangan</option>
+              </select>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
