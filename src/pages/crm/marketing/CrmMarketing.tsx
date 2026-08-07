@@ -6,6 +6,7 @@ import { useFirestore } from '../../../hooks/useFirestore';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 
@@ -134,26 +135,13 @@ export default function CrmMarketing() {
         {activeTab === 'KAMPANIYALAR' && (
           <motion.div key="camps" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-[#111118] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Umumiy Budjet</p>
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                  {new Intl.NumberFormat('uz-UZ').format(totalBudget)}
-                </h3>
-              </div>
-              <div className="bg-white dark:bg-[#111118] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Reklamaga Sarflandi</p>
-                <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400">
-                  {new Intl.NumberFormat('uz-UZ').format(totalSpent)}
-                </h3>
-              </div>
-              <div className="bg-white dark:bg-[#111118] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Lidlar</p>
-                <h3 className="text-2xl font-black text-blue-600 dark:text-blue-400">{totalLeads}</h3>
-              </div>
-              <div className="bg-white dark:bg-[#111118] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
-                <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Oqishga kirdi (Konversiya)</p>
-                <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{totalConversions} <span className="text-sm font-bold text-zinc-400">({totalLeads ? Math.round((totalConversions/totalLeads)*100) : 0}%)</span></h3>
-              </div>
+              <StatCard variant="minimal" color="slate" label="Umumiy Budjet" value={new Intl.NumberFormat('uz-UZ').format(totalBudget)} />
+              <StatCard variant="minimal" color="rose" label="Reklamaga Sarflandi" value={new Intl.NumberFormat('uz-UZ').format(totalSpent)} />
+              <StatCard variant="minimal" color="blue" label="Lidlar" value={totalLeads} />
+              <StatCard
+                variant="minimal" color="emerald" label="Oqishga kirdi (Konversiya)"
+                value={`${totalConversions} (${totalLeads ? Math.round((totalConversions / totalLeads) * 100) : 0}%)`}
+              />
             </div>
 
             <div className="flex justify-between items-center mb-2">

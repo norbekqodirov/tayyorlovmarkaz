@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
-import { Link as LinkIcon, Copy, ExternalLink, Plus, BarChart2, Edit2, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
+import { Link as LinkIcon, Copy, ExternalLink, Plus, BarChart2, Edit2, Trash2 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
 
 interface Form {
   id: string;
@@ -88,10 +91,9 @@ export default function CrmForms() {
       />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Target Formalar</h1>
-        <button onClick={() => openModal()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm">
-          <Plus size={18} />
+        <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
           Yangi forma yaratish
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -153,59 +155,41 @@ export default function CrmForms() {
       </div>
 
       {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-zinc-200 dark:border-zinc-800">
-            <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">{editingForm ? 'Formani tahrirlash' : 'Yangi forma yaratish'}</h3>
-              <button onClick={closeModal} className="text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Forma nomi</label>
-                <input 
-                  type="text" 
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
-                  placeholder="Masalan: Instagram Target - Kuzgi qabul"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">URL manzil</label>
-                <input 
-                  type="text" 
-                  value={formData.url}
-                  onChange={(e) => setFormData({...formData, url: e.target.value})}
-                  className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
-                  placeholder={`${window.location.origin}/l/...`}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Holat</label>
-                <select 
-                  value={formData.status}
-                  onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-                  className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
-                >
-                  <option value="Faol">Faol</option>
-                  <option value="To'xtatilgan">To'xtatilgan</option>
-                </select>
-              </div>
-            </div>
-            <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-2 bg-zinc-50 dark:bg-zinc-900/50">
-              <button onClick={closeModal} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors">
-                Bekor qilish
-              </button>
-              <button onClick={handleSave} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-colors">
-                Saqlash
-              </button>
-            </div>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingForm ? 'Formani tahrirlash' : 'Yangi forma yaratish'}
+      >
+        <div className="space-y-4">
+          <Input
+            label="Forma nomi"
+            value={formData.name}
+            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            placeholder="Masalan: Instagram Target - Kuzgi qabul"
+          />
+          <Input
+            label="URL manzil"
+            value={formData.url}
+            onChange={(e) => setFormData({...formData, url: e.target.value})}
+            placeholder={`${window.location.origin}/l/...`}
+          />
+          <div>
+            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Holat</label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+              className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
+            >
+              <option value="Faol">Faol</option>
+              <option value="To'xtatilgan">To'xtatilgan</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={closeModal}>Bekor qilish</Button>
+            <Button onClick={handleSave}>Saqlash</Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
