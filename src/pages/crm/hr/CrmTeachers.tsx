@@ -97,8 +97,8 @@ export default function CrmTeachers() {
   useEffect(() => { loadTeachers(); }, []);
 
   const handleSave = async () => {
-    if (!formData.name || !formData.email) {
-      showToast("Ism va email kiritilishi shart!", 'error');
+    if (!formData.name || !formData.phone) {
+      showToast("Ism va telefon raqam kiritilishi shart!", 'error');
       return;
     }
     
@@ -527,7 +527,7 @@ export default function CrmTeachers() {
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="F.I.O"
+              label="F.I.O *"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="Masalan: Aliyev Vali"
@@ -550,7 +550,7 @@ export default function CrmTeachers() {
 
           <div className="grid grid-cols-2 gap-4">
             <PhoneInput
-              label="Telefon"
+              label="Telefon *"
               value={formData.phone || ''}
               onChange={(phone) => setFormData({ ...formData, phone })}
             />

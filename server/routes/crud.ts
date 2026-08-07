@@ -239,6 +239,32 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string) {
     });
 }
 
+// ─── Teachers (public directory) — haqiqiy manba User modeli (role=TEACHER) ──
+// 'teachers' kolleksiyasiga hech qachon hech narsa yozilmaydi (haqiqiy ustozlar
+// CrmTeachers.tsx orqali /auth/users'da saqlanadi) — shuning uchun GenericDocument
+// fallback doim bo'sh qaytaradi va ommaviy sayt, qidiruv, dashboard, BI ustozlar
+// ro'yxatini hech qachon ko'rmaydi. Shu yerda User'dan jonli, xavfsiz (parol/
+// telefon/emailsiz) proyeksiya hisoblab qaytaramiz.
+async function getPublicTeachersList() {
+    const users = await prisma.user.findMany({ where: { role: 'TEACHER' }, orderBy: { createdAt: 'desc' } });
+    return users.map((u: any) => {
+        let meta: any = {};
+        try {
+            const perms = JSON.parse(u.permissions || '[]');
+            const metaObj = perms.find((p: any) => p.meta);
+            if (metaObj) meta = metaObj.meta;
+        } catch { /* ignore */ }
+        return {
+            id: u.id,
+            name: u.name,
+            role: meta.subject || '',
+            exp: meta.exp || '',
+            desc: meta.desc || '',
+            img: u.avatar || '',
+        };
+    });
+}
+
 // Ommaviy sayt (Home/About/Blog/Teachers) shu kolleksiyalarni O'QISH uchun login
 // talab qilmasligi kerak — aks holda haqiqiy (login qilmagan) tashrif buyuruvchi
 // uchun bosh sahifa matni, galereya, yangiliklar va ustozlar ro'yxati HECH QACHON
@@ -301,6 +327,14 @@ router.use('/:collection', authForCollection, async (req, res, next) => {
 router.get('/:collection', async (req, res) => {
     const page = parseInt(req.query.page as string) || 0;
     const limit = parseInt(req.query.limit as string) || 0;
+
+    if (req.params.collection === 'teachers') {
+        try {
+            return res.json(await getPublicTeachersList());
+        } catch (error) {
+            return res.status(500).json({ error: String(error) });
+        }
+    }
 
     try {
         if ((req as any).useFallback) {

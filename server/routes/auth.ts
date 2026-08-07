@@ -174,7 +174,7 @@ router.post('/users', requireAuth, async (req, res) => {
             return res.status(403).json({ message: "Foydalanuvchi yaratish uchun ruxsat yo'q" });
         }
 
-        const { phone, email, password, name, role, permissions } = req.body;
+        const { phone, email, password, name, role, permissions, avatar } = req.body;
 
         if (!phone) return res.status(400).json({ message: "Telefon raqam kiritilishi shart" });
         if (!name)  return res.status(400).json({ message: "Ism kiritilishi shart" });
@@ -200,13 +200,15 @@ router.post('/users', requireAuth, async (req, res) => {
                 role: targetRole,
                 isActive: true,
                 permissions: JSON.stringify(permissions || []),
+                avatar: avatar || null,
             } as any,
         });
 
         res.json({
             id: user.id, phone: user.phone, email: user.email,
             name: user.name, role: user.role,
-            permissions: (user as any).permissions
+            permissions: (user as any).permissions,
+            avatar: (user as any).avatar
         });
     } catch (error) {
         console.error('[AUTH] Create user error:', error);
@@ -222,7 +224,7 @@ router.put('/users/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ message: "Ruxsat yo'q" });
         }
 
-        const { name, role, phone, email, permissions, password, isActive } = req.body;
+        const { name, role, phone, email, permissions, password, isActive, avatar } = req.body;
         const targetRole = role;
 
         // Only SUPER_ADMIN can assign SUPER_ADMIN role
@@ -239,9 +241,10 @@ router.put('/users/:id', requireAuth, async (req, res) => {
         };
         if (phone) updateData.phone = normalizePhone(phone);
         if (password) updateData.password = await bcrypt.hash(password, 12);
+        if (avatar !== undefined) updateData.avatar = avatar || null;
 
         const user = await prisma.user.update({ where: { id: req.params.id }, data: updateData });
-        res.json({ id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role });
+        res.json({ id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role, avatar: (user as any).avatar });
     } catch (error) {
         res.status(500).json({ message: String(error) });
     }
