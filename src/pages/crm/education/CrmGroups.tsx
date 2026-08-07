@@ -16,6 +16,7 @@ import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import { EmptyState } from '../../../components/States';
 
 // Prisma `Group` modeliga mos keladigan shakl (server/routes/crud.ts RELATION_INCLUDES
@@ -292,25 +293,13 @@ export default function CrmGroups() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {[
-          { label: 'Jami Guruhlar', value: (groups || []).length, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatda' },
-          { label: 'Faol Guruhlar', value: (groups || []).filter(g => g.status === 'active').length, icon: CheckCircle2, gradient: 'from-emerald-500 to-teal-600', sub: 'Hozir o\'qiyotgan' },
-          { label: 'O\'rtacha To\'lish', value: (groups || []).length > 0 ? Math.round((groups || []).reduce((acc, g) => acc + ((g._count?.enrollments || 0) / (g.maxSize || 1) * 100), 0) / (groups || []).length) + '%' : '0%', icon: GraduationCap, gradient: 'from-amber-500 to-orange-600', sub: 'O\'rin band' }
-        ].map((stat, i) => (
-          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-5 shadow-lg text-white relative overflow-hidden`}>
-            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
-            <div className="relative flex items-start justify-between">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
-                <stat.icon size={18} strokeWidth={2.5} />
-              </div>
-            </div>
-            <div className="relative mt-3">
-              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
-              <p className="text-2xl font-black text-white mt-1">{stat.value}</p>
-              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
-            </div>
-          </div>
-        ))}
+        <StatCard variant="gradient" color="blue" label="Jami Guruhlar" value={(groups || []).length} sub="Ro'yxatda" icon={<Users size={18} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="emerald" label="Faol Guruhlar" value={(groups || []).filter(g => g.status === 'active').length} sub="Hozir o'qiyotgan" icon={<CheckCircle2 size={18} strokeWidth={2.5} />} />
+        <StatCard
+          variant="gradient" color="amber" label="O'rtacha To'lish"
+          value={(groups || []).length > 0 ? Math.round((groups || []).reduce((acc, g) => acc + ((g._count?.enrollments || 0) / (g.maxSize || 1) * 100), 0) / (groups || []).length) + '%' : '0%'}
+          sub="O'rin band" icon={<GraduationCap size={18} strokeWidth={2.5} />}
+        />
       </div>
 
       {/* Search and Filter */}

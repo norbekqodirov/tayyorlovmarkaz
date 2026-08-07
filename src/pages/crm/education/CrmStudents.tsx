@@ -19,6 +19,7 @@ import { Input } from '../../../components/ui/Input';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import { exportToExcel, exportToPDF, exportCertificateToPDF } from '../../../utils/export';
 import { useCrmData } from '../../../hooks/useCrmData';
 
@@ -280,26 +281,10 @@ export default function CrmStudents() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Jami O\'quvchilar', value: stats.total, icon: Users, gradient: 'from-blue-500 to-indigo-600', sub: 'Ro\'yxatdagi jami' },
-          { label: 'Faol O\'quvchilar', value: stats.active, icon: GraduationCap, gradient: 'from-emerald-500 to-teal-600', sub: 'Hozir o\'qiyotgan' },
-          { label: 'Qarzdorlar', value: stats.debtors, icon: AlertCircle, gradient: 'from-rose-500 to-red-600', sub: 'To\'lov qilmagan' },
-          { label: 'Umumiy Balans', value: new Intl.NumberFormat('uz-UZ').format(stats.totalBalance), icon: DollarSign, gradient: 'from-amber-500 to-orange-600', sub: 'so\'m' }
-        ].map((stat, i) => (
-          <div key={i} className={`bg-gradient-to-br ${stat.gradient} rounded-2xl p-4 shadow-lg text-white relative overflow-hidden`}>
-            <div className="absolute top-0 right-0 w-20 h-20 rounded-full bg-white/5 -mr-6 -mt-6" />
-            <div className="relative flex items-start justify-between">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-white/20 shrink-0">
-                <stat.icon size={17} strokeWidth={2.5} />
-              </div>
-            </div>
-            <div className="relative mt-3">
-              <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{stat.label}</p>
-              <p className="text-xl font-black text-white mt-0.5 truncate">{stat.value}</p>
-              <p className="text-[10px] text-white/60 mt-0.5">{stat.sub}</p>
-            </div>
-          </div>
-        ))}
+        <StatCard variant="gradient" color="blue" label="Jami O'quvchilar" value={stats.total} sub="Ro'yxatdagi jami" icon={<Users size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="emerald" label="Faol O'quvchilar" value={stats.active} sub="Hozir o'qiyotgan" icon={<GraduationCap size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="rose" label="Qarzdorlar" value={stats.debtors} sub="To'lov qilmagan" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="amber" label="Umumiy Balans" value={new Intl.NumberFormat('uz-UZ').format(stats.totalBalance)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
       </div>
 
       {/* Filters and Table */}

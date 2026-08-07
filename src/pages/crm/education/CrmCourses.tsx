@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Plus, Search, Edit2, Trash2, BookOpen,
   Clock, DollarSign, Layers,
@@ -8,6 +8,10 @@ import {
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Input } from '../../../components/ui/Input';
+import { Button } from '../../../components/ui/Button';
+import { Modal } from '../../../components/ui/Modal';
+import { StatCard } from '../../../components/ui/StatCard';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import ImageUpload from '../../../components/ImageUpload';
 import { exportToExcel } from '../../../utils/export';
@@ -258,22 +262,10 @@ export default function CrmCourses() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Jami Kurslar', value: stats.total, icon: BookOpen, color: 'blue' },
-          { label: 'Faol Kurslar', value: stats.active, icon: CheckCircle2, color: 'emerald' },
-          { label: 'Jami O\'quvchilar', value: stats.totalStudents, icon: Users, color: 'violet' },
-          { label: 'O\'rtacha Narx', value: formatMoney(stats.avgPrice), icon: DollarSign, color: 'amber' },
-        ].map((s, i) => (
-          <div key={i} className="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-${s.color}-50 dark:bg-${s.color}-900/20 text-${s.color}-600 dark:text-${s.color}-400`}>
-              <s.icon size={18} strokeWidth={2.5} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest truncate">{s.label}</p>
-              <p className="text-lg font-black text-slate-900 dark:text-white mt-0.5 truncate">{s.value}</p>
-            </div>
-          </div>
-        ))}
+        <StatCard label="Jami Kurslar" value={stats.total} icon={<BookOpen size={18} strokeWidth={2.5} />} color="blue" />
+        <StatCard label="Faol Kurslar" value={stats.active} icon={<CheckCircle2 size={18} strokeWidth={2.5} />} color="emerald" />
+        <StatCard label="Jami O'quvchilar" value={stats.totalStudents} icon={<Users size={18} strokeWidth={2.5} />} color="violet" />
+        <StatCard label="O'rtacha Narx" value={formatMoney(stats.avgPrice)} icon={<DollarSign size={18} strokeWidth={2.5} />} color="amber" />
       </div>
 
       {/* Filters */}
@@ -423,43 +415,29 @@ export default function CrmCourses() {
       )}
 
       {/* Add/Edit Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-zinc-200 dark:border-zinc-800"
-            >
-              <div className="flex items-center justify-between p-6 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {editingCourse ? 'Kursni Tahrirlash' : 'Yangi Kurs Yaratish'}
-                </h3>
-                <button onClick={closeModal} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-zinc-400 transition-colors"><X size={20} /></button>
-              </div>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingCourse ? 'Kursni Tahrirlash' : 'Yangi Kurs Yaratish'}
+        width="xl"
+      >
+        <div className="space-y-5">
+          {/* Image Upload */}
+          <ImageUpload
+            label="Kurs rasmi (ixtiyoriy)"
+            value={formData.image || ''}
+            onChange={(url) => setFormData(f => ({ ...f, image: url }))}
+          />
 
-              <div className="p-6 space-y-5 max-h-[72vh] overflow-y-auto">
-                {/* Image Upload */}
-                <ImageUpload
-                  label="Kurs rasmi (ixtiyoriy)"
-                  value={formData.image || ''}
-                  onChange={(url) => setFormData(f => ({ ...f, image: url }))}
-                />
+          {/* Name */}
+          <Input
+            label="Kurs Nomi *"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="Masalan: IELTS Foundation"
+          />
 
-                {/* Name */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs Nomi *</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-                    placeholder="Masalan: IELTS Foundation"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
                     <select
@@ -499,13 +477,13 @@ export default function CrmCourses() {
                     <div className="space-y-2 pt-1">
                       {tiers.map((tier, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={tier.name}
-                            onChange={(e) => updateTier(idx, { name: e.target.value })}
-                            placeholder="Masalan: 2-sinf"
-                            className="flex-1 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                          />
+                          <div className="flex-1">
+                            <Input
+                              value={tier.name}
+                              onChange={(e) => updateTier(idx, { name: e.target.value })}
+                              placeholder="Masalan: 2-sinf"
+                            />
+                          </div>
                           <div className="w-40">
                             <MoneyInput
                               value={tier.price || undefined}
@@ -538,24 +516,18 @@ export default function CrmCourses() {
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars/hafta</label>
-                    <input
-                      type="number" min="1" max="7"
-                      value={formData.lessonsPerWeek}
-                      onChange={(e) => setFormData({ ...formData, lessonsPerWeek: Number(e.target.value) })}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Dars (min)</label>
-                    <input
-                      type="number" min="15" max="300"
-                      value={formData.lessonDuration}
-                      onChange={(e) => setFormData({ ...formData, lessonDuration: Number(e.target.value) })}
-                      className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                    />
-                  </div>
+                  <Input
+                    type="number" min="1" max="7"
+                    label="Dars/hafta"
+                    value={formData.lessonsPerWeek}
+                    onChange={(e) => setFormData({ ...formData, lessonsPerWeek: Number(e.target.value) })}
+                  />
+                  <Input
+                    type="number" min="15" max="300"
+                    label="Dars (min)"
+                    value={formData.lessonDuration}
+                    onChange={(e) => setFormData({ ...formData, lessonDuration: Number(e.target.value) })}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -586,24 +558,13 @@ export default function CrmCourses() {
                     ))}
                   </div>
                 </div>
-              </div>
 
-              <div className="p-5 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3 bg-zinc-50/50 dark:bg-zinc-900/50">
-                <button onClick={closeModal} className="px-6 py-2.5 rounded-xl text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                  Bekor
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-black transition-all shadow-lg shadow-blue-600/20 disabled:opacity-60"
-                >
-                  {isSaving ? 'Saqlanmoqda...' : 'Saqlash'}
-                </button>
-              </div>
-            </motion.div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <Button variant="secondary" onClick={closeModal}>Bekor qilish</Button>
+            <Button onClick={handleSave} isLoading={isSaving}>Saqlash</Button>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
     </div>
   );
 }
