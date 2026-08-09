@@ -29,6 +29,9 @@ export default function LeadForm() {
       api.get(`/public/forms/${formId}`)
         .then(res => { if (res.data?.title) setFormName(res.data.title); })
         .catch(() => {});
+      // Ko'rish hisobi — konversiya % ini haqiqiy qiladi (avval doim NaN% edi,
+      // chunki hech narsa ko'rishlarni sanamas edi).
+      api.post(`/public/forms/${formId}/view`).catch(() => {});
     }
     api.get('/public/lead-form-config')
       .then(res => setExtraField(res.data))

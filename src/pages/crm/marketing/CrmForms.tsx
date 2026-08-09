@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link as LinkIcon, Copy, ExternalLink, Plus, Edit2, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Link as LinkIcon, Copy, ExternalLink, Plus, Edit2, Trash2, Eye, TrendingUp } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
 import { useToast } from '../../../components/Toast';
@@ -8,6 +8,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
 import { StatCard } from '../../../components/ui/StatCard';
+import api from '../../../api/client';
 
 interface Form {
   id: string;
@@ -27,6 +28,15 @@ export default function CrmForms() {
   const [editingForm, setEditingForm] = useState<Form | null>(null);
   const [formData, setFormData] = useState<Partial<Form>>({ title: '', description: '', course: '', isActive: true });
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [formStats, setFormStats] = useState<Record<string, { views: number; submissionsReal: number; conversionRate: number; won: number }>>({});
+
+  useEffect(() => {
+    api.get('/marketing/by-form').then(res => {
+      const map: Record<string, any> = {};
+      for (const f of res.data || []) map[f.id] = f;
+      setFormStats(map);
+    }).catch(() => {});
+  }, [forms.length]);
 
   const openModal = (form: Form | null = null) => {
     if (form) {
@@ -89,7 +99,9 @@ export default function CrmForms() {
 
   const totalForms = forms.length;
   const activeForms = forms.filter(f => f.isActive).length;
-  const totalSubmissions = forms.reduce((sum, f) => sum + (f.submissions || 0), 0);
+  const totalViews = Object.values(formStats).reduce((sum, s) => sum + (s.views || 0), 0);
+  const totalSubmissions = Object.values(formStats).reduce((sum, s) => sum + (s.submissionsReal || 0), 0)
+    || forms.reduce((sum, f) => sum + (f.submissions || 0), 0); // statistika hali yuklanmagan bo'lsa eski hisobga tayanadi
 
   return (
     <div className="space-y-6">
@@ -111,10 +123,11 @@ export default function CrmForms() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard variant="minimal" label="Jami Formalar" value={totalForms} icon={<LinkIcon size={18} />} color="blue" />
         <StatCard variant="minimal" label="Faol Formalar" value={activeForms} icon={<LinkIcon size={18} />} color="emerald" />
-        <StatCard variant="minimal" label="Jami Arizalar" value={totalSubmissions} icon={<LinkIcon size={18} />} color="violet" />
+        <StatCard variant="minimal" label="Jami Ko'rishlar" value={totalViews} icon={<Eye size={18} />} color="amber" />
+        <StatCard variant="minimal" label="Jami Arizalar" value={totalSubmissions} icon={<TrendingUp size={18} />} color="violet" />
       </div>
 
       {forms.length === 0 ? (
@@ -162,9 +175,21 @@ export default function CrmForms() {
                 </a>
               </div>
 
-              <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Jami Arizalar</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">{form.submissions || 0}</p>
+              <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800/50 grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Ko'rishlar</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{formStats[form.id]?.views ?? '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Arizalar</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{formStats[form.id]?.submissionsReal ?? form.submissions ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Konversiya</p>
+                  <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+                    {formStats[form.id] ? `${formStats[form.id].conversionRate}%` : '-'}
+                  </p>
+                </div>
               </div>
             </div>
           ))}

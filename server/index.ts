@@ -6,6 +6,7 @@ import authRoutes from './routes/auth.js';
 import publicRoutes from './routes/public.js';
 import crudRoutes from './routes/crud.js';
 import leadsRoutes from './routes/leads.js';
+import marketingRoutes from './routes/marketing.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
 import telegramRoutes from './routes/telegram.js';
@@ -120,6 +121,7 @@ app.use('/api/branches', branchesRoutes);
 app.use('/api/work-locations', workLocationsRoutes);
 app.use('/api/staff-attendance', staffAttendanceRoutes);
 app.use('/api/leads', leadsRoutes); // crud.ts'dan OLDIN — generic /api/:collection'ni "leads" uchun soyalaydi
+app.use('/api/marketing', marketingRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────
