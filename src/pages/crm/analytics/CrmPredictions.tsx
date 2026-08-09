@@ -10,6 +10,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
 import api from '../../../api/client';
+import { STAGES } from '../../../components/leads/types';
 
 type Tab = 'dropout' | 'revenue' | 'leads' | 'payment';
 
@@ -88,7 +89,7 @@ export default function CrmPredictions() {
     : r === 'medium' ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400'
     : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400';
 
-  const stageLabel: Record<string, string> = { new: 'Yangi', contacted: "Aloqada", meeting: "Uchrashuv", won: "Yutildi", lost: "Yo'qotildi" };
+  const stageLabel: Record<string, string> = Object.fromEntries(STAGES.map(s => [s.id, s.short]));
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">

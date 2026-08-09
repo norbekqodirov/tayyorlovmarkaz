@@ -13,6 +13,7 @@ import {
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
 import { exportToExcel } from '../../../utils/export';
+import { STAGES } from '../../../components/leads/types';
 import api from '../../../api/client';
 
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
@@ -158,13 +159,11 @@ export default function CrmAdvancedBI() {
   }, [students, currentMonth, periodNum]);
 
   // ── Lead funnel data ─────────────────────────────────────────────────
-  const leadFunnelData = [
-    { stage: 'Yangi', count: leads.filter((l: any) => l.stage === 'new').length, color: '#3b82f6' },
-    { stage: 'Aloqa', count: leads.filter((l: any) => l.stage === 'contacted').length, color: '#f59e0b' },
-    { stage: 'Uchrashuv', count: leads.filter((l: any) => l.stage === 'meeting').length, color: '#8b5cf6' },
-    { stage: "O'quvchi", count: leads.filter((l: any) => l.stage === 'won').length, color: '#10b981' },
-    { stage: 'Rad', count: leads.filter((l: any) => l.stage === 'lost').length, color: '#ef4444' },
-  ];
+  const leadFunnelData = STAGES.map(s => ({
+    stage: s.short,
+    count: leads.filter((l: any) => l.stage === s.id).length,
+    color: s.hex,
+  }));
 
   // ── Lead source ──────────────────────────────────────────────────────
   const leadSourceData = useMemo(() => {

@@ -356,25 +356,29 @@ router.get('/:collection', async (req, res) => {
 
         const modelName = (req as any).modelName;
         const include = RELATION_INCLUDES[modelName];
+        // Lead uchun soft-delete filtri — deletedAt bulk.ts orqali qo'yiladi, lekin
+        // shu vaqtgacha hech bir o'qish yo'li uni hisobga olmagan edi (o'chirilgan
+        // lidlar Kanban/statistikada ko'rinaverardi).
+        const where = modelName === 'lead' ? { deletedAt: null } : undefined;
         if (page > 0 && limit > 0) {
             // @ts-ignore
             const [total, data] = await Promise.all([
                 // @ts-ignore
-                prisma[modelName].count(),
+                prisma[modelName].count({ where }),
                 // @ts-ignore
-                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(include && { include }) }),
+                prisma[modelName].findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(include && { include }) }),
             ]);
             return res.json({ data: data.map((row: any) => parseJsonFields(modelName, row)), total, page, limit });
         }
 
         try {
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, ...(include && { include }) });
+            const data = await prisma[modelName].findMany({ where, orderBy: { createdAt: 'desc' }, ...(include && { include }) });
             res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ ...(include && { include }) });
+            const data = await prisma[modelName].findMany({ where, ...(include && { include }) });
             res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         }
     } catch (error) {
@@ -395,7 +399,7 @@ router.get('/:collection/:id', async (req, res) => {
         const include = RELATION_INCLUDES[modelName];
         // @ts-ignore
         const data = await prisma[modelName].findUnique({ where: { id: req.params.id }, ...(include && { include }) });
-        if (!data) return res.status(404).json({ message: 'Topilmadi' });
+        if (!data || (modelName === 'lead' && data.deletedAt)) return res.status(404).json({ message: 'Topilmadi' });
         res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -541,6 +545,14 @@ router.delete('/:collection/:id', async (req, res) => {
             });
         }
         // leads: leadActivities now native — cascade handles it
+
+        // Lid — soft delete (o'chirilgan lid statistikadan yashirinadi, lekin
+        // ma'lumot yo'qolmaydi; hard-delete keyingi bosqichda faqat ADMIN uchun
+        // alohida yo'l bilan qo'shiladi).
+        if ((req as any).modelName === 'lead') {
+            await prisma.lead.update({ where: { id }, data: { deletedAt: new Date() } });
+            return res.json({ success: true });
+        }
 
         // @ts-ignore
         await prisma[(req as any).modelName].delete({ where: { id } });

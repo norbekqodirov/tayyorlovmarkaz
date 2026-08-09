@@ -128,21 +128,25 @@ router.get('/monthly', requireAuth, async (_req, res) => {
         ]);
 
         const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+        // Yil tekshiruvisiz faqat oy (getMonth()) solishtirilsa, o'tgan yillardagi
+        // yozuvlar ham shu yilning oyiga qo'shilib ketardi (masalan 2025-yanvar
+        // 2026-yanvar bilan bir ustunga tushardi) — grafik noto'g'ri ko'rsatardi.
+        const currentYear = new Date().getFullYear();
 
         const monthly = Array.from({ length: 12 }, (_, mi) => {
             const income = transactions
-                .filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === mi)
+                .filter(t => t.type === 'income' && t.date && new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === mi)
                 .reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
             const expense = transactions
-                .filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === mi)
+                .filter(t => t.type === 'expense' && t.date && new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === mi)
                 .reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
             const newStudents = students.filter(s => {
                 const d = new Date(s.joinedDate || s.createdAt || 0);
-                return d.getMonth() === mi;
+                return d.getFullYear() === currentYear && d.getMonth() === mi;
             }).length;
             const newLeads = leads.filter(l => {
                 const d = new Date(l.createdAt || l.date || 0);
-                return d.getMonth() === mi;
+                return d.getFullYear() === currentYear && d.getMonth() === mi;
             }).length;
 
             return {

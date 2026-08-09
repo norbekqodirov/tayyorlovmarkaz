@@ -17,7 +17,8 @@ interface Campaign {
   budget: number;
   spent: number;
   leads: number;
-  conversions: number;
+  // Bazada yo'q — hisoblanadigan haqiqiy konversiya keyingi bosqichda qo'shiladi.
+  conversions?: number;
   status: 'Faol' | 'To\'xtatilgan' | 'Yakunlangan';
   startDate: string;
   endDate: string;
@@ -43,7 +44,6 @@ export default function CrmMarketing() {
 
   const { data: campaigns = [], addDocument: addCampaign, updateDocument: updateCampaign, deleteDocument: delCampaign } = useFirestore<Campaign>('campaigns');
   const { data: automations = [], addDocument: addAuto, updateDocument: updateAuto, deleteDocument: delAuto } = useFirestore<Automation>('automations');
-  const { data: students = [] } = useFirestore<any>('students'); // Real data mapping for ROI
 
   // Modals state
   const [isCampModal, setIsCampModal] = useState(false);
@@ -53,7 +53,7 @@ export default function CrmMarketing() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; type: 'camp' | 'auto'; id: string }>({ open: false, type: 'camp', id: '' });
 
   const [campForm, setCampForm] = useState<Partial<Campaign>>({
-    name: '', platform: 'Instagram', budget: 0, spent: 0, leads: 0, conversions: 0, status: 'Faol',
+    name: '', platform: 'Instagram', budget: 0, spent: 0, leads: 0, status: 'Faol',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   });
@@ -139,14 +139,14 @@ export default function CrmMarketing() {
               <StatCard variant="minimal" color="rose" label="Reklamaga Sarflandi" value={new Intl.NumberFormat('uz-UZ').format(totalSpent)} />
               <StatCard variant="minimal" color="blue" label="Lidlar" value={totalLeads} />
               <StatCard
-                variant="minimal" color="emerald" label="Oqishga kirdi (Konversiya)"
+                variant="minimal" color="emerald" label="Oqishga kirdi (Taxminiy)"
                 value={`${totalConversions} (${totalLeads ? Math.round((totalConversions / totalLeads) * 100) : 0}%)`}
               />
             </div>
 
             <div className="flex justify-between items-center mb-2">
                <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Faol Kampaniyalar</h2>
-               <Button onClick={() => { setEditingCamp(null); setCampForm({name:'', platform: 'Instagram', budget:0, spent:0, leads:0, conversions:0, status:'Faol', startDate: new Date().toISOString().split('T')[0], endDate: ''}); setIsCampModal(true); }} leftIcon={<Plus size={18}/>}>
+               <Button onClick={() => { setEditingCamp(null); setCampForm({name:'', platform: 'Instagram', budget:0, spent:0, leads:0, status:'Faol', startDate: new Date().toISOString().split('T')[0], endDate: ''}); setIsCampModal(true); }} leftIcon={<Plus size={18}/>}>
                   Yangi Kampaniya
                </Button>
             </div>
@@ -180,7 +180,7 @@ export default function CrmMarketing() {
                         <td className="px-6 py-4">
                            <div className="flex flex-col gap-1">
                               <span className="text-xs font-bold text-blue-600 bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded-full inline-block w-max">Lidlar: {c.leads}</span>
-                              <span className="text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full inline-block w-max">Kirdi: {c.conversions}</span>
+                              <span className="text-xs font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full inline-block w-max">Kirdi: {c.conversions || 0}</span>
                            </div>
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -218,10 +218,7 @@ export default function CrmMarketing() {
                    <Input type="number" label="Budjet" value={campForm.budget} onChange={e => setCampForm({...campForm, budget: Number(e.target.value)})} />
                    <Input type="number" label="Sarflandi" value={campForm.spent} onChange={e => setCampForm({...campForm, spent: Number(e.target.value)})} />
                  </div>
-                 <div className="grid grid-cols-2 gap-4">
-                   <Input type="number" label="Lidlar" value={campForm.leads} onChange={e => setCampForm({...campForm, leads: Number(e.target.value)})} />
-                   <Input type="number" label="O'qishga kirdi (Konversiya)" value={campForm.conversions} onChange={e => setCampForm({...campForm, conversions: Number(e.target.value)})} />
-                 </div>
+                 <Input type="number" label="Lidlar (platforma ko'rsatkichi)" value={campForm.leads} onChange={e => setCampForm({...campForm, leads: Number(e.target.value)})} />
                  <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                    <Button variant="secondary" onClick={() => setIsCampModal(false)}>Bekor qilish</Button>
                    <Button variant="primary" onClick={handleCampSave}>Saqlash</Button>
@@ -239,8 +236,11 @@ export default function CrmMarketing() {
                   <div>
                     <h2 className="text-3xl font-black mb-2 tracking-tight">Sarmoya Qaytimi (ROI) Tahlili</h2>
                     <p className="text-blue-200 mb-6 font-medium max-w-sm">Biznesingizning reklama harajatlaridan ko'rayotgan aniq foydasi. Daromad / Xarajat nisbati asosida.</p>
+                    <div className="mb-4 inline-flex items-center gap-2 bg-amber-500/10 border border-amber-400/20 px-3 py-1.5 rounded-full">
+                       <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">⚠ Taxminiy — haqiqiy o'quvchi to'lovlari asosidagi hisob keyingi bosqichda qo'shiladi</span>
+                    </div>
                     <div className="inline-flex flex-col bg-white/10 backdrop-blur border border-white/20 p-5 rounded-2xl">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">Net Marketing ROI %</span>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">Net Marketing ROI % (taxminiy)</span>
                        <span className="text-5xl font-black text-emerald-400 mt-1">
                           {overallROI.toFixed(1)}% {overallROI > 0 ? '↑' : '↓'}
                        </span>
@@ -258,7 +258,7 @@ export default function CrmMarketing() {
                      </div>
                      <div className="col-span-2 bg-black/20 backdrop-blur p-4 rounded-2xl border border-white/5 flex items-center justify-between">
                         <div>
-                          <span className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Mijozning Estimat Yechimi (LTV)</span>
+                          <span className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Mijozning Estimat Qiymati (LTV, taxminiy)</span>
                           <span className="text-xl font-black text-emerald-400">~ 800,000 UZS / kurs</span>
                         </div>
                         <TrendingUp size={32} className="text-white/10" />

@@ -2,12 +2,14 @@ import { motion } from 'framer-motion';
 import { MapPin, Phone, Mail, Clock, ArrowUpRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import api from '../api/client';
+import { useToast } from '../components/Toast';
 
 export default function Contact() {
   const [formData, setFormData] = useState({ name: '', phone: '', message: '', extra: '' });
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
+  const { showToast } = useToast();
 
   useEffect(() => {
     api.get('/public/lead-form-config').then(res => setExtraField(res.data)).catch(() => {});
@@ -36,6 +38,7 @@ export default function Contact() {
       }, 3000);
     } catch (error) {
       console.error("Error adding lead:", error);
+      showToast("Xabarni yuborishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring yoki telefon orqali bog'laning.", 'error');
     } finally {
       setSubmitting(false);
     }

@@ -1,15 +1,10 @@
+import { STAGES } from '../../leads/types';
+
 export function LeadFunnelChart({ leads }: { leads: any[] }) {
-  const stages = [
-    { id: 'new', name: 'Yangi', color: '#3b82f6' },
-    { id: 'contacted', name: 'Aloqa', color: '#f59e0b' },
-    { id: 'meeting', name: 'Uchrashuv', color: '#8b5cf6' },
-    { id: 'won', name: "O'quvchi", color: '#10b981' },
-    { id: 'lost', name: 'Rad', color: '#ef4444' },
-  ];
-  const data = stages.map(s => ({
-    name: s.name,
+  const data = STAGES.map(s => ({
+    name: s.short,
     count: leads.filter(l => l.stage === s.id).length,
-    color: s.color,
+    color: s.hex,
   }));
   const total = leads.length || 1;
 

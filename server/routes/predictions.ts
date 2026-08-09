@@ -10,9 +10,13 @@
 
 import express from 'express';
 import prisma from '../db.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const router = express.Router();
+// Bu yerda o'quvchi/lid ism+telefon kabi shaxsiy ma'lumotlar qaytariladi —
+// avval hech qanday auth yo'q edi, GET so'rovlari internetdagi har kimga ochiq edi.
+router.use(requireAuth, requireMinRole('MANAGER'));
 
 // ─── Dropout Risk (chiqib ketish ehtimoli) ───────────────────────────────────
 

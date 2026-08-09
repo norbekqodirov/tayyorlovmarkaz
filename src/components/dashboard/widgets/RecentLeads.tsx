@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, Target } from 'lucide-react';
+import { STAGES } from '../../leads/types';
 
 export function RecentLeads({ leads }: { leads: any[] }) {
   const navigate = useNavigate();
@@ -7,13 +8,9 @@ export function RecentLeads({ leads }: { leads: any[] }) {
     .sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime())
     .slice(0, 6);
 
-  const stageConfig: Record<string, { label: string; color: string }> = {
-    new: { label: 'Yangi', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10' },
-    contacted: { label: 'Aloqa', color: 'text-amber-600 bg-amber-50 dark:bg-amber-500/10' },
-    meeting: { label: 'Uchrashuv', color: 'text-purple-600 bg-purple-50 dark:bg-purple-500/10' },
-    won: { label: "O'quvchi", color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10' },
-    lost: { label: 'Rad', color: 'text-zinc-500 bg-zinc-100 dark:bg-zinc-800' },
-  };
+  const stageConfig: Record<string, { label: string; color: string }> = Object.fromEntries(
+    STAGES.map(s => [s.id, { label: s.short, color: s.badge }])
+  );
 
   return (
     <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-4 h-full shadow-sm">
