@@ -17,8 +17,12 @@ export default function CrmSettings() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [leadExtraFieldType, setLeadExtraFieldType] = useState<'none' | 'age' | 'grade'>('none');
   const [leadFieldSaving, setLeadFieldSaving] = useState(false);
+  const [leadSettings, setLeadSettings] = useState({ mode: 'on', pool: [] as string[], slaMinutes: 30, workStart: '09:00', workEnd: '19:00' });
+  const [leadSettingsSaving, setLeadSettingsSaving] = useState(false);
+  const [assignableManagers, setAssignableManagers] = useState<{ id: string; name: string; role: string }[]>([]);
   const [billingSettings, setBillingSettings] = useState({ lessonsPerMonth: 12, absenceThreshold: 3, teacherSalaryPercent: 40 });
   const [billingSaving, setBillingSaving] = useState(false);
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN';
 
   const [profileData, setProfileData] = useState({
     name: '',
@@ -81,6 +85,8 @@ export default function CrmSettings() {
 
   useEffect(() => {
     api.get('/public/lead-form-config').then(res => setLeadExtraFieldType(res.data?.type || 'none')).catch(() => {});
+    api.get('/leads/settings').then(res => setLeadSettings(res.data)).catch(() => {});
+    api.get('/leads/assignable-users').then(res => setAssignableManagers(res.data)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -145,7 +151,15 @@ export default function CrmSettings() {
         setLeadFieldSaving(true);
         try {
           await api.put('/public/lead-form-config', { type: leadExtraFieldType });
-          showToast("Lid forma sozlamasi saqlandi!", 'success');
+          if (isAdmin) {
+            setLeadSettingsSaving(true);
+            try {
+              await api.put('/leads/settings', leadSettings);
+            } finally {
+              setLeadSettingsSaving(false);
+            }
+          }
+          showToast("Lid sozlamalari saqlandi!", 'success');
         } finally {
           setLeadFieldSaving(false);
         }
@@ -381,6 +395,103 @@ export default function CrmSettings() {
                 ))}
               </div>
               {leadFieldSaving && <p className="text-xs text-zinc-400 mt-4">Saqlanmoqda...</p>}
+
+              <div className="mt-10 pt-8 border-t border-zinc-200 dark:border-zinc-800">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Avtomatik Taqsimlash va SLA</h2>
+                <p className="text-sm text-zinc-500 mb-6">
+                  Yangi lid tushganda uni menejerlar orasida qanday taqsimlash va javob
+                  berish muddatini (SLA) belgilang. Bu sozlama sayt va CRM orqali kelgan
+                  barcha lidlarga birdek qo'llanadi.
+                </p>
+
+                {!isAdmin && (
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-500 mb-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+                    Bu sozlamalarni faqat administrator o'zgartira oladi.
+                  </p>
+                )}
+
+                <div className="space-y-5 max-w-md">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Taqsimlash rejimi</label>
+                    <div className="flex gap-3">
+                      {[{ value: 'on', label: 'Avtomatik' }, { value: 'off', label: "Qo'lda" }].map(opt => (
+                        <button
+                          type="button"
+                          key={opt.value}
+                          disabled={!isAdmin}
+                          onClick={() => setLeadSettings({ ...leadSettings, mode: opt.value })}
+                          className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${leadSettings.mode === opt.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400' : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-1.5">
+                      {leadSettings.mode === 'on'
+                        ? 'Yangi lid eng kam yuklangan menejerga avtomatik biriktiriladi.'
+                        : "Yangi lidlar hech kimga biriktirilmaydi — menejer qo'lda oladi."}
+                    </p>
+                  </div>
+
+                  {leadSettings.mode === 'on' && (
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Taqsimlash puli</label>
+                      <p className="text-xs text-zinc-400 mb-2">Hech kim tanlanmasa — barcha menejer va admin foydalanuvchilar orasida taqsimlanadi.</p>
+                      <div className="space-y-1 max-h-56 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 bg-zinc-50 dark:bg-zinc-950">
+                        {assignableManagers.length === 0 && <p className="text-xs text-zinc-400">Menejerlar topilmadi</p>}
+                        {assignableManagers.map(m => {
+                          const checked = leadSettings.pool.includes(m.id);
+                          return (
+                            <label key={m.id} className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm ${isAdmin ? 'cursor-pointer hover:bg-white dark:hover:bg-zinc-900' : 'cursor-not-allowed opacity-70'}`}>
+                              <input
+                                type="checkbox"
+                                disabled={!isAdmin}
+                                checked={checked}
+                                onChange={() => setLeadSettings({
+                                  ...leadSettings,
+                                  pool: checked ? leadSettings.pool.filter(id => id !== m.id) : [...leadSettings.pool, m.id],
+                                })}
+                              />
+                              <span className="font-medium text-slate-800 dark:text-slate-200">{m.name}</span>
+                              <span className="text-xs text-zinc-400">
+                                ({m.role === 'SUPER_ADMIN' ? 'Super admin' : m.role === 'ADMIN' ? 'Admin' : 'Menejer'})
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <Input
+                    type="number" min="5"
+                    label="SLA — javob berish muddati (daqiqa)"
+                    value={leadSettings.slaMinutes}
+                    disabled={!isAdmin}
+                    onChange={e => setLeadSettings({ ...leadSettings, slaMinutes: Number(e.target.value) })}
+                  />
+                  <p className="text-xs text-zinc-400 -mt-3">Shu vaqt ichida javobsiz qolgan lid uchun menejerga eslatma yuboriladi.</p>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      type="time"
+                      label="Ish vaqti boshlanishi"
+                      value={leadSettings.workStart}
+                      disabled={!isAdmin}
+                      onChange={e => setLeadSettings({ ...leadSettings, workStart: e.target.value })}
+                    />
+                    <Input
+                      type="time"
+                      label="Ish vaqti tugashi"
+                      value={leadSettings.workEnd}
+                      disabled={!isAdmin}
+                      onChange={e => setLeadSettings({ ...leadSettings, workEnd: e.target.value })}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-400 -mt-3">SLA eslatmalari faqat shu ish soatlari ichida yuboriladi.</p>
+                </div>
+                {leadSettingsSaving && <p className="text-xs text-zinc-400 mt-4">Saqlanmoqda...</p>}
+              </div>
             </>
           )}
 

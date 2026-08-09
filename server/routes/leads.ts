@@ -115,6 +115,56 @@ router.get('/', async (req, res) => {
     }
 });
 
+// ─── GET/PUT /api/leads/settings — avtomatik taqsimlash/SLA sozlamalari ────────
+// leadIntake.ts (pickAssignee) va scheduler.ts (Faza 7, lead_sla_breach) shu
+// aynan shu Setting kalitlarni o'qiydi — bu yerda faqat CRM'dan tahrirlash yo'li.
+const SETTINGS_KEYS = {
+    mode: 'lead_assignment_mode',
+    pool: 'lead_assignment_pool',
+    slaMinutes: 'lead_sla_minutes',
+    workStart: 'work_hours_start',
+    workEnd: 'work_hours_end',
+} as const;
+
+router.get('/settings', async (_req, res) => {
+    try {
+        const rows = await prisma.setting.findMany({ where: { key: { in: Object.values(SETTINGS_KEYS) } } });
+        const map = new Map(rows.map(r => [r.key, r.value]));
+        let pool: string[] = [];
+        try { pool = JSON.parse(map.get(SETTINGS_KEYS.pool) || '[]'); } catch { /* noop */ }
+        res.json({
+            mode: map.get(SETTINGS_KEYS.mode) || 'on',
+            pool,
+            slaMinutes: Number(map.get(SETTINGS_KEYS.slaMinutes)) || 30,
+            workStart: map.get(SETTINGS_KEYS.workStart) || '09:00',
+            workEnd: map.get(SETTINGS_KEYS.workEnd) || '19:00',
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/settings', requireMinRole('ADMIN'), async (req, res) => {
+    try {
+        const { mode, pool, slaMinutes, workStart, workEnd } = req.body as {
+            mode?: string; pool?: string[]; slaMinutes?: number; workStart?: string; workEnd?: string;
+        };
+        const upserts: [string, string][] = [];
+        if (mode !== undefined) upserts.push([SETTINGS_KEYS.mode, mode]);
+        if (pool !== undefined) upserts.push([SETTINGS_KEYS.pool, JSON.stringify(pool)]);
+        if (slaMinutes !== undefined) upserts.push([SETTINGS_KEYS.slaMinutes, String(slaMinutes)]);
+        if (workStart !== undefined) upserts.push([SETTINGS_KEYS.workStart, workStart]);
+        if (workEnd !== undefined) upserts.push([SETTINGS_KEYS.workEnd, workEnd]);
+
+        await Promise.all(upserts.map(([key, value]) =>
+            prisma.setting.upsert({ where: { key }, update: { value }, create: { key, value } })
+        ));
+        res.json({ ok: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── GET /api/leads/my/summary — joriy menejer uchun qisqa hisob ──────────────
 router.get('/my/summary', async (req, res) => {
     try {
