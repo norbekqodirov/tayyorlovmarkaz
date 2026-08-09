@@ -1,28 +1,31 @@
 /**
- * CrmLeads.tsx (Faza 0.3 — refactored)
+ * CrmLeads.tsx (Faza 4 — server-side filtr/sahifalash, real vaqtli yangilanish)
  * Orchestrator: state, handlers, data fetching only.
  * Rendering delegated to src/components/leads/.
  */
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Search, Plus, Download, GraduationCap } from 'lucide-react';
+import { Search, Plus, Download, GraduationCap, Upload } from 'lucide-react';
 
 import { exportToExcel, exportToPDF } from '../../../utils/export';
-import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
+import { useLeads } from '../../../hooks/useLeads';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import ImportWizard from '../../../components/ImportWizard';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import api from '../../../api/client';
 
 import LeadStatsBar from '../../../components/leads/LeadStatsBar';
+import LeadFilters from '../../../components/leads/LeadFilters';
+import LeadBulkBar from '../../../components/leads/LeadBulkBar';
 import KanbanBoard from '../../../components/leads/KanbanBoard';
 import LeadListView from '../../../components/leads/LeadListView';
 import LeadDetailPanel from '../../../components/leads/LeadDetailPanel';
 import LeadFormModal from '../../../components/leads/LeadFormModal';
 
-import type { Lead, LeadActivity } from '../../../components/leads/types';
+import type { Lead } from '../../../components/leads/types';
 
 const EXCEL_COLS = [
   { header: 'Ism', key: 'name', width: 25 },
@@ -38,44 +41,51 @@ const EXCEL_COLS = [
 
 export default function CrmLeads() {
   // ─── Data ────────────────────────────────────────────────────────────────────
-  const { data: leads = [], addDocument, updateDocument, deleteDocument } = useFirestore<Lead>('leads');
-  const { addDocument: addStudent } = useFirestore<any>('students');
-  const { data: groups = [] } = useFirestore<any>('groups');
-  const { addDocument: addLeadActivity } = useFirestore<any>('leadActivities');
+  const {
+    leads, total, stageCounts, loading, filters, updateFilters, clearFilters,
+    qInput, setQInput, sort, setSort, page, setPage, limit, setLimit,
+    refetch, optimisticUpdate,
+  } = useLeads();
   const { courses } = useCrmData();
   const { showToast } = useToast();
 
+  const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    api.get('/leads/assignable-users').then(res => setManagers(res.data || [])).catch(() => {});
+  }, []);
+
   // ─── UI State ─────────────────────────────────────────────────────────────────
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
-  const [searchQuery, setSearchQuery] = useState('');
+  useEffect(() => { setLimit(view === 'kanban' ? 0 : 25); }, [view, setLimit]);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [groups, setGroups] = useState<any[]>([]);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+
+  useEffect(() => { api.get('/groups').then(res => setGroups(res.data?.data || res.data || [])).catch(() => {}); }, []);
 
   const [formData, setFormData] = useState<Partial<Lead>>({
     name: '', phone: '', email: '', stage: 'new',
     source: 'Instagram', course: '', notes: '', score: 50, status: 'warm',
   });
 
-  // ─── Filtered data ────────────────────────────────────────────────────────────
-  const filteredLeads = useMemo(() =>
-    (leads || []).filter(l =>
-      (l.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (l.phone || '').includes(searchQuery) ||
-      (l.course || '').toLowerCase().includes(searchQuery.toLowerCase())
-    ), [leads, searchQuery]);
+  const emptyForm = (): Partial<Lead> => ({
+    name: '', phone: '', email: '', stage: 'new',
+    source: 'Instagram', course: '', notes: '', score: 50, status: 'warm',
+  });
 
   // ─── Modal helpers ────────────────────────────────────────────────────────────
   const openModal = (lead: Lead | null = null) => {
     setEditingLead(lead);
-    setFormData(lead ?? {
-      name: '', phone: '', email: '', stage: 'new',
-      source: 'Instagram', course: '', notes: '', score: 50, status: 'warm',
-    });
+    setFormData(lead ?? emptyForm());
     setIsModalOpen(true);
   };
   const closeModal = () => { setIsModalOpen(false); setEditingLead(null); };
@@ -85,86 +95,104 @@ export default function CrmLeads() {
     if (!formData.name || !formData.phone) {
       showToast('Ism va telefon raqami majburiy!', 'error'); return;
     }
-    // "activities" Lead modelida yo'q (alohida LeadActivity jadvali) — yuborilsa
-    // serverda jimgina tashlab yuboriladi, shuning uchun to'g'ridan-to'g'ri olib tashlaymiz.
-    const { activities: _omit, ...rest } = formData as any;
+    setIsSaving(true);
     try {
       if (editingLead) {
-        const data = { ...rest, date: formData.date || editingLead.date };
-        await updateDocument(editingLead.id, data);
-        if (selectedLead?.id === editingLead.id) setSelectedLead({ ...selectedLead, ...data } as Lead);
+        const res = await api.put(`/leads/${editingLead.id}`, formData);
+        if (selectedLead?.id === editingLead.id) setSelectedLead({ ...selectedLead, ...res.data });
         showToast('Lid yangilandi', 'success');
       } else {
-        await addDocument({ date: new Date().toISOString(), ...rest });
+        await api.post('/leads', formData);
         showToast('Yangi lid qo\'shildi', 'success');
       }
       closeModal();
+      refetch();
     } catch (err: any) {
       showToast(err?.response?.data?.message || 'Lidni saqlashda xatolik yuz berdi', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    await deleteDocument(deleteConfirm.id);
+    try {
+      await api.delete(`/leads/${deleteConfirm.id}`);
+      showToast("Lid o'chirildi", 'success');
+      refetch();
+    } catch {
+      showToast("O'chirishda xatolik yuz berdi", 'error');
+    }
     setDeleteConfirm({ open: false, id: '' });
     setIsDetailOpen(false);
-    showToast("Lid o'chirildi", 'success');
   };
 
-  // ─── Kanban drag ─────────────────────────────────────────────────────────────
-  const handleDrop = async (e: React.DragEvent, stageId: string) => {
-    e.preventDefault();
-    await updateDocument(e.dataTransfer.getData('leadId'), { stage: stageId as any });
-  };
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    e.dataTransfer.setData('leadId', id);
-  };
-
-  // ─── Activities ───────────────────────────────────────────────────────────────
-  // LeadActivity Lead'ning JSON maydoni emas, alohida jadval — shuning uchun
-  // to'g'ridan-to'g'ri /api/leadActivities ga yoziladi (avval Lead.activities'ni
-  // yangilashga urinardi, bu maydon sxemada yo'q va serverda jimgina tashlanardi).
-  const addActivity = async (leadId: string, type: LeadActivity['type'], content: string) => {
+  // ─── Kanban drag / bosqich o'zgartirish (optimistik) ──────────────────────────
+  const changeStage = async (id: string, stage: string, lostReason?: string) => {
+    optimisticUpdate(id, { stage: stage as Lead['stage'], lostReason });
+    if (selectedLead?.id === id) setSelectedLead({ ...selectedLead, stage: stage as Lead['stage'], lostReason });
     try {
-      const userName = (() => {
-        try { return JSON.parse(localStorage.getItem('crm_user') || '{}').name || 'Admin'; } catch { return 'Admin'; }
-      })();
-      const date = new Date().toISOString();
-      const newId = await addLeadActivity({ leadId, type, content, date, user: userName });
+      await api.put(`/leads/${id}`, { stage, ...(lostReason ? { lostReason } : {}) });
+    } catch {
+      showToast("Bosqichni o'zgartirishda xatolik — qayta yuklanmoqda", 'error');
+      refetch();
+    }
+  };
+
+  // ─── Menejerga biriktirish ────────────────────────────────────────────────────
+  const handleAssign = async (id: string, userId: string | null) => {
+    const manager = managers.find(m => m.id === userId) || null;
+    optimisticUpdate(id, { assignedToId: userId, assignedTo: manager });
+    if (selectedLead?.id === id) setSelectedLead({ ...selectedLead, assignedToId: userId, assignedTo: manager });
+    try {
+      await api.post(`/leads/${id}/assign`, { userId });
+    } catch {
+      showToast('Biriktirishda xatolik', 'error');
+      refetch();
+    }
+  };
+
+  // ─── Faoliyat qo'shish ────────────────────────────────────────────────────────
+  const handleLogActivity = async (leadId: string, data: any) => {
+    try {
+      const res = await api.post(`/leads/${leadId}/activities`, data);
       if (selectedLead?.id === leadId) {
-        const newAct: LeadActivity = { id: newId, type, content, date, user: userName };
-        setSelectedLead({ ...selectedLead, activities: [newAct, ...(selectedLead.activities || [])] });
+        setSelectedLead({ ...selectedLead, ...res.data.lead, activities: [res.data.activity, ...(selectedLead.activities || [])] });
       }
+      showToast('Faoliyat qo\'shildi', 'success');
+      refetch();
     } catch {
       showToast('Faollikni saqlashda xatolik yuz berdi', 'error');
     }
   };
 
-  // ─── Convert lead → student ───────────────────────────────────────────────────
+  // ─── Lid tafsilotini ochish (to'liq — faoliyatlar bilan) ──────────────────────
+  const openDetail = async (lead: Lead) => {
+    setIsDetailOpen(true);
+    setSelectedLead(lead); // darhol ko'rsatish (qisman ma'lumot), keyin to'liq yuklanadi
+    try {
+      const res = await api.get(`/leads/${lead.id}`);
+      setSelectedLead(res.data);
+    } catch {
+      showToast('Lid tafsilotini yuklashda xatolik', 'error');
+    }
+  };
+
+  // ─── Convert lead → student (bitta tranzaksiya, backend) ──────────────────────
   const handleConvertToStudent = async (lead: Lead) => {
     if (!selectedGroupId) { showToast('Iltimos, guruhni tanlang!', 'error'); return; }
-    const grp = (groups || []).find((g: any) => g.id === selectedGroupId);
     try {
-      const studentId = await addStudent({
-        name: lead.name, phone: lead.phone, email: lead.email || '',
-        address: '', birthDate: '', parentName: '', parentPhone: '',
-        course: lead.course, group: grp?.name || '',
-        paymentStatus: 'Kutilmoqda', balance: 0, status: 'Faol',
-        joinedDate: new Date().toISOString().split('T')[0],
-        notes: lead.notes || `Lid manbasi: ${lead.source}`,
-      });
-      // Group.students maydoni sxemada yo'q — haqiqiy ro'yxatga olish Enrollment
-      // jadvali orqali amalga oshadi (bda0add'gacha bo'lgan kod buni tashlab ketardi).
-      await api.post('/enrollments', { studentId, groupId: selectedGroupId });
-      await updateDocument(lead.id, { stage: 'won' });
+      await api.post(`/leads/${lead.id}/convert`, { groupId: selectedGroupId });
       showToast(`${lead.name} o'quvchilar ro'yxatiga va guruhga qo'shildi!`, 'success');
       setIsConvertModalOpen(false);
       setIsDetailOpen(false);
       setSelectedGroupId('');
+      refetch();
     } catch (err: any) {
       showToast(err?.response?.data?.message || "O'quvchiga aylantirishda xatolik yuz berdi", 'error');
     }
   };
+
+  const activeFilterCount = useMemo(() => Object.values(filters).filter(v => v !== undefined && (!Array.isArray(v) || v.length > 0)).length, [filters]);
 
   // ─── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -172,7 +200,7 @@ export default function CrmLeads() {
       <ConfirmDialog
         isOpen={deleteConfirm.open}
         title="Lidni o'chirish"
-        message="Haqiqatan ham bu lidni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
+        message="Haqiqatan ham bu lidni o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
@@ -185,7 +213,6 @@ export default function CrmLeads() {
           <p className="text-zinc-500 text-sm font-medium">Sotuv voronkasi va marketing tahlili</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* View toggle */}
           <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
             {(['kanban', 'list'] as const).map(v => (
               <button
@@ -198,6 +225,12 @@ export default function CrmLeads() {
             ))}
           </div>
           <button
+            onClick={() => setIsImportOpen(true)}
+            className="flex items-center gap-2 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold transition-all text-sm"
+          >
+            <Upload size={16} /> Import
+          </button>
+          <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
           >
@@ -207,62 +240,84 @@ export default function CrmLeads() {
       </div>
 
       {/* Stats */}
-      <LeadStatsBar leads={leads || []} />
+      <LeadStatsBar leads={leads} total={total} stageCounts={stageCounts} />
 
-      {/* Search bar + export */}
-      <div className="flex flex-col md:flex-row gap-4 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Lid ismi, raqami yoki kurs bo'yicha qidirish..."
-            className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
-          />
+      {/* Search + filters + export */}
+      <div className="flex flex-col gap-4 bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+            <input
+              type="text"
+              value={qInput}
+              onChange={e => setQInput(e.target.value)}
+              placeholder="Lid ismi, raqami yoki kurs bo'yicha qidirish..."
+              className="w-full pl-10 pr-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
+            />
+          </div>
+          <button
+            onClick={() => exportToExcel(leads, EXCEL_COLS, 'Lidlar')}
+            className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
+            title="Excel yuklab olish"
+          >
+            <Download size={16} />
+          </button>
+          <button
+            onClick={async () => await exportToPDF(leads, EXCEL_COLS, "Lidlar Ro'yxati", 'Lidlar')}
+            className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all"
+            title="PDF yuklab olish"
+          >
+            <Download size={16} />
+          </button>
         </div>
-        <button
-          onClick={() => exportToExcel(filteredLeads, EXCEL_COLS, 'Lidlar')}
-          className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
-          title="Excel yuklab olish"
-        >
-          <Download size={16} />
-        </button>
-        <button
-          onClick={async () => await exportToPDF(filteredLeads, EXCEL_COLS, "Lidlar Ro'yxati", 'Lidlar')}
-          className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-500/20 transition-all"
-          title="PDF yuklab olish"
-        >
-          <Download size={16} />
-        </button>
+        <LeadFilters filters={filters} onChange={updateFilters} onClear={clearFilters} stageCounts={stageCounts} />
       </div>
 
       {/* Main content */}
       {view === 'kanban' ? (
         <KanbanBoard
-          leads={filteredLeads}
-          onDrop={handleDrop}
-          onDragStart={handleDragStart}
-          onLeadClick={lead => { setSelectedLead(lead); setIsDetailOpen(true); }}
+          leads={leads}
+          stageCounts={stageCounts}
+          onDrop={(id, stage) => changeStage(id, stage)}
+          onStageChange={changeStage}
+          onLeadClick={openDetail}
         />
       ) : (
         <LeadListView
-          leads={filteredLeads}
-          onRowClick={lead => { setSelectedLead(lead); setIsDetailOpen(true); }}
+          leads={leads}
+          total={total}
+          page={page}
+          limit={limit}
+          loading={loading}
+          sort={sort}
+          onSortChange={setSort}
+          onPageChange={setPage}
+          onRowClick={openDetail}
           onEdit={openModal}
+          selection={{ value: selectedIds, onChange: setSelectedIds }}
         />
       )}
+
+      <LeadBulkBar
+        selectedIds={Array.from(selectedIds)}
+        onClear={() => setSelectedIds(new Set())}
+        onDone={() => { setSelectedIds(new Set()); refetch(); }}
+        showToast={showToast}
+      />
 
       {/* Detail panel */}
       <AnimatePresence>
         {isDetailOpen && selectedLead && (
           <LeadDetailPanel
             lead={selectedLead}
+            managers={managers}
             onClose={() => setIsDetailOpen(false)}
             onEdit={lead => { openModal(lead); }}
             onDelete={id => setDeleteConfirm({ open: true, id })}
             onConvert={() => setIsConvertModalOpen(true)}
-            onAddActivity={addActivity}
+            onStageChange={changeStage}
+            onAssign={handleAssign}
+            onLogActivity={handleLogActivity}
           />
         )}
       </AnimatePresence>
@@ -287,7 +342,7 @@ export default function CrmLeads() {
                 className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 <option value="">Tanlang...</option>
-                {(groups || []).filter((g: any) => ['Faol', 'Yangi', 'active'].includes(g.status)).map((g: any) => (
+                {(groups || []).filter((g: any) => g.status === 'active').map((g: any) => (
                   <option key={g.id} value={g.id}>{g.name} ({g.course?.name || 'Kurssiz'})</option>
                 ))}
               </select>
@@ -308,10 +363,20 @@ export default function CrmLeads() {
         editingLead={editingLead}
         formData={formData}
         courses={courses}
+        managers={managers}
+        saving={isSaving}
         onClose={closeModal}
         onSave={handleSave}
         onChange={patch => setFormData(prev => ({ ...prev, ...patch }))}
       />
+
+      {isImportOpen && (
+        <ImportWizard
+          collection="leads"
+          onClose={() => setIsImportOpen(false)}
+          onSuccess={() => { setIsImportOpen(false); refetch(); }}
+        />
+      )}
     </div>
   );
 }

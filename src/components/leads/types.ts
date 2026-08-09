@@ -5,26 +5,70 @@
 
 export interface LeadActivity {
   id: string;
-  type: 'call' | 'message' | 'meeting' | 'note';
+  type: 'call' | 'message' | 'meeting' | 'note' | 'form';
   content: string;
   date: string;
   user: string;
+  createdAt?: string;
+  userId?: string | null;
+  outcome?: string | null;
+  direction?: 'in' | 'out' | null;
+  durationSec?: number | null;
 }
 
 export interface Lead {
   id: string;
   name: string;
   phone: string;
-  email?: string;
+  email?: string | null;
   stage: 'new' | 'contacted' | 'meeting' | 'won' | 'lost';
   source: string;
   course: string;
+  courseId?: string | null;
   score: number;
   status: 'hot' | 'warm' | 'cold';
   date: string;
   activities: LeadActivity[];
   notes: string;
   extraField?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+
+  // Egalik / SLA
+  assignedToId?: string | null;
+  assignedTo?: { id: string; name: string } | null;
+  assignedAt?: string | null;
+  firstResponseAt?: string | null;
+  firstResponseMinutes?: number | null;
+  slaBreachedAt?: string | null;
+  lastContactAt?: string | null;
+  nextFollowUpAt?: string | null;
+  nextAction?: string | null;
+  stageChangedAt?: string | null;
+
+  // Atributsiya
+  campaignId?: string | null;
+  campaign?: { id: string; name: string; platform: string } | null;
+  formId?: string | null;
+  form?: { id: string; title: string } | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+
+  // Konversiya
+  studentId?: string | null;
+  convertedAt?: string | null;
+
+  // Yo'qotish
+  lostReason?: string | null;
+  lostAt?: string | null;
+
+  // Dublikat
+  duplicateOfId?: string | null;
+  duplicateOf?: { id: string; name: string; stage: string } | null;
+  submitCount?: number;
+
+  _count?: { activities: number };
 }
 
 // Yagona manba — bosqichlar avval 5 ta faylda mustaqil nusxalangan edi
@@ -42,7 +86,34 @@ export function stageById(id: string) {
   return STAGES.find(s => s.id === id);
 }
 
+export const OPEN_STAGE_IDS = ['new', 'contacted', 'meeting'];
+
 export const SOURCES = ['Instagram', 'Facebook', 'Telegram', 'Vebsayt', 'Tavsiya', 'Banner', 'Boshqa'];
+
+export const LOST_REASONS = [
+  'Narx mos kelmadi',
+  'Boshqa markazni tanladi',
+  'Vaqt/jadval mos kelmadi',
+  'Aloqaga chiqmadi',
+  'Fikridan qaytdi',
+  'Boshqa',
+];
+
+export const ACTIVITY_TYPES: { id: LeadActivity['type']; label: string }[] = [
+  { id: 'call', label: "Qo'ng'iroq" },
+  { id: 'message', label: 'Xabar' },
+  { id: 'meeting', label: 'Uchrashuv' },
+  { id: 'note', label: 'Eslatma' },
+];
+
+export const ACTIVITY_OUTCOMES: { id: string; label: string }[] = [
+  { id: 'answered', label: 'Javob berdi' },
+  { id: 'no_answer', label: 'Javob bermadi' },
+  { id: 'busy', label: 'Band edi' },
+  { id: 'wrong_number', label: "Noto'g'ri raqam" },
+  { id: 'interested', label: 'Qiziqdi' },
+  { id: 'not_interested', label: 'Qiziqmadi' },
+];
 
 export function getStatusColor(status: Lead['status']) {
   switch (status) {

@@ -1,63 +1,97 @@
 /**
  * LeadDetailPanel.tsx
- * Right-side slide-in panel showing full lead details, activity timeline, and note input.
+ * O'ng tomondan chiquvchi to'liq lid paneli.
+ *
+ * Tuzatilgan buglar:
+ * - Konversiya ENDI istalgan (lost bo'lmagan) bosqichdan mumkin — avval
+ *   faqat stage==='won' bo'lganda tugma ko'rinardi (teskari mantiq: avval
+ *   qo'lda "won"ga sudrab, keyin panelni qayta ochib konvertatsiya qilish
+ *   kerak edi).
+ * - 3 ta soxta faoliyat tugmasi (hardcoded matn, hech narsa yubormasdi)
+ *   o'rniga haqiqiy LogActivityModal.
+ * - "Ball avtomatik hisoblanadi" degan yozuv endi HAQIQAT (server buni
+ *   POST /:id/activities orqali chindan ham yangilaydi).
  */
-import React, { useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, Edit2, Trash2, Phone, Mail, Calendar, User,
-  MessageSquare, Send, FileText, GraduationCap,
+  MessageSquare, FileText, GraduationCap, Send, Megaphone,
+  AlertTriangle, Plus, CalendarClock,
 } from 'lucide-react';
-import { getStatusColor } from './types';
+import { getStatusColor, STAGES, LOST_REASONS } from './types';
 import type { Lead, LeadActivity } from './types';
+import LogActivityModal from './LogActivityModal';
 
 interface Props {
   lead: Lead;
+  managers: { id: string; name: string }[];
   onClose: () => void;
   onEdit: (lead: Lead) => void;
   onDelete: (id: string) => void;
-  onConvert: () => void;
-  onAddActivity: (leadId: string, type: LeadActivity['type'], content: string) => void;
+  onConvert: (lead: Lead) => void;
+  onStageChange: (id: string, stage: string, lostReason?: string) => void;
+  onAssign: (id: string, userId: string | null) => void;
+  onLogActivity: (leadId: string, data: { type: string; content: string; outcome?: string; direction: 'in' | 'out'; nextFollowUpAt?: string; nextAction?: string }) => Promise<void>;
 }
 
-const LeadDetailPanel: React.FC<Props> = ({
-  lead, onClose, onEdit, onDelete, onConvert, onAddActivity,
-}) => {
-  const noteRef = useRef<HTMLInputElement>(null);
+const activityIcon = (type: LeadActivity['type']) => {
+  switch (type) {
+    case 'call':    return <Phone size={14} className="text-blue-500" />;
+    case 'message': return <MessageSquare size={14} className="text-emerald-500" />;
+    case 'meeting': return <Calendar size={14} className="text-purple-500" />;
+    case 'form':    return <Send size={14} className="text-indigo-500" />;
+    default:        return <FileText size={14} className="text-amber-500" />;
+  }
+};
 
-  const submitNote = () => {
-    if (noteRef.current?.value) {
-      onAddActivity(lead.id, 'note', noteRef.current.value);
-      noteRef.current.value = '';
+const LeadDetailPanel: React.FC<Props> = ({
+  lead, managers, onClose, onEdit, onDelete, onConvert, onStageChange, onAssign, onLogActivity,
+}) => {
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [pendingLostReason, setPendingLostReason] = useState<string | null>(null);
+
+  const canConvert = lead.stage !== 'lost' && !lead.studentId;
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleStageSelect = (newStage: string) => {
+    if (newStage === lead.stage) return;
+    if (newStage === 'lost') {
+      setPendingLostReason(''); // rad sababi so'raladi
+      return;
     }
+    onStageChange(lead.id, newStage);
   };
 
-  const activityIcon = (type: LeadActivity['type']) => {
-    switch (type) {
-      case 'call':    return <Phone size={14} className="text-blue-500" />;
-      case 'message': return <MessageSquare size={14} className="text-emerald-500" />;
-      case 'meeting': return <Calendar size={14} className="text-purple-500" />;
-      case 'note':    return <FileText size={14} className="text-amber-500" />;
-    }
+  const confirmLost = () => {
+    if (pendingLostReason === null) return;
+    onStageChange(lead.id, 'lost', pendingLostReason || undefined);
+    setPendingLostReason(null);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <motion.div
         initial={{ x: '100%' }}
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
+        onClick={e => e.stopPropagation()}
         className="w-full max-w-2xl h-full bg-white dark:bg-zinc-900 shadow-2xl flex flex-col"
       >
         {/* Header */}
-        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl font-black">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center text-xl font-black shrink-0">
               {lead.name.charAt(0)}
             </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{lead.name}</h2>
-              <div className="flex items-center gap-2 mt-1">
+            <div className="min-w-0">
+              <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight truncate">{lead.name}</h2>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${getStatusColor(lead.status)}`}>
                   {lead.status}
                 </span>
@@ -66,23 +100,86 @@ const LeadDetailPanel: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {lead.stage === 'won' && (
+          <div className="flex items-center gap-1 shrink-0">
+            {canConvert && (
               <button
-                onClick={onConvert}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-lg shadow-emerald-600/20"
+                onClick={() => onConvert(lead)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-lg shadow-emerald-600/20"
               >
                 <GraduationCap size={16} /> O'quvchiga aylantirish
               </button>
             )}
-            <button onClick={() => onEdit(lead)} className="p-2 text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={20} /></button>
-            <button onClick={() => onDelete(lead.id)} className="p-2 text-zinc-400 hover:text-rose-600 transition-colors"><Trash2 size={20} /></button>
-            <button onClick={onClose} className="p-2 text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors ml-4"><X size={24} /></button>
+            <button onClick={() => onEdit(lead)} className="p-2 text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={18} /></button>
+            <button onClick={() => onDelete(lead.id)} className="p-2 text-zinc-400 hover:text-rose-600 transition-colors"><Trash2 size={18} /></button>
+            <button onClick={onClose} className="p-2 text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors ml-2"><X size={22} /></button>
           </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Dublikat ogohlantirishi */}
+          {lead.duplicateOf && (
+            <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl">
+              <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                Bu kontakt ilgari ham murojaat qilgan: <span className="underline">{lead.duplicateOf.name}</span> ({lead.duplicateOf.stage})
+              </div>
+            </div>
+          )}
+          {lead.studentId && (
+            <div className="flex items-start gap-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-2xl">
+              <GraduationCap size={18} className="text-blue-500 shrink-0 mt-0.5" />
+              <div className="text-xs font-bold text-blue-700 dark:text-blue-400">Bu lid allaqachon o'quvchiga aylantirilgan.</div>
+            </div>
+          )}
+
+          {/* Bosqich va menejer */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Bosqich</p>
+              <select
+                value={lead.stage}
+                onChange={e => handleStageSelect(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none dark:text-white"
+              >
+                {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Menejer</p>
+              <select
+                value={lead.assignedToId || ''}
+                onChange={e => onAssign(lead.id, e.target.value || null)}
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none dark:text-white"
+              >
+                <option value="">Egasiz</option>
+                {managers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Rad sababi so'rovi */}
+          {pendingLostReason !== null && (
+            <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 p-4 rounded-2xl space-y-3">
+              <p className="text-xs font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Rad etish sababi</p>
+              <select
+                value={pendingLostReason}
+                onChange={e => setPendingLostReason(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-rose-200 dark:border-rose-800 rounded-xl text-sm font-bold outline-none dark:text-white"
+              >
+                <option value="">Tanlanmagan</option>
+                {LOST_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setPendingLostReason(null)} className="px-3 py-1.5 text-xs font-bold text-zinc-500">Bekor qilish</button>
+                <button onClick={confirmLost} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-black">Tasdiqlash</button>
+              </div>
+            </div>
+          )}
+          {lead.stage === 'lost' && lead.lostReason && (
+            <p className="text-xs font-bold text-rose-500">Sabab: {lead.lostReason}</p>
+          )}
+
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-1">
@@ -104,7 +201,7 @@ const LeadDetailPanel: React.FC<Props> = ({
             <div className="space-y-1">
               <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Qo'shilgan sana</p>
               <p className="text-sm font-bold text-slate-900 dark:text-white">
-                {new Date(lead.date).toLocaleDateString('uz-UZ')}
+                {new Date(lead.createdAt || lead.date).toLocaleDateString('uz-UZ')}
               </p>
             </div>
             {lead.extraField && (
@@ -113,7 +210,26 @@ const LeadDetailPanel: React.FC<Props> = ({
                 <p className="text-sm font-bold text-slate-900 dark:text-white">{lead.extraField}</p>
               </div>
             )}
+            {(lead.campaign || lead.form || lead.utmSource) && (
+              <div className="space-y-1 col-span-2">
+                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-1.5"><Megaphone size={11} /> Reklama manbasi</p>
+                <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                  {[lead.campaign?.name, lead.form?.title, lead.utmSource].filter(Boolean).join(' · ') || '-'}
+                </p>
+              </div>
+            )}
           </div>
+
+          {/* Keyingi qadam */}
+          {(lead.nextFollowUpAt || lead.nextAction) && (
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex items-center gap-3">
+              <CalendarClock size={18} className="text-blue-500 shrink-0" />
+              <div className="text-xs">
+                {lead.nextFollowUpAt && <p className="font-black text-slate-900 dark:text-white">{new Date(lead.nextFollowUpAt).toLocaleDateString('uz-UZ')}</p>}
+                {lead.nextAction && <p className="text-zinc-500 font-bold">{lead.nextAction}</p>}
+              </div>
+            </div>
+          )}
 
           {/* Score bar */}
           <div className="bg-zinc-50 dark:bg-zinc-800/50 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800">
@@ -122,14 +238,10 @@ const LeadDetailPanel: React.FC<Props> = ({
               <span className="text-2xl font-black text-blue-600">{lead.score}</span>
             </div>
             <div className="w-full h-3 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${lead.score}%` }}
-                className="h-full bg-blue-600"
-              />
+              <motion.div initial={{ width: 0 }} animate={{ width: `${lead.score}%` }} className="h-full bg-blue-600" />
             </div>
             <p className="text-[10px] font-bold text-zinc-500 mt-3 italic">
-              * Ball lidning faolligi va qiziqishi asosida avtomatik hisoblanadi.
+              * Ball lidning faolligi, manbasi va faoliyat natijalari asosida avtomatik hisoblanadi.
             </p>
           </div>
 
@@ -137,26 +249,12 @@ const LeadDetailPanel: React.FC<Props> = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Faolliklar Tarixi</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => onAddActivity(lead.id, 'call', "Telefon orqali bog'lanildi")}
-                  className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 hover:text-blue-600 transition-all"
-                >
-                  <Phone size={16} />
-                </button>
-                <button
-                  onClick={() => onAddActivity(lead.id, 'message', 'Telegramdan xabar yozildi')}
-                  className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 hover:text-blue-600 transition-all"
-                >
-                  <Send size={16} />
-                </button>
-                <button
-                  onClick={() => onAddActivity(lead.id, 'meeting', "Uchrashuv o'tkazildi")}
-                  className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 hover:text-blue-600 transition-all"
-                >
-                  <Calendar size={16} />
-                </button>
-              </div>
+              <button
+                onClick={() => setIsActivityModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all"
+              >
+                <Plus size={14} /> Qo'shish
+              </button>
             </div>
 
             <div className="space-y-4 relative before:absolute before:left-4 before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-100 dark:before:bg-zinc-800">
@@ -166,14 +264,15 @@ const LeadDetailPanel: React.FC<Props> = ({
                     {activityIcon(activity.type)}
                   </div>
                   <div className="bg-zinc-50 dark:bg-zinc-800/30 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                    <div className="flex justify-between items-start mb-1">
-                      <p className="text-xs font-black text-slate-900 dark:text-white">{activity.content}</p>
-                      <span className="text-[10px] font-bold text-zinc-400">
-                        {new Date(activity.date).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                    <div className="flex justify-between items-start mb-1 gap-2">
+                      <p className="text-xs font-black text-slate-900 dark:text-white whitespace-pre-line">{activity.content}</p>
+                      <span className="text-[10px] font-bold text-zinc-400 shrink-0">
+                        {new Date(activity.createdAt || activity.date).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-400">
-                      <User size={10} /> {activity.user} • {new Date(activity.date).toLocaleDateString('uz-UZ')}
+                      <User size={10} /> {activity.user} • {new Date(activity.createdAt || activity.date).toLocaleDateString('uz-UZ')}
+                      {activity.outcome && <span className="text-blue-500">• {activity.outcome}</span>}
                     </div>
                   </div>
                 </div>
@@ -184,26 +283,13 @@ const LeadDetailPanel: React.FC<Props> = ({
             </div>
           </div>
         </div>
-
-        {/* Note input footer */}
-        <div className="p-6 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
-          <div className="flex gap-3">
-            <input
-              ref={noteRef}
-              type="text"
-              placeholder="Eslatma yozish..."
-              className="flex-1 px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
-              onKeyDown={e => { if (e.key === 'Enter') submitNote(); }}
-            />
-            <button
-              onClick={submitNote}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black text-sm shadow-lg shadow-blue-600/20"
-            >
-              Saqlash
-            </button>
-          </div>
-        </div>
       </motion.div>
+
+      <LogActivityModal
+        isOpen={isActivityModalOpen}
+        onClose={() => setIsActivityModalOpen(false)}
+        onSubmit={(data) => onLogActivity(lead.id, data)}
+      />
     </div>
   );
 };

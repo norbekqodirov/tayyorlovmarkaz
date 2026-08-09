@@ -130,6 +130,22 @@ router.get('/my/summary', async (req, res) => {
     }
 });
 
+// ─── GET /api/leads/assignable-users — biriktirish uchun menejerlar ro'yxati ──
+// auth.ts'dagi GET /auth/users faqat ADMIN+ uchun ochiq — oddiy MANAGER ham
+// lid biriktirishi kerak bo'lgani uchun bu yerda tor, xavfsiz proyeksiya.
+router.get('/assignable-users', async (_req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            where: { role: { in: ['MANAGER', 'ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+            select: { id: true, name: true, role: true },
+            orderBy: { name: 'asc' },
+        });
+        res.json(users);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── GET /api/leads/:id — to'liq (faoliyatlar bilan) ───────────────────────────
 router.get('/:id', async (req, res) => {
     try {
@@ -198,6 +214,7 @@ router.put('/:id', async (req, res) => {
         }
 
         const updated = await prisma.lead.update({ where: { id: req.params.id }, data, select: LEAD_SELECT });
+        try { emitToAdmins('lead:updated', { id: updated.id }); } catch { /* jim */ }
         res.json(updated);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -214,9 +231,11 @@ router.delete('/:id', async (req, res) => {
                 return res.status(403).json({ message: "Faqat administrator butunlay o'chira oladi" });
             }
             await prisma.lead.delete({ where: { id: req.params.id } });
+            try { emitToAdmins('lead:deleted', { id: req.params.id }); } catch { /* jim */ }
             return res.json({ success: true, hard: true });
         }
         await prisma.lead.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
+        try { emitToAdmins('lead:deleted', { id: req.params.id }); } catch { /* jim */ }
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -227,6 +246,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/:id/restore', async (req, res) => {
     try {
         const lead = await prisma.lead.update({ where: { id: req.params.id }, data: { deletedAt: null }, select: LEAD_SELECT });
+        try { emitToAdmins('lead:updated', { id: lead.id }); } catch { /* jim */ }
         res.json(lead);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -305,6 +325,7 @@ router.post('/:id/activities', async (req, res) => {
         }
 
         const updated = await prisma.lead.update({ where: { id: lead.id }, data: leadUpdate, select: LEAD_SELECT });
+        try { emitToAdmins('lead:updated', { id: updated.id }); } catch { /* jim */ }
         res.status(201).json({ activity, lead: updated });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -341,6 +362,7 @@ router.post('/:id/convert', async (req, res) => {
             return { student, lead: updatedLead };
         });
 
+        try { emitToAdmins('lead:updated', { id: result.lead.id }); } catch { /* jim */ }
         res.status(201).json(result);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
