@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap, Play, Clock, CheckCircle2, XCircle, SkipForward,
   RefreshCw, ChevronDown, ChevronRight, Calendar,
-  CreditCard, GraduationCap, Users, AlertTriangle, Activity
+  CreditCard, GraduationCap, Users, AlertTriangle, Activity,
+  Timer, CalendarClock, TrendingDown, BarChart3
 } from 'lucide-react';
 import { useToast } from '../../../components/Toast';
 import api from '../../../api/client';
@@ -32,6 +33,10 @@ const TRIGGER_ICONS: Record<string, any> = {
   daily_attendance_monitor: GraduationCap,
   hourly_lead_nurturing: Users,
   daily_group_lifecycle: Calendar,
+  lead_sla_breach: Timer,
+  daily_followup_digest: CalendarClock,
+  daily_lead_score_refresh: TrendingDown,
+  weekly_marketing_report: BarChart3,
 };
 
 const TRIGGER_SCHEDULES: Record<string, string> = {
@@ -39,6 +44,10 @@ const TRIGGER_SCHEDULES: Record<string, string> = {
   daily_attendance_monitor: 'Har kuni 17:30',
   hourly_lead_nurturing: 'Har 2 soatda',
   daily_group_lifecycle: 'Har kuni 10:00',
+  lead_sla_breach: 'Har 10 daqiqada',
+  daily_followup_digest: 'Har kuni 09:00',
+  daily_lead_score_refresh: 'Har kuni 03:00',
+  weekly_marketing_report: 'Dushanba 09:00',
 };
 
 export default function CrmAutomations() {
