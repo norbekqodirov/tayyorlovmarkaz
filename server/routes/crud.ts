@@ -53,7 +53,10 @@ const FORCE_GENERIC: Set<string> = new Set([
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Core entities ────────────────────────────────────────────────────────
-    'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'score', 'status', 'date', 'notes', 'extraField'],
+    // assignedToId/studentId/phoneNorm/searchKey va SLA vaqt-belgilari ataylab
+    // shu yerda yo'q — ular yon ta'sirli (biriktirish/konversiya/dedupe) va
+    // faqat maxsus endpointlar (server/routes/leads.ts, Faza 3) orqali yoziladi.
+    'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'courseId', 'score', 'status', 'date', 'notes', 'extraField', 'nextFollowUpAt', 'nextAction', 'lostReason', 'campaignId', 'formId', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm'],
     'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'balance', 'joinedDate'],
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'price'],
     'room': ['name', 'capacity', 'color'],
@@ -67,15 +70,15 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'task': ['title', 'completed', 'userId', 'staffId', 'priority', 'deadline'],
     'performanceReview': ['staffId', 'date', 'reviewer', 'feedback', 'rating'],
     'staffDocument': ['staffId', 'name', 'type', 'uploadDate'],
-    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions'],
+    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions', 'campaignId', 'utmSource', 'utmCampaign'],
     // ── Academic (Faza 0.2) ──────────────────────────────────────────────────
     'groupSchedule':   ['groupId', 'groupName', 'teacher', 'room', 'startTime', 'endTime', 'days', 'color'],
     'attendance':      ['groupId', 'date', 'records'],
     'assessment':      ['studentId', 'groupId', 'title', 'type', 'score', 'maxScore', 'date', 'subject', 'notes'],
     'exam':            ['groupId', 'studentId', 'examName', 'score'],
     'groupStudentNote':['groupId', 'studentId', 'note'],
-    'campaign':        ['name', 'platform', 'budget', 'spent', 'leads', 'startDate', 'endDate', 'status', 'notes'],
-    'leadActivity':    ['leadId', 'type', 'content', 'date', 'user'],
+    'campaign':        ['name', 'platform', 'budget', 'spent', 'leads', 'startDate', 'endDate', 'status', 'notes', 'impressions', 'clicks', 'utmSource', 'utmCampaign'],
+    'leadActivity':    ['leadId', 'type', 'content', 'date', 'user', 'outcome', 'direction', 'durationSec'],
 };
 
 // Fields stored as JSON-in-Text columns (Prisma schema comment: "JSON representation").

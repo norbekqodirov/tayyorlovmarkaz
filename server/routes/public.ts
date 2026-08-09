@@ -11,7 +11,8 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { todayDateStr } from '../utils/timezone.js';
+import { publicLeadRateLimit, publicViewRateLimit, hashIp } from '../middleware/rateLimit.js';
+import { createLeadFromIntake, LeadIntakeValidationError } from '../services/leadIntake.js';
 
 const router = express.Router();
 
@@ -58,37 +59,78 @@ router.get('/forms/:id', async (req, res) => {
     }
 });
 
-// POST /api/public/lead — ommaviy sayt/target forma orqali lid yaratish
-router.post('/lead', async (req, res) => {
+// GET /api/public/courses — faol kurslar ro'yxati (lid formasi dropdown'i uchun,
+// avval LeadForm.tsx'da 4 ta qattiq yozilgan variant bor edi)
+router.get('/courses', async (_req, res) => {
     try {
-        const { name, phone, course, source, extraField, notes, formId } = req.body as Record<string, string>;
-        if (!name?.trim() || !phone?.trim()) {
-            return res.status(400).json({ message: 'Ism va telefon kiritilishi shart' });
-        }
+        const courses = await prisma.course.findMany({
+            where: { status: 'Active' },
+            select: { id: true, name: true },
+            orderBy: { name: 'asc' },
+        });
+        res.json(courses);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
-        const lead = await prisma.lead.create({
-            data: {
-                name: String(name).trim().slice(0, 200),
-                phone: String(phone).trim().slice(0, 30),
-                course: course ? String(course).trim().slice(0, 200) : null,
-                source: source ? String(source).trim().slice(0, 100) : 'Vebsayt',
-                stage: 'new',
-                status: 'warm',
-                date: todayDateStr(),
-                extraField: extraField ? String(extraField).trim().slice(0, 200) : null,
-                notes: notes ? String(notes).trim().slice(0, 2000) : null,
-            },
+// POST /api/public/forms/:id/view — forma sahifasi ochilganini hisoblaydi
+// (konversiya % = arizalar/ko'rishlar shu hisobga tayanadi).
+router.post('/forms/:id/view', publicViewRateLimit, async (req, res) => {
+    await prisma.targetForm.update({
+        where: { id: req.params.id },
+        data: { views: { increment: 1 } },
+    }).catch(() => null);
+    res.json({ ok: true });
+});
+
+// POST /api/public/lead — ommaviy sayt/target forma orqali lid yaratish.
+// Haqiqiy qabul mantiqi (dublikat, UTM->kampaniya, avtomatik biriktirish,
+// ball, bildirishnoma) server/services/leadIntake.ts'da — bu CRM'dan qo'lda
+// yaratishda ham ishlatiladigan yagona umumiy yo'l.
+router.post('/lead', publicLeadRateLimit, async (req, res) => {
+    try {
+        const body = req.body as Record<string, string>;
+        const result = await createLeadFromIntake({
+            name: body.name,
+            phone: body.phone,
+            email: body.email,
+            course: body.course,
+            notes: body.notes,
+            extraField: body.extraField,
+            source: body.source,
+            formId: body.formId,
+            campaignId: body.campaignId,
+            utmSource: body.utm_source || body.utmSource,
+            utmMedium: body.utm_medium || body.utmMedium,
+            utmCampaign: body.utm_campaign || body.utmCampaign,
+            utmContent: body.utm_content || body.utmContent,
+            utmTerm: body.utm_term || body.utmTerm,
+            clickId: body.gclid || body.fbclid || body.clickId,
+            landingPage: body.landingPage,
+            referrer: body.referrer || req.get('referer') || undefined,
+            ipHash: hashIp(req.ip || ''),
+            honeypot: body.website, // yashirin honeypot maydoni — to'ldirilgan bo'lsa bot
         });
 
-        if (formId) {
+        if (!result.ok) {
+            // Honeypot ishga tushdi — botga "muvaffaqiyatli" deb yolg'on javob
+            // qaytariladi, hech narsa yozilmaydi.
+            return res.json({ id: 'ok' });
+        }
+
+        if (body.formId) {
             await prisma.targetForm.update({
-                where: { id: formId },
+                where: { id: body.formId },
                 data: { submissions: { increment: 1 } },
             }).catch(() => null);
         }
 
-        res.json({ id: lead.id });
+        res.json({ id: result.id });
     } catch (err: any) {
+        if (err instanceof LeadIntakeValidationError) {
+            return res.status(400).json({ message: err.message });
+        }
         res.status(500).json({ message: err.message });
     }
 });

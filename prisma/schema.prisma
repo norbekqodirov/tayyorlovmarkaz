@@ -34,6 +34,8 @@ model User {
   journalEntries JournalEntry[]     @relation("TeacherJournal")
   notifications  Notification[]
   auditLogs      AuditLog[]
+  leadsOwned     Lead[]             @relation("LeadOwner")
+  leadActivities LeadActivity[]
 }
 
 // ============================================
@@ -76,6 +78,7 @@ model Student {
   parents           Parent[]          @relation("StudentParent")
   certificates      Certificate[]
   testSubmissions   TestSubmission[]
+  leads             Lead[]
 }
 
 // ============================================
@@ -316,7 +319,8 @@ model Lead {
   email     String?
   stage     String   @default("new") // new, contacted, meeting, won, lost
   source    String?  // Instagram, Facebook, Telegram, etc.
-  course    String?  // Qaysi kursga qiziqish
+  course    String?  // Qaysi kursga qiziqish (erkin matn)
+  courseId  String?  // Kurslar ro'yxatidagi id (relation yo'q — faqat guruhlash uchun)
   score     Int      @default(0) // 0-100
   status    String   @default("warm") // hot, warm, cold
   date      String?
@@ -326,17 +330,79 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Egalik va SLA
+  assignedToId         String?
+  assignedTo           User?     @relation("LeadOwner", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedAt           DateTime?
+  firstResponseAt      DateTime?
+  firstResponseMinutes Int?
+  slaBreachedAt        DateTime?
+  lastContactAt        DateTime?
+  nextFollowUpAt       DateTime?
+  nextAction           String?
+  stageChangedAt       DateTime?
+
+  // Atributsiya (UTM va kampaniya)
+  campaignId  String?
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  formId      String?
+  form        TargetForm? @relation(fields: [formId], references: [id], onDelete: SetNull)
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  clickId     String?  // gclid yoki fbclid
+  landingPage String?
+  referrer    String?
+
+  // Konversiya
+  studentId   String?
+  student     Student?  @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  convertedAt DateTime?
+
+  // Yo'qotish
+  lostReason String?
+  lostAt     DateTime?
+
+  // Sifat / dublikat
+  phoneNorm     String? // oxirgi 9 raqam
+  searchKey     String? // lower(name + ' ' + phone + ' ' + course)
+  duplicateOfId String?
+  duplicateOf   Lead?   @relation("LeadDupe", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates    Lead[]  @relation("LeadDupe")
+  submitCount   Int     @default(1)
+  ipHash        String?
+
   activities LeadActivity[]
+
+  @@index([deletedAt, stage])
+  @@index([deletedAt, assignedToId])
+  @@index([phoneNorm])
+  @@index([searchKey])
+  @@index([campaignId])
+  @@index([formId])
+  @@index([createdAt])
+  @@index([nextFollowUpAt])
 }
 
 model LeadActivity {
-  id      String @id @default(uuid())
-  leadId  String
-  lead    Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  type    String // call, message, meeting, note
-  content String
-  date    String
-  user    String @default("Admin")
+  id          String    @id @default(uuid())
+  leadId      String
+  lead        Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type        String    // call, message, meeting, note
+  content     String
+  date        String
+  user        String    @default("Admin") // eski yozuvlar uchun ism (matn)
+  createdAt   DateTime  @default(now())
+  userId      String?
+  userRef     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  outcome     String?   // answered, no_answer, busy, wrong_number, interested, not_interested
+  direction   String?   // out, in
+  durationSec Int?
+
+  @@index([leadId])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -349,13 +415,23 @@ model Campaign {
   platform  String   // Instagram, Facebook, Telegram, Google
   budget    Float    @default(0)
   spent     Float    @default(0)
-  leads     Int      @default(0)
+  leads     Int      @default(0) // platforma o'zi ko'rsatgan lidlar soni (qo'lda kiritiladi)
   startDate String?
   endDate   String?
   status    String   @default("active") // active, paused, completed
   notes     String? @db.Text
+  impressions Int    @default(0)
+  clicks      Int    @default(0)
+  utmSource   String?
+  utmCampaign String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  leadRecords Lead[]
+  forms       TargetForm[]
+
+  @@index([status])
+  @@index([utmCampaign])
 }
 
 // ============================================
@@ -405,11 +481,21 @@ model TargetForm {
   title       String
   description String?
   course      String?
-  url         String?  @unique // /l/formId
+  url         String?  @unique // eskirgan — endi yozilmaydi, /l/{id} ishlatiladi
   isActive    Boolean  @default(true)
   submissions Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  views       Int      @default(0)
+  campaignId  String?
+  campaign    Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  utmSource   String?
+  utmCampaign String?
+
+  leadRecords Lead[]
+
+  @@index([isActive])
 }
 
 // ============================================
