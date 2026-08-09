@@ -19,7 +19,8 @@ const MODEL_MAP: Record<string, string> = {
     'finance':        'transaction',
     'transactions':   'transaction',
     'payments':       'payment',
-    'leads':          'lead',
+    // 'leads' shu yerda YO'Q — server/routes/leads.ts (Faza 3) crud.ts'dan
+    // OLDIN mount qilingan va /api/leads*ni to'liq soyalaydi (server/index.ts).
     'posts':          'post',
     'news':           'post',
     'inventory':      'inventoryItem',
@@ -53,10 +54,7 @@ const FORCE_GENERIC: Set<string> = new Set([
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Core entities ────────────────────────────────────────────────────────
-    // assignedToId/studentId/phoneNorm/searchKey va SLA vaqt-belgilari ataylab
-    // shu yerda yo'q — ular yon ta'sirli (biriktirish/konversiya/dedupe) va
-    // faqat maxsus endpointlar (server/routes/leads.ts, Faza 3) orqali yoziladi.
-    'lead': ['name', 'phone', 'email', 'stage', 'source', 'course', 'courseId', 'score', 'status', 'date', 'notes', 'extraField', 'nextFollowUpAt', 'nextAction', 'lostReason', 'campaignId', 'formId', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm'],
+    // 'lead' shu yerda YO'Q — server/routes/leads.ts (Faza 3) o'z whitelist'iga ega.
     'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'balance', 'joinedDate'],
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'price'],
     'room': ['name', 'capacity', 'color'],
@@ -109,9 +107,6 @@ const RELATION_INCLUDES: Record<string, any> = {
         course: { select: { id: true, name: true, price: true, lessonDuration: true, duration: true, tiers: true } },
         teacher: { select: { id: true, name: true } },
         _count: { select: { enrollments: true } },
-    },
-    'lead': {
-        activities: { orderBy: { date: 'desc' } },
     },
     'course': {
         tiers: { orderBy: { price: 'asc' } },
@@ -172,7 +167,6 @@ function normalizeData(modelName: string, data: any): any {
 
 // Validation rules
 const VALIDATION_RULES: Record<string, { required: string[]; messages: Record<string, string> }> = {
-    lead: { required: ['name', 'phone'], messages: { name: 'Ism kiritilishi shart', phone: 'Telefon raqam kiritilishi shart' } },
     student: { required: ['name'], messages: { name: "O'quvchi ismi kiritilishi shart" } },
     group: { required: ['name', 'courseId'], messages: { name: 'Guruh nomi kiritilishi shart', courseId: 'Kurs tanlanishi shart' } },
     course: { required: ['name'], messages: { name: 'Kurs nomi kiritilishi shart' } },
@@ -359,29 +353,25 @@ router.get('/:collection', async (req, res) => {
 
         const modelName = (req as any).modelName;
         const include = RELATION_INCLUDES[modelName];
-        // Lead uchun soft-delete filtri — deletedAt bulk.ts orqali qo'yiladi, lekin
-        // shu vaqtgacha hech bir o'qish yo'li uni hisobga olmagan edi (o'chirilgan
-        // lidlar Kanban/statistikada ko'rinaverardi).
-        const where = modelName === 'lead' ? { deletedAt: null } : undefined;
         if (page > 0 && limit > 0) {
             // @ts-ignore
             const [total, data] = await Promise.all([
                 // @ts-ignore
-                prisma[modelName].count({ where }),
+                prisma[modelName].count(),
                 // @ts-ignore
-                prisma[modelName].findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(include && { include }) }),
+                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(include && { include }) }),
             ]);
             return res.json({ data: data.map((row: any) => parseJsonFields(modelName, row)), total, page, limit });
         }
 
         try {
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ where, orderBy: { createdAt: 'desc' }, ...(include && { include }) });
+            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, ...(include && { include }) });
             res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ where, ...(include && { include }) });
+            const data = await prisma[modelName].findMany({ ...(include && { include }) });
             res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         }
     } catch (error) {
@@ -402,7 +392,7 @@ router.get('/:collection/:id', async (req, res) => {
         const include = RELATION_INCLUDES[modelName];
         // @ts-ignore
         const data = await prisma[modelName].findUnique({ where: { id: req.params.id }, ...(include && { include }) });
-        if (!data || (modelName === 'lead' && data.deletedAt)) return res.status(404).json({ message: 'Topilmadi' });
+        if (!data) return res.status(404).json({ message: 'Topilmadi' });
         res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -454,10 +444,7 @@ router.post('/:collection', async (req, res) => {
             let notifTitle = '';
             let notifMessage = '';
 
-            if (collection === 'leads') {
-                notifTitle = 'Yangi Lid';
-                notifMessage = `Qiziquvchi qo'shildi: ${req.body.name}`;
-            } else if (collection === 'students') {
+            if (collection === 'students') {
                 notifTitle = "Yangi O'quvchi";
                 notifMessage = `Tizimga yangi o'quvchi qo'shildi: ${req.body.name}`;
             } else if (collection === 'groups') {
@@ -523,12 +510,6 @@ router.delete('/:collection/:id', async (req, res) => {
                     where: { collection: { in: ['schedule', 'attendance', 'assessments', 'journal', 'exams', 'notes'] }, data: { contains: `"groupId":"${id}"` } }
                 });
             }
-            if (collection === 'leads') {
-                await prisma.genericDocument.deleteMany({
-                    where: { collection: { in: ['leadActivities', 'lead_activities'] }, data: { contains: `"leadId":"${id}"` } }
-                });
-            }
-
             await prisma.genericDocument.delete({ where: { id } });
             return res.json({ success: true });
         }
@@ -547,16 +528,6 @@ router.delete('/:collection/:id', async (req, res) => {
                 where: { collection: 'journal', data: { contains: `"groupId":"${id}"` } }
             });
         }
-        // leads: leadActivities now native — cascade handles it
-
-        // Lid — soft delete (o'chirilgan lid statistikadan yashirinadi, lekin
-        // ma'lumot yo'qolmaydi; hard-delete keyingi bosqichda faqat ADMIN uchun
-        // alohida yo'l bilan qo'shiladi).
-        if ((req as any).modelName === 'lead') {
-            await prisma.lead.update({ where: { id }, data: { deletedAt: new Date() } });
-            return res.json({ success: true });
-        }
-
         // @ts-ignore
         await prisma[(req as any).modelName].delete({ where: { id } });
         res.json({ success: true });

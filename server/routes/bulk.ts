@@ -4,7 +4,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
-type BulkAction = 'delete' | 'restore' | 'update' | 'status';
+type BulkAction = 'delete' | 'restore' | 'update' | 'status' | 'assign';
 
 // POST /api/bulk/:collection — ommaviy amal
 router.post('/:collection', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
@@ -63,13 +63,25 @@ router.post('/:collection', requireAuth, requireMinRole('MANAGER'), async (req, 
             if (action === 'status' && data?.stage) {
                 const result = await prisma.lead.updateMany({
                     where: { id: { in: ids } },
-                    data: { stage: data.stage },
+                    data: { stage: data.stage, stageChangedAt: new Date() },
                 });
                 updated = result.count;
             } else if (action === 'delete') {
                 const result = await prisma.lead.updateMany({
                     where: { id: { in: ids } },
                     data: { deletedAt: new Date() },
+                });
+                updated = result.count;
+            } else if (action === 'restore') {
+                const result = await prisma.lead.updateMany({
+                    where: { id: { in: ids } },
+                    data: { deletedAt: null },
+                });
+                updated = result.count;
+            } else if (action === 'assign' && data?.userId !== undefined) {
+                const result = await prisma.lead.updateMany({
+                    where: { id: { in: ids } },
+                    data: { assignedToId: data.userId || null, assignedAt: data.userId ? new Date() : null },
                 });
                 updated = result.count;
             }
