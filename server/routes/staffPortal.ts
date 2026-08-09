@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import { validateStaffInitData } from '../services/telegramService.js';
 import { todayDateStr, nowTimeStr, nowMinutesOfDay, tashkentDayOfWeek, addDaysDateStr } from '../utils/timezone.js';
+import { MANAGER_KEY, teacherKey, studentKey } from './parentChat.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-key';
@@ -896,6 +897,110 @@ router.get('/my-attendance', staffPortalAuth, async (req: any, res) => {
             : null;
 
         res.json({ month, today: todayRec, stats, records, faceRegistered: validProfile, faceProfile: profileOut });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Ota-ona ↔ Xodim chat (Staff bot tomoni) ──────────────────────────────────
+// Xuddi shu suhbat CRM'da server/routes/parentChat.ts orqali brauzerdan ham
+// ochiladi — bu yerda faqat auth qatlami (staffPortalAuth) boshqacha, ID
+// sxemasi va Message modeli bir xil (parentChat.ts'dan import qilingan).
+
+function isManagerRole(role: string) {
+    return role === 'MANAGER' || role === 'ADMIN' || role === 'SUPER_ADMIN';
+}
+
+// GET /api/staff-portal/chat-threads — joriy xodimga tegishli barcha ota-ona suhbatlari
+router.get('/chat-threads', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { id, role } = req.staffUser;
+        const staffKey = isManagerRole(role) ? MANAGER_KEY : teacherKey(id);
+
+        const msgs = await prisma.message.findMany({
+            where: { OR: [{ senderId: staffKey }, { receiverId: staffKey }] },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        const byStudent = new Map<string, { lastMsg: any; unread: number }>();
+        for (const m of msgs) {
+            const other = m.senderId === staffKey ? m.receiverId : m.senderId;
+            if (!other.startsWith('student:')) continue;
+            if (!byStudent.has(other)) byStudent.set(other, { lastMsg: m, unread: 0 });
+            const entry = byStudent.get(other)!;
+            if (m.receiverId === staffKey && !m.readAt) entry.unread++;
+        }
+
+        const studentIds = Array.from(byStudent.keys()).map(k => k.replace('student:', ''));
+        const students = await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { id: true, name: true, photo: true, parentName: true },
+        });
+        const studentMap = new Map(students.map(s => [s.id, s]));
+
+        const threads = Array.from(byStudent.entries()).map(([key, v]) => {
+            const sid = key.replace('student:', '');
+            const s = studentMap.get(sid);
+            return {
+                key: sid,
+                title: s?.name || "Noma'lum o'quvchi",
+                subtitle: s?.parentName ? `Ota-ona: ${s.parentName}` : "Ota-ona",
+                lastMessage: v.lastMsg.content,
+                lastMessageAt: v.lastMsg.createdAt,
+                unread: v.unread,
+            };
+        }).sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+
+        res.json(threads);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/staff-portal/chat-threads/:studentId — bitta o'quvchi bilan suhbat tarixi
+router.get('/chat-threads/:studentId', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { id, role } = req.staffUser;
+        const staffKey = isManagerRole(role) ? MANAGER_KEY : teacherKey(id);
+        const sKey = studentKey(req.params.studentId);
+
+        const messages = await prisma.message.findMany({
+            where: { OR: [{ senderId: staffKey, receiverId: sKey }, { senderId: sKey, receiverId: staffKey }] },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+        });
+
+        await prisma.message.updateMany({
+            where: { senderId: sKey, receiverId: staffKey, readAt: null },
+            data: { readAt: new Date() },
+        });
+
+        res.json(messages.map(m => ({ ...m, fromMe: m.senderId === staffKey })));
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/staff-portal/chat-threads/:studentId — xodim ota-onaga xabar yozadi
+router.post('/chat-threads/:studentId', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { id, role } = req.staffUser;
+        const { content } = req.body as { content: string };
+        if (!content?.trim()) return res.status(400).json({ error: 'Xabar matni kiritilishi shart' });
+
+        const staffKey = isManagerRole(role) ? MANAGER_KEY : teacherKey(id);
+        const sKey = studentKey(req.params.studentId);
+
+        const message = await prisma.message.create({
+            data: {
+                senderId: staffKey,
+                receiverId: sKey,
+                senderType: isManagerRole(role) ? 'manager' : 'teacher',
+                content: content.trim(),
+            },
+        });
+
+        res.status(201).json({ ...message, fromMe: true });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

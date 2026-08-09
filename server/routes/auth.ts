@@ -156,7 +156,8 @@ router.get('/users', requireAuth, async (req, res) => {
         const users = await prisma.user.findMany({
             select: {
                 id: true, email: true, phone: true, name: true, role: true,
-                avatar: true, permissions: true, isActive: true, createdAt: true
+                avatar: true, permissions: true, isActive: true, createdAt: true,
+                subject: true, experience: true, bio: true,
             } as any,
             orderBy: { createdAt: 'desc' }
         });
@@ -174,7 +175,7 @@ router.post('/users', requireAuth, async (req, res) => {
             return res.status(403).json({ message: "Foydalanuvchi yaratish uchun ruxsat yo'q" });
         }
 
-        const { phone, email, password, name, role, permissions, avatar } = req.body;
+        const { phone, email, password, name, role, permissions, avatar, subject, experience, bio } = req.body;
 
         if (!phone) return res.status(400).json({ message: "Telefon raqam kiritilishi shart" });
         if (!name)  return res.status(400).json({ message: "Ism kiritilishi shart" });
@@ -201,6 +202,9 @@ router.post('/users', requireAuth, async (req, res) => {
                 isActive: true,
                 permissions: JSON.stringify(permissions || []),
                 avatar: avatar || null,
+                subject: subject || null,
+                experience: experience || null,
+                bio: bio || null,
             } as any,
         });
 
@@ -208,7 +212,10 @@ router.post('/users', requireAuth, async (req, res) => {
             id: user.id, phone: user.phone, email: user.email,
             name: user.name, role: user.role,
             permissions: (user as any).permissions,
-            avatar: (user as any).avatar
+            avatar: (user as any).avatar,
+            subject: (user as any).subject,
+            experience: (user as any).experience,
+            bio: (user as any).bio,
         });
     } catch (error) {
         console.error('[AUTH] Create user error:', error);
@@ -224,7 +231,7 @@ router.put('/users/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ message: "Ruxsat yo'q" });
         }
 
-        const { name, role, phone, email, permissions, password, isActive, avatar } = req.body;
+        const { name, role, phone, email, permissions, password, isActive, avatar, subject, experience, bio } = req.body;
         const targetRole = role;
 
         // Only SUPER_ADMIN can assign SUPER_ADMIN role
@@ -237,14 +244,24 @@ router.put('/users/:id', requireAuth, async (req, res) => {
             role: targetRole,
             email: email || null,
             isActive: isActive !== undefined ? isActive : true,
-            permissions: JSON.stringify(permissions || []),
         };
+        // permissions faqat aniq yuborilganda yangilanadi — aks holda boshqa
+        // forma (masalan CrmTeachers.tsx) saqlashda CrmUsers.tsx orqali
+        // qo'yilgan ruxsatlarni bo'sh massivga aylantirib qo'yadi.
+        if (permissions !== undefined) updateData.permissions = JSON.stringify(permissions);
         if (phone) updateData.phone = normalizePhone(phone);
         if (password) updateData.password = await bcrypt.hash(password, 12);
         if (avatar !== undefined) updateData.avatar = avatar || null;
+        if (subject !== undefined) updateData.subject = subject || null;
+        if (experience !== undefined) updateData.experience = experience || null;
+        if (bio !== undefined) updateData.bio = bio || null;
 
         const user = await prisma.user.update({ where: { id: req.params.id }, data: updateData });
-        res.json({ id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role, avatar: (user as any).avatar });
+        res.json({
+            id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role,
+            avatar: (user as any).avatar, subject: (user as any).subject,
+            experience: (user as any).experience, bio: (user as any).bio,
+        });
     } catch (error) {
         res.status(500).json({ message: String(error) });
     }

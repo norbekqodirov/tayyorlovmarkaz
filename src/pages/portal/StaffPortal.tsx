@@ -10,7 +10,7 @@ import {
     ChevronRight, RefreshCw, Clock, CheckCircle2, XCircle,
     AlertCircle, UserCheck, Search, Building2, BookOpen,
     TrendingUp, CreditCard, GraduationCap, Save, ArrowLeft,
-    Fingerprint,
+    Fingerprint, MessageCircle, Send,
 } from 'lucide-react';
 import FaceIdCheckin from '../../components/portal/FaceIdCheckin';
 
@@ -49,6 +49,9 @@ const ATT_COLOR: Record<AttStatus, string> = {
     late: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
     excused: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
 };
+
+interface ChatThread { key: string; title: string; subtitle: string; lastMessage: string | null; lastMessageAt: string | null; unread: number; }
+interface ChatMessage { id: string; content: string; createdAt: string; fromMe: boolean; }
 
 interface StatsData {
     studentCount: number; groupCount: number;
@@ -123,10 +126,11 @@ function RoleLabel({ role }: { role: string }) {
 
 // ─── Tab configs ──────────────────────────────────────────────────────────────
 
-type TabId = 'today' | 'groups' | 'attendance' | 'grades' | 'profile' | 'stats' | 'students' | 'faceid';
+type TabId = 'today' | 'groups' | 'attendance' | 'grades' | 'profile' | 'stats' | 'students' | 'faceid' | 'chat';
 
 function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[] {
     const faceTab = { id: 'faceid' as TabId, label: 'Davomat', icon: Fingerprint };
+    const chatTab = { id: 'chat' as TabId, label: 'Xabar', icon: MessageCircle };
     const base = [
         { id: 'today' as TabId, label: 'Bugun', icon: Calendar },
         { id: 'groups' as TabId, label: role === 'TEACHER' ? 'Guruhlarim' : 'Guruhlar', icon: Users },
@@ -138,7 +142,7 @@ function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[]
         return [
             base[0], base[1], faceTab, base[2],
             { id: 'grades' as TabId, label: 'Natijalar', icon: BarChart2 },
-            base[3],
+            chatTab, base[3],
         ];
     }
 
@@ -146,7 +150,7 @@ function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[]
         return [
             base[0], base[1], faceTab,
             { id: 'stats' as TabId, label: 'Statistika', icon: TrendingUp },
-            base[3],
+            chatTab, base[3],
         ];
     }
 
@@ -758,6 +762,145 @@ function ProfileTab({ staffUser, initData }: { staffUser: StaffUser; initData: s
     );
 }
 
+function ChatTab({ initData }: { initData: string }) {
+    const [threads, setThreads] = useState<ChatThread[] | null>(null);
+    const [activeKey, setActiveKey] = useState<string | null>(null);
+    const [messages, setMessages] = useState<ChatMessage[] | null>(null);
+    const [input, setInput] = useState('');
+    const [sending, setSending] = useState(false);
+    const [msgLoading, setMsgLoading] = useState(false);
+
+    useEffect(() => {
+        staffFetch('/chat-threads', initData)
+            .then(setThreads)
+            .catch(() => setThreads([]));
+    }, [initData]);
+
+    const openThread = useCallback(async (key: string) => {
+        setActiveKey(key);
+        setMessages(null);
+        setMsgLoading(true);
+        try {
+            const msgs = await staffFetch(`/chat-threads/${key}`, initData);
+            setMessages(msgs);
+        } catch { setMessages([]); }
+        finally { setMsgLoading(false); }
+    }, [initData]);
+
+    const sendMessage = useCallback(async () => {
+        if (!activeKey || !input.trim()) return;
+        setSending(true);
+        try {
+            const msg = await staffFetch(`/chat-threads/${activeKey}`, initData, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: input.trim() }),
+            });
+            setMessages(prev => [...(prev || []), msg]);
+            setInput('');
+            setThreads(null);
+            staffFetch('/chat-threads', initData).then(setThreads).catch(() => {});
+        } catch { /* xabar yuborilmadi — foydalanuvchi qayta urinishi mumkin */ }
+        finally { setSending(false); }
+    }, [activeKey, input, initData]);
+
+    if (!activeKey) {
+        return (
+            <div className="p-4">
+                {threads === null && (
+                    <div className="flex justify-center py-10">
+                        <div className="w-8 h-8 rounded-full border-4 border-blue-600/20 border-t-blue-600 animate-spin" />
+                    </div>
+                )}
+                {threads !== null && threads.length === 0 && (
+                    <div className="text-center py-16 text-zinc-400">
+                        <MessageCircle size={36} className="mx-auto mb-3 opacity-30" />
+                        <p className="text-sm">Hozircha suhbatlar yo'q</p>
+                    </div>
+                )}
+                {threads !== null && threads.length > 0 && (
+                    <div className="space-y-2">
+                        {threads.map(th => (
+                            <button
+                                key={th.key}
+                                onClick={() => openThread(th.key)}
+                                className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-left transition-colors"
+                            >
+                                <div className="w-11 h-11 rounded-xl bg-blue-500 flex items-center justify-center shrink-0 text-white font-black">
+                                    {th.title.charAt(0)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="font-bold text-sm truncate">{th.title}</p>
+                                        {th.unread > 0 && (
+                                            <span className="shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center">{th.unread}</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-zinc-500 truncate">{th.subtitle}</p>
+                                    {th.lastMessage && <p className="text-xs text-zinc-400 truncate mt-0.5">{th.lastMessage}</p>}
+                                </div>
+                                <ChevronRight size={16} className="text-zinc-400 shrink-0" />
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    const activeTitle = threads?.find(t => t.key === activeKey)?.title || 'Orqaga';
+
+    return (
+        <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 180px)' }}>
+            <button
+                onClick={() => { setActiveKey(null); setMessages(null); }}
+                className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 mb-3 shrink-0"
+            >
+                <ArrowLeft size={16} /> {activeTitle}
+            </button>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pb-3">
+                {msgLoading && (
+                    <div className="flex justify-center py-6">
+                        <div className="w-6 h-6 rounded-full border-4 border-blue-600/20 border-t-blue-600 animate-spin" />
+                    </div>
+                )}
+                {!msgLoading && messages && messages.length === 0 && (
+                    <div className="text-center py-10 text-zinc-400 text-sm">Hali xabar yo'q. Birinchi xabarni yozing.</div>
+                )}
+                {!msgLoading && messages && messages.map(m => (
+                    <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm ${m.fromMe ? 'bg-blue-500 text-white rounded-br-md' : 'bg-zinc-100 dark:bg-zinc-800 text-slate-900 dark:text-white rounded-bl-md'}`}>
+                            <p>{m.content}</p>
+                            <p className={`text-[10px] mt-1 ${m.fromMe ? 'text-blue-100' : 'text-zinc-400'}`}>
+                                {new Date(m.createdAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 pt-2">
+                <input
+                    type="text"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !sending) sendMessage(); }}
+                    placeholder="Xabar yozing..."
+                    className="flex-1 px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                    onClick={sendMessage}
+                    disabled={sending || !input.trim()}
+                    className="w-11 h-11 rounded-xl bg-blue-500 text-white flex items-center justify-center shrink-0 disabled:opacity-50"
+                >
+                    <Send size={18} />
+                </button>
+            </div>
+        </div>
+    );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function StaffPortal() {
@@ -914,6 +1057,9 @@ export default function StaffPortal() {
                         )}
                         {activeTab === 'faceid' && (
                             <FaceIdCheckin initData={initData} staffName={staffUser.name} />
+                        )}
+                        {activeTab === 'chat' && (
+                            <ChatTab initData={initData} />
                         )}
                         {activeTab === 'profile' && (
                             <ProfileTab staffUser={staffUser} initData={initData} />

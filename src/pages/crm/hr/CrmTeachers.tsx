@@ -70,25 +70,16 @@ export default function CrmTeachers() {
       // Filter only users with role TEACHER
       const tUsers = (res.data || []).filter((u: any) => u.role === 'TEACHER');
       
-      const mapped = tUsers.map((u: any) => {
-        let meta: any = {};
-        try {
-          const perms = JSON.parse(u.permissions || '[]');
-          const metaObj = perms.find((p: any) => p.meta);
-          if (metaObj) meta = metaObj.meta;
-        } catch(e) {}
-        
-        return {
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          phone: u.phone || '',
-          role: meta.subject || '',
-          exp: meta.exp || '',
-          desc: meta.desc || '',
-          img: u.avatar || ''
-        };
-      });
+      const mapped = tUsers.map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone || '',
+        role: u.subject || '',
+        exp: u.experience || '',
+        desc: u.bio || '',
+        img: u.avatar || ''
+      }));
       setTeachers(mapped);
     } catch (e) {
       console.error(e);
@@ -103,16 +94,6 @@ export default function CrmTeachers() {
       return;
     }
     
-    // Store extra teacher logic in generic user permissions slot
-    const metaObj = {
-      meta: {
-        subject: formData.role,
-        exp: formData.exp,
-        desc: formData.desc
-      }
-    };
-    const permissions = [metaObj];
-
     try {
       const dbPayload = {
         name: formData.name,
@@ -121,7 +102,9 @@ export default function CrmTeachers() {
         password: formData.password,
         role: 'TEACHER', // Enforce teacher role
         avatar: formData.img,
-        permissions
+        subject: formData.role,
+        experience: formData.exp,
+        bio: formData.desc,
       };
 
       if (formData.id) {

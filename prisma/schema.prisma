@@ -21,6 +21,9 @@ model User {
   role      String   @default("ADMIN") // SUPER_ADMIN, ADMIN, MANAGER, TEACHER
   avatar    String?
   permissions String? @default("[]") @db.Text // JSON array of permission keys
+  subject     String?  // O'qituvchi uchun: fan nomi
+  experience  String?  // O'qituvchi uchun: tajriba (masalan "5 yil")
+  bio         String?  @db.Text // O'qituvchi uchun: tavsif
   isActive       Boolean  @default(true)
   telegramChatId String?  @unique
   createdAt      DateTime @default(now())
