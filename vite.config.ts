@@ -32,25 +32,21 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       sourcemap: false,
       chunkSizeWarningLimit: 1500,
-      // Vite standart holatda manualChunks'dagi BARCHA vendor bundle'larni
-      // (jspdf/xlsx ~700 KB, recharts ~450 KB kabi faqat CRM sahifalarida
-      // kerak bo'lganlarini ham) HAR BIR sahifada — jumladan ochiq marketing
-      // bosh sahifada ham — <link rel="modulepreload"> orqali oldindan
-      // yuklab, sahifani sekinlashtiradi. vendor-react/vendor-ui/vendor-utils
-      // deyarli hamma joyda kerak bo'lgani uchun ular preload qilinishda
-      // qoladi — faqat CRM'ga xos og'ir bundle'lar chiqarib tashlanadi.
-      modulePreload: {
-        resolveDependencies: (_filename, deps) =>
-          deps.filter((dep) => !dep.includes('vendor-pdf') && !dep.includes('vendor-charts')),
-      },
       rollupOptions: {
         output: {
+          // vendor-pdf (jspdf/xlsx, ~700 KB) va vendor-charts (recharts, ~450 KB)
+          // ATAYIN manualChunks'da YO'Q — ular faqat bir nechta CRM sahifasida
+          // (hisobotlar, BI) kerak. Object-shakldagi manualChunks bularni majburiy,
+          // global chunk qilib qo'yganida, Rollup ularni MUTLAQO aloqasi yo'q ochiq
+          // sahifalarga (masalan lid-yig'ish formasiga) ham haqiqiy `import` sifatida
+          // "sizdirib" qo'ygan — brauzer ularni yuklashga majbur bo'lgan (1+ MB ortiqcha
+          // JS, mobil tarmoqda forma juda sekin ochilishiga sabab bo'lgan). manualChunks'dan
+          // chiqarib tashlangach, Vite ularni FAQAT haqiqatda foydalanadigan CRM
+          // sahifalarining o'z lazy chunk'iga joylashtiradi.
           manualChunks: {
             'vendor-react': ['react', 'react-dom', 'react-router-dom'],
             'vendor-ui': ['framer-motion', 'lucide-react'],
-            'vendor-charts': ['recharts'],
             'vendor-utils': ['axios', 'date-fns'],
-            'vendor-pdf': ['jspdf', 'jspdf-autotable', 'xlsx'],
           },
         },
       },

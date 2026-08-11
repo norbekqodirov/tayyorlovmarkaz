@@ -141,11 +141,27 @@ app.use('/api', crudRoutes);
 if (IS_PROD) {
     const distPath = path.join(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
-        app.use(express.static(distPath));
+        // /assets/* fayl nomlari Vite tomonidan kontent-hash bilan yaratiladi
+        // (masalan index-Ab12Cd34.js) — kontent o'zgarsa, nom ham o'zgaradi.
+        // Shuning uchun ularni CHEKSIZ keshlash xavfsiz. Bu CloudFlare/brauzer
+        // darajasida ham uzoq keshlanishiga ruxsat beradi — lekin muammo faqat
+        // index.html HAM xuddi shunday uzoq keshlansa yuzaga keladi: eski
+        // index.html yangi deploy'da o'chirilgan eski hash'li JS fayllarga
+        // ishora qilib qoladi, natijada 404 va sayt ochilmay qoladi (buni
+        // 2026-08-11'da CloudFlare keshida haqiqatda ko'rdik). Shu sabab
+        // index.html'ga pastda alohida, keshlanmaydigan sarlavha qo'yiladi.
+        app.use(express.static(distPath, {
+            setHeaders: (res, filePath) => {
+                if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+                    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                }
+            },
+        }));
         // SPA fallback — all non-API routes serve index.html
         app.get('*', (_req, res) => {
             const indexPath = path.join(distPath, 'index.html');
             if (fs.existsSync(indexPath)) {
+                res.setHeader('Cache-Control', 'no-cache');
                 res.sendFile(indexPath);
             } else {
                 res.status(404).json({ message: 'Frontend build not found. Run `npm run build` first.' });
