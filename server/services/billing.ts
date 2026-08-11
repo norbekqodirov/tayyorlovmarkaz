@@ -30,10 +30,18 @@ export async function getBillingSettings(): Promise<BillingSettings> {
     });
     const map: Record<string, string> = {};
     rows.forEach(r => { map[r.key] = r.value; });
+    // `|| DEFAULT` bilan emas — 0 ham "o'rnatilmagan" deb noto'g'ri talqin qilinardi
+    // (masalan admin chegara/foizni ataylab 0 qilib qo'ysa, sozlama jimgina 3/40'ga
+    // qaytib ketardi). Faqat qiymat umuman yo'q yoki raqam bo'lmasa standartga tushadi.
+    const numOrDefault = (raw: string | undefined, fallback: number): number => {
+        if (raw === undefined) return fallback;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : fallback;
+    };
     return {
-        lessonsPerMonth: Number(map['monthly_lessons_count']) || DEFAULTS.lessonsPerMonth,
-        absenceThreshold: Number(map['absence_discount_threshold']) || DEFAULTS.absenceThreshold,
-        teacherSalaryPercent: Number(map['teacher_salary_percent']) || DEFAULTS.teacherSalaryPercent,
+        lessonsPerMonth: numOrDefault(map['monthly_lessons_count'], DEFAULTS.lessonsPerMonth),
+        absenceThreshold: numOrDefault(map['absence_discount_threshold'], DEFAULTS.absenceThreshold),
+        teacherSalaryPercent: numOrDefault(map['teacher_salary_percent'], DEFAULTS.teacherSalaryPercent),
     };
 }
 

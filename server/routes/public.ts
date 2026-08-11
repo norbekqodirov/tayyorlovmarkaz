@@ -16,15 +16,23 @@ import { createLeadFromIntake, LeadIntakeValidationError } from '../services/lea
 
 const router = express.Router();
 
+function extraFieldLabel(type: string): string | null {
+    return type === 'age' ? 'Yosh' : type === 'grade' ? 'Sinf' : null;
+}
+
+async function globalExtraFieldType(): Promise<'none' | 'age' | 'grade'> {
+    const setting = await prisma.setting.findUnique({ where: { key: 'lead_extra_field_type' } });
+    return (setting?.value as 'none' | 'age' | 'grade') || 'none';
+}
+
 // GET /api/public/lead-form-config — lid formasida qo'shimcha maydon (yosh/sinf/yo'q)
-// ko'rsatilishi kerakmi, sozlamalardan o'qiydi. Login talab qilinmaydi (ommaviy sahifa
-// buni ko'rsatishdan oldin chaqiradi).
+// ko'rsatilishi kerakmi, sozlamalardan o'qiydi (global standart — formId'siz sahifalar,
+// masalan Contact.tsx, shuni ishlatadi). Login talab qilinmaydi (ommaviy sahifa buni
+// ko'rsatishdan oldin chaqiradi).
 router.get('/lead-form-config', async (_req, res) => {
     try {
-        const setting = await prisma.setting.findUnique({ where: { key: 'lead_extra_field_type' } });
-        const type = (setting?.value as 'none' | 'age' | 'grade') || 'none';
-        const label = type === 'age' ? 'Yosh' : type === 'grade' ? 'Sinf' : null;
-        res.json({ type, label });
+        const type = await globalExtraFieldType();
+        res.json({ type, label: extraFieldLabel(type) });
     } catch {
         res.json({ type: 'none', label: null });
     }
@@ -48,12 +56,19 @@ router.put('/lead-form-config', requireAuth, requireMinRole('ADMIN'), async (req
     }
 });
 
-// GET /api/public/forms/:id — bitta target forma haqida ommaviy ma'lumot (faol bo'lsa)
+// GET /api/public/forms/:id — bitta target forma haqida ommaviy ma'lumot (faol bo'lsa).
+// extraField — shu FORMAGA xos sozlama (CrmForms.tsx'da tanlanadi); agar forma
+// alohida belgilamagan bo'lsa (extraFieldType == null), global Sozlamalar
+// qiymatiga qaytadi — eski (formId'dan oldin yaratilgan) formalar buzilmaydi.
 router.get('/forms/:id', async (req, res) => {
     try {
         const form = await prisma.targetForm.findFirst({ where: { id: req.params.id, isActive: true } });
         if (!form) return res.status(404).json({ message: 'Forma topilmadi yoki faol emas' });
-        res.json({ id: form.id, title: form.title, description: form.description, course: form.course });
+        const type = (form.extraFieldType as 'none' | 'age' | 'grade' | null) || await globalExtraFieldType();
+        res.json({
+            id: form.id, title: form.title, description: form.description, course: form.course,
+            extraField: { type, label: extraFieldLabel(type) },
+        });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }

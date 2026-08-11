@@ -493,6 +493,10 @@ model TargetForm {
   utmSource   String?
   utmCampaign String?
 
+  // null = global Sozlamalar qiymatini meros oladi ('none'|'age'|'grade');
+  // aniq qiymat berilsa shu forma uchun global sozlamani ustidan yozadi.
+  extraFieldType String?
+
   leadRecords Lead[]
 
   @@index([isActive])

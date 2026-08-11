@@ -68,7 +68,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'task': ['title', 'completed', 'userId', 'staffId', 'priority', 'deadline'],
     'performanceReview': ['staffId', 'date', 'reviewer', 'feedback', 'rating'],
     'staffDocument': ['staffId', 'name', 'type', 'uploadDate'],
-    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions', 'campaignId', 'utmSource', 'utmCampaign'],
+    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions', 'campaignId', 'utmSource', 'utmCampaign', 'extraFieldType'],
     // ── Academic (Faza 0.2) ──────────────────────────────────────────────────
     'groupSchedule':   ['groupId', 'groupName', 'teacher', 'room', 'startTime', 'endTime', 'days', 'color'],
     'attendance':      ['groupId', 'date', 'records'],

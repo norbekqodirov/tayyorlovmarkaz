@@ -366,8 +366,10 @@ export default function CrmSettings() {
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Lid Forma Sozlamalari</h2>
               <p className="text-sm text-zinc-500 mb-6">
                 Yangi lid (qiziquvchi) qo'shilganda ism/telefon/kursdan tashqari yana qanday
-                qo'shimcha ma'lumot so'ralishini tanlang. Bu barcha lid formalarga
-                (CRM, sayt "Aloqa" va target formalar) birdek qo'llanadi.
+                qo'shimcha ma'lumot so'ralishini tanlang. Bu CRM va sayt "Aloqa" sahifasiga
+                to'g'ridan-to'g'ri qo'llanadi; har bir target forma esa (Marketing → Target
+                Formalar) buni o'zi uchun alohida ustidan yozishi mumkin — o'sha yerda
+                belgilanmagan formalar shu standart qiymatni meros oladi.
               </p>
               <div className="space-y-3 max-w-md">
                 {[

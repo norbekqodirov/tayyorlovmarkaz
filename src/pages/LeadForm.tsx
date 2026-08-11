@@ -38,14 +38,19 @@ export default function LeadForm() {
     if (formId) {
       // Formaning haqiqiy mavjud/faolligini tekshiradi — sarlavha sifatida
       // ko'rsatilmaydi (forma nomi faqat CRM ichida statistika uchun).
-      api.get(`/public/forms/${formId}`).catch(() => {});
+      // extraField — shu FORMAGA xos (CrmForms.tsx'da tanlangan), forma buni
+      // belgilamagan bo'lsa backend global sozlamaga qaytadi.
+      api.get(`/public/forms/${formId}`)
+        .then(res => { if (res.data?.extraField) setExtraField(res.data.extraField); })
+        .catch(() => {});
       // Ko'rish hisobi — konversiya % ini haqiqiy qiladi (avval doim NaN% edi,
       // chunki hech narsa ko'rishlarni sanamas edi).
       api.post(`/public/forms/${formId}/view`).catch(() => {});
+    } else {
+      api.get('/public/lead-form-config')
+        .then(res => setExtraField(res.data))
+        .catch(() => {});
     }
-    api.get('/public/lead-form-config')
-      .then(res => setExtraField(res.data))
-      .catch(() => {});
     api.get('/public/courses')
       .then(res => setCourses(res.data || []))
       .catch(() => {});

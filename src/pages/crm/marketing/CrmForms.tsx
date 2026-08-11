@@ -17,7 +17,15 @@ interface Form {
   course?: string | null;
   isActive: boolean;
   submissions: number;
+  extraFieldType?: 'none' | 'age' | 'grade' | null;
 }
+
+const EXTRA_FIELD_OPTIONS = [
+  { value: '', label: "Standart (Sozlamalardagi)" },
+  { value: 'none', label: "Qo'shimcha maydon yo'q" },
+  { value: 'age', label: 'Yosh' },
+  { value: 'grade', label: 'Sinf' },
+] as const;
 
 export default function CrmForms() {
   const { documents: forms, addDocument, updateDocument, deleteDocument } = useFirestore<Form>('forms');
@@ -26,7 +34,7 @@ export default function CrmForms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
-  const [formData, setFormData] = useState<Partial<Form>>({ title: '', description: '', course: '', isActive: true });
+  const [formData, setFormData] = useState<Partial<Form>>({ title: '', description: '', course: '', isActive: true, extraFieldType: null });
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [formStats, setFormStats] = useState<Record<string, { views: number; submissionsReal: number; conversionRate: number; won: number }>>({});
 
@@ -41,10 +49,10 @@ export default function CrmForms() {
   const openModal = (form: Form | null = null) => {
     if (form) {
       setEditingForm(form);
-      setFormData({ title: form.title, description: form.description || '', course: form.course || '', isActive: form.isActive });
+      setFormData({ title: form.title, description: form.description || '', course: form.course || '', isActive: form.isActive, extraFieldType: form.extraFieldType ?? null });
     } else {
       setEditingForm(null);
-      setFormData({ title: '', description: '', course: '', isActive: true });
+      setFormData({ title: '', description: '', course: '', isActive: true, extraFieldType: null });
     }
     setIsModalOpen(true);
   };
@@ -231,6 +239,21 @@ export default function CrmForms() {
                 <option key={c.id} value={c.name}>{c.name}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Qo'shimcha savol</label>
+            <select
+              value={formData.extraFieldType ?? ''}
+              onChange={(e) => setFormData({ ...formData, extraFieldType: (e.target.value || null) as Form['extraFieldType'] })}
+              className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white"
+            >
+              {EXTRA_FIELD_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-zinc-400 mt-1">
+              Bu FAQAT shu forma uchun — Sozlamalar → Lid Forma'dagi umumiy standartni ustidan yozadi.
+            </p>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
