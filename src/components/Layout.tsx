@@ -106,6 +106,8 @@ export default function Layout() {
             {/* Mobile Menu Toggle */}
             <button
               onClick={() => setIsOpen(!isOpen)}
+              aria-label={isOpen ? "Menyuni yopish" : "Menyuni ochish"}
+              aria-expanded={isOpen}
               className="lg:hidden w-10 h-10 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 flex items-center justify-center text-slate-900 dark:text-white hover:bg-white dark:hover:bg-zinc-700 border border-transparent hover:border-slate-200 dark:hover:border-zinc-600 transition-all shadow-sm"
             >
               {isOpen ? <X size={20} strokeWidth={2.5} /> : <Menu size={20} strokeWidth={2.5} />}
@@ -180,9 +182,9 @@ export default function Layout() {
           </div>
 
           <div className="flex flex-col items-center border-t border-zinc-200 dark:border-zinc-800 pt-10">
-            <h1 className="text-[16vw] font-black tracking-tighter leading-none uppercase text-zinc-900 dark:text-white w-full text-center">
+            <p aria-hidden="true" className="text-[16vw] font-black tracking-tighter leading-none uppercase text-zinc-900 dark:text-white w-full text-center">
               TAYYORLOV
-            </h1>
+            </p>
             <div className="flex flex-col md:flex-row justify-between w-full mt-10 text-xs font-bold text-zinc-500 uppercase tracking-widest gap-4">
               <span>Maxfiylik Siyosati</span>
               <span>EST — {new Date().getFullYear()}</span>

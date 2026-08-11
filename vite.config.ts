@@ -32,6 +32,17 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       sourcemap: false,
       chunkSizeWarningLimit: 1500,
+      // Vite standart holatda manualChunks'dagi BARCHA vendor bundle'larni
+      // (jspdf/xlsx ~700 KB, recharts ~450 KB kabi faqat CRM sahifalarida
+      // kerak bo'lganlarini ham) HAR BIR sahifada — jumladan ochiq marketing
+      // bosh sahifada ham — <link rel="modulepreload"> orqali oldindan
+      // yuklab, sahifani sekinlashtiradi. vendor-react/vendor-ui/vendor-utils
+      // deyarli hamma joyda kerak bo'lgani uchun ular preload qilinishda
+      // qoladi — faqat CRM'ga xos og'ir bundle'lar chiqarib tashlanadi.
+      modulePreload: {
+        resolveDependencies: (_filename, deps) =>
+          deps.filter((dep) => !dep.includes('vendor-pdf') && !dep.includes('vendor-charts')),
+      },
       rollupOptions: {
         output: {
           manualChunks: {

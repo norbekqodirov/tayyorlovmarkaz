@@ -1,0 +1,17 @@
+# 10+10 Tayyorlov Markazi
+
+> Prezident maktablari va nufuzli oliygohlarga tayyorgarlik ko'radigan o'quv markazi (Toshkent, O'zbekiston). Ushbu sayt markazning ta'lim tizimi, ustozlari, o'quvchilar natijalari va bog'lanish ma'lumotlarini taqdim etadi.
+
+## Asosiy sahifalar
+
+- [Bosh sahifa](https://tayyorlovmarkaz.uz/): Markaz haqida umumiy ma'lumot, statistika va yangiliklar
+- [Biz haqimizda](https://tayyorlovmarkaz.uz/biz-haqimizda): Markazning tarixi va missiyasi
+- [Ta'lim tizimi](https://tayyorlovmarkaz.uz/talim-tizimi): O'quv dasturi va metodika
+- [Ustozlar](https://tayyorlovmarkaz.uz/ustozlar): O'qituvchilar jamoasi
+- [Natijalar](https://tayyorlovmarkaz.uz/natijalar): O'quvchilarning erishgan natijalari
+- [Blog](https://tayyorlovmarkaz.uz/blog): Ta'lim va tayyorgarlik bo'yicha maqolalar
+- [Bog'lanish](https://tayyorlovmarkaz.uz/boglanish): Aloqa ma'lumotlari va manzil
+
+## Eslatma
+
+Ushbu domenda o'quvchi/xodim boshqaruv tizimi (CRM) va Telegram Mini App portallari ham joylashgan — ular shaxsiy ma'lumotlar bilan ishlaydigan tizim bo'lgani uchun umumiy kontent sifatida mo'ljallanmagan.

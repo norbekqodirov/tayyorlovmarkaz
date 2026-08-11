@@ -71,10 +71,10 @@ export default function Results() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-32">
         {[
-          { name: "Azizbek R.", school: "Prezident Maktabi", img: "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?q=80&w=1949&auto=format&fit=crop" },
-          { name: "Malika K.", school: "Al-Xorazmiy Maktabi", img: "https://images.unsplash.com/photo-1544717302-de2939b7ef71?q=80&w=2069&auto=format&fit=crop" },
-          { name: "Sardor I.", school: "Prezident Maktabi", img: "https://images.unsplash.com/photo-1506869640319-fe1a24fd76dc?q=80&w=2070&auto=format&fit=crop" },
-          { name: "Nodira A.", school: "Ixtisoslashtirilgan Maktab", img: "https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?q=80&w=2069&auto=format&fit=crop" }
+          { name: "Azizbek R.", school: "Prezident Maktabi", img: "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?q=75&w=1200&auto=format&fit=crop" },
+          { name: "Malika K.", school: "Al-Xorazmiy Maktabi", img: "https://images.unsplash.com/photo-1544717302-de2939b7ef71?q=75&w=1200&auto=format&fit=crop" },
+          { name: "Sardor I.", school: "Prezident Maktabi", img: "https://images.unsplash.com/photo-1506869640319-fe1a24fd76dc?q=75&w=1200&auto=format&fit=crop" },
+          { name: "Nodira A.", school: "Ixtisoslashtirilgan Maktab", img: "https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?q=75&w=1200&auto=format&fit=crop" }
         ].map((student, i) => (
           <motion.div 
             key={i}
@@ -84,7 +84,7 @@ export default function Results() {
             transition={{ delay: i * 0.1 }}
             className="group relative aspect-[3/4] rounded-[2rem] overflow-hidden bg-zinc-100 dark:bg-zinc-900"
           >
-            <img src={student.img} alt={student.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" referrerPolicy="no-referrer" />
+            <img src={student.img} alt={student.name} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" referrerPolicy="no-referrer" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity"></div>
             <div className="absolute bottom-0 left-0 w-full p-6 text-white">
               <h3 className="text-2xl font-black mb-1">{student.name}</h3>

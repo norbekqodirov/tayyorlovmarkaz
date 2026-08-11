@@ -74,6 +74,19 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
+// Xavfsizlik sarlavhalari — faqat hech narsani buzmaydigan, universal xavfsiz
+// sarlavhalar. CSP/X-Frame-Options/Trusted-Types atayin QO'SHILMAGAN: Telegram
+// Mini App'lar (/portal, /staff-portal) Telegram'ning o'z WebView'ida iframe
+// ichida ochiladi — noto'g'ri sozlangan frame-ancestors/CSP ularni butunlay
+// ishlamay qo'yishi mumkin va bu holatni shu yerdan sinab bo'lmaydi.
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (IS_PROD && req.secure) {
+        res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+    }
+    next();
+});
+
 // Public health check
 app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', message: 'API is running!', env: process.env.NODE_ENV, timestamp: new Date().toISOString() });

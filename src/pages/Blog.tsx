@@ -19,7 +19,7 @@ export default function Blog() {
           id: 1,
           title: "Yangi o'quv yili uchun qabul boshlandi",
           excerpt: "2026-2027 o'quv yili uchun barcha yo'nalishlar bo'yicha qabul jarayonlari rasman ochiq deb e'lon qilindi.",
-          imageUrl: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=2070&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=75&w=1200&auto=format&fit=crop",
           date: "2026-03-15",
           author: "Admin"
         },
@@ -27,7 +27,7 @@ export default function Blog() {
           id: 2,
           title: "IELTS dan 8.5 ball olgan o'quvchimiz sirlari",
           excerpt: "Markazimiz o'quvchisi qanday qilib qisqa vaqt ichida yuqori natijaga erishgani haqida batafsil ma'lumot.",
-          imageUrl: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=2070&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=75&w=1200&auto=format&fit=crop",
           date: "2026-03-10",
           author: "Admin"
         },
@@ -35,7 +35,7 @@ export default function Blog() {
           id: 3,
           title: "Matematika fanidan bepul master-klass",
           excerpt: "Dam olish kuni bo'lib o'tadigan ochiq darsimizga barchani taklif qilamiz. Joylar soni cheklangan.",
-          imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=2132&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=75&w=1200&auto=format&fit=crop",
           date: "2026-03-05",
           author: "Admin"
         }
@@ -78,9 +78,11 @@ export default function Blog() {
             >
               <div className="relative aspect-[4/3] overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                 {post.imageUrl ? (
-                  <img 
-                    src={post.imageUrl} 
-                    alt={post.title} 
+                  <img
+                    src={post.imageUrl}
+                    alt={post.title}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     referrerPolicy="no-referrer"
                   />

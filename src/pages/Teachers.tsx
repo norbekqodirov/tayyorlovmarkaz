@@ -6,10 +6,10 @@ import { useFirestore } from '../hooks/useFirestore';
 export default function Teachers() {
   const { data: firestoreTeachers } = useFirestore<any>('teachers');
   const [teachers, setTeachers] = useState([
-    { name: "Azizbek Rahimov", role: "Matematika", exp: "8 yillik tajriba", desc: "O'quvchilari xalqaro olimpiadalarda sovrinli o'rinlarni egallagan. Matematikani oson va qiziqarli tushuntirish bo'yicha mutaxassis.", img: "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=80&w=2070&auto=format&fit=crop", bg: "bg-zinc-100 dark:bg-zinc-900" },
-    { name: "Malika Karimova", role: "Ingliz tili", exp: "IELTS 8.5", desc: "Kembrij dasturi bo'yicha sertifikatlangan o'qituvchi. 5 yildan beri bolalarni xalqaro imtihonlarga tayyorlaydi.", img: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=2076&auto=format&fit=crop", bg: "bg-white dark:bg-zinc-800" },
-    { name: "Sardor Ibragimov", role: "Tanqidiy fikrlash", exp: "5 yillik tajriba", desc: "Mantiqiy masalalar va tanqidiy fikrlash bo'yicha maxsus qo'llanmalar muallifi.", img: "https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?q=80&w=2070&auto=format&fit=crop", bg: "bg-zinc-100 dark:bg-zinc-900" },
-    { name: "Nodira Aliyeva", role: "Psixolog", exp: "10 yillik tajriba", desc: "Bolalar psixologiyasi bo'yicha ekspert. Imtihon oldi stressini yengishda o'quvchilarga yordam beradi.", img: "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=1961&auto=format&fit=crop", bg: "bg-white dark:bg-zinc-800" }
+    { name: "Azizbek Rahimov", role: "Matematika", exp: "8 yillik tajriba", desc: "O'quvchilari xalqaro olimpiadalarda sovrinli o'rinlarni egallagan. Matematikani oson va qiziqarli tushuntirish bo'yicha mutaxassis.", img: "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?q=75&w=1200&auto=format&fit=crop", bg: "bg-zinc-100 dark:bg-zinc-900" },
+    { name: "Malika Karimova", role: "Ingliz tili", exp: "IELTS 8.5", desc: "Kembrij dasturi bo'yicha sertifikatlangan o'qituvchi. 5 yildan beri bolalarni xalqaro imtihonlarga tayyorlaydi.", img: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=75&w=1200&auto=format&fit=crop", bg: "bg-white dark:bg-zinc-800" },
+    { name: "Sardor Ibragimov", role: "Tanqidiy fikrlash", exp: "5 yillik tajriba", desc: "Mantiqiy masalalar va tanqidiy fikrlash bo'yicha maxsus qo'llanmalar muallifi.", img: "https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?q=75&w=1200&auto=format&fit=crop", bg: "bg-zinc-100 dark:bg-zinc-900" },
+    { name: "Nodira Aliyeva", role: "Psixolog", exp: "10 yillik tajriba", desc: "Bolalar psixologiyasi bo'yicha ekspert. Imtihon oldi stressini yengishda o'quvchilarga yordam beradi.", img: "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=75&w=1200&auto=format&fit=crop", bg: "bg-white dark:bg-zinc-800" }
   ]);
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function Teachers() {
             className={`${teacher.bg} rounded-[2rem] overflow-hidden border border-zinc-200 dark:border-zinc-800 group relative flex flex-col`}
           >
             <div className="aspect-[3/4] overflow-hidden relative">
-              <img src={teacher.img} alt={teacher.name} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" referrerPolicy="no-referrer" />
+              <img src={teacher.img} alt={teacher.name} loading="lazy" decoding="async" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" referrerPolicy="no-referrer" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 group-hover:opacity-60 transition-opacity"></div>
               
               <div className="absolute bottom-0 left-0 w-full p-6 text-white">

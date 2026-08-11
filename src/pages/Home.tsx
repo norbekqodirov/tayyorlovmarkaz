@@ -29,9 +29,9 @@ export default function Home() {
   }, [pageDocs]);
 
   const [galleryItems, setGalleryItems] = useState([
-    { img: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=80&w=2070&auto=format&fit=crop", title: "Ochiq eshiklar kuni", date: "15 Oktabr, 2024" },
-    { img: "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?q=80&w=2070&auto=format&fit=crop", title: "Mock test jarayonlari", date: "10 Oktabr, 2024" },
-    { img: "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=2070&auto=format&fit=crop", title: "Ustozlar bilan seminar", date: "05 Oktabr, 2024" }
+    { img: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=75&w=1200&auto=format&fit=crop", title: "Ochiq eshiklar kuni", date: "15 Oktabr, 2024" },
+    { img: "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?q=75&w=1200&auto=format&fit=crop", title: "Mock test jarayonlari", date: "10 Oktabr, 2024" },
+    { img: "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=75&w=1200&auto=format&fit=crop", title: "Ustozlar bilan seminar", date: "05 Oktabr, 2024" }
   ]);
 
   const [newsItems, setNewsItems] = useState<any[]>([]);
@@ -57,7 +57,7 @@ export default function Home() {
           id: 1,
           title: "Prezident maktablariga tayyorgarlikni qachon boshlash kerak?",
           excerpt: "Farzandingizni Prezident maktabiga tayyorlashni qachon boshlash eng maqbul vaqt ekanligi haqida mutaxassislar maslahati.",
-          imageUrl: "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=80&w=2022&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=75&w=1200&auto=format&fit=crop",
           date: "2024-10-15",
           author: "Azizbek Rahimov"
         },
@@ -65,7 +65,7 @@ export default function Home() {
           id: 2,
           title: "Matematikani o'rganishning 5 ta samarali usuli",
           excerpt: "Matematika fanini oson va qiziqarli o'rganish uchun eng yaxshi va sinalgan metodlar bilan tanishing.",
-          imageUrl: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?q=80&w=2070&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?q=75&w=1200&auto=format&fit=crop",
           date: "2024-10-12",
           author: "Malika Karimova"
         }
@@ -132,19 +132,19 @@ export default function Home() {
         <div className="max-w-[1400px] mx-auto px-4 md:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 divide-x divide-zinc-200 dark:divide-zinc-800">
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-blue-600 dark:text-blue-500 mb-2">{landingData.stat1Value}</h3>
+              <p className="text-4xl md:text-5xl font-black text-blue-600 dark:text-blue-500 mb-2">{landingData.stat1Value}</p>
               <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat1Label}</p>
             </div>
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat2Value}</h3>
+              <p className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat2Value}</p>
               <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat2Label}</p>
             </div>
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat3Value}</h3>
+              <p className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat3Value}</p>
               <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat3Label}</p>
             </div>
             <div className="text-center px-4">
-              <h3 className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat4Value}</h3>
+              <p className="text-4xl md:text-5xl font-black text-zinc-900 dark:text-white mb-2">{landingData.stat4Value}</p>
               <p className="text-sm md:text-base text-zinc-600 dark:text-zinc-400 font-medium">{landingData.stat4Label}</p>
             </div>
           </div>
@@ -173,24 +173,24 @@ export default function Home() {
 
           {/* Card 2 */}
           <div className="bg-zinc-50 dark:bg-zinc-900 rounded-[2rem] p-8 border border-zinc-200 dark:border-zinc-800 hover:border-orange-500 transition-colors group">
-            <div className="w-14 h-14 bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+            <div className="w-14 h-14 bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <BookOpen size={28} />
             </div>
             <h3 className="text-2xl font-bold mb-4">Al-Xorazmiy Maktabi</h3>
             <p className="text-zinc-600 dark:text-zinc-400 mb-8">Aniq fanlar va dasturlash asoslariga yo'naltirilgan maxsus intensiv kurslar.</p>
-            <Link to="/talim-tizimi" className="inline-flex items-center gap-2 text-orange-600 dark:text-orange-400 font-bold hover:gap-3 transition-all">
+            <Link to="/talim-tizimi" className="inline-flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold hover:gap-3 transition-all">
               Batafsil <ChevronRight size={18} />
             </Link>
           </div>
 
           {/* Card 3 */}
           <div className="bg-zinc-50 dark:bg-zinc-900 rounded-[2rem] p-8 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 transition-colors group">
-            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-400 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <Award size={28} />
             </div>
             <h3 className="text-2xl font-bold mb-4">Respublika Mock Testi</h3>
             <p className="text-zinc-600 dark:text-zinc-400 mb-8">Haqiqiy imtihon atmosferasini his qilish va bilimni sinab ko'rish uchun oylik testlar.</p>
-            <Link to="/talim-tizimi" className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold hover:gap-3 transition-all">
+            <Link to="/talim-tizimi" className="inline-flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold hover:gap-3 transition-all">
               Batafsil <ChevronRight size={18} />
             </Link>
           </div>
@@ -220,7 +220,7 @@ export default function Home() {
           </div>
 
           <div className="md:col-span-4 bg-zinc-950 dark:bg-zinc-900 rounded-[2rem] p-10 text-white flex flex-col justify-between min-h-[300px] relative overflow-hidden group">
-            <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=2132&auto=format&fit=crop" alt="Zamonaviy metodika" className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity duration-500" referrerPolicy="no-referrer" />
+            <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?q=75&w=1200&auto=format&fit=crop" alt="Zamonaviy metodika" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity duration-500" referrerPolicy="no-referrer" />
             <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent"></div>
             <div className="relative z-10">
               <h3 className="text-2xl font-bold mb-4">Zamonaviy metodika</h3>
@@ -232,7 +232,7 @@ export default function Home() {
           </div>
 
           <div className="md:col-span-5 bg-orange-500 rounded-[2rem] p-10 text-white flex flex-col justify-between min-h-[300px] relative overflow-hidden group">
-            <img src="https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=2070&auto=format&fit=crop" alt="Psixologik qo'llab-quvvatlash" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-40 transition-opacity duration-500 mix-blend-overlay" referrerPolicy="no-referrer" />
+            <img src="https://images.unsplash.com/photo-1577896851231-70ef18881754?q=75&w=1200&auto=format&fit=crop" alt="Psixologik qo'llab-quvvatlash" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-40 transition-opacity duration-500 mix-blend-overlay" referrerPolicy="no-referrer" />
             <div className="relative z-10">
               <h3 className="text-2xl font-bold mb-4">Psixologik qo'llab-quvvatlash</h3>
               <p className="text-orange-100">Imtihon stressini yengish va o'ziga bo'lgan ishonchni oshirish uchun maxsus treninglar.</p>
@@ -262,7 +262,7 @@ export default function Home() {
             </div>
             <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-[1.1] text-zinc-900 dark:text-white max-w-2xl">
               Markazimizdagi <br />
-              <span className="text-zinc-400">qaynoq jarayonlar.</span>
+              <span className="text-zinc-600 dark:text-zinc-400">qaynoq jarayonlar.</span>
             </h2>
           </div>
           <Link to="/biz-haqimizda" className="inline-flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold hover:gap-3 transition-all">
@@ -274,7 +274,7 @@ export default function Home() {
           {galleryItems.map((item, i) => (
             <div key={i} className="group cursor-pointer">
               <div className="aspect-[4/3] rounded-[2rem] overflow-hidden mb-6 relative">
-                <img src={item.img} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" referrerPolicy="no-referrer" />
+                <img src={item.img} alt={item.title} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" referrerPolicy="no-referrer" />
                 <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors duration-500"></div>
               </div>
               <div className="flex items-center gap-4 mb-3">
@@ -296,10 +296,10 @@ export default function Home() {
             </div>
             <h2 className="text-4xl md:text-5xl font-black tracking-tight leading-[1.1] text-zinc-900 dark:text-white max-w-2xl">
               So'nggi <br />
-              <span className="text-orange-500">maqolalar.</span>
+              <span className="text-orange-700 dark:text-orange-400">maqolalar.</span>
             </h2>
           </div>
-          <Link to="/blog" className="inline-flex items-center gap-2 text-orange-600 dark:text-orange-400 font-bold hover:gap-3 transition-all">
+          <Link to="/blog" className="inline-flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold hover:gap-3 transition-all">
             Barcha maqolalar <ChevronRight size={18} />
           </Link>
         </div>
@@ -308,7 +308,7 @@ export default function Home() {
           {newsItems.map((post: any) => (
             <Link to={`/blog/${post.id}`} key={post.id} className="group flex flex-col md:flex-row gap-6 bg-white dark:bg-zinc-900 rounded-[2rem] p-6 border border-zinc-200 dark:border-zinc-800 hover:border-orange-500 transition-colors">
               <div className="w-full md:w-2/5 aspect-[4/3] md:aspect-square rounded-2xl overflow-hidden shrink-0">
-                <img src={post.imageUrl || post.url} alt={post.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />
+                <img src={post.imageUrl || post.url} alt={post.title} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />
               </div>
               <div className="flex flex-col justify-center flex-1">
                 <div className="flex items-center gap-3 mb-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
@@ -326,7 +326,7 @@ export default function Home() {
                 <p className="text-zinc-600 dark:text-zinc-400 line-clamp-3 mb-6">
                   {post.excerpt || post.content?.substring(0, 150) + '...'}
                 </p>
-                <span className="inline-flex items-center gap-2 text-orange-600 dark:text-orange-400 font-bold mt-auto group-hover:gap-3 transition-all">
+                <span className="inline-flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold mt-auto group-hover:gap-3 transition-all">
                   O'qishni davom ettirish <ArrowUpRight size={18} />
                 </span>
               </div>
@@ -355,7 +355,7 @@ export default function Home() {
                 <img src="https://i.pravatar.cc/100?img=44" alt="Parent" className="w-full h-full object-cover" />
               </div>
               <div>
-                <h4 className="font-bold">Dilnoza S.</h4>
+                <h3 className="font-bold">Dilnoza S.</h3>
                 <p className="text-sm text-zinc-500">Ota-ona</p>
               </div>
             </div>
@@ -373,7 +373,7 @@ export default function Home() {
                 <img src="https://i.pravatar.cc/100?img=11" alt="Parent" className="w-full h-full object-cover" />
               </div>
               <div>
-                <h4 className="font-bold">Rustam A.</h4>
+                <h3 className="font-bold">Rustam A.</h3>
                 <p className="text-sm text-zinc-500">Ota-ona</p>
               </div>
             </div>

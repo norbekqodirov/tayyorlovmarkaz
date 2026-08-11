@@ -12,12 +12,12 @@ export default function About() {
       setGallery(firestoreGallery);
     } else {
       setGallery([
-        { id: 1, url: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=80&w=2070&auto=format&fit=crop", title: "Ochiq eshiklar kuni", date: "2024-10-15" },
-        { id: 2, url: "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?q=80&w=2070&auto=format&fit=crop", title: "Mock test jarayonlari", date: "2024-10-10" },
-        { id: 3, url: "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=2070&auto=format&fit=crop", title: "Ustozlar bilan seminar", date: "2024-10-05" },
-        { id: 4, url: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=2132&auto=format&fit=crop", title: "Matematika darsi", date: "2024-09-20" },
-        { id: 5, url: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=2070&auto=format&fit=crop", title: "Ingliz tili to'garagi", date: "2024-09-15" },
-        { id: 6, url: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=2070&auto=format&fit=crop", title: "Bitiruvchilar bilan uchrashuv", date: "2024-09-10" },
+        { id: 1, url: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?q=75&w=1200&auto=format&fit=crop", title: "Ochiq eshiklar kuni", date: "2024-10-15" },
+        { id: 2, url: "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?q=75&w=1200&auto=format&fit=crop", title: "Mock test jarayonlari", date: "2024-10-10" },
+        { id: 3, url: "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=75&w=1200&auto=format&fit=crop", title: "Ustozlar bilan seminar", date: "2024-10-05" },
+        { id: 4, url: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=75&w=1200&auto=format&fit=crop", title: "Matematika darsi", date: "2024-09-20" },
+        { id: 5, url: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=75&w=1200&auto=format&fit=crop", title: "Ingliz tili to'garagi", date: "2024-09-15" },
+        { id: 6, url: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=75&w=1200&auto=format&fit=crop", title: "Bitiruvchilar bilan uchrashuv", date: "2024-09-10" },
       ]);
     }
   }, [firestoreGallery]);
@@ -80,7 +80,7 @@ export default function About() {
             className="relative rounded-[2.5rem] overflow-hidden aspect-[4/3] shadow-2xl"
           >
             <img 
-              src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80" 
+              src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=75" 
               alt="Students learning" 
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
@@ -199,9 +199,11 @@ export default function About() {
                   transition={{ delay: i * 0.1 }}
                   className="group relative aspect-[4/3] rounded-[2.5rem] overflow-hidden bg-zinc-100 dark:bg-zinc-800 shadow-lg"
                 >
-                  <img 
-                    src={item.url} 
-                    alt={item.title} 
+                  <img
+                    src={item.url}
+                    alt={item.title}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     referrerPolicy="no-referrer"
                   />

@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /crmtayyorlovmarkaz
+Disallow: /portal
+Disallow: /staff-portal
+Disallow: /l/
+Disallow: /test/
+Disallow: /api/

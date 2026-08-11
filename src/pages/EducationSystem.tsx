@@ -10,7 +10,7 @@ export default function EducationSystem() {
       desc: "Har bir o'quvchi markazga kelganda maxsus diagnostika testidan o'tadi. Bu orqali uning kuchli va zaif tomonlari aniqlanib, mos darajadagi guruhga taqsimlanadi.",
       num: "01",
       bg: "bg-white dark:bg-zinc-900",
-      img: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=2070&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=75&w=1200&auto=format&fit=crop"
     },
     {
       icon: <Brain className="w-10 h-10 text-white" />,
@@ -18,7 +18,7 @@ export default function EducationSystem() {
       desc: "Matematika, Ingliz tili va Mantiq fanlaridan chuqurlashtirilgan darslar. Darslar interaktiv usulda, bolani zeriktirmaydigan tarzda o'tiladi.",
       num: "02",
       bg: "bg-blue-600",
-      img: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=2071&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=75&w=1200&auto=format&fit=crop"
     },
     {
       icon: <LineChart className="w-10 h-10 text-white" />,
@@ -26,7 +26,7 @@ export default function EducationSystem() {
       desc: "Har oy oxirida haqiqiy imtihon atmosferasida DTM va Kembrij formatidagi testlar olinadi. Natijalar ota-onalarga tahliliy hisobot shaklida yuboriladi.",
       num: "03",
       bg: "bg-zinc-950",
-      img: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=2070&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=75&w=1200&auto=format&fit=crop"
     },
     {
       icon: <ShieldCheck className="w-10 h-10 text-zinc-900 dark:text-white" />,
@@ -34,7 +34,7 @@ export default function EducationSystem() {
       desc: "Imtihon stressini yengish, vaqtni to'g'ri taqsimlash va o'ziga ishonchni oshirish bo'yicha professional psixologlar bilan doimiy treninglar.",
       num: "04",
       bg: "bg-zinc-100 dark:bg-zinc-800",
-      img: "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=80&w=2070&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1577896851231-70ef18881754?q=75&w=1200&auto=format&fit=crop"
     }
   ];
 
@@ -43,19 +43,19 @@ export default function EducationSystem() {
       name: "Matematika",
       desc: "Mantiqiy va tezkor hisoblash, masalalar yechishning nostandart usullari.",
       details: ["Arifmetika va algebra asoslari", "Mantiqiy masalalar", "Tezkor hisoblash sirlari", "Olimpiada darajasidagi misollar"],
-      img: "https://images.unsplash.com/photo-1509228468518-180dd4864904?q=80&w=2070&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1509228468518-180dd4864904?q=75&w=1200&auto=format&fit=crop"
     },
     {
       name: "Ingliz tili",
       desc: "Cambridge dasturi asosida chuqurlashtirilgan grammatika va so'zlashuv.",
       details: ["Reading va Listening ko'nikmalari", "Grammatika qoidalari", "Vocabulary (Lug'at boyligi)", "Speaking amaliyoti"],
-      img: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=80&w=2071&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?q=75&w=1200&auto=format&fit=crop"
     },
     {
       name: "Tanqidiy fikrlash",
       desc: "Prezident maktablari imtihonining eng muhim qismi bo'lgan mantiqiy fikrlash.",
       details: ["Fazoviy tasavvur", "Qonuniyatlarni topish", "Matnli mantiqiy masalalar", "Analitik fikrlash"],
-      img: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070&auto=format&fit=crop"
+      img: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=75&w=1200&auto=format&fit=crop"
     }
   ];
 
@@ -120,7 +120,7 @@ export default function EducationSystem() {
             className={`${step.bg} p-10 md:p-12 rounded-[2rem] md:rounded-[3rem] border border-zinc-200 dark:border-zinc-800 flex flex-col justify-between min-h-[400px] relative overflow-hidden group`}
           >
             <div className="absolute inset-0 w-full h-full opacity-0 group-hover:opacity-20 transition-opacity duration-500">
-              <img src={step.img} alt={step.title} className="w-full h-full object-cover mix-blend-overlay" referrerPolicy="no-referrer" />
+              <img src={step.img} alt={step.title} loading="lazy" decoding="async" className="w-full h-full object-cover mix-blend-overlay" referrerPolicy="no-referrer" />
             </div>
             <div className="relative z-10 flex justify-between items-start mb-12">
               <div className="w-20 h-20 rounded-2xl bg-white/20 dark:bg-black/10 backdrop-blur-md flex items-center justify-center">
@@ -171,7 +171,7 @@ export default function EducationSystem() {
               className="bg-white dark:bg-zinc-900 rounded-[2.5rem] overflow-hidden border border-zinc-200 dark:border-zinc-800 group"
             >
               <div className="aspect-[16/10] overflow-hidden relative">
-                <img src={sub.img} alt={sub.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
+                <img src={sub.img} alt={sub.name} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
                 <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
               </div>
               <div className="p-8">
@@ -250,7 +250,7 @@ export default function EducationSystem() {
 
       {/* CTA Section */}
       <div className="bg-zinc-950 rounded-[3rem] p-10 md:p-20 text-white relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-12">
-        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=80&w=2022&auto=format&fit=crop')] opacity-10 mix-blend-overlay object-cover"></div>
+        <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1503676260728-1c00da094a0b?q=75&w=1200&auto=format&fit=crop')] opacity-10 mix-blend-overlay object-cover"></div>
         <div className="absolute -top-32 -right-32 w-96 h-96 bg-orange-500/30 blur-[100px] rounded-full"></div>
         
         <div className="relative z-10 max-w-2xl">

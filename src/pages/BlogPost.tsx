@@ -26,7 +26,7 @@ export default function BlogPost() {
           id: 1,
           title: "Yangi o'quv yili uchun qabul boshlandi",
           content: "2026-2027 o'quv yili uchun barcha yo'nalishlar bo'yicha qabul jarayonlari rasman ochiq deb e'lon qilindi. Markazimizda endilikda yangi fanlar va ilg'or metodikalar asosida darslar o'tiladi. O'quvchilarimiz uchun maxsus chegirmalar va grantlar ajratilgan. Shoshiling, joylar soni cheklangan!",
-          imageUrl: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=80&w=2070&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?q=75&w=1200&auto=format&fit=crop",
           date: "2026-03-15",
           author: "Admin"
         },
@@ -34,7 +34,7 @@ export default function BlogPost() {
           id: 2,
           title: "IELTS dan 8.5 ball olgan o'quvchimiz sirlari",
           content: "Markazimiz o'quvchisi qanday qilib qisqa vaqt ichida yuqori natijaga erishgani haqida batafsil ma'lumot. Uning kun tartibi, tayyorgarlik jarayoni va foydalangan resurslari haqida ushbu maqolada o'qishingiz mumkin.",
-          imageUrl: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=2070&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=75&w=1200&auto=format&fit=crop",
           date: "2026-03-10",
           author: "Admin"
         },
@@ -42,7 +42,7 @@ export default function BlogPost() {
           id: 3,
           title: "Matematika fanidan bepul master-klass",
           content: "Dam olish kuni bo'lib o'tadigan ochiq darsimizga barchani taklif qilamiz. Joylar soni cheklangan. Master-klass davomida eng qiyin misollarni oson yechish usullari ko'rsatib beriladi.",
-          imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=80&w=2132&auto=format&fit=crop",
+          imageUrl: "https://images.unsplash.com/photo-1509062522246-3755977927d7?q=75&w=1200&auto=format&fit=crop",
           date: "2026-03-05",
           author: "Admin"
         }
