@@ -73,12 +73,12 @@ export default function CrmLeads() {
   useEffect(() => { api.get('/groups').then(res => setGroups(res.data?.data || res.data || [])).catch(() => {}); }, []);
 
   const [formData, setFormData] = useState<Partial<Lead>>({
-    name: '', phone: '', email: '', stage: 'new',
+    name: '', phone: '', stage: 'new',
     source: 'Instagram', course: '', notes: '', score: 50, status: 'warm',
   });
 
   const emptyForm = (): Partial<Lead> => ({
-    name: '', phone: '', email: '', stage: 'new',
+    name: '', phone: '', stage: 'new',
     source: 'Instagram', course: '', notes: '', score: 50, status: 'warm',
   });
 

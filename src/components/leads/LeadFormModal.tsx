@@ -12,6 +12,8 @@ import api from '../../api/client';
 import { SOURCES, STAGES } from './types';
 import type { Lead } from './types';
 
+const GRADE_OPTIONS = [2, 3, 4, 5, 6];
+
 interface Props {
   isOpen: boolean;
   editingLead: Lead | null;
@@ -48,19 +50,16 @@ const LeadFormModal: React.FC<Props> = ({
         <PhoneInput label="Telefon" value={formData.phone || ''} onChange={phone => onChange({ phone })} />
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
-        <Input type="email" label="Email (Ixtiyoriy)" value={formData.email || ''} onChange={e => onChange({ email: e.target.value })} placeholder="example@mail.com" />
-        <div className="space-y-1.5 flex flex-col gap-1.5">
-          <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Kurs</label>
-          <select
-            value={formData.course}
-            onChange={e => onChange({ course: e.target.value })}
-            className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
-          >
-            <option value="">Kursni tanlang...</option>
-            {courses.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
-        </div>
+      <div className="space-y-1.5 flex flex-col gap-1.5">
+        <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Kurs</label>
+        <select
+          value={formData.course}
+          onChange={e => onChange({ course: e.target.value })}
+          className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+        >
+          <option value="">Kursni tanlang...</option>
+          {courses.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+        </select>
       </div>
 
       {editingLead && (
@@ -114,14 +113,28 @@ const LeadFormModal: React.FC<Props> = ({
         </div>
       </div>
 
-      {extraField.type !== 'none' && (
+      {extraField.type === 'age' && (
         <Input
           label={extraField.label || ''}
-          type={extraField.type === 'age' ? 'number' : 'text'}
+          type="number"
           value={formData.extraField || ''}
           onChange={e => onChange({ extraField: e.target.value })}
-          placeholder={extraField.type === 'age' ? '10' : "Masalan: 5-sinf"}
+          placeholder="10"
         />
+      )}
+
+      {extraField.type === 'grade' && (
+        <div className="space-y-1.5 flex flex-col gap-1.5">
+          <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">{extraField.label}</label>
+          <select
+            value={formData.extraField || ''}
+            onChange={e => onChange({ extraField: e.target.value })}
+            className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
+          >
+            <option value="">Sinfni tanlang</option>
+            {GRADE_OPTIONS.map(g => <option key={g} value={`${g}-sinf`}>{g}-sinf</option>)}
+          </select>
+        </div>
       )}
 
       <div className="space-y-1.5 flex flex-col gap-1.5">

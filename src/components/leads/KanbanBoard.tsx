@@ -50,40 +50,19 @@ function LeadCard({ lead, onLeadClick, onStageChange }: { lead: Lead; onLeadClic
         e.dataTransfer.setData('leadId', lead.id);
       }}
       onClick={() => { if (!dragMoved.current) onLeadClick(lead); dragMoved.current = false; }}
-      className={`bg-white dark:bg-zinc-800 p-4 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing transition-all group relative overflow-hidden ${ringClass}`}
+      className={`bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing transition-all group relative ${ringClass}`}
     >
-      <div className={`absolute top-0 left-0 w-1 h-full ${stage.color}`} />
-
-      <div className="flex justify-between items-start mb-3">
-        <div className="min-w-0">
-          <h4 className="font-black text-sm text-slate-900 dark:text-white tracking-tight truncate">{lead.name}</h4>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest truncate">{lead.course}</p>
-            {lead.source && (
-              <span className="text-[9px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 rounded">{lead.source}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            {isStale && (
-              <span className="flex items-center gap-1 text-[9px] font-black text-rose-500 uppercase tracking-widest">
-                <AlertCircle size={10} /> O'lik Lid
-              </span>
-            )}
-            {needsFollowUp && !isStale && (
-              <span className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase tracking-widest">
-                <Clock size={10} /> Qayta aloqa
-              </span>
-            )}
-            {overdue && (
-              <span className="flex items-center gap-1 text-[9px] font-black text-rose-500 uppercase tracking-widest">
-                <CalendarClock size={10} /> Muddat o'tdi
-              </span>
-            )}
-            {noResponse && (
-              <span className="flex items-center gap-1 text-[9px] font-black text-orange-500 uppercase tracking-widest">
-                SLA
-              </span>
-            )}
+      <div className="flex justify-between items-start gap-2 mb-1.5">
+        <div className="min-w-0 flex items-start gap-1.5">
+          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${stage.color}`} />
+          <div className="min-w-0">
+            <h4 className="font-black text-sm text-slate-900 dark:text-white tracking-tight truncate">{lead.name}</h4>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest truncate">{lead.course}</p>
+              {lead.source && (
+                <span className="text-[9px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 rounded">{lead.source}</span>
+              )}
+            </div>
           </div>
         </div>
         <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest shrink-0 ${getStatusColor(lead.status)}`}>
@@ -91,39 +70,65 @@ function LeadCard({ lead, onLeadClick, onStageChange }: { lead: Lead; onLeadClic
         </span>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
-          <Phone size={12} className="text-zinc-400" /> {lead.phone}
+      {(isStale || needsFollowUp || overdue || noResponse) && (
+        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+          {isStale && (
+            <span className="flex items-center gap-1 text-[9px] font-black text-rose-500 uppercase tracking-widest">
+              <AlertCircle size={10} /> O'lik Lid
+            </span>
+          )}
+          {needsFollowUp && !isStale && (
+            <span className="flex items-center gap-1 text-[9px] font-black text-amber-500 uppercase tracking-widest">
+              <Clock size={10} /> Qayta aloqa
+            </span>
+          )}
+          {overdue && (
+            <span className="flex items-center gap-1 text-[9px] font-black text-rose-500 uppercase tracking-widest">
+              <CalendarClock size={10} /> Muddat o'tdi
+            </span>
+          )}
+          {noResponse && (
+            <span className="flex items-center gap-1 text-[9px] font-black text-orange-500 uppercase tracking-widest">
+              SLA
+            </span>
+          )}
         </div>
-        {lead.assignedTo && (
-          <div className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
-            <User size={11} className="text-zinc-400" /> {lead.assignedTo.name}
-          </div>
-        )}
-        <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-700/50">
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-6 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-[10px] font-black text-zinc-400">
-              {lead.score}
-            </div>
-            <div className="w-16 h-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500" style={{ width: `${lead.score}%` }} />
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-[10px] font-bold text-zinc-400">
-            <History size={10} /> {lead._count?.activities ?? (lead.activities || []).length}
-          </div>
-        </div>
+      )}
 
-        {/* Mobil uchun — HTML5 drag ishlamaydi, shuning uchun bosqich select'i */}
-        <select
-          value={lead.stage}
-          onClick={e => e.stopPropagation()}
-          onChange={e => onStageChange(lead.id, e.target.value)}
-          className="w-full sm:hidden mt-1 px-2 py-1.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[11px] font-bold outline-none"
-        >
-          {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+      <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-zinc-500">
+        <span className="flex items-center gap-1 min-w-0 truncate">
+          <Phone size={11} className="text-zinc-400 shrink-0" /> {lead.phone}
+        </span>
+        {lead.assignedTo && (
+          <span className="flex items-center gap-1 min-w-0 truncate">
+            <User size={11} className="text-zinc-400 shrink-0" /> {lead.assignedTo.name}
+          </span>
+        )}
       </div>
+
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-700/50">
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-[9px] font-black text-zinc-400">
+            {lead.score}
+          </div>
+          <div className="w-14 h-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500" style={{ width: `${lead.score}%` }} />
+          </div>
+        </div>
+        <div className="flex items-center gap-1 text-[10px] font-bold text-zinc-400">
+          <History size={10} /> {lead._count?.activities ?? (lead.activities || []).length}
+        </div>
+      </div>
+
+      {/* Mobil uchun — HTML5 drag ishlamaydi, shuning uchun bosqich select'i */}
+      <select
+        value={lead.stage}
+        onClick={e => e.stopPropagation()}
+        onChange={e => onStageChange(lead.id, e.target.value)}
+        className="w-full sm:hidden mt-2 px-2 py-1.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[11px] font-bold outline-none"
+      >
+        {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
     </motion.div>
   );
 }
@@ -161,7 +166,7 @@ const KanbanBoard: React.FC<Props> = ({ leads, stageCounts, onDrop, onLeadClick,
             </div>
 
             {/* Cards */}
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
               {leads.filter(l => l.stage === stage.id).map(lead => (
                 <LeadCard key={lead.id} lead={lead} onLeadClick={onLeadClick} onStageChange={onStageChange} />
               ))}

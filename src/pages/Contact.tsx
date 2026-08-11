@@ -5,6 +5,8 @@ import api from '../api/client';
 import { useToast } from '../components/Toast';
 import { getAttribution } from '../utils/utm';
 
+const GRADE_OPTIONS = [2, 3, 4, 5, 6];
+
 export default function Contact() {
   const [formData, setFormData] = useState({ name: '', phone: '', message: '', extra: '', website: '' });
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -195,18 +197,33 @@ export default function Contact() {
                   placeholder="Farzandimni ro'yxatdan o'tkazmoqchi edim..."
                 ></textarea>
               </div>
-              {extraField.type !== 'none' && (
+              {extraField.type === 'age' && (
                 <div>
                   <label htmlFor="extra" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2 uppercase tracking-wider">{extraField.label}</label>
                   <input
-                    type={extraField.type === 'age' ? 'number' : 'text'}
+                    type="number"
                     id="extra"
                     required
                     value={formData.extra}
                     onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
                     className="w-full px-6 py-4 bg-zinc-100 dark:bg-zinc-950 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-500 text-zinc-900 dark:text-white font-medium transition-shadow"
-                    placeholder={extraField.type === 'age' ? '10' : "Masalan: 5-sinf"}
+                    placeholder="10"
                   />
+                </div>
+              )}
+              {extraField.type === 'grade' && (
+                <div>
+                  <label htmlFor="extra" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2 uppercase tracking-wider">{extraField.label}</label>
+                  <select
+                    id="extra"
+                    required
+                    value={formData.extra}
+                    onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
+                    className="w-full px-6 py-4 bg-zinc-100 dark:bg-zinc-950 border-none rounded-2xl focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-500 text-zinc-900 dark:text-white font-medium transition-shadow appearance-none"
+                  >
+                    <option value="" disabled>Sinfni tanlang</option>
+                    {GRADE_OPTIONS.map(g => <option key={g} value={`${g}-sinf`}>{g}-sinf</option>)}
+                  </select>
                 </div>
               )}
               <button

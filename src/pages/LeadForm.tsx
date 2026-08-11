@@ -10,11 +10,12 @@ interface Course {
   name: string;
 }
 
+const GRADE_OPTIONS = [2, 3, 4, 5, 6];
+
 export default function LeadForm() {
   const { formId } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const [formName, setFormName] = useState('Ro\'yxatdan o\'tish');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
@@ -23,7 +24,6 @@ export default function LeadForm() {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    email: '',
     courseId: '',
     extra: '',
     website: '', // honeypot — ko'rinmaydi, botlar to'ldiradi
@@ -36,9 +36,9 @@ export default function LeadForm() {
   // qilmagan foydalanuvchi uchun 401 bilan jimgina barbod bo'lardi).
   useEffect(() => {
     if (formId) {
-      api.get(`/public/forms/${formId}`)
-        .then(res => { if (res.data?.title) setFormName(res.data.title); })
-        .catch(() => {});
+      // Formaning haqiqiy mavjud/faolligini tekshiradi — sarlavha sifatida
+      // ko'rsatilmaydi (forma nomi faqat CRM ichida statistika uchun).
+      api.get(`/public/forms/${formId}`).catch(() => {});
       // Ko'rish hisobi — konversiya % ini haqiqiy qiladi (avval doim NaN% edi,
       // chunki hech narsa ko'rishlarni sanamas edi).
       api.post(`/public/forms/${formId}/view`).catch(() => {});
@@ -60,7 +60,6 @@ export default function LeadForm() {
       await api.post('/public/lead', {
         name: formData.name,
         phone: formData.phone,
-        email: formData.email || undefined,
         courseId: formData.courseId || undefined,
         course: course?.name,
         // "source" ataylab yuborilmaydi — server buni UTM/kampaniyadan aniqlaydi
@@ -115,7 +114,7 @@ export default function LeadForm() {
 
       <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 md:p-10 max-w-md w-full border border-zinc-200 dark:border-zinc-800 shadow-xl">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">{formName}</h1>
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Ro'yxatdan o'tish</h1>
           <p className="text-zinc-600 dark:text-zinc-400">Ma'lumotlaringizni qoldiring, biz siz bilan bog'lanamiz.</p>
         </div>
 
@@ -160,17 +159,6 @@ export default function LeadForm() {
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Email <span className="text-zinc-400 font-medium normal-case">(ixtiyoriy)</span></label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              placeholder="email@example.com"
-            />
-          </div>
-
-          <div>
             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Qaysi kursga qiziqasiz?</label>
             <select
               required
@@ -183,17 +171,32 @@ export default function LeadForm() {
             </select>
           </div>
 
-          {extraField.type !== 'none' && (
+          {extraField.type === 'age' && (
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{extraField.label}</label>
               <input
-                type={extraField.type === 'age' ? 'number' : 'text'}
+                type="number"
                 required
                 value={formData.extra}
                 onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
                 className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                placeholder={extraField.type === 'age' ? '10' : "Masalan: 5-sinf"}
+                placeholder="10"
               />
+            </div>
+          )}
+
+          {extraField.type === 'grade' && (
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{extraField.label}</label>
+              <select
+                required
+                value={formData.extra}
+                onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
+                className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+              >
+                <option value="" disabled>Sinfni tanlang</option>
+                {GRADE_OPTIONS.map(g => <option key={g} value={`${g}-sinf`}>{g}-sinf</option>)}
+              </select>
             </div>
           )}
 
