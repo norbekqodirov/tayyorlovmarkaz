@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Clock, CheckCircle, XCircle, ChevronRight, ChevronLeft, Award, Loader2, AlertCircle } from 'lucide-react';
 import api from '../api/client';
+import { PhoneInput } from '../components/ui/PhoneInput';
 
 interface QuizOption { id: string; text: string; order: number; }
 interface QuizQuestion {
@@ -183,12 +184,7 @@ export default function PublicQuiz() {
                     placeholder="Ismingizni kiriting..."
                     className="w-full px-4 py-3 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-1.5">Telefon raqam *</label>
-                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                    placeholder="+998 90 123 45 67"
-                    className="w-full px-4 py-3 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm" />
-                </div>
+                <PhoneInput label="Telefon raqam *" value={phone} onChange={setPhone} />
               </div>
               <div className="flex gap-3 mt-6">
                 <button onClick={() => setStage('intro')} className="flex-1 py-3 border border-zinc-200 text-zinc-600 rounded-xl font-medium hover:bg-zinc-50 transition-colors text-sm">

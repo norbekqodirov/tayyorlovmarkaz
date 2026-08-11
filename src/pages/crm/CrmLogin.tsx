@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Phone, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import api from '../../api/client';
+import { PhoneInput } from '../../components/ui/PhoneInput';
 
 export default function CrmLogin() {
   const [phone, setPhone] = useState('');
@@ -62,23 +63,12 @@ export default function CrmLogin() {
             )}
 
             {/* Phone */}
-            <div className="space-y-1.5">
-              <label className="block text-sm font-black text-slate-700 dark:text-slate-300">Telefon raqam</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Phone size={18} className="text-zinc-400" />
-                </div>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
-                  placeholder="+998 93 752 55 92"
-                  autoFocus
-                  required
-                />
-              </div>
-            </div>
+            <PhoneInput
+              label="Telefon raqam"
+              value={phone}
+              onChange={setPhone}
+              required
+            />
 
             {/* Password */}
             <div className="space-y-1.5">
