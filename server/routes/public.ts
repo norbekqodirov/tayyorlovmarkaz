@@ -68,6 +68,7 @@ router.get('/forms/:id', async (req, res) => {
         res.json({
             id: form.id, title: form.title, description: form.description, course: form.course,
             extraField: { type, label: extraFieldLabel(type) },
+            showCourseField: form.showCourseField,
         });
     } catch (err: any) {
         res.status(500).json({ message: err.message });

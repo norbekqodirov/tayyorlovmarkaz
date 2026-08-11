@@ -19,6 +19,7 @@ export default function LeadForm() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
+  const [showCourseField, setShowCourseField] = useState(true);
   const [courses, setCourses] = useState<Course[]>([]);
 
   const [formData, setFormData] = useState({
@@ -41,7 +42,10 @@ export default function LeadForm() {
       // extraField — shu FORMAGA xos (CrmForms.tsx'da tanlangan), forma buni
       // belgilamagan bo'lsa backend global sozlamaga qaytadi.
       api.get(`/public/forms/${formId}`)
-        .then(res => { if (res.data?.extraField) setExtraField(res.data.extraField); })
+        .then(res => {
+          if (res.data?.extraField) setExtraField(res.data.extraField);
+          if (typeof res.data?.showCourseField === 'boolean') setShowCourseField(res.data.showCourseField);
+        })
         .catch(() => {});
       // Ko'rish hisobi — konversiya % ini haqiqiy qiladi (avval doim NaN% edi,
       // chunki hech narsa ko'rishlarni sanamas edi).
@@ -163,18 +167,20 @@ export default function LeadForm() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Qaysi kursga qiziqasiz?</label>
-            <select
-              required
-              value={formData.courseId}
-              onChange={(e) => setFormData({...formData, courseId: e.target.value})}
-              className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
-            >
-              <option value="" disabled>Kursni tanlang</option>
-              {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
+          {showCourseField && (
+            <div>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Qaysi kursga qiziqasiz?</label>
+              <select
+                required
+                value={formData.courseId}
+                onChange={(e) => setFormData({...formData, courseId: e.target.value})}
+                className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+              >
+                <option value="" disabled>Kursni tanlang</option>
+                {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
 
           {extraField.type === 'age' && (
             <div>

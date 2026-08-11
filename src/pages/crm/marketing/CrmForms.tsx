@@ -18,6 +18,7 @@ interface Form {
   isActive: boolean;
   submissions: number;
   extraFieldType?: 'none' | 'age' | 'grade' | null;
+  showCourseField?: boolean;
 }
 
 const EXTRA_FIELD_OPTIONS = [
@@ -34,7 +35,7 @@ export default function CrmForms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
-  const [formData, setFormData] = useState<Partial<Form>>({ title: '', description: '', course: '', isActive: true, extraFieldType: null });
+  const [formData, setFormData] = useState<Partial<Form>>({ title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true });
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [formStats, setFormStats] = useState<Record<string, { views: number; submissionsReal: number; conversionRate: number; won: number }>>({});
 
@@ -49,10 +50,10 @@ export default function CrmForms() {
   const openModal = (form: Form | null = null) => {
     if (form) {
       setEditingForm(form);
-      setFormData({ title: form.title, description: form.description || '', course: form.course || '', isActive: form.isActive, extraFieldType: form.extraFieldType ?? null });
+      setFormData({ title: form.title, description: form.description || '', course: form.course || '', isActive: form.isActive, extraFieldType: form.extraFieldType ?? null, showCourseField: form.showCourseField ?? true });
     } else {
       setEditingForm(null);
-      setFormData({ title: '', description: '', course: '', isActive: true, extraFieldType: null });
+      setFormData({ title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true });
     }
     setIsModalOpen(true);
   };
@@ -240,6 +241,18 @@ export default function CrmForms() {
               ))}
             </select>
           </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.showCourseField ?? true}
+              onChange={(e) => setFormData({ ...formData, showCourseField: e.target.checked })}
+              className="w-4 h-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">"Qaysi kursga qiziqasiz?" savolini ko'rsatish</span>
+          </label>
+          <p className="text-xs text-zinc-400 -mt-2">
+            O'chirilsa, tashrif buyuruvchidan kurs so'ralmaydi (masalan reklama allaqachon bitta kursga bag'ishlangan bo'lsa).
+          </p>
           <div>
             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Qo'shimcha savol</label>
             <select

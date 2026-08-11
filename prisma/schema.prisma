@@ -497,6 +497,11 @@ model TargetForm {
   // aniq qiymat berilsa shu forma uchun global sozlamani ustidan yozadi.
   extraFieldType String?
 
+  // false = "Qaysi kursga qiziqasiz?" tanlovi shu formada yashiriladi (masalan,
+  // reklama allaqachon bitta kursga bag'ishlangan bo'lsa). Standart true —
+  // eski formalar oldingi xatti-harakatini saqlab qoladi.
+  showCourseField Boolean @default(true)
+
   leadRecords Lead[]
 
   @@index([isActive])
