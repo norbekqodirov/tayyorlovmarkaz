@@ -51,12 +51,15 @@ const TEMPLATE_TYPES = [
 
 const TEMPLATE_VARS = ['{{student_name}}', '{{group_name}}', '{{amount}}', '{{due_date}}', '{{lesson_time}}', '{{teacher_name}}'];
 
+// "leads" ataylab yo'q — lidlarda Telegram chatId yo'q (botni hali boshlamagan),
+// shuning uchun bu yerga qo'shish "yuborildi" deb yolg'on aytishga olib kelardi
+// (backend hech qachon hech kimga xabar yubormasdi). Lidlar bilan bog'lanish
+// uchun Marketing > Lidlar bo'limidan foydalaning.
 const TARGET_TYPES = [
   { value: 'all', label: 'Barcha talabalar' },
   { value: 'debtors', label: 'Qarzdorlar' },
   { value: 'group', label: 'Guruh bo\'yicha' },
   { value: 'course', label: 'Kurs bo\'yicha' },
-  { value: 'leads', label: 'Faol Lidlar' },
 ];
 
 function typeColor(type: string) {

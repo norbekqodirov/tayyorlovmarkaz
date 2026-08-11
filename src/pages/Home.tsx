@@ -3,6 +3,7 @@ import { ArrowUpRight, Sparkles, ChevronRight, Star, BookOpen, Target, Users, Aw
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useFirestore } from '../hooks/useFirestore';
+import LeadCaptureWidget from '../components/LeadCaptureWidget';
 
 export default function Home() {
   const { data: firestoreGallery = [] } = useFirestore<any>('gallery');
@@ -392,11 +393,10 @@ export default function Home() {
             <p className="text-xl text-zinc-400 mb-12">
               Farzandingizning muvaffaqiyatli kelajagi uchun birinchi qadamni bugun tashlang. Bepul diagnostika testiga yoziling.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link to="/boglanish" className="w-full sm:w-auto px-10 py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold text-lg transition-all hover:scale-105 flex items-center justify-center gap-2">
-                Ro'yxatdan o'tish <ArrowUpRight size={24} />
-              </Link>
-            </div>
+            <LeadCaptureWidget />
+            <Link to="/boglanish" className="inline-flex items-center gap-2 mt-6 text-zinc-400 hover:text-white text-sm font-bold transition-colors">
+              yoki to'liq forma orqali yozilish <ArrowUpRight size={14} />
+            </Link>
           </div>
         </div>
       </section>

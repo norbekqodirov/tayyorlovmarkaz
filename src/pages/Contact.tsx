@@ -3,9 +3,10 @@ import { MapPin, Phone, Mail, Clock, ArrowUpRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../components/Toast';
+import { getAttribution } from '../utils/utm';
 
 export default function Contact() {
-  const [formData, setFormData] = useState({ name: '', phone: '', message: '', extra: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', message: '', extra: '', website: '' });
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
@@ -22,16 +23,21 @@ export default function Contact() {
       // Bu ommaviy (login talab qilmaydigan) endpoint — avval /api/leads (generic CRUD)
       // ga yuborilardi, u esa har doim login talab qilib, tashrif buyuruvchi uchun
       // jimgina 401 bilan barbod bo'lardi.
+      const attribution = getAttribution();
       await api.post('/public/lead', {
         name: formData.name,
         phone: formData.phone,
-        course: 'Boshqa',
-        source: 'Aloqa sahifasi',
+        // "course" va "source" ataylab yuborilmaydi — bu sahifada kurs tanlanmaydi
+        // (qattiq "Boshqa" yozish shunchaki noto'g'ri ma'lumot edi), manba esa
+        // serverda UTM/kampaniyadan aniqlanadi (qo'lda "Aloqa sahifasi" yozish
+        // manba diagrammasida o'z axlat ustunini yaratardi).
         notes: formData.message,
         extraField: extraField.type !== 'none' ? formData.extra : undefined,
+        website: formData.website, // honeypot
+        ...attribution,
       });
       setIsSubmitted(true);
-      setFormData({ name: '', phone: '', message: '', extra: '' });
+      setFormData({ name: '', phone: '', message: '', extra: '', website: '' });
 
       setTimeout(() => {
         setIsSubmitted(false);
@@ -138,6 +144,14 @@ export default function Contact() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Honeypot — haqiqiy foydalanuvchiga ko'rinmaydi */}
+              <input
+                type="text" value={formData.website}
+                onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                tabIndex={-1} autoComplete="off"
+                className="absolute -left-[9999px] w-px h-px opacity-0"
+                aria-hidden="true"
+              />
               <div>
                 <label htmlFor="name" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2 uppercase tracking-wider">Ismingiz</label>
                 <input 

@@ -96,6 +96,7 @@ router.post('/lead', publicLeadRateLimit, async (req, res) => {
             phone: body.phone,
             email: body.email,
             course: body.course,
+            courseId: body.courseId,
             notes: body.notes,
             extraField: body.extraField,
             source: body.source,

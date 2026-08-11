@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { captureAttribution } from './utils/utm';
 
 import Layout from './components/Layout';
 import CrmLayout from './components/CrmLayout';
@@ -79,6 +80,8 @@ const GlobalSpinner = () => (
 );
 
 export default function App() {
+  useEffect(() => { captureAttribution(); }, []);
+
   return (
     <ErrorBoundary>
       <BrowserRouter>

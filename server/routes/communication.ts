@@ -71,7 +71,13 @@ router.post('/bulk-messages/send', requireAuth, async (req, res) => {
         const { content, targetType, targetId, templateId } = req.body;
         if (!content) return res.status(400).json({ error: 'content majburiy' });
 
-        // Qabul qiluvchilarni aniqlash
+        // Qabul qiluvchilarni aniqlash. "leads" ataylab yo'q — Lead modelida
+        // Telegram identifikatori (chatId) umuman yo'q (lidlar botni hali
+        // boshlamagan), shuning uchun bu yerga qo'shilsa ham hech qachon
+        // hech narsa yubormaydi, faqat status:'sent' deb yolg'on aytadi
+        // (bu aynan shu bug edi — CrmCommunication.tsx'dagi "Faol Lidlar"
+        // varianti ham olib tashlandi). Lidlar bilan bog'lanish uchun
+        // Marketing > Lidlar bo'limidagi telefon raqamlaridan foydalaning.
         let recipients: { name: string; telegramId?: string | null }[] = [];
 
         if (targetType === 'all') {
@@ -80,9 +86,6 @@ router.post('/bulk-messages/send', requireAuth, async (req, res) => {
         } else if (targetType === 'debtors') {
             const students = await prisma.student.findMany({ where: { balance: { lt: 0 } } });
             recipients = students.map(s => ({ name: s.name }));
-        } else if (targetType === 'leads') {
-            const leads = await prisma.lead.findMany({ where: { stage: { notIn: ['won', 'lost'] } } });
-            recipients = leads.map(l => ({ name: l.name }));
         } else if (targetType === 'group' && targetId) {
             const enrollments = await prisma.enrollment.findMany({
                 where: { groupId: targetId },

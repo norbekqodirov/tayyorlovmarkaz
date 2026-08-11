@@ -22,6 +22,7 @@ export interface LeadIntakeInput {
     phone: string;
     email?: string | null;
     course?: string | null;
+    courseId?: string | null; // Course jadvalidagi id — relation emas, faqat guruhlash uchun
     notes?: string | null;
     extraField?: string | null;
     source?: string | null; // qo'lda tanlangan manba (masalan CRM'dan yaratilganda)
@@ -233,6 +234,7 @@ export async function createLeadFromIntake(input: LeadIntakeInput): Promise<Lead
 
     const { name, phoneNorm } = validate(input);
     const course = sanitizeText(input.course, 200);
+    const courseId = sanitizeText(input.courseId, 100) || undefined;
     const notes = sanitizeText(input.notes, 2000);
     const extraField = sanitizeText(input.extraField, 200);
     const email = sanitizeText(input.email, 200);
@@ -275,6 +277,7 @@ export async function createLeadFromIntake(input: LeadIntakeInput): Promise<Lead
                     submitCount: { increment: 1 },
                     notes: (existing.notes || '') + noteAppend,
                     course: existing.course || course || undefined,
+                    courseId: existing.courseId || courseId,
                     email: existing.email || email || undefined,
                     extraField: existing.extraField || extraField || undefined,
                     status: 'hot',
@@ -300,10 +303,10 @@ export async function createLeadFromIntake(input: LeadIntakeInput): Promise<Lead
 
         // ─ Yopilgan / eski / mavjud o'quvchi — yangi lid, lekin dublikat sifatida belgilanadi.
         const assignedToId = await pickAssignee();
-        const score = computeIntakeScore(input, { hasCourseId: false, fromPaidCampaign: !!campaign, isRepeat: false });
+        const score = computeIntakeScore(input, { hasCourseId: !!courseId, fromPaidCampaign: !!campaign, isRepeat: false });
         const created = await prisma.lead.create({
             data: {
-                name, phone: input.phone, phoneNorm, email, course, notes, extraField,
+                name, phone: input.phone, phoneNorm, email, course, courseId, notes, extraField,
                 source: resolvedSource, searchKey,
                 stage: 'new', status: statusFromScore(score), score,
                 date: new Date().toISOString(),
@@ -323,10 +326,10 @@ export async function createLeadFromIntake(input: LeadIntakeInput): Promise<Lead
 
     // ─ Umuman yangi lid ─────────────────────────────────────────────────────────
     const assignedToId = await pickAssignee();
-    const score = computeIntakeScore(input, { hasCourseId: false, fromPaidCampaign: !!campaign, isRepeat: false });
+    const score = computeIntakeScore(input, { hasCourseId: !!courseId, fromPaidCampaign: !!campaign, isRepeat: false });
     const created = await prisma.lead.create({
         data: {
-            name, phone: input.phone, phoneNorm, email, course, notes, extraField,
+            name, phone: input.phone, phoneNorm, email, course, courseId, notes, extraField,
             source: resolvedSource, searchKey,
             stage: 'new', status: statusFromScore(score), score,
             date: new Date().toISOString(),

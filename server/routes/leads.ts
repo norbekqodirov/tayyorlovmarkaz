@@ -17,6 +17,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { withAudit } from '../middleware/audit.js';
 import { createLeadFromIntake, LeadIntakeValidationError } from '../services/leadIntake.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { OPEN_STAGES } from '../constants/leads.js';
@@ -218,13 +219,14 @@ router.get('/:id', async (req, res) => {
 });
 
 // ─── POST /api/leads — qo'lda (CRM'dan) yaratish, xuddi shu qabul quvuridan ───
-router.post('/', async (req, res) => {
+router.post('/', withAudit('lead'), async (req, res) => {
     try {
         const result = await createLeadFromIntake({
             name: req.body.name,
             phone: req.body.phone,
             email: req.body.email,
             course: req.body.course,
+            courseId: req.body.courseId,
             notes: req.body.notes,
             extraField: req.body.extraField,
             source: req.body.source,
@@ -245,7 +247,7 @@ const EDITABLE_FIELDS = [
     'notes', 'extraField', 'nextFollowUpAt', 'nextAction', 'lostReason',
     'campaignId', 'formId', 'utmSource', 'utmMedium', 'utmCampaign',
 ];
-router.put('/:id', async (req, res) => {
+router.put('/:id', withAudit('lead'), async (req, res) => {
     try {
         const existing = await prisma.lead.findUnique({ where: { id: req.params.id } });
         if (!existing || existing.deletedAt) return res.status(404).json({ message: 'Topilmadi' });
@@ -272,7 +274,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // ─── DELETE /api/leads/:id — soft (hard faqat ADMIN, ?hard=1) ─────────────────
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', withAudit('lead'), async (req, res) => {
     try {
         if (req.query.hard === '1') {
             const requester = (req as any).user;
