@@ -7,7 +7,7 @@
 > Ishlab chiqarish (production) serveri: SSH `46.8.194.26` (user `tayyorlovmarkaz`),
 > `/home/tayyorlovmarkaz/tayyorlovmarkaz/` — **SQLite** bilan ishlaydi (§0.6 ga q.),
 > `bash deploy.sh` orqali yangilanadi, PM2 (`pm2 restart tayyorlovmarkaz`) boshqaradi.
-> Oxirgi yangilanish: 2026-08-11 (Marketing/Lidlar moduli production'ga chiqarilmoqda — §3.7–3.8 ga q.)
+> Oxirgi yangilanish: 2026-08-11 (Marketing/Lidlar moduli production'ga chiqarilmoqda — §3.7–3.10 ga q.)
 
 ---
 
@@ -139,6 +139,27 @@ Foydalanuvchi bu modulni birinchi bo'lib ishlatishni boshlaydi, shuning uchun is
 - **Kanban lead kartochkasi ixchamlashtirildi va chap chetidagi rang chiziq olib tashlandi** (kichik nuqta bilan almashtirildi) — kartochka balandligi kamaytirildi, telefon/menejer qatorlari birlashtirildi.
 - **Brauzer tab nomi** `index.html`da "My Google AI Studio App" (Google AI Studio'dan qolib ketgan default) → "10+10 Tayyorlov Markazi" ga tuzatildi, `lang="en"`→`"uz"`, meta description qo'shildi.
 - **To'liq xavfsizlik/tezlik/kod sifati auditi** o'tkazildi — natijalar §7 (Ma'lum muammolar) bo'limida.
+
+### 3.10 Sakkizinchi sessiya davomi — foydalanuvchining eski "12-band" talabi qayta auditi
+Foydalanuvchi oylar oldin bergan (2026-08-05, Ikkinchi sessiya, §3 arxividagi "12 ta yangi funksiya") 12 bandli talabni qayta ko'rsatib, har biri qanchalik to'liq/mukammal bajarilganini tekshirishni so'radi. Natija — 8 tasi ALLAQACHON to'g'ri ishlayotgani tasdiqlandi (keyingi sessiyalarda tuzatilgan ekan), qolganlarida haqiqiy kamchilik topilib tuzatildi:
+
+**Tasdiqlangan — allaqachon to'g'ri ishlaydi (qo'shimcha o'zgarish shart emas edi):**
+1. Ustoz-kurs bog'lash — `CrmTeachers.tsx`da allaqachon yaratilgan kurslardan `<select>` (erkin matn emas).
+2. Kurs ko'p-tarifli narx — `CrmCourses.tsx`da to'liq `CourseTier` CRUD UI bor ("Tarif qo'shish", har biriga alohida narx), `CrmGroups.tsx` guruh yaratishda shundan tanlaydi.
+4. Narx input "0" muammosi — `MoneyInput.tsx` allaqachon bo'sh boshlanadi (`value ? format(value) : ''`), placeholder bilan aralashtirilmagan.
+5–6. Guruh yaratish/tahrirlash/saqlash/o'quvchi qo'shish — to'g'ridan-to'g'ri API orqali (`POST/PUT /api/groups`, `POST /api/enrollments`) sinovdan o'tkazildi, hammasi 200 qaytardi. (Sandbox brauzerida avval "modal ochilmayapti"/"saqlash ishlamayapti" bo'lib ko'ringan edi — sababi ikkita test-artefakti bo'lib chiqdi: framer-motion animatsiyasi bilan bog'liq sandbox compositing bugi (oldin ham qayd etilgan) va bu sessiyada muqobil portda (3050) ishlatilgan CORS whitelist mos kelmasligi — ikkalasi ham haqiqiy ilova bilan bog'liq emas.)
+8. Lid formada sinf/yosh dynamic sozlash — §3.9da ishlangan, tasdiqlandi.
+10–11. Oylik to'lov (bot orqali ko'rinishi) + davomat asosida hisoblash (>3 kun qoldirsa, har kurs alohida, dars soni/chegara sozlanadigan, o'qituvchi oyligi haqiqiy tushumdan) — `billing.ts` chuqur o'qildi, spec bilan bir xil.
+12. Ota-ona 2 xil chat (menejer + har ustoz alohida, ustoz nomi+fani bilan) — `parentChat.ts`/`portal.ts` tasdiqlandi.
+
+**Haqiqiy topilib tuzatilgan kamchiliklar:**
+- **3-band — Login sahifasida +998 prefiksi yo'q edi.** `CrmLogin.tsx` oddiy `<input type="tel">` edi (faqat placeholder sifatida "+998..." ko'rsatardi, lekin qo'lda to'liq raqam terish kerak edi) — endi umumiy `PhoneInput` komponenti ishlatiladi (boshqa deyarli hamma joyda allaqachon shunday edi). Xuddi shu muammo `PublicQuiz.tsx`da (test topshiruvchi telefon maydoni) ham topilib tuzatildi.
+- **7-band — pul minglik ajratgichi ishonchsiz edi.** `Intl.NumberFormat('uz-UZ')` brauzer/OS ICU ma'lumotiga qarab pul formatini turlicha chiqarardi — shu sessiyada sinovdan o'tkazilganda vergul (`800,000`) chiqardi, bo'sh joy (`800 000`) emas (foydalanuvchi so'ragan aynan shu edi, va vergul aslida chalkashtiruvchi — ko'p yevropa/rus konvensiyasida vergul kasr belgisi). Yechim: `src/utils/formatters.ts`ga deterministik `formatNumber()` qo'shildi (brauzerdan mustaqil, qo'lda bo'sh joy bilan guruhlaydi); **40 ta chaqiruv, 19 ta fayl** bo'ylab `new Intl.NumberFormat('uz-UZ').format(...)` shu funksiyaga almashtirildi (`MoneyInput.tsx` ham kiradi).
+- **9-band — Lead Detail Panel.** Kod ko'rib chiqildi (`LeadDetailPanel.tsx` + `CrmLeads.tsx`dagi handler'lar) — bosqich/menejer o'zgartirish, tahrirlash, o'chirish, konvertatsiya, faoliyat qo'shish hammasi haqiqiy API'larga bog'langan, aniq bug topilmadi (Faza 4 qayta qurishda allaqachon tuzatilgan ko'rinadi). Sandbox'da to'liq interaktiv sinov cheklangani sababli 100% brauzer-tasdig'i yo'q — agar foydalanuvchi hali ham muammoni real qurilmada ko'rsa, aniq qadamlar bilan qayta xabar berish tavsiya etiladi.
+- **Yangi so'rov — har bir lid formaga alohida qo'shimcha savol.** Avval `lead_extra_field_type` FAQAT bitta global sozlama edi (barcha formalarga bab-baravar). Endi `TargetForm.extraFieldType` (nullable — `null` = global standartni meros oladi) qo'shildi, `CrmForms.tsx`da forma yaratish/tahrirlashda alohida tanlash (`Standart / Yo'q / Yosh / Sinf`) mumkin. `GET /api/public/forms/:id` endi `extraField` ni forma-xos yoki global fallback bilan qaytaradi.
+- **`billing.ts`dagi kichik topilma** — `getBillingSettings()` `Number(x) || DEFAULT` orqali 0 qiymatni "o'rnatilmagan" deb noto'g'ri talqin qilardi (admin chegarani ataylab 0 qilsa, jimgina standart 3'ga qaytardi). To'g'ri `undefined`/`NaN` tekshiruviga almashtirildi.
+
+Barchasi `npx tsc --noEmit` (0 xato) va `npm run build` bilan tekshirilgan; guruh/lid API'lari to'g'ridan-to'g'ri so'rovlar bilan sinaldi.
 
 ---
 

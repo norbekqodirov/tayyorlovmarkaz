@@ -41,10 +41,20 @@ elsewhere — e.g. another agent session's `tsx watch` is still up on :3001).
 - **Production data must never be lost on deploy.** `deploy.sh` (run on the
   server) does `git pull` + a schema.prisma sed-patch (server runs SQLite —
   see "Production uses SQLite" below) + `npm install` + `prisma generate` +
-  `pm2 restart`. It intentionally does **not** run `db push` or anything
-  destructive. If a schema change ever needs to reach production, treat it as
-  additive-only (new nullable columns/tables), back up first, and never drop or
-  rename existing columns without an explicit, separate, confirmed step.
+  `npm run build` + `pm2 restart`. It intentionally does **not** run `db push`
+  or anything destructive. If a schema change ever needs to reach production,
+  treat it as additive-only (new nullable columns/tables), back up first, and
+  never drop or rename existing columns without an explicit, separate,
+  confirmed step.
+- **Deploy workflow (2026-08-11 on):** ordinary deploys are just `git push`
+  (local) + `bash deploy.sh` (on the server, via SSH — the agent cannot run
+  this itself, entering the SSH password is off-limits; give the user the
+  exact commands and let them run it). `deploy.sh` now builds the frontend
+  itself (`dist/` stays gitignored, rebuilt fresh each deploy) — no more
+  manual local `npm run build` → `tar` → `scp` → extract dance. If a schema
+  change shipped, the user still runs `npx prisma db push --accept-data-loss`
+  on the server manually as a separate, deliberate step before/after
+  `deploy.sh` — never bundle that into the script.
 - **Production uses SQLite, not PostgreSQL.** The server has
   `git update-index --skip-worktree prisma/schema.prisma` set, with a
   SQLite-flavored schema.prisma (`provider = "sqlite"`, no `@db.Text`) that
