@@ -1,4 +1,5 @@
 import { Wallet, CreditCard, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { formatNumber } from '../../../utils/formatters';
 
 export function RecentPayments({ payments }: { payments: any[] }) {
   const recent = [...payments]
@@ -32,7 +33,7 @@ export function RecentPayments({ payments }: { payments: any[] }) {
               <p className="text-[9px] text-zinc-400">{p.date} • {p.method || ''}</p>
             </div>
             <span className={`text-[12px] font-black shrink-0 ${p.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {p.type === 'income' ? '+' : '-'}{new Intl.NumberFormat('uz-UZ').format(p.amount || 0)}
+              {p.type === 'income' ? '+' : '-'}{formatNumber(p.amount || 0)}
             </span>
           </div>
         ))}

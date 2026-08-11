@@ -2,6 +2,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { CHART_TOOLTIP_STYLE } from '../registry';
+import { formatNumber } from '../../../utils/formatters';
 
 export function RevenueChart({ data }: { data: any[] }) {
   const formatM = (v: number) => v >= 1000000 ? (v / 1000000).toFixed(1) + 'M' : v >= 1000 ? (v / 1000).toFixed(0) + 'K' : String(v);
@@ -48,7 +49,7 @@ export function RevenueChart({ data }: { data: any[] }) {
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 700 }} dy={8} />
             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#71717a', fontWeight: 700 }} tickFormatter={formatM} width={38} />
-            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(99,102,241,0.04)' } as any} formatter={(v: any) => new Intl.NumberFormat('uz-UZ').format(v) + ' so\'m'} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(99,102,241,0.04)' } as any} formatter={(v: any) => formatNumber(v) + ' so\'m'} />
             <Bar dataKey="income" name="Kirim" fill="url(#barIncome)" radius={[8, 8, 3, 3]} maxBarSize={24} />
             <Bar dataKey="expense" name="Chiqim" fill="url(#barExpense)" radius={[8, 8, 3, 3]} maxBarSize={24} />
           </BarChart>

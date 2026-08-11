@@ -22,6 +22,7 @@ import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import api from '../../../api/client';
+import { formatNumber } from '../../../utils/formatters';
 
 interface Invoice {
   id: string;
@@ -74,7 +75,7 @@ function formatMoney(amount: number) {
 function formatCompact(v: number): string {
   if (v >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
   if (v >= 1_000) return (v / 1_000).toFixed(0) + 'K';
-  return new Intl.NumberFormat('uz-UZ').format(v);
+  return formatNumber(v);
 }
 
 export default function CrmFinance() {
@@ -861,7 +862,7 @@ export default function CrmFinance() {
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <span className="text-sm font-black text-rose-600">
-                          -{new Intl.NumberFormat('uz-UZ').format(Math.abs(s.balance || 0))} so'm
+                          -{formatNumber(Math.abs(s.balance || 0))} so'm
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-right">
@@ -1040,7 +1041,7 @@ export default function CrmFinance() {
                 setForm({ ...form, studentId: e.target.value, studentName: s?.name || '', description: s ? `${s.name} — kurs to'lovi` : '' });
               }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">O'quvchini tanlang</option>
-                {students.map(s => <option key={s.id} value={s.id}>{s.name} {s.balance !== undefined ? `(${s.balance > 0 ? '+' : ''}${new Intl.NumberFormat('uz-UZ').format(s.balance)} so'm)` : ''}</option>)}
+                {students.map(s => <option key={s.id} value={s.id}>{s.name} {s.balance !== undefined ? `(${s.balance > 0 ? '+' : ''}${formatNumber(s.balance)} so'm)` : ''}</option>)}
               </select>
             </div>
           )}

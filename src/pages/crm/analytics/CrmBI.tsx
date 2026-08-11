@@ -15,11 +15,12 @@ import { useCrmData } from '../../../hooks/useCrmData';
 import { exportToExcel } from '../../../utils/export';
 import { STAGES } from '../../../components/leads/types';
 import api from '../../../api/client';
+import { formatNumber } from '../../../utils/formatters';
 
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
 
-const fN = (v: number) => new Intl.NumberFormat('uz-UZ').format(v);
+const fN = (v: number) => formatNumber(v);
 const fM = (v: number) => v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : v >= 1_000 ? (v / 1_000).toFixed(0) + 'K' : String(v);
 const fPct = (v: number) => `${v}%`;
 

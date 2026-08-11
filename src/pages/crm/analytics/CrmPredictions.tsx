@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import api from '../../../api/client';
 import { STAGES } from '../../../components/leads/types';
+import { formatNumber } from '../../../utils/formatters';
 
 type Tab = 'dropout' | 'revenue' | 'leads' | 'payment';
 
@@ -32,7 +33,7 @@ interface PaymentRisk {
   daysSincePayment: number; severity: string; lastPaymentDate?: string; lastPaymentAmount: number;
 }
 
-const fmt = (n: number) => new Intl.NumberFormat('uz-UZ').format(Math.round(n));
+const fmt = (n: number) => formatNumber(Math.round(n));
 
 export default function CrmPredictions() {
   const [activeTab, setActiveTab] = useState<Tab>('dropout');

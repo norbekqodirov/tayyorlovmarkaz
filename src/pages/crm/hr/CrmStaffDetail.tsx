@@ -14,6 +14,7 @@ import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { ErrorState } from '../../../components/States';
 import { SkeletonCard } from '../../../components/Skeleton';
 import api from '../../../api/client';
+import { formatNumber } from '../../../utils/formatters';
 
 interface StaffMember {
   id: string;
@@ -259,7 +260,7 @@ export default function CrmStaffDetail() {
           <div className="grid grid-cols-2 gap-2 shrink-0">
             <div className="flex flex-col items-center px-3 py-2 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20 min-w-[90px]">
               <span className="text-[9px] font-bold text-white/60 uppercase tracking-widest">Maosh</span>
-              <span className="text-white font-black text-sm leading-tight mt-0.5">{new Intl.NumberFormat('uz-UZ').format(member.salary)}</span>
+              <span className="text-white font-black text-sm leading-tight mt-0.5">{formatNumber(member.salary)}</span>
             </div>
             <div className="flex flex-col items-center px-3 py-2 rounded-xl bg-white/15 backdrop-blur-sm border border-white/20 min-w-[90px]">
               <span className="text-[9px] font-bold text-white/60 uppercase tracking-widest">Holat</span>
@@ -333,7 +334,7 @@ export default function CrmStaffDetail() {
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Maosh</p>
-                    <p className="text-lg font-black text-emerald-600">{new Intl.NumberFormat('uz-UZ').format(member.salary)} UZS</p>
+                    <p className="text-lg font-black text-emerald-600">{formatNumber(member.salary)} UZS</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Ish boshlagan</p>
@@ -412,9 +413,9 @@ export default function CrmStaffDetail() {
                     <tr key={h.id || i} className="group">
                       <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{h.month}</td>
                       <td className="px-6 py-4 text-xs font-bold text-zinc-500">
-                        {new Intl.NumberFormat('uz-UZ').format(h.baseSalary)} + {new Intl.NumberFormat('uz-UZ').format(h.bonus)} − {new Intl.NumberFormat('uz-UZ').format(h.deduction)}
+                        {formatNumber(h.baseSalary)} + {formatNumber(h.bonus)} − {formatNumber(h.deduction)}
                       </td>
-                      <td className="px-6 py-4 font-black text-slate-900 dark:text-white">{new Intl.NumberFormat('uz-UZ').format(h.total)} UZS</td>
+                      <td className="px-6 py-4 font-black text-slate-900 dark:text-white">{formatNumber(h.total)} UZS</td>
                       <td className="px-6 py-4">
                         {h.paid ? (
                           <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">To'landi</span>

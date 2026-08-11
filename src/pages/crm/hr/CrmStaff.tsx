@@ -10,6 +10,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
+import { formatNumber } from '../../../utils/formatters';
 
 interface StaffMember {
   id: string;
@@ -168,7 +169,7 @@ export default function CrmStaff() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard variant="gradient" color="blue" label="Jami Xodimlar" value={safeStaff.length} sub="Ro'yxatda" icon={<Users size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="emerald" label="Oylik Fond" value={new Intl.NumberFormat('uz-UZ').format(safeStaff.reduce((acc, s) => acc + (Number(s.salary) || 0), 0))} sub="so'm / oy" icon={<DollarSign size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="emerald" label="Oylik Fond" value={formatNumber(safeStaff.reduce((acc, s) => acc + (Number(s.salary) || 0), 0))} sub="so'm / oy" icon={<DollarSign size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="violet" label="Faol Xodimlar" value={safeStaff.filter(s => s.status === 'Faol').length} sub="Ishlayotgan" icon={<ShieldCheck size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="amber" label="Bo'limlar" value={new Set((safeStaff || []).map(s => s.department)).size} sub="Unikal bo'lim" icon={<Building2 size={17} strokeWidth={2.5} />} />
       </div>

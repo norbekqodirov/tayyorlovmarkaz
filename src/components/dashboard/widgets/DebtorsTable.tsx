@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react';
+import { formatNumber } from '../../../utils/formatters';
 
 export function DebtorsTable({ students }: { students: any[] }) {
   const navigate = useNavigate();
@@ -47,7 +48,7 @@ export function DebtorsTable({ students }: { students: any[] }) {
             </div>
             <div className="text-right shrink-0">
               <p className="text-[11px] font-black text-rose-600">
-                -{new Intl.NumberFormat('uz-UZ').format(Math.abs(s.balance || 0))}
+                -{formatNumber(Math.abs(s.balance || 0))}
               </p>
               <p className="text-[9px] text-zinc-400">so'm</p>
             </div>

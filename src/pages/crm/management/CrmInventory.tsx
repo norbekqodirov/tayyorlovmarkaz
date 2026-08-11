@@ -13,6 +13,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { exportToExcel } from '../../../utils/export';
+import { formatNumber } from '../../../utils/formatters';
 
 interface InventoryItem {
   id: string;
@@ -107,7 +108,7 @@ export default function CrmInventory() {
   });
 
   const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('uz-UZ').format(amount || 0) + ' UZS';
+    return formatNumber(amount || 0) + ' UZS';
   };
 
   const totalValue = (safeItems || []).reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
@@ -157,7 +158,7 @@ export default function CrmInventory() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard variant="gradient" color="blue" label="Jami Jihoz" value={safeItems.length} sub="Ro'yxatda" icon={<Package size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="emerald" label="Umumiy Qiymat" value={new Intl.NumberFormat('uz-UZ').format(totalValue)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="emerald" label="Umumiy Qiymat" value={formatNumber(totalValue)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="violet" label="Yaxshi Holatda" value={safeItems.filter(i => i.condition === 'Yaxshi').length} sub="Ishlaydigan" icon={<CheckCircle2 size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="amber" label="Ta'mirda" value={safeItems.filter(i => i.condition === 'Ta\'mirda' || i.condition === 'Eskirgan').length} sub="Diqqat kerak" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
       </div>

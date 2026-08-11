@@ -18,6 +18,7 @@ import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { EmptyState } from '../../../components/States';
+import { formatNumber } from '../../../utils/formatters';
 
 // Prisma `Group` modeliga mos keladigan shakl (server/routes/crud.ts RELATION_INCLUDES
 // orqali course/teacher/_count qo'shib qaytaradi). `room`/`days`/`time` Group'da YO'Q —
@@ -402,7 +403,7 @@ export default function CrmGroups() {
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm font-bold text-slate-700 dark:text-zinc-300">
-                    {new Intl.NumberFormat('uz-UZ').format(displayPrice)} so'm
+                    {formatNumber(displayPrice)} so'm
                   </td>
                   <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-zinc-300">
                     {groupSchedule ? `${groupSchedule.startTime} - ${groupSchedule.endTime}` : '—'}
@@ -481,7 +482,7 @@ export default function CrmGroups() {
               >
                 <option value="">Kursni tanlang...</option>
                 {courseList.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} {c.price ? `— ${new Intl.NumberFormat('uz-UZ').format(c.price)} so'm/oy` : ''}</option>
+                  <option key={c.id} value={c.id}>{c.name} {c.price ? `— ${formatNumber(c.price)} so'm/oy` : ''}</option>
                 ))}
               </select>
               {formErrors.courseId && <p className="text-xs font-bold text-rose-500">{formErrors.courseId}</p>}
@@ -598,7 +599,7 @@ export default function CrmGroups() {
                 label="Narxi (Oylik)"
                 value={formData.price}
                 onChange={(price) => setFormData({ ...formData, price })}
-                placeholder={selectedCourseData?.price ? new Intl.NumberFormat('uz-UZ').format(selectedCourseData.price) : '0'}
+                placeholder={selectedCourseData?.price ? formatNumber(selectedCourseData.price) : '0'}
               />
               {selectedCourseData?.tiers?.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -613,7 +614,7 @@ export default function CrmGroups() {
                           : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
                       }`}
                     >
-                      {tier.name} — {new Intl.NumberFormat('uz-UZ').format(tier.price)}
+                      {tier.name} — {formatNumber(tier.price)}
                     </button>
                   ))}
                 </div>

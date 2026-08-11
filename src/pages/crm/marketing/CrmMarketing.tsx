@@ -11,6 +11,7 @@ import { StatCard } from '../../../components/ui/StatCard';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import api from '../../../api/client';
+import { formatNumber } from '../../../utils/formatters';
 
 interface Campaign {
   id?: string;
@@ -149,8 +150,8 @@ export default function CrmMarketing() {
         {activeTab === 'KAMPANIYALAR' && (
           <motion.div key="camps" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatCard variant="minimal" color="slate" label="Umumiy Budjet" value={new Intl.NumberFormat('uz-UZ').format(totalBudget)} />
-              <StatCard variant="minimal" color="rose" label="Reklamaga Sarflandi" value={new Intl.NumberFormat('uz-UZ').format(totalSpent)} />
+              <StatCard variant="minimal" color="slate" label="Umumiy Budjet" value={formatNumber(totalBudget)} />
+              <StatCard variant="minimal" color="rose" label="Reklamaga Sarflandi" value={formatNumber(totalSpent)} />
               <StatCard variant="minimal" color="blue" label="Lidlar" value={totalLeads} />
               <StatCard
                 variant="minimal" color="emerald" label="Oqishga kirdi (haqiqiy)"
@@ -184,8 +185,8 @@ export default function CrmMarketing() {
                         </td>
                         <td className="px-6 py-4">
                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-sm dark:text-white">{new Intl.NumberFormat('uz-UZ').format(c.spent)}</span>
-                              <span className="text-xs text-zinc-400">/ {new Intl.NumberFormat('uz-UZ').format(c.budget)}</span>
+                              <span className="font-bold text-sm dark:text-white">{formatNumber(c.spent)}</span>
+                              <span className="text-xs text-zinc-400">/ {formatNumber(c.budget)}</span>
                            </div>
                            <div className="w-full max-w-[150px] h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
                               <div className="h-full bg-blue-500" style={{ width: `${Math.min((c.spent/(c.budget||1))*100, 100)}%`}}></div>
@@ -260,19 +261,19 @@ export default function CrmMarketing() {
                   <div className="grid grid-cols-2 gap-4">
                      <div className="bg-black/20 backdrop-blur p-4 rounded-2xl border border-white/5">
                         <span className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">Cost Per Lead (CPL)</span>
-                        <span className="text-2xl font-black text-rose-300">{new Intl.NumberFormat('uz-UZ').format(overview?.cpl || 0)} UZS</span>
+                        <span className="text-2xl font-black text-rose-300">{formatNumber(overview?.cpl || 0)} UZS</span>
                      </div>
                      <div className="bg-black/20 backdrop-blur p-4 rounded-2xl border border-white/5">
                         <span className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">Cost Per Acquisition (CAC)</span>
-                        <span className="text-2xl font-black text-amber-300">{new Intl.NumberFormat('uz-UZ').format(overview?.cac || 0)} UZS</span>
+                        <span className="text-2xl font-black text-amber-300">{formatNumber(overview?.cac || 0)} UZS</span>
                         <p className="text-xs text-zinc-500 font-medium mt-1">1 mijoz jalb qilish narxi</p>
                      </div>
                      <div className="col-span-2 bg-black/20 backdrop-blur p-4 rounded-2xl border border-white/5 flex items-center justify-between">
                         <div>
                           <span className="block text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">Haqiqiy daromad (to'liq / 90 kunlik)</span>
                           <span className="text-xl font-black text-emerald-400">
-                            {new Intl.NumberFormat('uz-UZ').format(overview?.revenue || 0)} UZS
-                            <span className="text-sm text-zinc-400 font-bold"> ({new Intl.NumberFormat('uz-UZ').format(overview?.revenueFirst90d || 0)} / 90 kun)</span>
+                            {formatNumber(overview?.revenue || 0)} UZS
+                            <span className="text-sm text-zinc-400 font-bold"> ({formatNumber(overview?.revenueFirst90d || 0)} / 90 kun)</span>
                           </span>
                         </div>
                         <TrendingUp size={32} className="text-white/10" />
@@ -311,7 +312,7 @@ export default function CrmMarketing() {
                           <td className="py-2.5 text-right font-bold text-zinc-500">{s.leads}</td>
                           <td className="py-2.5 text-right font-bold text-emerald-600">{s.conversionRate}%</td>
                           <td className="py-2.5 text-right font-bold text-zinc-500">{s.avgScore}</td>
-                          <td className="py-2.5 text-right font-bold text-blue-600">{new Intl.NumberFormat('uz-UZ').format(s.revenue)}</td>
+                          <td className="py-2.5 text-right font-bold text-blue-600">{formatNumber(s.revenue)}</td>
                         </tr>
                       ))}
                       {bySource.length === 0 && !statsLoading && (

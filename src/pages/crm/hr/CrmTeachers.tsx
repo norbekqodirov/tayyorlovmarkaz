@@ -13,6 +13,7 @@ import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
+import { formatNumber } from '../../../utils/formatters';
 
 interface Teacher {
   id: string;
@@ -369,7 +370,7 @@ export default function CrmTeachers() {
                             <TrendingUp size={16} className="text-indigo-200" />
                             <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Bu oylik KPI ({salaryPercent}% Stavka)</p>
                          </div>
-                         <h2 className="text-3xl font-black tracking-tight">{teacherRevenueLoading ? '...' : new Intl.NumberFormat('uz-UZ').format(estimatedSalary)} UZS</h2>
+                         <h2 className="text-3xl font-black tracking-tight">{teacherRevenueLoading ? '...' : formatNumber(estimatedSalary)} UZS</h2>
                          <p className="text-xs font-medium text-indigo-200 mt-2">Davomat chegirmasidan keyingi haqiqiy tushumdan olingan ulush</p>
                        </div>
                     </div>
@@ -463,7 +464,7 @@ export default function CrmTeachers() {
                   <div className="space-y-4">
                      <div className="flex justify-between items-center text-sm font-bold text-slate-700 dark:text-zinc-300">
                        <span>Bu oylik haqiqiy tushum (davomat chegirmasi bilan)</span>
-                       <span>{new Intl.NumberFormat('uz-UZ').format(totalEstRevenue)} so'm</span>
+                       <span>{formatNumber(totalEstRevenue)} so'm</span>
                      </div>
                      <div className="flex items-center gap-4">
                        <Input 
@@ -475,7 +476,7 @@ export default function CrmTeachers() {
                      </div>
                      <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
                        <span className="text-sm font-black text-emerald-800 dark:text-emerald-400">To'lanadigan Summa:</span>
-                       <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{new Intl.NumberFormat('uz-UZ').format(finalSalary)} so'm</span>
+                       <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{formatNumber(finalSalary)} so'm</span>
                      </div>
                      <Button className="w-full mt-4" onClick={handlePay}>Moliya bo'limiga yozib to'lash</Button>
                   </div>

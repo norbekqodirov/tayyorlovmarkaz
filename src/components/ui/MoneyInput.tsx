@@ -1,3 +1,5 @@
+import { formatNumber } from '../../utils/formatters';
+
 interface Props {
   label?: string;
   value: number | undefined | null;
@@ -15,7 +17,7 @@ interface Props {
  * (800000 emas, 800 000 — tushunish oson bo'lishi uchun).
  */
 export function MoneyInput({ label, value, onChange, placeholder = '0', required, disabled, suffix = "so'm", className = '' }: Props) {
-  const displayValue = value ? new Intl.NumberFormat('uz-UZ').format(value) : '';
+  const displayValue = value ? formatNumber(value) : '';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const digits = e.target.value.replace(/\D/g, '');

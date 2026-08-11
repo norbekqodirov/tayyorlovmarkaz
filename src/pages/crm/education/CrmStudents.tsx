@@ -22,6 +22,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { exportToExcel, exportToPDF, exportCertificateToPDF } from '../../../utils/export';
 import { useCrmData } from '../../../hooks/useCrmData';
+import { formatNumber } from '../../../utils/formatters';
 
 interface Student {
   id: string;
@@ -284,7 +285,7 @@ export default function CrmStudents() {
         <StatCard variant="gradient" color="blue" label="Jami O'quvchilar" value={stats.total} sub="Ro'yxatdagi jami" icon={<Users size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="emerald" label="Faol O'quvchilar" value={stats.active} sub="Hozir o'qiyotgan" icon={<GraduationCap size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="rose" label="Qarzdorlar" value={stats.debtors} sub="To'lov qilmagan" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="amber" label="Umumiy Balans" value={new Intl.NumberFormat('uz-UZ').format(stats.totalBalance)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="amber" label="Umumiy Balans" value={formatNumber(stats.totalBalance)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
       </div>
 
       {/* Filters and Table */}
@@ -441,7 +442,7 @@ export default function CrmStudents() {
                   </td>
                   <td className="px-6 py-4">
                     <span className={`text-sm font-black ${student.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {new Intl.NumberFormat('uz-UZ').format(student.balance)}
+                      {formatNumber(student.balance)}
                     </span>
                   </td>
                   <td className="px-4 py-4">
@@ -537,7 +538,7 @@ export default function CrmStudents() {
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Balans</p>
                     <p className={`text-lg font-black ${selectedStudent.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {new Intl.NumberFormat('uz-UZ').format(selectedStudent.balance)}
+                      {formatNumber(selectedStudent.balance)}
                     </p>
                   </div>
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">

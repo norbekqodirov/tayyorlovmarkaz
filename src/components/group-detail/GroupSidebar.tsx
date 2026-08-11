@@ -6,6 +6,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Download, MoreVertical, User, Search, UserPlus, Trash2 } from 'lucide-react';
+import { formatNumber } from '../../utils/formatters';
 
 interface Props {
   group: any;
@@ -58,7 +59,7 @@ const GroupSidebar: React.FC<Props> = ({
 
         <div className="space-y-2 text-sm font-bold text-slate-700 dark:text-zinc-300">
           <p className="flex justify-between items-center"><span className="text-zinc-400">O'qituvchi:</span> <span className="text-blue-500">{group.teacher?.name || '—'}</span></p>
-          <p className="flex justify-between items-center"><span className="text-zinc-400">Narx:</span> <span>{new Intl.NumberFormat('uz-UZ').format(group.price ?? group.course?.price ?? 0)} so'm</span></p>
+          <p className="flex justify-between items-center"><span className="text-zinc-400">Narx:</span> <span>{formatNumber(group.price ?? group.course?.price ?? 0)} so'm</span></p>
           <p className="flex justify-between items-center"><span className="text-zinc-400">Vaqt:</span> <span>{group.time || '—'}</span></p>
           <p className="flex justify-between items-center"><span className="text-zinc-400">Kurs:</span> <span>{group.course?.name || '—'}</span></p>
           <p className="flex justify-between items-center"><span className="text-zinc-400">Boshlanish:</span> <span>{group.startDate}</span></p>

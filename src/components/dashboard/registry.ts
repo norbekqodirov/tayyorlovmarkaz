@@ -1,3 +1,4 @@
+import { formatNumber } from '../../utils/formatters';
 // Dashboard widget catalog: what widgets exist, their default layout per role,
 // and small shared formatting helpers used by more than one widget.
 
@@ -51,7 +52,7 @@ export function formatCompact(v: number): string {
   if (v >= 1000000000) return (v / 1000000000).toFixed(1) + 'B';
   if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
   if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
-  return new Intl.NumberFormat('uz-UZ').format(v);
+  return formatNumber(v);
 }
 
 export const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];

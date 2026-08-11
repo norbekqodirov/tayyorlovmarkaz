@@ -3,14 +3,26 @@
  * Import from here instead of duplicating inline.
  */
 
-/** Format amount as Uzbek sum or other currency */
-export function formatMoney(amount: number | null | undefined, currency = 'UZS'): string {
+/**
+ * Group digits with a space every 3 (800000 -> "800 000") — deterministic,
+ * locale-independent. `Intl.NumberFormat('uz-UZ')` is NOT reliable for this:
+ * its grouping separator varies by browser/OS ICU data (observed rendering
+ * commas instead of spaces in some environments), which is exactly the
+ * ambiguity (800,000 read as a decimal fraction in many locales) this
+ * formatting exists to avoid.
+ */
+export function formatNumber(value: number | null | undefined): string {
+  if (value == null || isNaN(value)) return '0';
+  const negative = value < 0;
+  const [intPart, fracPart] = Math.abs(value).toString().split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (negative ? '-' : '') + grouped + (fracPart ? `.${fracPart}` : '');
+}
+
+/** Format amount as Uzbek sum */
+export function formatMoney(amount: number | null | undefined, currency = "so'm"): string {
   if (amount == null) return `0 ${currency}`;
-  return new Intl.NumberFormat('uz-UZ', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return `${formatNumber(amount)} ${currency}`;
 }
 
 /** Format compact large numbers: 1500000 → "1.5M", 250000 → "250K" */

@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { applyUnicodeFont } from './pdfFont';
+import { formatNumber } from './formatters';
 
 interface ExportColumn {
   header: string;
@@ -86,7 +87,7 @@ export async function exportReceiptToPDF(transaction: any, orgName: string = "O'
   doc.setFontSize(12);
   doc.text("To'lov summasi:", 15, 50);
   doc.setFontSize(24);
-  const amountStr = new Intl.NumberFormat('uz-UZ').format(transaction.amount) + " UZS";
+  const amountStr = formatNumber(transaction.amount) + " UZS";
   doc.text(transaction.type === 'income' ? `+${amountStr}` : `-${amountStr}`, 15, 62);
 
   // Details

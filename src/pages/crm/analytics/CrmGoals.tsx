@@ -8,6 +8,7 @@ import {
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { formatNumber } from '../../../utils/formatters';
 
 interface Goal {
   id: string; title: string; description?: string;
@@ -28,7 +29,7 @@ const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
   'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
 const fmt = (n: number, unit: string) => {
-  if (unit === "so'm") return new Intl.NumberFormat('uz-UZ').format(n) + " so'm";
+  if (unit === "so'm") return formatNumber(n) + " so'm";
   if (unit === '%') return n + '%';
   return n + ' ' + unit;
 };

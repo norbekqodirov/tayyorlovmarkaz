@@ -16,6 +16,7 @@ import { MoneyInput } from '../../../components/ui/MoneyInput';
 import ImageUpload from '../../../components/ImageUpload';
 import { exportToExcel } from '../../../utils/export';
 import api from '../../../api/client';
+import { formatNumber } from '../../../utils/formatters';
 
 interface CourseTier {
   id?: string;
@@ -213,7 +214,7 @@ export default function CrmCourses() {
   }, [courses, searchQuery, filterCategory, filterStatus]);
 
   const formatMoney = (amount: number) =>
-    new Intl.NumberFormat('uz-UZ').format(amount || 0) + ' so\'m';
+    formatNumber(amount || 0) + ' so\'m';
 
   return (
     <div className="space-y-6">
