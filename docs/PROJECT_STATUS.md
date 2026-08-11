@@ -15,7 +15,7 @@
 
 1. **Lokal DB: PostgreSQL.** Schema o'zgartirilganda **faqat** `npx prisma db push --accept-data-loss` — `prisma migrate` **HECH QACHON** ishlatilmaydi. `prisma/dev.db` eski SQLite qoldig'i, ishlatilmaydi.
 2. **MUHIM — Production DB: SQLite, lokal DB'dan farqli!** Serverda `git update-index --skip-worktree prisma/schema.prisma` o'rnatilgan — `schema.prisma`ning serverdagi nusxasi qo'lda `provider = "sqlite"` (va `@db.Text` siz) qilib saqlangan, `git pull` buni ustidan yozmaydi. Schema o'zgarishi productionga borishi kerak bo'lsa: additive-only (yangi nullable ustun/jadval), avval backup, keyin **qo'lda** serverda `prisma db push` — `deploy.sh` buni AVTOMATIK QILMAYDI.
-3. **`deploy.sh` frontendni BUILD QILMAYDI.** Faqat `git pull` + schema-fix + `npm install` + `prisma generate` + `pm2 restart`. `dist/` `.gitignore`da. Frontend o'zgarishi productionga chiqishi uchun: lokal `npm run build` → `dist/`ni `tar -czf` bilan paketlash → SCP → serverda `rm -rf dist && mkdir dist && tar -xzf ... -C dist`.
+3. **`deploy.sh` endi frontendni HAM serverning o'zida quradi** (2026-08-11 dan beri — `npm install` (devDeps bilan, `vite` shu yerda) + `prisma generate` + `npm run build` + `pm2 restart`). Demak oddiy deploy endi **faqat** `git push` (lokal) + serverda `bash deploy.sh` — qo'lda `tar`/`SCP` shart emas. `dist/` hamon `.gitignore`da (git'ga commit qilinmaydi, har safar serverda qayta quriladi).
 4. **Navigatsiya yagona manbasi: `src/components/CrmLayout.tsx` dagi `MODULES` massivi.** Yangi sahifa qo'shish uchun faqat (a) `MODULES` ga nav link, (b) `App.tsx` ga route qo'shing. `detectModule`/`getPageTitle` larni **qo'lda tahrirlash shart emas** — ular `MODULES` dan avtomatik hosil bo'ladi (`findActiveLink` orqali).
 5. Nav link `permission` qiymati `App.tsx` dagi route `requiredPermission` bilan **bir xil** bo'lishi shart. **Diqqat:** agar foydalanuvchida custom `permissions` massivi bo'lsa, `requiredPermission` FAQAT frontendda (`ProtectedRoute`) tekshiriladi — backend (`crud.ts`/`leads.ts`/...) faqat ROL darajasini (`TEACHER<MANAGER<ADMIN<SUPER_ADMIN`) tekshiradi, custom permission array'ni umuman bilmaydi. Ya'ni "administrator UI'da o'chirib qo'ygan" ruxsat API'ga to'g'ridan-to'g'ri so'rov bilan baribir ishlaydi (§7.6 ga q.) — bu bilinigan strukturaviy kamchilik, hali tuzatilmagan.
 6. O'zgarishdan keyin doim tekshiring: `npx tsc --noEmit` (0 xato bo'lishi kerak) va kerak bo'lsa `npm run build`.
@@ -295,6 +295,15 @@ To'liq loyiha auditi (Lidlar moduli birinchi ishga tushirilishi oldidan). Tafsil
 - O'zi hech qayerda ishlatilmagan `src/components/ui/ChartCard.tsx` o'chirildi (`CrmBI.tsx` o'zining alohida nusxasini ishlatadi).
 - `index.html` sarlavhasi ("My Google AI Studio App" — Google AI Studio'dan qolgan default) → "10+10 Tayyorlov Markazi"; `lang="en"`→`"uz"`.
 
+**Deploy jarayoni soddalashtirildi (§0.3):** `deploy.sh`ga `npm run build` qadami
+qo'shildi (frontend endi serverning o'zida quriladi) — buning uchun `npm install`dan
+`--omit=dev` olib tashlandi (`vite` devDependency, build uchun kerak). Endi oddiy
+deploy **faqat** `git push` (lokal) + `bash deploy.sh` (serverda) — qo'lda
+`tar`/`SCP` bosqichi shart emas. Yon-ta'sir sifatida `set -o pipefail` ham
+qo'shildi — avval `npm install`/`npm run build` xato bersa ham `| tail` orqasida
+chiqish kodi yashirinib, script `set -e`ga qaramay davom etardi (pm2 restart
+buzuq/eskirgan `dist/` bilan ham ishga tushishi mumkin edi).
+
 **Hali OCHIQ qoldi (§0.5 ga ham q. — RBAC gap):**
 - Backend hech qayerda foydalanuvchining custom `permissions` massivini tekshirmaydi — faqat rol darajasi (`requireMinRole`). Bu butun loyihaga tarqalgan strukturaviy masala, bitta sessiyada xavfsiz tuzatib bo'lmaydi (har bir route uchun to'g'ri permission key aniqlash kerak) — alohida vazifa sifatida qoldirildi.
 - `server/routes/marketing.ts`ning `/by-campaign`, `/by-form`, `/managers` endpointlarida N+1 naqsh bor (har bir kampaniya/forma/menejer uchun alohida so'rov). Bu loyihaning hozirgi kichik hajmida (o'nlab kampaniya/menejer) sezilarli emas, lekin o'sishda `groupBy`ga o'tkazish tavsiya etiladi.
@@ -317,10 +326,12 @@ npx tsc --noEmit       # = npm run lint (0 xato bo'lishi shart)
 npm run build          # vite build → dist/
 
 # Production (SSH 46.8.194.26, /home/tayyorlovmarkaz/tayyorlovmarkaz/, SQLite)
-bash deploy.sh          # git pull + schema-fix (SQLite) + npm install + prisma generate + pm2 restart
-                         # ⚠️ frontend BUILD QILMAYDI — dist/ o'zgarishi uchun lokal build+tar+SCP shart (§0.3)
+git push origin master  # lokaldan — avval shu
+# so'ng serverda (ssh):
+bash deploy.sh          # git pull + schema-fix (SQLite) + npm install (devDeps bilan) +
+                         # prisma generate + npm run build (frontend HAM shu yerda quriladi,
+                         # 2026-08-11 dan beri) + pm2 restart — qo'lda tar/SCP endi SHART EMAS
                          # ⚠️ schema o'zgarsa — bu skript db push QILMAYDI, qo'lda serverda bajarish shart (§0.2)
-pm2 restart tayyorlovmarkaz
 ```
 
 ---
