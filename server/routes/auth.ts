@@ -7,12 +7,9 @@ import { spawn } from 'child_process';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDbConfig } from '../services/dbBackup.js';
+import { JWT_SECRET } from '../config/jwtSecret.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-for-local';
-if (!process.env.JWT_SECRET) {
-    console.warn('[AUTH] ⚠ JWT_SECRET o\'rnatilmagan! .env faylini tekshiring.');
-}
 
 // ─── Role hierarchy (higher index = more powerful) ───────────────────────────
 const ROLE_LEVEL: Record<string, number> = {

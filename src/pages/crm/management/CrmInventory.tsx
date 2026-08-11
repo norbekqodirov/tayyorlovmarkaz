@@ -22,8 +22,8 @@ interface InventoryItem {
   purchaseDate: string;
   price: number;
   quantity: number;
-  status: 'Yaxshi' | 'Ta\'mirda' | 'Eskirgan';
-  description: string;
+  condition: 'Yaxshi' | 'Ta\'mirda' | 'Eskirgan';
+  notes: string;
 }
 
 const CATEGORIES = ['Mebel', 'Texnika', 'O\'quv qurollari', 'Xo\'jalik mollari', 'Boshqa'];
@@ -45,8 +45,8 @@ export default function CrmInventory() {
     purchaseDate: new Date().toISOString().split('T')[0],
     price: 0,
     quantity: 1,
-    status: 'Yaxshi',
-    description: ''
+    condition: 'Yaxshi',
+    notes: ''
   });
 
   const handleSave = async () => {
@@ -87,8 +87,8 @@ export default function CrmInventory() {
         purchaseDate: new Date().toISOString().split('T')[0],
         price: 0,
         quantity: 1,
-        status: 'Yaxshi',
-        description: ''
+        condition: 'Yaxshi',
+        notes: ''
       });
     }
     setIsModalOpen(true);
@@ -140,7 +140,7 @@ export default function CrmInventory() {
               { header: 'Soni', key: 'quantity', width: 8 },
               { header: 'Narxi', key: 'price', width: 18 },
               { header: 'Umumiy qiymat', key: 'totalValue', width: 18 },
-              { header: 'Holat', key: 'status', width: 12 },
+              { header: 'Holat', key: 'condition', width: 12 },
               { header: 'Sotib olingan', key: 'purchaseDate', width: 15 },
             ], 'Inventar')}
             className="p-2.5 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all"
@@ -158,14 +158,14 @@ export default function CrmInventory() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard variant="gradient" color="blue" label="Jami Jihoz" value={safeItems.length} sub="Ro'yxatda" icon={<Package size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="emerald" label="Umumiy Qiymat" value={new Intl.NumberFormat('uz-UZ').format(totalValue)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="violet" label="Yaxshi Holatda" value={safeItems.filter(i => i.status === 'Yaxshi').length} sub="Ishlaydigan" icon={<CheckCircle2 size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="amber" label="Ta'mirda" value={safeItems.filter(i => i.status === 'Ta\'mirda' || i.status === 'Eskirgan').length} sub="Diqqat kerak" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="violet" label="Yaxshi Holatda" value={safeItems.filter(i => i.condition === 'Yaxshi').length} sub="Ishlaydigan" icon={<CheckCircle2 size={17} strokeWidth={2.5} />} />
+        <StatCard variant="gradient" color="amber" label="Ta'mirda" value={safeItems.filter(i => i.condition === 'Ta\'mirda' || i.condition === 'Eskirgan').length} sub="Diqqat kerak" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="md:col-span-3 relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-          <input 
+          <input
             type="text"
             placeholder="Jihozlarni qidirish..."
             value={searchQuery}
@@ -174,7 +174,7 @@ export default function CrmInventory() {
           />
         </div>
         <div className="md:col-span-1">
-          <select 
+          <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
             className="w-full px-4 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm dark:text-white"
@@ -232,16 +232,16 @@ export default function CrmInventory() {
                   </td>
                   <td className="px-6 py-4">
                     <div className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${
-                      item.status === 'Yaxshi' ? 'text-emerald-600' :
-                      item.status === 'Ta\'mirda' ? 'text-amber-600' :
+                      item.condition === 'Yaxshi' ? 'text-emerald-600' :
+                      item.condition === 'Ta\'mirda' ? 'text-amber-600' :
                       'text-rose-600'
                     }`}>
                       <div className={`w-1.5 h-1.5 rounded-full ${
-                        item.status === 'Yaxshi' ? 'bg-emerald-600' :
-                        item.status === 'Ta\'mirda' ? 'bg-amber-600' :
+                        item.condition === 'Yaxshi' ? 'bg-emerald-600' :
+                        item.condition === 'Ta\'mirda' ? 'bg-amber-600' :
                         'bg-rose-600'
                       }`} />
-                      {item.status}
+                      {item.condition}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -323,8 +323,8 @@ export default function CrmInventory() {
             <div className="space-y-2">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</label>
               <select
-                value={formData.status}
-                onChange={(e) => setFormData({...formData, status: e.target.value as any})}
+                value={formData.condition}
+                onChange={(e) => setFormData({...formData, condition: e.target.value as any})}
                 className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 <option value="Yaxshi">Yaxshi</option>
@@ -337,8 +337,8 @@ export default function CrmInventory() {
           <div className="space-y-2">
             <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>
             <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              value={formData.notes}
+              onChange={(e) => setFormData({...formData, notes: e.target.value})}
               className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white min-h-[100px]"
               placeholder="Jihoz haqida batafsil..."
             />

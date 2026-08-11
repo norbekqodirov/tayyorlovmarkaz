@@ -72,8 +72,7 @@ export async function calculateStudentMonthlyDue(
         include: { group: { include: { course: { select: { name: true, price: true } } } } },
     });
 
-    const byGroup: GroupDueBreakdown[] = [];
-    for (const e of enrollments) {
+    const byGroup: GroupDueBreakdown[] = await Promise.all(enrollments.map(async (e) => {
         const group = e.group;
         const basePrice = group.price ?? group.course?.price ?? 0;
         const absences = await prisma.attendanceRecord.count({
@@ -84,7 +83,7 @@ export async function calculateStudentMonthlyDue(
         const discount = discountApplied ? Math.round(perLessonPrice * absences) : 0;
         const finalPrice = Math.max(0, Math.round(basePrice - discount));
 
-        byGroup.push({
+        return {
             groupId: group.id,
             groupName: group.name,
             courseName: group.course?.name || 'Kurs',
@@ -95,8 +94,8 @@ export async function calculateStudentMonthlyDue(
             perLessonPrice: Math.round(perLessonPrice),
             discount,
             finalPrice,
-        });
-    }
+        };
+    }));
 
     return {
         month: monthStr,
@@ -122,19 +121,17 @@ export async function calculateTeacherMonthlyRevenue(
         include: { enrollments: { select: { studentId: true } } },
     });
 
-    const groupSummaries: Array<{ groupId: string; groupName: string; studentCount: number; revenue: number }> = [];
-    let revenue = 0;
-
-    for (const g of groups) {
-        let groupRevenue = 0;
-        for (const enr of g.enrollments) {
-            const due = await calculateStudentMonthlyDue(enr.studentId, year, month, settings);
+    const groupSummaries = await Promise.all(groups.map(async (g) => {
+        const dues = await Promise.all(
+            g.enrollments.map(enr => calculateStudentMonthlyDue(enr.studentId, year, month, settings))
+        );
+        const groupRevenue = dues.reduce((sum, due) => {
             const groupDue = due.byGroup.find(b => b.groupId === g.id);
-            groupRevenue += groupDue?.finalPrice || 0;
-        }
-        groupSummaries.push({ groupId: g.id, groupName: g.name, studentCount: g.enrollments.length, revenue: groupRevenue });
-        revenue += groupRevenue;
-    }
+            return sum + (groupDue?.finalPrice || 0);
+        }, 0);
+        return { groupId: g.id, groupName: g.name, studentCount: g.enrollments.length, revenue: groupRevenue };
+    }));
+    const revenue = groupSummaries.reduce((sum, g) => sum + g.revenue, 0);
 
     return {
         revenue,

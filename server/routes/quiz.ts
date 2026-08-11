@@ -22,12 +22,17 @@
 import express from 'express';
 import prisma from '../db.js';
 import { todayDateStr } from '../utils/timezone.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// ─── Quiz CRUD ────────────────────────────────────────────────────────────────
+// ─── Quiz CRUD (admin) — quiz ochish/topshirish oqimi (/public/:slug, /:id/start,
+// /attempts/*) ataylab ochiq qoladi, chunki anonim (login qilmagan) test
+// topshiruvchi shu orqali ishlaydi (src/pages/PublicQuiz.tsx). Qolgan hammasi —
+// yaratish/tahrirlash/o'chirish/natijalarni ko'rish — login talab qiladi.
+// ────────────────────────────────────────────────────────────────────────────
 
-router.get('/', async (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
     try {
         const quizzes = await prisma.quiz.findMany({
             orderBy: { createdAt: 'desc' },
@@ -41,7 +46,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
     const { title, description, courseId, groupId, duration, maxScore, passingScore, isPublic, publicSlug, status } = req.body;
     if (!title) return res.status(400).json({ error: 'title required' });
 
@@ -89,7 +94,7 @@ router.get('/public/:slug', async (req, res) => {
     }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
     try {
         const quiz = await prisma.quiz.findUnique({
             where: { id: req.params.id },
@@ -108,7 +113,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
     const { title, description, courseId, groupId, duration, maxScore, passingScore, isPublic, publicSlug, status } = req.body;
     try {
         const quiz = await prisma.quiz.update({
@@ -132,7 +137,7 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
     try {
         await prisma.quiz.delete({ where: { id: req.params.id } });
         res.json({ ok: true });
@@ -143,7 +148,7 @@ router.delete('/:id', async (req, res) => {
 
 // ─── Questions ────────────────────────────────────────────────────────────────
 
-router.post('/:id/questions', async (req, res) => {
+router.post('/:id/questions', requireAuth, async (req, res) => {
     const { text, type, order, points, imageUrl, options } = req.body;
     if (!text) return res.status(400).json({ error: 'text required' });
 
@@ -173,7 +178,7 @@ router.post('/:id/questions', async (req, res) => {
     }
 });
 
-router.put('/:id/questions/:qid', async (req, res) => {
+router.put('/:id/questions/:qid', requireAuth, async (req, res) => {
     const { text, type, order, points, imageUrl, options } = req.body;
     try {
         // Delete old options and recreate
@@ -207,7 +212,7 @@ router.put('/:id/questions/:qid', async (req, res) => {
     }
 });
 
-router.delete('/:id/questions/:qid', async (req, res) => {
+router.delete('/:id/questions/:qid', requireAuth, async (req, res) => {
     try {
         await prisma.quizQuestion.delete({ where: { id: req.params.qid } });
         res.json({ ok: true });
@@ -362,7 +367,7 @@ router.post('/attempts/:aid/finish', async (req, res) => {
     }
 });
 
-router.get('/:id/attempts', async (req, res) => {
+router.get('/:id/attempts', requireAuth, async (req, res) => {
     try {
         const attempts = await prisma.quizAttempt.findMany({
             where: { quizId: req.params.id },

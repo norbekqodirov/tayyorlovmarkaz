@@ -8,6 +8,7 @@ import express from 'express';
 import crypto from 'crypto';
 import prisma from '../db.js';
 import { todayDateStr } from '../utils/timezone.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -716,6 +717,18 @@ router.post('/click', async (req, res) => {
                 });
             }
 
+            if (tx.state === 2) {
+                // Bekor qilingan/xatolik bo'lgan tranzaksiya — Complete qayta yuborilsa ham
+                // hisobni kreditlab bo'lmaydi (Payme filiali PerformTransaction'da xuddi shu
+                // holat uchun else-if bor edi, Click filialida yo'q edi — shu yerda tuzatildi).
+                return res.json({
+                    click_trans_id,
+                    merchant_trans_id,
+                    error: -9,
+                    error_note: 'Transaction cancelled'
+                });
+            }
+
             // Transition state 0 (prepared) -> 1 (completed)
             await prisma.onlineTransaction.update({
                 where: { id: tx.id },
@@ -788,7 +801,7 @@ router.post('/click', async (req, res) => {
 
 // ─── PAYMENT LINK GENERATOR ──────────────────────────────────────────────────
 
-router.get('/generate-links', async (req, res) => {
+router.get('/generate-links', requireAuth, async (req, res) => {
     const studentId = req.query.studentId as string;
     const amount = Number(req.query.amount);
 

@@ -9,10 +9,9 @@ import {
 } from '../services/telegramService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { todayDateStr, tashkentDayOfWeek } from '../utils/timezone.js';
+import { JWT_SECRET } from '../config/jwtSecret.js';
 
 const router = express.Router();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-key';
 
 // ─── Helper: get staff mini app URL ─────────────────────────────────────────
 

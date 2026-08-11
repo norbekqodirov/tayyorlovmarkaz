@@ -5,6 +5,7 @@ import { validateInitData } from '../services/telegramService.js';
 import { addDaysDateStr } from '../utils/timezone.js';
 import { calculateStudentMonthlyDue } from '../services/billing.js';
 import { MANAGER_KEY, teacherKey, studentKey, notifyStaffOfParentMessage } from './parentChat.js';
+import { JWT_SECRET } from '../config/jwtSecret.js';
 
 const router = express.Router();
 
@@ -18,13 +19,11 @@ async function portalAuth(req: any, res: any, next: any) {
         return next();
     }
 
-    const portalSecret = process.env.JWT_SECRET || 'dev-only-secret-key';
-
     // ── 1. URL token auth (bot xabari orqali kelgan link) ─────────────────
     const urlToken = (req.query.t || req.headers['x-portal-token']) as string;
     if (urlToken) {
         try {
-            const decoded: any = jwt.verify(urlToken, portalSecret);
+            const decoded: any = jwt.verify(urlToken, JWT_SECRET);
             if (decoded.chatId) {
                 req.portalChatId = decoded.chatId;
                 return next();

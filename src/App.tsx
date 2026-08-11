@@ -103,7 +103,7 @@ export default function App() {
             <Route path="/test/:slug" element={<PublicQuiz />} />
             <Route path="/portal" element={<TelegramPortal />} />
             <Route path="/staff-portal" element={<StaffPortal />} />
-            <Route path="/verify-cert/:id" element={<VerifyCert />} />
+            <Route path="/verify/:serial" element={<VerifyCert />} />
 
             {/* CRM Routes */}
             <Route path="/crmtayyorlovmarkaz/login" element={<CrmLogin />} />

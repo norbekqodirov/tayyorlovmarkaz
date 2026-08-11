@@ -2,6 +2,7 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
+import { JWT_SECRET } from '../config/jwtSecret.js';
 
 let io: Server | null = null;
 
@@ -41,8 +42,7 @@ export function initRealtime(httpServer: HttpServer) {
             const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
             if (!token) return next(new Error('No token'));
 
-            const secret = process.env.JWT_SECRET || 'dev-only-secret-key';
-            const decoded: any = jwt.verify(token, secret);
+            const decoded: any = jwt.verify(token, JWT_SECRET);
 
             const user = await prisma.user.findUnique({
                 where: { id: decoded.userId || decoded.id },

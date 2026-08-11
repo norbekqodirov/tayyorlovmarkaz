@@ -4,9 +4,9 @@ import prisma from '../db.js';
 import { validateStaffInitData } from '../services/telegramService.js';
 import { todayDateStr, nowTimeStr, nowMinutesOfDay, tashkentDayOfWeek, addDaysDateStr } from '../utils/timezone.js';
 import { MANAGER_KEY, teacherKey, studentKey } from './parentChat.js';
+import { JWT_SECRET } from '../config/jwtSecret.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-secret-key';
 
 // ─── Staff Portal Auth Middleware ─────────────────────────────────────────────
 

@@ -1,10 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-    console.error('[AUTH] ⚠ JWT_SECRET muhit o\'zgaruvchisi o\'rnatilmagan!');
-}
+import { JWT_SECRET } from '../config/jwtSecret.js';
 
 // Role hierarchy levels
 const ROLE_LEVEL: Record<string, number> = {
@@ -21,8 +17,7 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
     }
     const token = authHeader.split(' ')[1];
     try {
-        const secret = JWT_SECRET || 'fallback-secret-key-for-local';
-        const payload = jwt.verify(token, secret);
+        const payload = jwt.verify(token, JWT_SECRET);
         (req as any).user = payload;
         next();
     } catch {
