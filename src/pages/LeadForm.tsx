@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react';
 import api from '../api/client';
 import { useToast } from '../components/Toast';
 import { getAttribution } from '../utils/utm';
@@ -20,6 +20,11 @@ export default function LeadForm() {
   const [submitting, setSubmitting] = useState(false);
   const [extraField, setExtraField] = useState<{ type: 'none' | 'age' | 'grade'; label: string | null }>({ type: 'none', label: null });
   const [showCourseField, setShowCourseField] = useState(true);
+  // formId bor sahifalarda haqiqiy sozlama (kurs/yosh/sinf) server javobidan
+  // kelguncha standart holat (hammasi ko'rinadi) bir lahza chizilib, keyin
+  // to'g'ri holatga "miltillab" o'zgarardi. Shu bayroq javob kelguncha
+  // maydonlarni umuman chizmaslikka majbur qiladi — miltillash yo'qoladi.
+  const [configLoaded, setConfigLoaded] = useState(!formId);
   const [courses, setCourses] = useState<Course[]>([]);
 
   const [formData, setFormData] = useState({
@@ -46,7 +51,8 @@ export default function LeadForm() {
           if (res.data?.extraField) setExtraField(res.data.extraField);
           if (typeof res.data?.showCourseField === 'boolean') setShowCourseField(res.data.showCourseField);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setConfigLoaded(true));
       // Ko'rish hisobi — konversiya % ini haqiqiy qiladi (avval doim NaN% edi,
       // chunki hech narsa ko'rishlarni sanamas edi).
       api.post(`/public/forms/${formId}/view`).catch(() => {});
@@ -167,22 +173,25 @@ export default function LeadForm() {
             </div>
           </div>
 
-          {showCourseField && (
+          {configLoaded && showCourseField && (
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Qaysi kursga qiziqasiz?</label>
-              <select
-                required
-                value={formData.courseId}
-                onChange={(e) => setFormData({...formData, courseId: e.target.value})}
-                className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
-              >
-                <option value="" disabled>Kursni tanlang</option>
-                {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <div className="relative">
+                <select
+                  required
+                  value={formData.courseId}
+                  onChange={(e) => setFormData({...formData, courseId: e.target.value})}
+                  className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+                >
+                  <option value="" disabled>Kursni tanlang</option>
+                  {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={20} className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              </div>
             </div>
           )}
 
-          {extraField.type === 'age' && (
+          {configLoaded && extraField.type === 'age' && (
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{extraField.label}</label>
               <input
@@ -196,18 +205,21 @@ export default function LeadForm() {
             </div>
           )}
 
-          {extraField.type === 'grade' && (
+          {configLoaded && extraField.type === 'grade' && (
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">{extraField.label}</label>
-              <select
-                required
-                value={formData.extra}
-                onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
-                className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
-              >
-                <option value="" disabled>Sinfni tanlang</option>
-                {GRADE_OPTIONS.map(g => <option key={g} value={`${g}-sinf`}>{g}-sinf</option>)}
-              </select>
+              <div className="relative">
+                <select
+                  required
+                  value={formData.extra}
+                  onChange={(e) => setFormData({ ...formData, extra: e.target.value })}
+                  className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+                >
+                  <option value="" disabled>Sinfni tanlang</option>
+                  {GRADE_OPTIONS.map(g => <option key={g} value={`${g}-sinf`}>{g}-sinf</option>)}
+                </select>
+                <ChevronDown size={20} className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-zinc-400" />
+              </div>
             </div>
           )}
 

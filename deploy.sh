@@ -12,7 +12,14 @@ echo "=== Tayyorlovmarkaz Deploy ==="
 echo "Vaqt: $(date)"
 
 # 1. Git pull (schema.prisma skip-worktree bilan himoyalangan)
+#    Oldin schema.prisma'ni git holatiga qaytaramiz — 2-qadam uni baribir
+#    qayta SQLite'ga o'giradi, shuning uchun bu xavfsiz. Aks holda oldingi
+#    deploy'ning sed-patch qilgan versiyasi "local changes would be
+#    overwritten by merge" xatosi bilan pull'ni bloklab qo'yardi (bir necha
+#    marta shu tufayli deploy qo'lda tuzatilgan edi).
 echo ">> git pull..."
+git update-index --no-skip-worktree prisma/schema.prisma 2>/dev/null || true
+git checkout -- prisma/schema.prisma package-lock.json 2>/dev/null || true
 git pull origin master
 
 # 2. SQLite schema.prisma ni tiklash (git pull PostgreSQL versiyasini keltirishi mumkin)
@@ -22,10 +29,13 @@ sed -i 's/ @db\.Text//' prisma/schema.prisma
 # skip-worktree ni qayta o'rnatish (git pull olib tashlashi mumkin)
 git update-index --skip-worktree prisma/schema.prisma 2>/dev/null || true
 
-# 3. npm install — devDependencies HAM kerak (vite build shu yerda,
-#    frontend endi serverning o'zida qurilyapti — pastga q.).
-echo ">> npm install..."
-npm install --ignore-scripts 2>&1 | tail -5
+# 3. npm ci — `npm install`dan farqli, package-lock.json'ni HECH QACHON
+#    o'zgartirmaydi (aynan shu drift package-lock.json'ni har deploy'da
+#    "local changes" qilib, git pull'ni bloklab kelgan edi). devDependencies
+#    HAM kerak (vite build shu yerda, frontend endi serverning o'zida
+#    qurilyapti — pastga q.).
+echo ">> npm ci..."
+npm ci --ignore-scripts 2>&1 | tail -5
 
 # 4. Prisma generate (client yangilash)
 echo ">> prisma generate..."
