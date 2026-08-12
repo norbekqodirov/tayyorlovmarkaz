@@ -154,6 +154,16 @@ if (IS_PROD) {
             setHeaders: (res, filePath) => {
                 if (filePath.includes(`${path.sep}assets${path.sep}`)) {
                     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+                } else if (filePath.endsWith('index.html')) {
+                    // MUHIM: "/" so'rovini pastdagi SPA fallback EMAS, aynan shu
+                    // express.static hal qiladi (u papka uchun index.html'ni o'zi
+                    // qaytaradi). Shu sabab bu shart bo'lmasa, bosh sahifaning
+                    // index.html'i HECH QANDAY Cache-Control'siz ketardi va
+                    // brauzer/CloudFlare uni "evristik" ravishda keshlab, eski
+                    // hash'li JS'ga ishora qiluvchi eski sahifani ko'rsatib
+                    // turardi (deploy'dan keyin "o'zgarish ko'rinmayapti" /
+                    // 404 chunk muammosining asl sababi).
+                    res.setHeader('Cache-Control', 'no-cache');
                 }
             },
         }));

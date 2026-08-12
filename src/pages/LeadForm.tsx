@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown } from 'lucide-react';
 import api from '../api/client';
 import { useToast } from '../components/Toast';
 import { getAttribution } from '../utils/utm';
@@ -25,6 +25,12 @@ export default function LeadForm() {
   // to'g'ri holatga "miltillab" o'zgarardi. Shu bayroq javob kelguncha
   // maydonlarni umuman chizmaslikka majbur qiladi — miltillash yo'qoladi.
   const [configLoaded, setConfigLoaded] = useState(!formId);
+  // Forma o'chirilgan yoki CRM'da "Forma faol" belgisi olib tashlangan bo'lsa,
+  // /public/forms/:id 404 qaytaradi. Avval bu jimgina yutilardi va sahifa
+  // STANDART holatda (kurs savoli KO'RINGAN holda) chizilaverardi — ya'ni
+  // formaga xos sozlamalar e'tiborga olinmasdi va o'chirilgan forma baribir
+  // lid yig'ishda davom etardi.
+  const [formMissing, setFormMissing] = useState(false);
   const [courses, setCourses] = useState<Course[]>([]);
 
   const [formData, setFormData] = useState({
@@ -51,7 +57,12 @@ export default function LeadForm() {
           if (res.data?.extraField) setExtraField(res.data.extraField);
           if (typeof res.data?.showCourseField === 'boolean') setShowCourseField(res.data.showCourseField);
         })
-        .catch(() => {})
+        .catch((err) => {
+          // Faqat 404 = forma yo'q/faol emas. Tarmoq uzilishi yoki 500'da
+          // sahifani "yo'q" deb ko'rsatmaymiz — lidni bekorga yo'qotmaslik
+          // uchun forma standart holatda chizilaveradi.
+          if (err?.response?.status === 404) setFormMissing(true);
+        })
         .finally(() => setConfigLoaded(true));
       // Ko'rish hisobi — konversiya % ini haqiqiy qiladi (avval doim NaN% edi,
       // chunki hech narsa ko'rishlarni sanamas edi).
@@ -104,6 +115,29 @@ export default function LeadForm() {
           <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-4">Arizangiz qabul qilindi!</h2>
           <p className="text-zinc-600 dark:text-zinc-400 mb-8">
             Tez orada menejerlarimiz siz bilan bog'lanishadi.
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-colors"
+          >
+            Bosh sahifaga qaytish
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (formMissing) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-black flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 md:p-12 max-w-md w-full text-center border border-zinc-200 dark:border-zinc-800 shadow-xl">
+          <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle size={40} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4">Bu forma hozircha mavjud emas</h2>
+          <p className="text-zinc-600 dark:text-zinc-400 mb-8">
+            Havola eskirgan yoki qabul vaqtincha to'xtatilgan bo'lishi mumkin.
+            Ariza qoldirish uchun bosh sahifadan foydalaning.
           </p>
           <button
             onClick={() => navigate('/')}

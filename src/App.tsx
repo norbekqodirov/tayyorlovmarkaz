@@ -4,8 +4,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { captureAttribution } from './utils/utm';
 
 import Layout from './components/Layout';
-import CrmLayout from './components/CrmLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+
+// CrmLayout (sidebar, global search, keyboard shortcuts, socket.io) faqat
+// /crmtayyorlovmarkaz ostida kerak — lazy qilingan, aks holda uning butun
+// kodi (jumladan socket.io-client) HAR bir sahifada, jumladan ochiq bosh
+// sahifada ham, asosiy bundle ichida yuklanardi.
+const CrmLayout = React.lazy(() => import('./components/CrmLayout'));
 
 // Public Lazy Routes
 const Home             = React.lazy(() => import('./pages/Home'));

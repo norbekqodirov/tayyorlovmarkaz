@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm run server\" \"vite --port=3000 --host=0.0.0.0\"",
     "server": "tsx watch server/index.ts",
-    "build": "vite build",
+    "build": "node scripts/build.mjs",
     "preview": "vite preview",
     "start": "npm run build && npm run start:prod",
     "start:prod": "NODE_ENV=production tsx server/index.ts",

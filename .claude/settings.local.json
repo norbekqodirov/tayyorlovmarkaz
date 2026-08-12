@@ -22,7 +22,9 @@
       "Bash(gh issue *)",
       "Bash(gh pr *)",
       "Bash(ls -la \"C:\\\\Users\\\\user\\\\.claude\\\\projects\\\\D--tayyorlovmarkaz\\\\\" 2>&1 | head -50)",
-      "Bash(wc -l \"/d/tayyorlovmarkaz/../../Users/user/.claude/projects/D--tayyorlovmarkaz/d5749853-263d-48f6-af2e-32a450196f70.jsonl\" 2>&1 || wc -l 'C:\\\\Users\\\\user\\\\.claude\\\\projects\\\\D--tayyorlovmarkaz\\\\d5749853-263d-48f6-af2e-32a450196f70.jsonl')"
+      "Bash(wc -l \"/d/tayyorlovmarkaz/../../Users/user/.claude/projects/D--tayyorlovmarkaz/d5749853-263d-48f6-af2e-32a450196f70.jsonl\" 2>&1 || wc -l 'C:\\\\Users\\\\user\\\\.claude\\\\projects\\\\D--tayyorlovmarkaz\\\\d5749853-263d-48f6-af2e-32a450196f70.jsonl')",
+      "WebFetch(domain:pagespeed.web.dev)",
+      "Bash(npx tsc *)"
     ]
   }
 }
