@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import DOMPurify from 'dompurify';
 import {
   Sparkles, Copy, Send, Instagram, Globe, MessageSquare,
   BookOpen, ClipboardList, Bell, Loader2, Check, RefreshCw, Zap
@@ -361,8 +362,23 @@ export default function CrmAIContent() {
               </div>
             ) : output || suggestions ? (
               <div className="relative">
-                <div className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed max-h-[500px] overflow-y-auto"
-                  dangerouslySetInnerHTML={{ __html: (output || suggestions).replace(/\n/g, '<br/>') }} />
+                {/* Faqat "Blog" tabi haqiqiy HTML qaytaradi (server/routes/ai.ts
+                    Gemini'ga <h2>/<p>/<ul> kabi teglar bilan yozishni buyuradi) —
+                    shuning uchun faqat shu yerda dangerouslySetInnerHTML ishlatiladi,
+                    va faqat DOMPurify orqali tozalangandan keyin (AI chiqishi
+                    ishonchsiz manba — mavzu/kalit so'z orqali prompt-in'ektsiya
+                    xavfi bor). Qolgan tablar (SMM/SMS/Takliflar) oddiy matn —
+                    ularga HTML in'ektsiyasi umuman kerak emas edi.  */}
+                {activeTab === 'blog' ? (
+                  <div
+                    className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed max-h-[500px] overflow-y-auto [&_h2]:font-black [&_h2]:text-base [&_h2]:mt-4 [&_h2]:mb-2 [&_h3]:font-bold [&_h3]:mt-3 [&_h3]:mb-1.5 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_li]:mb-1"
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(output || suggestions) }}
+                  />
+                ) : (
+                  <div className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed max-h-[500px] overflow-y-auto">
+                    {output || suggestions}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-48 text-zinc-300 dark:text-zinc-600 gap-3">

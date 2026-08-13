@@ -17,9 +17,11 @@ export interface LeadFilters {
   stage?: string[];
   status?: string[];
   source?: string[];
+  extraField?: string[]; // "sinf"/"yosh" — Sozlamalar/CrmForms.tsx'da tanlangan qo'shimcha maydon qiymati
   assignedTo?: string; // 'me' | 'unassigned' | userId
   campaignId?: string;
   formId?: string;
+  courseId?: string;
   from?: string;
   to?: string;
   overdue?: boolean;
@@ -66,9 +68,11 @@ export function useLeads() {
         stage: filters.stage?.join(','),
         status: filters.status?.join(','),
         source: filters.source?.join(','),
+        extraField: filters.extraField?.join(','),
         assignedTo: filters.assignedTo,
         campaignId: filters.campaignId,
         formId: filters.formId,
+        courseId: filters.courseId,
         from: filters.from,
         to: filters.to,
         overdue: filters.overdue ? '1' : undefined,

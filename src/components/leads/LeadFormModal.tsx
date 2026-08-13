@@ -53,12 +53,15 @@ const LeadFormModal: React.FC<Props> = ({
       <div className="space-y-1.5 flex flex-col gap-1.5">
         <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Kurs</label>
         <select
-          value={formData.course}
-          onChange={e => onChange({ course: e.target.value })}
+          value={formData.courseId || ''}
+          onChange={e => {
+            const course = courses.find((c: any) => c.id === e.target.value);
+            onChange({ courseId: e.target.value || null, course: course?.name || '' });
+          }}
           className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
         >
           <option value="">Kursni tanlang...</option>
-          {courses.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
 

@@ -53,6 +53,7 @@ router.get('/', async (req, res) => {
         const stage = parseCsv(req.query.stage);
         const status = parseCsv(req.query.status);
         const source = parseCsv(req.query.source);
+        const extraField = parseCsv(req.query.extraField);
         const assignedTo = req.query.assignedTo as string | undefined;
         const campaignId = req.query.campaignId as string | undefined;
         const formId = req.query.formId as string | undefined;
@@ -72,6 +73,7 @@ router.get('/', async (req, res) => {
         if (stage) where.stage = { in: stage };
         if (status) where.status = { in: status };
         if (source) where.source = { in: source };
+        if (extraField) where.extraField = { in: extraField };
         if (campaignId) where.campaignId = campaignId;
         if (formId) where.formId = formId;
         if (courseId) where.courseId = courseId;
@@ -192,6 +194,33 @@ router.get('/assignable-users', async (_req, res) => {
             orderBy: { name: 'asc' },
         });
         res.json(users);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── GET /api/leads/meta/facets — filtr paneli uchun mavjud manba/qo'shimcha maydon qiymatlari ──
+// LeadFilters.tsx'dagi "Manba" filtri avval faqat statik SOURCES ro'yxatini
+// (Instagram/Facebook/...) ko'rsatardi — leadIntake.ts endi kampaniyasiz target
+// formalar uchun forma sarlavhasini manba sifatida yozgani sabab, haqiqiy
+// ma'lumotlardagi manbalar shu statik ro'yxatdan chiqib ketishi mumkin.
+// Shu yo'l /:id'dan OLDIN turishi SHART, aks holda Express uni id="meta" deb tushunadi.
+router.get('/meta/facets', async (_req, res) => {
+    try {
+        const [sourceRows, extraRows] = await Promise.all([
+            prisma.lead.findMany({
+                where: { deletedAt: null, source: { not: null } },
+                distinct: ['source'], select: { source: true }, orderBy: { source: 'asc' },
+            }),
+            prisma.lead.findMany({
+                where: { deletedAt: null, extraField: { not: null } },
+                distinct: ['extraField'], select: { extraField: true }, orderBy: { extraField: 'asc' },
+            }),
+        ]);
+        res.json({
+            sources: sourceRows.map(r => r.source).filter((s): s is string => !!s),
+            extraFields: extraRows.map(r => r.extraField).filter((s): s is string => !!s),
+        });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

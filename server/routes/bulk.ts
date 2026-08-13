@@ -61,6 +61,15 @@ router.post('/:collection', requireAuth, requireMinRole('MANAGER'), async (req, 
             }
         } else if (collection === 'leads') {
             if (action === 'status' && data?.stage) {
+                // "won" shu yo'l bilan qo'yilmaydi — bu server/routes/leads.ts'ning
+                // POST /:id/convert orqali (talaba yaratish + guruhga yozish, bitta
+                // tranzaksiya) o'tishi SHART, aks holda lid studentId'siz "won"da
+                // qotib qoladi va Marketing > ROI hisob-kitoblarida umuman
+                // ko'rinmaydi (frontend allaqachon bu variantni yashiradi, bu esa
+                // to'g'ridan-to'g'ri API chaqiruviga qarshi qo'shimcha himoya).
+                if (data.stage === 'won') {
+                    return res.status(400).json({ message: "\"O'qishni boshladi\" holatiga ommaviy o'tkazib bo'lmaydi — har bir lidni alohida \"O'quvchiga aylantirish\" orqali guruhga yozing" });
+                }
                 const result = await prisma.lead.updateMany({
                     where: { id: { in: ids } },
                     data: { stage: data.stage, stageChangedAt: new Date() },

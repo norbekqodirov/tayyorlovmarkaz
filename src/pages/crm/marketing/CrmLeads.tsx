@@ -128,6 +128,22 @@ export default function CrmLeads() {
 
   // ─── Kanban drag / bosqich o'zgartirish (optimistik) ──────────────────────────
   const changeStage = async (id: string, stage: string, lostReason?: string) => {
+    const current = leads.find(l => l.id === id) || (selectedLead?.id === id ? selectedLead : null);
+    if (current && current.stage === stage) return;
+
+    // "O'qishni boshladi" (won) — to'g'ridan-to'g'ri PUT emas, balki haqiqiy
+    // konversiya (talaba yaratish + guruhga yozish, POST /leads/:id/convert)
+    // orqali o'tishi SHART. Aks holda lid Kanban'da shu ustunga sudralib
+    // qo'yilardi-yu, hech qanday Student yozuvi yaratilmasdi — Marketing >
+    // ROI'dagi barcha hisob-kitoblar (studentId'ga tayanadi, server/routes/
+    // marketing.ts) bunday lidni umuman "g'olib" deb hisobga olmay qolardi.
+    if (stage === 'won') {
+      if (current) setSelectedLead(current);
+      setSelectedGroupId('');
+      setIsConvertModalOpen(true);
+      return;
+    }
+
     optimisticUpdate(id, { stage: stage as Lead['stage'], lostReason });
     if (selectedLead?.id === id) setSelectedLead({ ...selectedLead, stage: stage as Lead['stage'], lostReason });
     try {
@@ -270,7 +286,7 @@ export default function CrmLeads() {
             <Download size={16} />
           </button>
         </div>
-        <LeadFilters filters={filters} onChange={updateFilters} onClear={clearFilters} stageCounts={stageCounts} />
+        <LeadFilters filters={filters} onChange={updateFilters} onClear={clearFilters} stageCounts={stageCounts} courses={courses} />
       </div>
 
       {/* Main content */}

@@ -103,8 +103,19 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/finance', financeRoutes);
+// MUHIM: bildirishnoma yo'llari communication.ts ichida '/notifications' prefiksi
+// bilan yozilgan (masalan router.get('/notifications', ...)) — demak faqat
+// /api/communication/notifications orqali ishlaydi. Avval bu yerda QO'SHIMCHA
+// '/api/notifications' mount ham bor edi, lekin o'sha prefiks tufayli hech qachon
+// mos kelmasdi (kerak bo'lardi /api/notifications/notifications) — so'rov jimgina
+// pastdagi generic /api/:collection'ga (crud.ts) tushib ketardi, u esa userId
+// bo'yicha FILTRLAMAY butun tizimdagi HAMMA bildirishnomani qaytarardi (har qanday
+// rol, jumladan TEACHER, boshqalarga yozilgan bildirishnomalarni ham ko'rar edi —
+// CrmLayout.tsx qo'ng'iroq belgisi va CrmCommunication.tsx buni har 30s'da chaqirardi).
+// Yechim: soxta mountni olib tashlash + chaqiruvchilarni (CrmLayout.tsx,
+// CrmCommunication.tsx) haqiqiy, foydalanuvchiga cheklangan yo'lga (/communication/
+// notifications) ko'chirish — bu yerda alohida mount SHART EMAS.
 app.use('/api/communication', communicationRoutes);
-app.use('/api/notifications', communicationRoutes);
 app.use('/api/students', studentsRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/ai', aiRoutes);

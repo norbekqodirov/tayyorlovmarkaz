@@ -6,6 +6,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { sendBroadcast } from '../services/telegramService.js';
 
 const router = express.Router();
 
@@ -74,44 +75,63 @@ router.post('/bulk-messages/send', requireAuth, async (req, res) => {
         // Qabul qiluvchilarni aniqlash. "leads" ataylab yo'q — Lead modelida
         // Telegram identifikatori (chatId) umuman yo'q (lidlar botni hali
         // boshlamagan), shuning uchun bu yerga qo'shilsa ham hech qachon
-        // hech narsa yubormaydi, faqat status:'sent' deb yolg'on aytadi
-        // (bu aynan shu bug edi — CrmCommunication.tsx'dagi "Faol Lidlar"
-        // varianti ham olib tashlandi). Lidlar bilan bog'lanish uchun
-        // Marketing > Lidlar bo'limidagi telefon raqamlaridan foydalaning.
-        let recipients: { name: string; telegramId?: string | null }[] = [];
+        // hech narsa yubormaydi. Lidlar bilan bog'lanish uchun Marketing >
+        // Lidlar bo'limidagi telefon raqamlaridan foydalaning.
+        // Ota-ona (parentTelegramId) — asosiy manzil, talabaning o'zi bot
+        // ishlatmagan bo'lsa telegramChatId'ga tushiladi.
+        let recipients: { name: string; chatId: string | null }[] = [];
 
         if (targetType === 'all') {
-            const students = await prisma.student.findMany({ where: { status: { in: ['active', 'Faol'] } } });
-            recipients = students.map(s => ({ name: s.name }));
+            const students = await prisma.student.findMany({
+                where: { status: { in: ['active', 'Faol'] } },
+                select: { name: true, parentTelegramId: true, telegramChatId: true },
+            });
+            recipients = students.map(s => ({ name: s.name, chatId: s.parentTelegramId || s.telegramChatId || null }));
         } else if (targetType === 'debtors') {
-            const students = await prisma.student.findMany({ where: { balance: { lt: 0 } } });
-            recipients = students.map(s => ({ name: s.name }));
+            const students = await prisma.student.findMany({
+                where: { balance: { lt: 0 } },
+                select: { name: true, parentTelegramId: true, telegramChatId: true },
+            });
+            recipients = students.map(s => ({ name: s.name, chatId: s.parentTelegramId || s.telegramChatId || null }));
         } else if (targetType === 'group' && targetId) {
             const enrollments = await prisma.enrollment.findMany({
                 where: { groupId: targetId },
-                include: { student: true },
+                include: { student: { select: { name: true, parentTelegramId: true, telegramChatId: true } } },
             });
-            recipients = enrollments.map(e => ({ name: e.student.name }));
+            recipients = enrollments.map(e => ({ name: e.student.name, chatId: e.student.parentTelegramId || e.student.telegramChatId || null }));
         }
 
-        // Telegram bot orqali yuborish (agar BOT_TOKEN mavjud bo'lsa)
-        const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-        let sentCount = 0;
+        // Faqat Telegram ulangan (chatId bor) qabul qiluvchilarga haqiqatan
+        // yuboriladi — qolganlari "yetkazilmadi" sifatida hisoblanadi. Avval
+        // bu yerda hech qanday yuborish sodir bo'lmasdan, to'g'ridan-to'g'ri
+        // status:'sent' deb yozib qo'yilardi (CrmCommunication.tsx buni
+        // "Yuborildi" deb ko'rsatardi, garchi hech kimga yetib bormagan bo'lsa ham).
+        const chatIds = recipients.map(r => r.chatId).filter((id): id is string => !!id);
+        const { sent, failed } = chatIds.length > 0 ? await sendBroadcast(chatIds, content) : { sent: 0, failed: 0 };
+        const noTelegramCount = recipients.length - chatIds.length;
 
-        // Hozircha DB ga saqlaymiz (Telegram bot Faza 2 da to'liq sozlanadi)
+        const status = sent === 0 ? 'failed' : (failed > 0 || noTelegramCount > 0) ? 'partial' : 'sent';
+
         const bulkMsg = await prisma.bulkMessage.create({
             data: {
                 templateId: templateId || null,
                 content,
                 targetType,
                 targetId: targetId || null,
-                status: 'sent',
+                status,
                 sentAt: new Date(),
-                sentCount: recipients.length,
+                sentCount: sent,
             },
         });
 
-        res.json({ success: true, sentCount: recipients.length, message: bulkMsg });
+        res.json({
+            success: sent > 0,
+            sentCount: sent,
+            failedCount: failed,
+            noTelegramCount,
+            totalRecipients: recipients.length,
+            message: bulkMsg,
+        });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

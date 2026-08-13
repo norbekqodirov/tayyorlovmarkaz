@@ -352,6 +352,12 @@ function Pills({
 export function FilterPanel({ filters, value, onChange, onClear, className = '', collapsible = false }: FilterPanelProps) {
   const [expanded, setExpanded] = useState(!collapsible);
   const activeCount = Object.entries(value).filter(([_, v]) => {
+    // 'toggle' filtrlari yoqilmagan holatda ham `false` (undefined emas) qiymat
+    // bilan keladi (masalan LeadFilters.tsx'dagi `overdue: filters.overdue ||
+    // false`) — buni undefined/null/'' bilan bir xil "hech narsa tanlanmagan"
+    // deb hisoblash SHART, aks holda "Tozalash (N)" hech qanday filtr
+    // yoqilmagan holatda ham N>0 ko'rsatib turaveradi.
+    if (typeof v === 'boolean') return v === true;
     if (Array.isArray(v)) return v.length > 0;
     if (typeof v === 'object' && v !== null) return v.from || v.to;
     return v !== undefined && v !== null && v !== '';

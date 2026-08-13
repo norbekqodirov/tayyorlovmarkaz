@@ -114,7 +114,7 @@ export default function CrmCommunication() {
   const fetchNotifications = useCallback(async () => {
     setNotifLoading(true);
     try {
-      const res = await api.get('/notifications');
+      const res = await api.get('/communication/notifications');
       setNotifications(res.data || []);
     } catch { setNotifications([]); } finally { setNotifLoading(false); }
   }, []);
@@ -154,8 +154,18 @@ export default function CrmCommunication() {
     if (!bulkForm.content) return;
     setBulkSending(true);
     try {
-      await api.post('/communication/bulk-messages/send', bulkForm);
-      showToast("Xabar muvaffaqiyatli yuborildi", 'success');
+      const res = await api.post('/communication/bulk-messages/send', bulkForm);
+      const { sentCount, failedCount, noTelegramCount, totalRecipients } = res.data || {};
+      if (sentCount > 0) {
+        const extra = (failedCount > 0 || noTelegramCount > 0)
+          ? ` (${totalRecipients - sentCount} ta yetib bormadi — Telegram ulanmagan yoki xatolik)`
+          : '';
+        showToast(`${sentCount} ta qabul qiluvchiga yuborildi${extra}`, 'success');
+      } else if (totalRecipients > 0) {
+        showToast("Hech kimga yetib bormadi — qabul qiluvchilarning Telegram'i ulanmagan", 'error');
+      } else {
+        showToast("Bu mezon bo'yicha qabul qiluvchi topilmadi", 'error');
+      }
       setIsBulkModalOpen(false);
       setBulkForm({ content: '', targetType: 'all', targetId: '', templateId: '' });
       fetchBulkMessages();
@@ -164,7 +174,7 @@ export default function CrmCommunication() {
 
   const handleMarkAllRead = async () => {
     try {
-      await api.post('/notifications/mark-all-read', {});
+      await api.post('/communication/notifications/mark-all-read', {});
       setNotifications(n => n.map(x => ({ ...x, isRead: true })));
       showToast("Barcha bildirishnomalar o'qilgan deb belgilandi", 'success');
     } catch { /* ignore */ }
@@ -311,10 +321,11 @@ export default function CrmCommunication() {
                       <div className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
                           msg.status === 'sent' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                          : msg.status === 'partial' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
                           : msg.status === 'failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
                           : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
                         }`}>
-                          {msg.status === 'sent' ? 'Yuborildi' : msg.status === 'failed' ? 'Xatolik' : 'Qoralama'}
+                          {msg.status === 'sent' ? 'Yuborildi' : msg.status === 'partial' ? 'Qisman yuborildi' : msg.status === 'failed' ? 'Xatolik' : 'Qoralama'}
                         </span>
                         <span className="text-[10px] text-zinc-400">
                           {TARGET_TYPES.find(t => t.value === msg.targetType)?.label || msg.targetType}
@@ -492,7 +503,7 @@ export default function CrmCommunication() {
           <div className="p-3 bg-amber-50 dark:bg-amber-500/10 rounded-xl border border-amber-200 dark:border-amber-500/30">
             <p className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
               <AlertTriangle size={12} />
-              Telegram Bot ulanganida xabar avtomatik yuboriladi
+              Faqat ota-onasi (yoki o'zi) Telegram botni ishga tushirgan o'quvchilarga yetib boradi
             </p>
           </div>
           <div className="flex gap-2 pt-2">

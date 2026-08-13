@@ -45,7 +45,7 @@ const COLLECTION_WRITE_LEVEL: Record<string, number> = {
     rooms:         2,
     campaigns:     2,
     marketing:     2,
-    forms:         3,
+    forms:         2, // MANAGER+ — Marketing Xodimi andozasi ham forma yarata olishi kerak
     content:       3,
     news:          3,
     posts:         3,

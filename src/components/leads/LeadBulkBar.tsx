@@ -53,7 +53,11 @@ export default function LeadBulkBar({ selectedIds, onClear, onDone, showToast }:
             className="bg-white/10 hover:bg-white/20 transition-colors rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none"
           >
             <option value="" disabled>Bosqich...</option>
-            {STAGES.map(s => <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>)}
+            {/* "O'qishni boshladi" (won) shu yerda YO'Q — konversiya (talaba
+                yaratish + guruhga yozish) har bir lid uchun alohida guruh
+                tanlashni talab qiladi, ommaviy amal sifatida mos emas.
+                Bitta-bitta "O'quvchiga aylantirish" tugmasidan foydalaning. */}
+            {STAGES.filter(s => s.id !== 'won').map(s => <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>)}
           </select>
         </div>
 

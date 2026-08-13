@@ -65,7 +65,7 @@ export default function CrmLayout() {
   const loadNotifications = useCallback(async () => {
     try {
       const api = (await import('../api/client')).default;
-      const res = await api.get('/notifications');
+      const res = await api.get('/communication/notifications');
       setNotifications(Array.isArray(res.data) ? res.data.slice(0, 8) : []);
     } catch { setNotifications([]); }
   }, []);

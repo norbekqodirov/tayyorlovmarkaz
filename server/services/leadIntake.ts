@@ -90,6 +90,14 @@ function statusFromScore(score: number): 'hot' | 'warm' | 'cold' {
 
 // ─── UTM → kampaniya aniqlash ───────────────────────────────────────────────────
 
+// formId'ga tegishli TargetForm sarlavhasi — bir marta olib, resolveCampaign VA
+// resolvedSource fallback'i ikkalasida ham ishlatiladi (ortiqcha so'rovsiz).
+async function resolveFormTitle(formId?: string | null): Promise<string | null> {
+    if (!formId) return null;
+    const form = await prisma.targetForm.findUnique({ where: { id: formId }, select: { title: true } });
+    return form?.title || null;
+}
+
 async function resolveCampaign(input: LeadIntakeInput): Promise<{ id: string; platform: string } | null> {
     if (input.campaignId) {
         const c = await prisma.campaign.findUnique({ where: { id: input.campaignId }, select: { id: true, platform: true } });
@@ -239,8 +247,16 @@ export async function createLeadFromIntake(input: LeadIntakeInput): Promise<Lead
     const extraField = sanitizeText(input.extraField, 200);
     const email = sanitizeText(input.email, 200);
 
-    const campaign = await resolveCampaign(input);
-    const resolvedSource = campaign?.platform || resolveSourceFromUtm(input.utmSource) || sanitizeText(input.source, 100) || 'Vebsayt';
+    const [campaign, formTitle] = await Promise.all([
+        resolveCampaign(input),
+        resolveFormTitle(input.formId),
+    ]);
+    // Ustuvorlik: kampaniya platformasi (Instagram/Facebook/...) > UTM orqali
+    // aniqlangan kanal > qo'lda kiritilgan manba (masalan CRM'dan) > shu lid
+    // qaysi target formadan kelgani (kampaniyasiz forma bo'lsa ham "Vebsayt"
+    // degan ma'nosiz umumiy nomdan ko'ra ancha foydali) > oxirgi holatda
+    // umumiy 'Vebsayt' (bosh sahifa/Aloqa — formId'siz kelgan tashrif).
+    const resolvedSource = campaign?.platform || resolveSourceFromUtm(input.utmSource) || sanitizeText(input.source, 100) || formTitle || 'Vebsayt';
     const searchKey = buildSearchKey(name, phoneNorm, course);
 
     const existing = await prisma.lead.findFirst({

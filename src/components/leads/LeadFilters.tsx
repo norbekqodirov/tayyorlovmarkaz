@@ -13,14 +13,30 @@ interface Props {
   onChange: (patch: Partial<LeadFiltersState>) => void;
   onClear: () => void;
   stageCounts: Record<string, number>;
+  courses?: { id: string; name: string }[];
 }
 
-export default function LeadFilters({ filters, onChange, onClear, stageCounts }: Props) {
+export default function LeadFilters({ filters, onChange, onClear, stageCounts, courses = [] }: Props) {
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
+  const [forms, setForms] = useState<{ id: string; title: string }[]>([]);
+  const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
+  // Haqiqiy ma'lumotlardagi manba/qo'shimcha-maydon qiymatlari — leadIntake.ts
+  // kampaniyasiz target formalar uchun endi forma sarlavhasini manba sifatida
+  // yozadi, shuning uchun statik SOURCES ro'yxati yetarli emas (yangi manbalar
+  // shu ro'yxatda bo'lmasligi mumkin).
+  const [facets, setFacets] = useState<{ sources: string[]; extraFields: string[] }>({ sources: [], extraFields: [] });
 
   useEffect(() => {
     api.get('/leads/assignable-users').then(res => setManagers(res.data || [])).catch(() => {});
+    api.get('/forms').then(res => setForms(res.data?.data || res.data || [])).catch(() => {});
+    api.get('/campaigns').then(res => setCampaigns(res.data?.data || res.data || [])).catch(() => {});
+    api.get('/leads/meta/facets').then(res => setFacets(res.data || { sources: [], extraFields: [] })).catch(() => {});
   }, []);
+
+  // Statik SOURCES doim ko'rinadi (hali lid tushmagan bo'lsa ham tanlash mumkin
+  // bo'lishi uchun), haqiqiy ma'lumotlardagi qo'shimcha manbalar (forma nomlari
+  // va h.k.) ustiga qo'shiladi.
+  const sourceOptions = Array.from(new Set([...SOURCES, ...facets.sources]));
 
   const panelFilters: Filter[] = [
     {
@@ -37,7 +53,7 @@ export default function LeadFilters({ filters, onChange, onClear, stageCounts }:
     },
     {
       type: 'multiSelect', key: 'source', label: 'Manba',
-      options: SOURCES.map(s => ({ value: s, label: s })),
+      options: sourceOptions.map(s => ({ value: s, label: s })),
     },
     {
       type: 'select', key: 'assignedTo', label: 'Menejer',
@@ -47,6 +63,22 @@ export default function LeadFilters({ filters, onChange, onClear, stageCounts }:
         ...managers.map(m => ({ value: m.id, label: m.name })),
       ],
     },
+    {
+      type: 'select', key: 'courseId', label: 'Kurs',
+      options: courses.map((c: any) => ({ value: c.id, label: c.name })),
+    },
+    {
+      type: 'select', key: 'formId', label: 'Forma',
+      options: forms.map(f => ({ value: f.id, label: f.title })),
+    },
+    {
+      type: 'select', key: 'campaignId', label: 'Kampaniya',
+      options: campaigns.map(c => ({ value: c.id, label: c.name })),
+    },
+    ...(facets.extraFields.length > 0 ? [{
+      type: 'multiSelect' as const, key: 'extraField', label: 'Sinf/Yosh',
+      options: facets.extraFields.map(v => ({ value: v, label: v })),
+    }] : []),
     { type: 'toggle', key: 'overdue', label: "Muddati o'tgan" },
     { type: 'toggle', key: 'unresponded', label: 'Javob berilmagan' },
   ];
@@ -56,6 +88,10 @@ export default function LeadFilters({ filters, onChange, onClear, stageCounts }:
     status: filters.status?.[0],
     source: filters.source || [],
     assignedTo: filters.assignedTo,
+    courseId: filters.courseId,
+    formId: filters.formId,
+    campaignId: filters.campaignId,
+    extraField: filters.extraField || [],
     overdue: filters.overdue || false,
     unresponded: filters.unresponded || false,
   };
@@ -66,6 +102,10 @@ export default function LeadFilters({ filters, onChange, onClear, stageCounts }:
       status: v.status ? [v.status] : undefined,
       source: v.source?.length ? v.source : undefined,
       assignedTo: v.assignedTo || undefined,
+      courseId: v.courseId || undefined,
+      formId: v.formId || undefined,
+      campaignId: v.campaignId || undefined,
+      extraField: v.extraField?.length ? v.extraField : undefined,
       overdue: v.overdue || undefined,
       unresponded: v.unresponded || undefined,
     });

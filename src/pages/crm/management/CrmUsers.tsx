@@ -35,6 +35,24 @@ const ALL_PERMISSIONS = [
 
 const PERMISSION_GROUPS = [...new Set(ALL_PERMISSIONS.map(p => p.group))];
 
+// "MARKETING" haqiqiy User.role qiymati emas (faqat TEACHER/MANAGER/ADMIN/
+// SUPER_ADMIN mavjud — server/middleware/auth.ts ROLE_LEVEL) — shu andoza
+// tanlanganda haqiqiy rol sifatida MANAGER saqlanadi (pastda applyTemplate),
+// permissions massivi esa cheklaydi. Shu funksiya buni orqaga qaytarib,
+// saqlangan permissions'ga qarab qaysi andoza ekanini aniqlaydi — aks holda
+// ro'yxat/tahrirlashda bunday foydalanuvchi "Menejer" yoki "Administrator"
+// deb noto'g'ri ko'rsatilardi.
+function matchTemplateId(user: { role: string; permissions?: string }): string {
+    let perms: string[] = [];
+    try { perms = JSON.parse(user.permissions || '[]'); } catch { /* noop */ }
+    if (perms.length > 0) {
+        const sorted = [...perms].sort().join(',');
+        const match = ROLE_TEMPLATES.find(t => [...t.permissions].sort().join(',') === sorted);
+        if (match) return match.id;
+    }
+    return user.role;
+}
+
 // ─── Role Templates ───────────────────────────────────────────────────
 const ROLE_TEMPLATES = [
     {
@@ -157,7 +175,7 @@ export default function CrmUsers() {
             role: user.role,
             permissions: perms,
         });
-        setSelectedTemplate(user.role);
+        setSelectedTemplate(matchTemplateId(user));
         setIsModalOpen(true);
     };
 
@@ -167,7 +185,13 @@ export default function CrmUsers() {
         setSelectedTemplate(templateId);
         setForm(prev => ({
             ...prev,
-            role: templateId === 'MARKETING' ? 'ADMIN' : templateId,
+            // MANAGER — eng past rol darajasi bu andozaga kerak bo'lgan barcha
+            // backend yo'llarni (leads/marketing/forms, hammasi MANAGER+) ochadi.
+            // ADMIN EMAS: ADMIN/SUPER_ADMIN frontend (ProtectedRoute.canAccess)
+            // va backendda maxsus holat sifatida "har doim to'liq ruxsat" deb
+            // ishlaydi — permissions massividan qat'i nazar. ADMIN saqlansa,
+            // "Marketing Xodimi" cheklovsiz to'liq administrator bo'lib qolardi.
+            role: templateId === 'MARKETING' ? 'MANAGER' : templateId,
             permissions: template.permissions,
         }));
     };
@@ -245,8 +269,9 @@ export default function CrmUsers() {
     );
 
 
-    const getRoleInfo = (role: string) => {
-        return ROLE_TEMPLATES.find(t => t.id === role) || ROLE_TEMPLATES[3];
+    const getRoleInfo = (user: CrmUser) => {
+        return ROLE_TEMPLATES.find(t => t.id === matchTemplateId(user))
+            || ROLE_TEMPLATES.find(t => t.id === 'TEACHER')!;
     };
 
     const getPermCount = (user: CrmUser) => {
@@ -282,7 +307,7 @@ export default function CrmUsers() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {ROLE_TEMPLATES.map(t => {
                     const Icon = t.icon;
-                    const count = users.filter(u => u.role === t.id || (t.id === 'MARKETING' && u.role === 'MARKETING')).length;
+                    const count = users.filter(u => matchTemplateId(u) === t.id).length;
                     return (
                         <div key={t.id} className={`p-4 rounded-2xl border ${t.border} ${t.bg} flex items-center gap-3`}>
                             <div className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-black/20 flex items-center justify-center ${t.color}`}>
@@ -290,7 +315,7 @@ export default function CrmUsers() {
                             </div>
                             <div>
                                 <p className="text-xs font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">{t.label}</p>
-                                <p className={`text-xl font-black ${t.color}`}>{users.filter(u => u.role === t.id).length} ta</p>
+                                <p className={`text-xl font-black ${t.color}`}>{count} ta</p>
                             </div>
                         </div>
                     );
@@ -334,7 +359,7 @@ export default function CrmUsers() {
                             </thead>
                             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                 {filteredUsers.map(user => {
-                                    const roleInfo = getRoleInfo(user.role);
+                                    const roleInfo = getRoleInfo(user);
                                     const Icon = roleInfo.icon;
                                     return (
                                         <tr key={user.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
