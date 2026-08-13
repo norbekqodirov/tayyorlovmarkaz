@@ -32,6 +32,13 @@ export default function LeadForm() {
   // lid yig'ishda davom etardi.
   const [formMissing, setFormMissing] = useState(false);
   const [courses, setCourses] = useState<Course[]>([]);
+  // Ariza yuborilgandan keyingi ekran — CrmForms.tsx'da har bir forma uchun
+  // alohida sozlanadi (masalan Instagram sahifasiga havola). Hammasi bo'sh
+  // bo'lsa (formId yo'q sahifalar, yoki sozlanmagan forma) pastdagi standart
+  // matn/tugma ishlatiladi.
+  const [successConfig, setSuccessConfig] = useState<{
+    title: string | null; message: string | null; buttonText: string | null; buttonUrl: string | null;
+  }>({ title: null, message: null, buttonText: null, buttonUrl: null });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -56,6 +63,7 @@ export default function LeadForm() {
         .then(res => {
           if (res.data?.extraField) setExtraField(res.data.extraField);
           if (typeof res.data?.showCourseField === 'boolean') setShowCourseField(res.data.showCourseField);
+          if (res.data?.success) setSuccessConfig(res.data.success);
         })
         .catch((err) => {
           // Faqat 404 = forma yo'q/faol emas. Tarmoq uzilishi yoki 500'da
@@ -106,22 +114,35 @@ export default function LeadForm() {
   };
 
   if (isSubmitted) {
+    // Xavfsizlik: backend allaqachon "/" yoki "http(s)://" bilan boshlanmagan
+    // qiymatlarni null qilib jo'natadi (server/routes/public.ts), lekin bu
+    // yerda ham mustaqil tekshiriladi — ikki qatlamli himoya, "javascript:"
+    // kabi sxemalar hech qachon href sifatida ishlatilmaydi.
+    const buttonUrl = successConfig.buttonUrl && /^(\/|https?:\/\/)/i.test(successConfig.buttonUrl)
+      ? successConfig.buttonUrl : null;
+    const isExternal = buttonUrl ? /^https?:\/\//i.test(buttonUrl) : false;
+    const buttonText = successConfig.buttonText || 'Bosh sahifaga qaytish';
+    const buttonClass = "w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-colors inline-block text-center";
+
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-black flex items-center justify-center p-4">
         <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 md:p-12 max-w-md w-full text-center border border-zinc-200 dark:border-zinc-800 shadow-xl">
           <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 size={40} />
           </div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-4">Arizangiz qabul qilindi!</h2>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-4">{successConfig.title || 'Arizangiz qabul qilindi!'}</h2>
           <p className="text-zinc-600 dark:text-zinc-400 mb-8">
-            Tez orada menejerlarimiz siz bilan bog'lanishadi.
+            {successConfig.message || "Tez orada menejerlarimiz siz bilan bog'lanishadi."}
           </p>
-          <button
-            onClick={() => navigate('/')}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg transition-colors"
-          >
-            Bosh sahifaga qaytish
-          </button>
+          {isExternal ? (
+            <a href={buttonUrl!} target="_blank" rel="noopener noreferrer" className={buttonClass}>
+              {buttonText}
+            </a>
+          ) : (
+            <button onClick={() => navigate(buttonUrl || '/')} className={buttonClass}>
+              {buttonText}
+            </button>
+          )}
         </div>
       </div>
     );

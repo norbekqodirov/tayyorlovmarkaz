@@ -1,5 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import prisma from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
@@ -68,7 +69,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'task': ['title', 'completed', 'userId', 'staffId', 'priority', 'deadline'],
     'performanceReview': ['staffId', 'date', 'reviewer', 'feedback', 'rating'],
     'staffDocument': ['staffId', 'name', 'type', 'uploadDate'],
-    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions', 'campaignId', 'utmSource', 'utmCampaign', 'extraFieldType', 'showCourseField'],
+    'targetForm': ['title', 'description', 'course', 'url', 'isActive', 'submissions', 'campaignId', 'utmSource', 'utmCampaign', 'extraFieldType', 'showCourseField', 'successTitle', 'successMessage', 'successButtonText', 'successButtonUrl'],
     // ── Academic (Faza 0.2) ──────────────────────────────────────────────────
     'groupSchedule':   ['groupId', 'groupName', 'teacher', 'room', 'startTime', 'endTime', 'days', 'color'],
     'attendance':      ['groupId', 'date', 'records'],
@@ -183,6 +184,29 @@ function validateInput(modelName: string, data: any): string | null {
         if (!data[field] && data[field] !== 0) return rules.messages[field] || `${field} maydoni to'ldirilishi shart`;
     }
     return null;
+}
+
+// ─── TargetForm qisqa ommaviy kod (/l/{shortCode}) ─────────────────────────────
+// Avval /l/{TargetForm.id} to'liq UUID (36 belgi) havola sifatida ishlatilardi —
+// reklama bio/linkda juda uzun bo'lardi. Endi CREATE vaqtida shu qisqa (6 belgi)
+// kod generatsiya qilinadi; server/routes/public.ts uni id bilan bir qatorda
+// qabul qiladi (eski to'liq-UUID havolalar ham ishlayveradi).
+const SHORT_CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+function randomShortCode(len: number): string {
+    const bytes = crypto.randomBytes(len);
+    let code = '';
+    for (let i = 0; i < len; i++) code += SHORT_CODE_CHARS[bytes[i] % SHORT_CODE_CHARS.length];
+    return code;
+}
+async function generateUniqueShortCode(): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+        const code = randomShortCode(6);
+        const exists = await prisma.targetForm.findUnique({ where: { shortCode: code }, select: { id: true } });
+        if (!exists) return code;
+    }
+    // 6 belgili kod 5 marta ketma-ket to'qnashishi amalda deyarli imkonsiz —
+    // shunga qaramay, cheksiz tsiklga tushmaslik uchun uzunroq zaxira variant.
+    return randomShortCode(10);
 }
 
 function sanitizeForPrisma(modelName: string, data: any): any {
@@ -315,6 +339,12 @@ router.use('/:collection', authForCollection, async (req, res, next) => {
         req.body = sanitizeForPrisma(modelName, req.body);
         req.body = normalizeData(modelName, req.body);
         req.body = stringifyJsonFields(modelName, req.body);
+
+        // Faqat CREATE'da — tahrirlashda mavjud kod SAQLANIB QOLISHI kerak,
+        // aks holda allaqachon ulashilgan qisqa havola buzilib qoladi.
+        if (req.method === 'POST' && modelName === 'targetForm') {
+            req.body.shortCode = await generateUniqueShortCode();
+        }
     }
 
     next();

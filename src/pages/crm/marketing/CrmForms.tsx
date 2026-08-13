@@ -17,8 +17,21 @@ interface Form {
   course?: string | null;
   isActive: boolean;
   submissions: number;
+  shortCode?: string | null;
   extraFieldType?: 'none' | 'age' | 'grade' | null;
   showCourseField?: boolean;
+  successTitle?: string | null;
+  successMessage?: string | null;
+  successButtonText?: string | null;
+  successButtonUrl?: string | null;
+}
+
+// Faqat ichki yo'l ("/...") yoki http(s):// bilan boshlangan tashqi havolani
+// qabul qilamiz — server ham xuddi shu qoidani mustaqil qo'llaydi
+// (server/routes/public.ts), bu yerdagi tekshiruv faqat tezroq fikr-mulohaza
+// (saqlashda darhol xato ko'rsatish) uchun.
+function isSafeRedirectUrl(url: string): boolean {
+  return /^(\/|https?:\/\/)/i.test(url.trim());
 }
 
 const EXTRA_FIELD_OPTIONS = [
@@ -35,7 +48,10 @@ export default function CrmForms() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
-  const [formData, setFormData] = useState<Partial<Form>>({ title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true });
+  const [formData, setFormData] = useState<Partial<Form>>({
+    title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true,
+    successTitle: '', successMessage: '', successButtonText: '', successButtonUrl: '',
+  });
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [formStats, setFormStats] = useState<Record<string, { views: number; submissionsReal: number; conversionRate: number; won: number }>>({});
 
@@ -50,10 +66,18 @@ export default function CrmForms() {
   const openModal = (form: Form | null = null) => {
     if (form) {
       setEditingForm(form);
-      setFormData({ title: form.title, description: form.description || '', course: form.course || '', isActive: form.isActive, extraFieldType: form.extraFieldType ?? null, showCourseField: form.showCourseField ?? true });
+      setFormData({
+        title: form.title, description: form.description || '', course: form.course || '',
+        isActive: form.isActive, extraFieldType: form.extraFieldType ?? null, showCourseField: form.showCourseField ?? true,
+        successTitle: form.successTitle || '', successMessage: form.successMessage || '',
+        successButtonText: form.successButtonText || '', successButtonUrl: form.successButtonUrl || '',
+      });
     } else {
       setEditingForm(null);
-      setFormData({ title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true });
+      setFormData({
+        title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true,
+        successTitle: '', successMessage: '', successButtonText: '', successButtonUrl: '',
+      });
     }
     setIsModalOpen(true);
   };
@@ -66,6 +90,10 @@ export default function CrmForms() {
   const handleSave = async () => {
     if (!formData.title?.trim()) {
       showToast('Forma nomi kiritilishi shart', 'error');
+      return;
+    }
+    if (formData.successButtonUrl?.trim() && !isSafeRedirectUrl(formData.successButtonUrl)) {
+      showToast("Tugma havolasi \"/\" bilan (ichki sahifa) yoki \"https://\" bilan (tashqi havola) boshlanishi shart", 'error');
       return;
     }
     setIsSaving(true);
@@ -99,7 +127,10 @@ export default function CrmForms() {
     setDeleteConfirm({ open: false, id: '' });
   };
 
-  const shareUrl = (form: Form) => `${window.location.origin}/l/${form.id}`;
+  // shortCode (6 belgi) — crud.ts CREATE'da avtomatik generatsiya qiladi.
+  // Eski (shortCode yaratilishidan oldingi) formalar uchun to'liq id'ga tushiladi
+  // (scripts/backfill_form_short_codes.ts orqali ular ham tuzatiladi).
+  const shareUrl = (form: Form) => `${window.location.origin}/l/${form.shortCode || form.id}`;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -267,6 +298,49 @@ export default function CrmForms() {
             <p className="text-xs text-zinc-400 mt-1">
               Bu FAQAT shu forma uchun — Sozlamalar → Lid Forma'dagi umumiy standartni ustidan yozadi.
             </p>
+          </div>
+          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/50">
+            <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1 mt-3">Muvaffaqiyat sahifasi (ariza yuborilgandan keyin)</p>
+            <p className="text-xs text-zinc-400 mb-3">
+              Bo'sh qoldirilsa standart matn va "Bosh sahifaga qaytish" tugmasi chiqadi.
+            </p>
+            <div className="space-y-3">
+              <Input
+                label="Sarlavha"
+                value={formData.successTitle || ''}
+                onChange={(e) => setFormData({ ...formData, successTitle: e.target.value })}
+                placeholder="Arizangiz qabul qilindi!"
+              />
+              <div>
+                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Xabar matni</label>
+                <textarea
+                  value={formData.successMessage || ''}
+                  onChange={(e) => setFormData({ ...formData, successMessage: e.target.value })}
+                  rows={2}
+                  placeholder="Tez orada menejerlarimiz siz bilan bog'lanishadi."
+                  className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Tugma matni"
+                  value={formData.successButtonText || ''}
+                  onChange={(e) => setFormData({ ...formData, successButtonText: e.target.value })}
+                  placeholder="Bosh sahifaga qaytish"
+                />
+                <Input
+                  label="Tugma havolasi"
+                  value={formData.successButtonUrl || ''}
+                  onChange={(e) => setFormData({ ...formData, successButtonUrl: e.target.value })}
+                  placeholder="https://instagram.com/..."
+                />
+              </div>
+              <p className="text-xs text-zinc-400 -mt-1">
+                Ichki sahifa uchun "/" bilan (masalan "/boglanish"), tashqi havola uchun
+                "https://" bilan boshlang (masalan Instagram/Telegram sahifangiz) — tashqi
+                havolalar yangi tabda ochiladi.
+              </p>
+            </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input

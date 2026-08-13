@@ -240,6 +240,21 @@ export async function createLeadFromIntake(input: LeadIntakeInput): Promise<Lead
         return { ok: false, reason: 'honeypot' };
     }
 
+    // formId — endi haqiqiy TargetForm.id yoki qisqa shortCode (/l/{shortCode})
+    // bo'lishi mumkin (LeadForm.tsx odatda GET /public/forms/:id javobidagi
+    // haqiqiy id'ni yuboradi, lekin juda tez yuborilgan so'rovda hali
+    // yechilmagan bo'lishi mumkin — shu holat uchun himoya). Lead.formId FK
+    // TargetForm.id'ga ishora qilishi SHART, shuning uchun shu yerda bir marta
+    // haqiqiy id'ga aylantiriladi — pastdagi hamma kod (resolveCampaign,
+    // attribution.formId) o'zgarishsiz ishlayveradi.
+    if (input.formId) {
+        const form = await prisma.targetForm.findFirst({
+            where: { OR: [{ id: input.formId }, { shortCode: input.formId }] },
+            select: { id: true },
+        });
+        input.formId = form?.id;
+    }
+
     const { name, phoneNorm } = validate(input);
     const course = sanitizeText(input.course, 200);
     const courseId = sanitizeText(input.courseId, 100) || undefined;

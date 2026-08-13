@@ -481,7 +481,8 @@ model TargetForm {
   title       String
   description String?
   course      String?
-  url         String?  @unique // eskirgan — endi yozilmaydi, /l/{id} ishlatiladi
+  url         String?  @unique // eskirgan — endi yozilmaydi, /l/{shortCode} ishlatiladi
+  shortCode   String?  @unique // qisqa ommaviy havola kodi (6 belgi) — server/routes/crud.ts CREATE'da generatsiya qiladi
   isActive    Boolean  @default(true)
   submissions Int      @default(0)
   createdAt   DateTime @default(now())
@@ -501,6 +502,17 @@ model TargetForm {
   // reklama allaqachon bitta kursga bag'ishlangan bo'lsa). Standart true —
   // eski formalar oldingi xatti-harakatini saqlab qoladi.
   showCourseField Boolean @default(true)
+
+  // Ariza yuborilgandan keyingi "muvaffaqiyat" ekrani — hammasi ixtiyoriy,
+  // bo'sh bo'lsa LeadForm.tsx'dagi standart matn/tugma (Bosh sahifaga
+  // qaytish) ishlatiladi. successButtonUrl faqat "/" bilan boshlangan ichki
+  // yo'l yoki "http(s)://" bilan boshlangan tashqi havola bo'lsa qabul
+  // qilinadi (LeadForm.tsx render vaqtida tekshiradi) — boshqa hech narsa
+  // (masalan "javascript:") havola sifatida ishlatilmaydi.
+  successTitle      String?
+  successMessage    String?
+  successButtonText String?
+  successButtonUrl  String?
 
   leadRecords Lead[]
 

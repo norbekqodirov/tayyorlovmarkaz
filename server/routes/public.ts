@@ -20,6 +20,16 @@ function extraFieldLabel(type: string): string | null {
     return type === 'age' ? 'Yosh' : type === 'grade' ? 'Sinf' : null;
 }
 
+// Faqat ichki yo'l ("/...") yoki http(s):// bilan boshlangan tashqi havolani
+// xavfsiz deb hisoblaymiz — "javascript:" va shunga o'xshash boshqa sxemalar
+// hech qachon ommaviy javobga chiqarilmaydi (LeadForm.tsx render vaqtida ham
+// alohida tekshiradi — ikki qatlamli himoya).
+function isSafeRedirectUrl(url: string | null | undefined): url is string {
+    if (!url) return false;
+    const trimmed = url.trim();
+    return trimmed.startsWith('/') || /^https?:\/\//i.test(trimmed);
+}
+
 async function globalExtraFieldType(): Promise<'none' | 'age' | 'grade'> {
     const setting = await prisma.setting.findUnique({ where: { key: 'lead_extra_field_type' } });
     return (setting?.value as 'none' | 'age' | 'grade') || 'none';
@@ -57,18 +67,29 @@ router.put('/lead-form-config', requireAuth, requireMinRole('ADMIN'), async (req
 });
 
 // GET /api/public/forms/:id — bitta target forma haqida ommaviy ma'lumot (faol bo'lsa).
+// :id — yoki haqiqiy TargetForm.id (eski, 36-belgili UUID havolalar), yoki
+// qisqa shortCode (/l/{shortCode}, yangi 6-belgili havolalar) bo'lishi mumkin —
+// ikkalasi ham qabul qilinadi (crud.ts CREATE'da shortCode generatsiya qiladi).
 // extraField — shu FORMAGA xos sozlama (CrmForms.tsx'da tanlanadi); agar forma
 // alohida belgilamagan bo'lsa (extraFieldType == null), global Sozlamalar
 // qiymatiga qaytadi — eski (formId'dan oldin yaratilgan) formalar buzilmaydi.
 router.get('/forms/:id', async (req, res) => {
     try {
-        const form = await prisma.targetForm.findFirst({ where: { id: req.params.id, isActive: true } });
+        const form = await prisma.targetForm.findFirst({
+            where: { OR: [{ id: req.params.id }, { shortCode: req.params.id }], isActive: true },
+        });
         if (!form) return res.status(404).json({ message: 'Forma topilmadi yoki faol emas' });
         const type = (form.extraFieldType as 'none' | 'age' | 'grade' | null) || await globalExtraFieldType();
         res.json({
             id: form.id, title: form.title, description: form.description, course: form.course,
             extraField: { type, label: extraFieldLabel(type) },
             showCourseField: form.showCourseField,
+            success: {
+                title: form.successTitle?.trim() || null,
+                message: form.successMessage?.trim() || null,
+                buttonText: form.successButtonText?.trim() || null,
+                buttonUrl: isSafeRedirectUrl(form.successButtonUrl) ? form.successButtonUrl.trim() : null,
+            },
         });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
@@ -93,8 +114,11 @@ router.get('/courses', async (_req, res) => {
 // POST /api/public/forms/:id/view — forma sahifasi ochilganini hisoblaydi
 // (konversiya % = arizalar/ko'rishlar shu hisobga tayanadi).
 router.post('/forms/:id/view', publicViewRateLimit, async (req, res) => {
-    await prisma.targetForm.update({
-        where: { id: req.params.id },
+    // updateMany — id VA shortCode ikkalasi ham unique, shuning uchun bu
+    // amalda hech qachon 1 tadan ortiq qatorga tegmaydi, lekin OR shartli
+    // update() (WhereUniqueInput) o'rniga updateMany() talab qiladi.
+    await prisma.targetForm.updateMany({
+        where: { OR: [{ id: req.params.id }, { shortCode: req.params.id }] },
         data: { views: { increment: 1 } },
     }).catch(() => null);
     res.json({ ok: true });
