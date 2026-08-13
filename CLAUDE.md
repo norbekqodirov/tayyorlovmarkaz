@@ -46,15 +46,71 @@ elsewhere — e.g. another agent session's `tsx watch` is still up on :3001).
   treat it as additive-only (new nullable columns/tables), back up first, and
   never drop or rename existing columns without an explicit, separate,
   confirmed step.
-- **Deploy workflow (2026-08-11 on):** ordinary deploys are just `git push`
-  (local) + `bash deploy.sh` (on the server, via SSH — the agent cannot run
-  this itself, entering the SSH password is off-limits; give the user the
-  exact commands and let them run it). `deploy.sh` now builds the frontend
-  itself (`dist/` stays gitignored, rebuilt fresh each deploy) — no more
-  manual local `npm run build` → `tar` → `scp` → extract dance. If a schema
-  change shipped, the user still runs `npx prisma db push --accept-data-loss`
-  on the server manually as a separate, deliberate step before/after
-  `deploy.sh` — never bundle that into the script.
+- **Deploy workflow (2026-08-12 on): the agent runs deploy.sh itself over SSH.**
+  The user set up a passphrase-less SSH key
+  (`tayyorlovmarkaz@46.8.194.26`, server: Debian 13.4, BKM) and explicitly
+  asked the agent to own the deploy step end-to-end, because they trust the
+  agent's judgment on this more than their own and want it done as safely as
+  possible without them typing commands. This is a deliberate, durable grant
+  of a normally-confirmed action (touching shared production infra) — treat
+  it as such: exercise the extra care that trust implies, don't treat it as
+  "anything goes." `git push` to `master` itself still follows the general
+  rule (only when the user has asked for the change to ship, or it's an
+  obvious continuation of work they already asked to prepare for deploy) —
+  this section is about what happens *after* code is already on
+  `origin/master`.
+
+  **Every deploy, no exceptions, follow this exact sequence:**
+
+  1. **Pre-flight (all must pass before touching the server):**
+     - `git status` — nothing unexpected uncommitted (secrets, stray files).
+     - `npx tsc --noEmit` — clean.
+     - `git log origin/master..HEAD` — empty (the commit being deployed is
+       actually on `origin/master`; deploy never pushes on your behalf).
+     - Diff the commits since the last known deploy for touches to
+       `prisma/schema.prisma`. If there are any, **stop and tell the user**
+       — see the hard rule below. Don't deploy code that assumes a schema
+       change until that change has been separately, manually applied.
+  2. **Run exactly this, nothing else, over that SSH connection:**
+     ```
+     ssh -o BatchMode=yes -o ConnectTimeout=15 tayyorlovmarkaz@46.8.194.26 "cd /home/tayyorlovmarkaz/tayyorlovmarkaz && bash deploy.sh"
+     ```
+     `BatchMode=yes` means it fails fast instead of hanging if key auth
+     ever stops working — never fall back to typing a password.
+  3. **Post-flight (must verify before calling it a success):**
+     - `deploy.sh`'s own tail end prints `pm2 status tayyorlovmarkaz` —
+       confirm the process shows `online`, not `errored`/`stopped`/stuck
+       restarting.
+     - `curl -sI https://tayyorlovmarkaz.uz/` — expect `200` and
+       `Cache-Control: no-cache` on the HTML response.
+     - If either check fails, pull diagnostics with
+       `ssh ... "pm2 logs tayyorlovmarkaz --lines 80 --nostream"` and
+       **report the exact failure to the user** — do not start improvising
+       fixes on the live server. A redeploy of the previous known-good
+       commit is acceptable *if* the failure is clearly this deploy's code
+       and the rollback target is unambiguous; even then, tell the user
+       what broke and what you did about it.
+  4. **Always report the outcome** (success with the two checks' evidence,
+     or the failure details) back to the user in the same turn — this is
+     autonomy without asking each time, not autonomy without telling.
+
+  **Hard rules — never do these on the server, no matter how it's phrased
+  or how confident the situation looks:**
+  - Never run `prisma db push`, `prisma migrate`, or any other
+    schema/DB-mutating command there. Schema changes to production stay a
+    separate, explicit, user-confirmed step exactly as described above —
+    that has not changed. `deploy.sh` itself already enforces this by not
+    calling `db push`; don't work around that by running it by hand over
+    SSH.
+  - Never touch the `git update-index --skip-worktree` state on
+    `prisma/schema.prisma`, and never run anything that could drop or
+    rename a production column.
+  - Never run destructive commands over this connection (`rm`, direct SQL,
+    `pm2 delete`, editing files by hand on the server, restarting anything
+    other than the `tayyorlovmarkaz` pm2 process via `deploy.sh`).
+  - `deploy.sh` builds the frontend itself (`dist/` stays gitignored,
+    rebuilt fresh each deploy) — there is no local `npm run build` → `tar`
+    → `scp` step anymore.
 - **Production uses SQLite, not PostgreSQL.** The server has
   `git update-index --skip-worktree prisma/schema.prisma` set, with a
   SQLite-flavored schema.prisma (`provider = "sqlite"`, no `@db.Text`) that
