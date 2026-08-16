@@ -44,13 +44,6 @@ const MODEL_MAP: Record<string, string> = {
     'lead_activities':'leadActivity',
 };
 
-// Collections still stored as GenericDocument (truly schema-less or rarely used)
-const FORCE_GENERIC: Set<string> = new Set([
-    'automations',
-    'enrollments_extra',
-    'journal', // JournalEntry model has different structure; migrated via journalEntries endpoint
-]);
-
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Core entities ────────────────────────────────────────────────────────
@@ -281,22 +274,17 @@ function authForCollection(req: express.Request, res: express.Response, next: ex
 // ─── Collection Middleware ────────────────────────────────────────────────────
 router.use('/:collection', authForCollection, async (req, res, next) => {
     const { collection } = req.params;
-    let modelName = MODEL_MAP[collection];
-
-    if (!modelName) {
-        // Check if direct Prisma model exists
-        // @ts-ignore
-        if (!FORCE_GENERIC.has(collection) && prisma[collection]) {
-            modelName = collection;
-        } else {
-            (req as any).useFallback = true;
-            (req as any).modelName = collection;
-            return next();
-        }
-    }
+    // Faqat MODEL_MAP'da ro'yxatdan o'tgan nomlar haqiqiy Prisma modeliga
+    // yo'naltiriladi — URL segmentini to'g'ridan-to'g'ri prisma[collection]
+    // sifatida ishlatish XAVFLI edi: masalan /api/user (User.password hash),
+    // /api/staffFaceProfile (biometrik), /api/auditLog, /api/leaveRequest kabi
+    // MODEL_MAP'da yo'q, lekin haqiqiy Prisma modeli bo'lgan har qanday nom
+    // whitelist'siz to'liq o'qilardi/yozilardi (SCHEMA_FIELDS ham bunday
+    // modellar uchun aniqlanmagani sababli yozishda ham cheklovsiz edi).
+    const modelName = MODEL_MAP[collection];
 
     // @ts-ignore
-    if (!prisma[modelName]) {
+    if (!modelName || !prisma[modelName]) {
         (req as any).useFallback = true;
         (req as any).modelName = collection;
         return next();
