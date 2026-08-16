@@ -7,7 +7,7 @@
 > Ishlab chiqarish (production) serveri: SSH `46.8.194.26` (user `tayyorlovmarkaz`),
 > `/home/tayyorlovmarkaz/tayyorlovmarkaz/` — **SQLite** bilan ishlaydi (§0.6 ga q.),
 > `bash deploy.sh` orqali yangilanadi, PM2 (`pm2 restart tayyorlovmarkaz`) boshqaradi.
-> Oxirgi yangilanish: 2026-08-11 (Marketing/Lidlar moduli production'ga chiqarilmoqda — §3.7–3.10 ga q.)
+> Oxirgi yangilanish: 2026-08-16 (Marketing/Lidlar moduli productionda ishlamoqda — §3.7–3.10 ga q.; generic CRUD GET RBAC + accessibility tuzatishlari deploy qilindi — §3.11 ga q.)
 
 ---
 
@@ -366,12 +366,42 @@ bash deploy.sh          # git pull + schema-fix (SQLite) + npm install (devDeps 
 5. Fayl o'chirishdan oldin import qilinishini tekshiring (Grep). Hech narsani ko'r-ko'rona o'chirmang.
 6. Ish yakunida **shu faylni yangilang** — keyingi AI to'liq tushunib, sifatli davom etsin.
 
+### 3.11 O'ninchi sessiya (2026-08-16) — worktree tozalash + generic CRUD GET RBAC
+
+Avvalgi sessiyalarda `Agent`/`spawn_task` orqali fon vazifasi sifatida boshlangan,
+lekin hech qachon ko'rib chiqilmagan/commit qilinmagan 3 ta `.claude/worktrees/`
+topildi: (1) `CrmUsers.tsx` nested-button accessibility tuzatishi — mos, qo'shildi;
+(2) generic CRUD GET'ga rol darajasi bo'yicha cheklov + xavfli model-nomi fallback
+yopilishi — mos, qo'shildi (pastga q.); (3) eski (ee84da8 asosli) schedule-days
+tuzatish `CrmGroupDetail.tsx` uchun — **eskirgan/ortiqcha topildi**, chunki bu
+muammo keyinroq boshqacha (`groupWithSchedule`, `education/CrmGroupDetail.tsx:47-66`)
+hal qilingan ekan — tashlab yuborildi. Ikkita orphan branch (worktree'siz,
+eski `ee84da8` commitga ishora qiluvchi, hech qanday noyob ish saqlamagan) ham
+o'chirildi.
+
+**Generic CRUD GET RBAC (`server/middleware/auth.ts`, `crud.ts`):** avval
+`GET /api/:collection` uchun FAQAT autentifikatsiya tekshirilardi, rol darajasi
+umuman emas — demak istalgan login qilgan foydalanuvchi (TEACHER ham) moliya
+tranzaksiyalari, xodim maoshi/pasporti, `settings` (bot tokenlari) kabi HAR
+QANDAY kolleksiyani o'qiy olardi. `COLLECTION_READ_LEVEL` (har bir kolleksiya
+uchun minimal rol, ro'yxatdan o'tmagani ADMIN'ga tushadi — fail-closed) qo'shildi.
+Alohida, lekin bog'liq: `crud.ts`da `MODEL_MAP`da yo'q URL segmenti
+to'g'ridan-to'g'ri `prisma[collection]` sifatida sinab ko'rilardi — `/api/user`
+(parol hash), `/api/staffFaceProfile`, `/api/auditLog` kabi nomlar
+`SCHEMA_FIELDS` whitelist'siz to'liq ochiq edi; endi faqat `MODEL_MAP`da
+ro'yxatdan o'tgan nomlar haqiqiy modelga yo'naltiriladi. `PUBLIC_READ_COLLECTIONS`
+(pageContent/gallery/news/teachers) bu tekshiruvdan oldin bypass qilingani
+uchun ommaviy sayt tegilmagan. Real brauzerda TEACHER test hisobi bilan
+tasdiqlandi: akademik ma'lumotlar (courses/groups/students/schedule/attendance)
+200, moliya/lidlar to'g'ri 403 (sahifa qulamaydi, dashboard vidjetlari 0
+ko'rsatadi). `tsc`+`build` toza, `master`ga push qilindi, productionga
+deploy qilindi (`9d76d65`) va tasdiqlandi (HEAD mos, PM2 barqaror, 200 OK).
+
 ### Keyingi tavsiya etilgan ishlar
-1. **Backend RBAC gap** (§7.4) — custom `permissions` massivini backend darajasida ham tekshirish (hozir faqat rol darajasi tekshiriladi). Katta, ehtiyotkorlik bilan qilinishi kerak bo'lgan ish.
-2. Marketing/Lidlar moduli — **hali productionga deploy qilinmagan** (§3.8-3.9), Lead sxemasiga ~25 yangi ustun qo'shilgan — deploy qilishdan oldin production SQLite bazasida qo'lda `prisma db push` SHART (§0.2).
-3. Vaqt zonasi (UTC) muammosini `scheduler.ts`/`analytics.ts`/`portal.ts` da ham tuzatish (`server/utils/timezone.ts` allaqachon bor).
-4. CrmFinance/CrmDashboard hisoblashni server-side ga o'tkazish (Faza 1.1).
-5. CrmGroupDetail (~40KB) sub-komponentlarga bo'lish (Faza 0.3).
-6. `marketing.ts`dagi N+1 so'rovlarni (`/by-campaign`, `/by-form`, `/managers`) kampaniya/menejer soni ko'paysa `groupBy`ga o'tkazish.
-7. Face ID xodim davomatini real qurilmada sinab ko'rish (mobil Telegram WebView).
-8. `scripts/fix_teacher_permissions.ts` productionda ishga tushirilganmi — tasdiqlanmagan (§3.7), tekshirish kerak.
+1. **Backend RBAC gap, yozish (write) tomoni** (§7.4/§8.25) — custom `permissions` massivini backend darajasida ham tekshirish (hozir GET rol darajasi bo'yicha cheklangan — §3.11, lekin custom `permissions` massivi hamon faqat frontendda tekshiriladi). Katta, ehtiyotkorlik bilan qilinishi kerak bo'lgan ish.
+2. Vaqt zonasi (UTC) muammosini `scheduler.ts`/`analytics.ts`/`portal.ts` da ham tuzatish (`server/utils/timezone.ts` allaqachon bor).
+3. CrmFinance/CrmDashboard hisoblashni server-side ga o'tkazish (Faza 1.1).
+4. CrmGroupDetail (~40KB) sub-komponentlarga bo'lish (Faza 0.3).
+5. `marketing.ts`dagi N+1 so'rovlarni (`/by-campaign`, `/by-form`, `/managers`) kampaniya/menejer soni ko'paysa `groupBy`ga o'tkazish.
+6. Face ID xodim davomatini real qurilmada sinab ko'rish (mobil Telegram WebView).
+7. `scripts/fix_teacher_permissions.ts` productionda ishga tushirilganmi — tasdiqlanmagan (§3.7), tekshirish kerak.
