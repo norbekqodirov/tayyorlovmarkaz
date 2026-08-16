@@ -535,10 +535,17 @@ export default function CrmUsers() {
                                             const isExpanded = expandedGroups.includes(group);
                                             return (
                                                 <div key={group} className="border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden">
-                                                    <button
-                                                        type="button"
+                                                    <div
+                                                        role="button"
+                                                        tabIndex={0}
                                                         onClick={() => setExpandedGroups(prev => prev.includes(group) ? prev.filter(g => g !== group) : [...prev, group])}
-                                                        className="w-full flex items-center justify-between px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                e.preventDefault();
+                                                                setExpandedGroups(prev => prev.includes(group) ? prev.filter(g => g !== group) : [...prev, group]);
+                                                            }
+                                                        }}
+                                                        className="w-full flex items-center justify-between px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <button
@@ -556,7 +563,7 @@ export default function CrmUsers() {
                                                             <span className="text-xs text-zinc-500">{selectedCount}/{groupPerms.length}</span>
                                                             <ChevronDown size={16} className={`text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                                         </div>
-                                                    </button>
+                                                    </div>
                                                     {isExpanded && (
                                                         <div className="p-3 grid grid-cols-2 gap-2">
                                                             {groupPerms.map(perm => (
