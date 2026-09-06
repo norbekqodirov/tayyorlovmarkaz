@@ -564,6 +564,31 @@ router.get('/students', staffPortalAuth, async (req: any, res) => {
     }
 });
 
+// ─── GET /api/staff-portal/staff ─────────────────────────────────────────────
+// HR uchun xodimlar ro'yxati (mini-app "Xodimlar" tabi). TEACHER bu yerga
+// kirmaydi (getTabsForRole frontendda ham buni ko'rsatmaydi, lekin backend
+// darajasida ham tekshiramiz — faqat frontendga ishonib qolmaslik uchun).
+// Maosh/pasport kabi nozik maydonlar QAYTARILMAYDI.
+
+router.get('/staff', staffPortalAuth, async (req: any, res) => {
+    try {
+        const { role } = req.staffUser;
+        if (role === 'TEACHER') {
+            return res.status(403).json({ error: 'Bu sahifaga ruxsat yo\'q' });
+        }
+
+        const staff = await prisma.staffMember.findMany({
+            where: { deletedAt: null, status: 'Faol' },
+            select: { id: true, name: true, role: true, phone: true, photo: true },
+            orderBy: { name: 'asc' },
+        });
+
+        res.json({ staff });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── PUT /api/staff-portal/me/telegram ───────────────────────────────────────
 
 router.put('/me/telegram', staffPortalAuth, async (req: any, res) => {

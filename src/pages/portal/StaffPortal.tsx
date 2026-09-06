@@ -909,31 +909,10 @@ function StaffTab({ initData }: { initData: string }) {
     const [error, setError] = useState('');
 
     useEffect(() => {
-        const load = async () => {
-            try {
-                // Biz mavjud generic CRUD endpointidan foydalanamiz
-                const token = getUrlToken();
-                // Agar URL token bo'lmasa, xodimlar ro'yxatini yuklashda muammo bo'lishi mumkin,
-                // lekin ko'p hollarda HR url token bilan kiradi
-                const headers: any = {};
-                if (token) headers['Authorization'] = `Bearer ${token}`;
-                
-                const res = await fetch('/api/staffMembers', { headers });
-                if (!res.ok) {
-                    if (res.status === 401 || res.status === 403) {
-                        throw new Error("Ruxsat yetarli emas yoki token eskirgan");
-                    }
-                    throw new Error("Xatolik yuz berdi");
-                }
-                const data = await res.json();
-                setStaffList(Array.isArray(data) ? data : (data.data || []));
-            } catch (err: any) {
-                setError(err.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-        load();
+        staffFetch('/staff', initData)
+            .then(d => setStaffList(d.staff || []))
+            .catch((err: any) => setError(err.debug || 'Xatolik yuz berdi'))
+            .finally(() => setLoading(false));
     }, [initData]);
 
     if (loading) return (
