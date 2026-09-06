@@ -88,6 +88,43 @@ export default function CrmGroups() {
 
   const selectedCourseData = courseList.find(c => c.id === formData.courseId);
 
+  const hasScheduleConflict = useMemo(() => {
+    if (!scheduleForm.room || scheduleForm.days.length === 0 || !scheduleForm.time) {
+      return false;
+    }
+
+    let [formStart, formEnd] = scheduleForm.time.split(' - ');
+    if (!formEnd && formStart && formStart.length === 5) {
+      formEnd = getEndTime(formStart, selectedCourseData?.lessonDuration || 90);
+    }
+    if (!formStart || !formEnd) return false;
+
+    const formDayNumbers = scheduleForm.days.map(d => DAY_MAP[d]).filter(Boolean);
+    if (formDayNumbers.length === 0) return false;
+
+    const timeToMin = (t: string) => {
+      const [h, m] = (t || '').split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+
+    const sMin = timeToMin(formStart);
+    const eMin = timeToMin(formEnd);
+
+    return (schedule || []).some((s: any) => {
+      if (formData.id && s.groupId === formData.id) return false;
+      if (!s.room || !s.days || !s.startTime || !s.endTime) return false;
+      if (s.room.trim().toLowerCase() !== scheduleForm.room.trim().toLowerCase()) return false;
+
+      const hasDayOverlap = (s.days || []).some((d: number) => formDayNumbers.includes(d));
+      if (!hasDayOverlap) return false;
+
+      const esMin = timeToMin(s.startTime);
+      const eeMin = timeToMin(s.endTime);
+
+      return sMin < eeMin && eMin > esMin;
+    });
+  }, [scheduleForm, formData.id, schedule, selectedCourseData?.lessonDuration, getEndTime]);
+
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!formData.name?.trim()) errors.name = "Guruh nomi kiritilishi shart";
@@ -683,6 +720,13 @@ export default function CrmGroups() {
               </select>
             </div>
           </div>
+
+          {hasScheduleConflict && (
+            <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-medium">
+              <AlertCircle size={16} className="shrink-0 text-amber-500" />
+              <span>Diqqat: bu xona/vaqt boshqa guruhda band bo'lishi mumkin</span>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
             <Button variant="ghost" onClick={closeModal} disabled={saving}>Bekor qilish</Button>
