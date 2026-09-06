@@ -170,7 +170,6 @@ export default function TelegramPortal() {
     const [meData, setMeData] = useState<MeData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [debugInfo, setDebugInfo] = useState('');
 
     // Tab data
     const [attendance, setAttendance] = useState<{ records: AttendanceRecord[]; summary: AttendanceSummary } | null>(null);
@@ -229,13 +228,11 @@ export default function TelegramPortal() {
         setLoading(true);
         setError('');
         const currentInitData = initData ?? '';
-        setDebugInfo(`initData len: ${currentInitData.length}`);
         try {
             const data = await portalFetch('/me', currentInitData);
             setMeData(data);
-            setDebugInfo('');
         } catch (e: any) {
-            setDebugInfo(`err: ${e.message} | ${(e as any).debug || ''} | initData len: ${currentInitData.length}`);
+            console.error('Portal fetch error:', e.message, (e as any).debug, 'initData len:', currentInitData.length);
             if (e.message === '404') setError('linked');
             else if (e.message === '401') setError('auth');
             else setError('network');
@@ -330,9 +327,6 @@ export default function TelegramPortal() {
                             </div>
                         ))}
                     </div>
-                )}
-                {debugInfo && (
-                    <p className="text-xs text-zinc-400 max-w-xs break-all bg-zinc-100 dark:bg-zinc-900 p-2 rounded-lg font-mono">{debugInfo}</p>
                 )}
                 {!isEmpty && (
                     <button onClick={fetchMe} className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-bold">
