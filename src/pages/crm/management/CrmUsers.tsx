@@ -29,6 +29,8 @@ const ALL_PERMISSIONS = [
     { id: 'inventory', label: 'Inventar', group: "Resurslar" },
     { id: 'content', label: 'Kontent/Yangiliklar', group: "Tizim" },
     { id: 'settings', label: 'Sozlamalar', group: "Tizim" },
+    { id: 'leave_requests', label: "Mehnat Ta'tillari", group: 'HR' },
+    { id: 'staff_attendance', label: 'Xodim Davomati', group: 'HR' },
     { id: 'users', label: 'Foydalanuvchilar', group: "Tizim" },
     { id: 'parent_chat', label: 'Ota-ona xabarlari', group: "Kommunikatsiya" },
 ];
@@ -103,7 +105,7 @@ const ROLE_TEMPLATES = [
         color: 'text-emerald-600',
         bg: 'bg-emerald-100 dark:bg-emerald-900/30',
         border: 'border-emerald-300 dark:border-emerald-700',
-        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'bi', 'leads', 'parent_chat'],
+        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'bi', 'leads', 'leave_requests', 'staff_attendance', 'parent_chat'],
     },
 ];
 

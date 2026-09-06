@@ -153,8 +153,8 @@ export default function App() {
               <Route path="teachers"         element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTeachers /></ProtectedRoute>} />
               <Route path="staff"            element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaff /></ProtectedRoute>} />
               <Route path="staff/:id"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmStaffDetail /></ProtectedRoute>} />
-              <Route path="leave-requests"   element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmLeaveRequests /></ProtectedRoute>} />
-              <Route path="staff-attendance" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmStaffAttendance /></ProtectedRoute>} />
+              <Route path="leave-requests"   element={<ProtectedRoute requiredPermission="leave_requests" allowedRoles={['ADMIN','MANAGER']}><CrmLeaveRequests /></ProtectedRoute>} />
+              <Route path="staff-attendance" element={<ProtectedRoute requiredPermission="staff_attendance" allowedRoles={['ADMIN','MANAGER']}><CrmStaffAttendance /></ProtectedRoute>} />
               <Route path="work-locations"   element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmWorkLocations /></ProtectedRoute>} />
 
               {/* ─── Moliya ─── */}
@@ -173,7 +173,7 @@ export default function App() {
               <Route path="inventory"    element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
               <Route path="content"      element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
               <Route path="automations"  element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAutomations /></ProtectedRoute>} />
-              <Route path="certificates" element={<ProtectedRoute allowedRoles={['ADMIN','MANAGER']}><CrmCertificates /></ProtectedRoute>} />
+              <Route path="certificates" element={<ProtectedRoute requiredPermission="settings" allowedRoles={['ADMIN','MANAGER']}><CrmCertificates /></ProtectedRoute>} />
               <Route path="reports"      element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmReports /></ProtectedRoute>} />
               <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAudit /></ProtectedRoute>} />
               <Route path="users"        element={<ProtectedRoute requiredPermission="users"    allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
