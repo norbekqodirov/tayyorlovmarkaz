@@ -5,6 +5,7 @@ import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
+import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Button } from '../../../components/ui/Button';
 
 export default function CrmDiscounts() {
@@ -210,11 +211,12 @@ export default function CrmDiscounts() {
                 <option value="fixed">Belgilangan so'm</option>
               </select>
             </div>
-            <Input
-              type="number"
+            <MoneyInput
               label={`Qiymat ${form.type === 'percent' ? '(%)' : "(so'm)"} *`}
-              value={form.value} onChange={e => setForm(p => ({ ...p, value: e.target.value }))}
+              value={form.value ? Number(form.value) : undefined}
+              onChange={val => setForm(p => ({ ...p, value: val ? String(val) : '' }))}
               placeholder={form.type === 'percent' ? '20' : '50000'}
+              suffix={form.type === 'percent' ? '%' : "so'm"}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -223,7 +225,12 @@ export default function CrmDiscounts() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input type="number" label="Max ishlatish soni" value={form.maxUses} onChange={e => setForm(p => ({ ...p, maxUses: e.target.value }))} placeholder="Cheksiz" />
-            <Input type="number" label="Min miqdor" value={form.minAmount} onChange={e => setForm(p => ({ ...p, minAmount: e.target.value }))} placeholder="0" />
+            <MoneyInput
+              label="Min miqdor"
+              value={form.minAmount ? Number(form.minAmount) : undefined}
+              onChange={val => setForm(p => ({ ...p, minAmount: val ? String(val) : '' }))}
+              placeholder="0"
+            />
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" checked={form.isActive} onChange={e => setForm(p => ({ ...p, isActive: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
