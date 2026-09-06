@@ -228,7 +228,7 @@ router.put('/users/:id', requireAuth, async (req, res) => {
             return res.status(403).json({ message: "Ruxsat yo'q" });
         }
 
-        const { name, role, phone, email, permissions, password, isActive, avatar, subject, experience, bio } = req.body;
+        const { name, role, phone, email, permissions, password, isActive, avatar, subject, experience, bio, salaryPercent } = req.body;
         const targetRole = role;
 
         // Only SUPER_ADMIN can assign SUPER_ADMIN role
@@ -252,6 +252,7 @@ router.put('/users/:id', requireAuth, async (req, res) => {
         if (subject !== undefined) updateData.subject = subject || null;
         if (experience !== undefined) updateData.experience = experience || null;
         if (bio !== undefined) updateData.bio = bio || null;
+        if (salaryPercent !== undefined) updateData.salaryPercent = salaryPercent;
 
         const user = await prisma.user.update({ where: { id: req.params.id }, data: updateData });
         res.json({

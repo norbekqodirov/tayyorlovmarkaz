@@ -27,6 +27,8 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
 
 // Collection → minimum role level required to write
 const COLLECTION_WRITE_LEVEL: Record<string, number> = {
+    positions:     3, // ADMIN+
+    transactionCategories: 2, // MANAGER+
     leads:         2, // MANAGER+
     students:      2,
     groups:        2,
@@ -69,6 +71,8 @@ const COLLECTION_WRITE_LEVEL: Record<string, number> = {
 // collection — finance ledger, staff salaries/passports, bot tokens in
 // `settings`, etc.) — see the notifications-leak audit that led here.
 const COLLECTION_READ_LEVEL: Record<string, number> = {
+    positions:     2, // MANAGER+
+    transactionCategories: 2, // MANAGER+
     // ── TEACHER (1) — core academic data + the dropdowns those pages share ──
     courses:       1,
     courseTiers:   1,
