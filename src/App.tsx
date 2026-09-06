@@ -133,7 +133,7 @@ export default function App() {
               <Route path="courses/:id" element={<ProtectedRoute requiredPermission="courses" allowedRoles={['ADMIN','MANAGER']}><CrmCourseDetail /></ProtectedRoute>} />
               <Route path="schedule" element={<ProtectedRoute requiredPermission="schedule" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmSchedule /></ProtectedRoute>} />
               <Route path="journal"  element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER']}><CrmJournal /></ProtectedRoute>} />
-              <Route path="quiz"     element={<ProtectedRoute requiredPermission="content"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
+              <Route path="quiz"     element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
               <Route path="tests"    element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmTests /></ProtectedRoute>} />
 
               {/* ─── Marketing ─── */}
