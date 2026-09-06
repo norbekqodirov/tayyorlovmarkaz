@@ -57,6 +57,28 @@ interface Transaction {
 
 const INCOME_CATEGORIES = ["Kurs to'lovi", 'Sotuv', 'Investitsiya', 'Boshqa'];
 const EXPENSE_CATEGORIES = ['Ijara', 'Marketing', 'Oylik', 'Kommunal', 'Soliq', 'Boshqa'];
+const EXPENSE_LABELS = {
+  SALARY: 'Ish haqi', RENT: 'Ijara', UTILITIES: 'Kommunal xizmatlar',
+  SUPPLIES: 'Sarf materiallari', MARKETING: 'Marketing', EQUIPMENT: 'Jihozlar', OTHER: 'Boshqa',
+} as const;
+type ExpenseCategory = keyof typeof EXPENSE_LABELS;
+const EXPENSE_KEYS = Object.keys(EXPENSE_LABELS) as ExpenseCategory[];
+interface Expense {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  date: string;
+  description: string | null;
+  receipt: string | null;
+}
+interface BudgetEntry {
+  category: ExpenseCategory;
+  planned: number;
+  month: number;
+  year: number;
+}
+const tashkentToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
+const emptyExpense = () => ({ category: 'OTHER' as ExpenseCategory, amount: 0, date: tashkentToday(), description: '', receipt: '' });
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 
 const TOOLTIP_STYLE = {
@@ -90,7 +112,112 @@ export default function CrmFinance() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
-  const [activeTab, setActiveTab] = useState<'transactions' | 'debtors' | 'monthly' | 'invoices'>('transactions');
+  const [activeTab, setActiveTab] = useState<'transactions' | 'debtors' | 'monthly' | 'invoices' | 'expenses' | 'budget'>('transactions');
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseRange, setExpenseRange] = useState({ from: '', to: '' });
+  const [expensesLoading, setExpensesLoading] = useState(true);
+  const [expensesError, setExpensesError] = useState(false);
+  const [expenseReload, setExpenseReload] = useState(0);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseForm, setExpenseForm] = useState(emptyExpense);
+  const [expenseSaving, setExpenseSaving] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+  const [expenseDeleting, setExpenseDeleting] = useState(false);
+  const [budgetPeriod] = useState(() => {
+    const [year, month] = tashkentToday().split('-').map(Number);
+    return { year, month };
+  });
+  const [budgetAmounts, setBudgetAmounts] = useState<Partial<Record<ExpenseCategory, number>>>({});
+  const [budgetLoading, setBudgetLoading] = useState(true);
+  const [budgetError, setBudgetError] = useState(false);
+  const [budgetReload, setBudgetReload] = useState(0);
+  const [budgetSaving, setBudgetSaving] = useState<ExpenseCategory | null>(null);
+  const invalidExpenseRange = !!(expenseRange.from && expenseRange.to && expenseRange.from > expenseRange.to);
+
+  useEffect(() => {
+    if (activeTab !== 'expenses' || invalidExpenseRange) return;
+    const controller = new AbortController();
+    setExpensesLoading(true);
+    setExpensesError(false);
+    api.get<Expense[]>('/finance/expenses', {
+      params: { from: expenseRange.from || undefined, to: expenseRange.to || undefined },
+      signal: controller.signal,
+    }).then(res => {
+      if (!controller.signal.aborted) setExpenses(res.data);
+    }).catch(() => {
+      if (!controller.signal.aborted) setExpensesError(true);
+    }).finally(() => {
+      if (!controller.signal.aborted) setExpensesLoading(false);
+    });
+    return () => controller.abort();
+  }, [activeTab, expenseRange, expenseReload, invalidExpenseRange]);
+
+  useEffect(() => {
+    if (activeTab !== 'budget') return;
+    const controller = new AbortController();
+    setBudgetLoading(true);
+    setBudgetError(false);
+    api.get<{ year: number; month: number; budgets: BudgetEntry[] }>('/finance/budget', {
+      params: budgetPeriod, signal: controller.signal,
+    }).then(res => {
+      if (!controller.signal.aborted) {
+        const amounts: Partial<Record<ExpenseCategory, number>> = {};
+        res.data.budgets.forEach(entry => { amounts[entry.category] = entry.planned; });
+        setBudgetAmounts(amounts);
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setBudgetError(true);
+    }).finally(() => {
+      if (!controller.signal.aborted) setBudgetLoading(false);
+    });
+    return () => controller.abort();
+  }, [activeTab, budgetPeriod, budgetReload]);
+
+  const saveExpense = async () => {
+    if (expenseSaving) return;
+    if (!Number.isFinite(expenseForm.amount) || expenseForm.amount <= 0 || !expenseForm.date) {
+      showToast('Musbat summa va sanani kiriting', 'error');
+      return;
+    }
+    setExpenseSaving(true);
+    try {
+      const payload = { ...expenseForm, description: expenseForm.description.trim(), receipt: expenseForm.receipt.trim() || null };
+      if (editingExpenseId) await api.patch(`/finance/expenses/${editingExpenseId}`, payload);
+      else await api.post('/finance/expenses', payload);
+      showToast(editingExpenseId ? 'Xarajat yangilandi' : "Xarajat qo'shildi", 'success');
+      setExpenseModalOpen(false);
+      setExpenseReload(value => value + 1);
+    } catch { showToast('Xarajatni saqlashda xatolik yuz berdi', 'error'); }
+    finally { setExpenseSaving(false); }
+  };
+
+  const deleteExpense = async () => {
+    if (!expenseToDelete || expenseDeleting) return;
+    setExpenseDeleting(true);
+    try {
+      await api.delete(`/finance/expenses/${expenseToDelete.id}`);
+      setExpenseToDelete(null);
+      setExpenseReload(value => value + 1);
+      showToast("Xarajat o'chirildi", 'success');
+    } catch { showToast("Xarajatni o'chirishda xatolik yuz berdi", 'error'); }
+    finally { setExpenseDeleting(false); }
+  };
+
+  const saveBudget = async (category: ExpenseCategory) => {
+    if (budgetSaving) return;
+    const planned = budgetAmounts[category] ?? 0;
+    if (!Number.isFinite(planned) || planned < 0) {
+      showToast("Summa manfiy bo'lmasligi kerak", 'error');
+      return;
+    }
+    setBudgetSaving(category);
+    try {
+      await api.post('/finance/budget', { ...budgetPeriod, category, planned });
+      showToast(`${EXPENSE_LABELS[category]} byudjeti saqlandi`, 'success');
+    } catch { showToast('Byudjetni saqlashda xatolik yuz berdi', 'error'); }
+    finally { setBudgetSaving(null); }
+  };
 
   // Invoices state
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -434,6 +561,8 @@ export default function CrmFinance() {
           { key: 'invoices', label: `Invoicelar (${invoices.filter(i => i.status === 'pending').length})` },
           { key: 'debtors', label: `Qarzdorlar (${debtors.length})` },
           { key: 'monthly', label: 'Oylik Hisobot' },
+          { key: 'expenses', label: 'Xarajatlar' },
+          { key: 'budget', label: 'Byudjet' },
         ] as const).map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
@@ -444,6 +573,109 @@ export default function CrmFinance() {
           </button>
         ))}
       </div>
+
+      {activeTab === 'expenses' && (
+        <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col md:flex-row md:items-end justify-between gap-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <Input id="expense-from" type="date" label="Boshlanish sanasi" value={expenseRange.from} max={expenseRange.to || undefined}
+                onChange={e => setExpenseRange(value => ({ ...value, from: e.target.value }))} />
+              <Input id="expense-to" type="date" label="Tugash sanasi" value={expenseRange.to} min={expenseRange.from || undefined}
+                onChange={e => setExpenseRange(value => ({ ...value, to: e.target.value }))} />
+              <Button variant="ghost" onClick={() => setExpenseRange({ from: '', to: '' })}>Filtrni tozalash</Button>
+            </div>
+            <Button leftIcon={<Plus size={15} />} onClick={() => {
+              setEditingExpenseId(null); setExpenseForm(emptyExpense()); setExpenseModalOpen(true);
+            }}>Yangi xarajat</Button>
+          </div>
+          {invalidExpenseRange ? <p role="alert" className="p-6 text-sm text-rose-600">Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak.</p>
+            : expensesLoading ? <p role="status" className="p-8 text-center text-sm text-zinc-400">Xarajatlar yuklanmoqda...</p>
+            : expensesError ? <div role="alert" className="p-6 text-center space-y-3">
+              <p className="text-sm text-rose-600">Xarajatlarni yuklab bo'lmadi.</p>
+              <Button variant="secondary" onClick={() => setExpenseReload(value => value + 1)}>Qayta urinish</Button>
+            </div> : <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead><tr className="bg-zinc-50 dark:bg-zinc-800/50">
+                  {['Kategoriya', 'Summa', 'Sana', 'Izoh', 'Amallar'].map(label => (
+                    <th key={label} className="px-5 py-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">{label}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {expenses.length === 0 ? <tr><td colSpan={5} className="py-12 text-center text-sm font-bold text-zinc-400">Xarajatlar topilmadi</td></tr>
+                    : expenses.map(expense => <tr key={expense.id} className="hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors">
+                      <td className="px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white">{EXPENSE_LABELS[expense.category]}</td>
+                      <td className="px-5 py-3.5 text-sm font-black text-rose-600 whitespace-nowrap">{formatMoney(expense.amount)}</td>
+                      <td className="px-5 py-3.5 text-sm text-zinc-500 whitespace-nowrap">{expense.date.slice(0, 10)}</td>
+                      <td className="px-5 py-3.5 text-sm text-zinc-500 break-words max-w-xs">{expense.description || '—'}</td>
+                      <td className="px-5 py-3.5"><div className="flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => {
+                          setEditingExpenseId(expense.id);
+                          setExpenseForm({ category: expense.category, amount: expense.amount, date: expense.date.slice(0, 10), description: expense.description || '', receipt: expense.receipt || '' });
+                          setExpenseModalOpen(true);
+                        }}>Tahrirlash</Button>
+                        <Button size="sm" variant="danger" onClick={() => setExpenseToDelete(expense)} leftIcon={<Trash2 size={14} />}>O'chirish</Button>
+                      </div></td>
+                    </tr>)}
+                </tbody>
+              </table>
+            </div>}
+        </div>
+      )}
+
+      {activeTab === 'budget' && (
+        <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-zinc-200 dark:border-zinc-800">
+            <h2 className="text-lg font-black text-slate-900 dark:text-white">Byudjet — {MONTHS[budgetPeriod.month - 1]} {budgetPeriod.year}</h2>
+            <p className="text-sm text-zinc-500 mt-1">Har bir kategoriya uchun oylik rejalashtirilgan summani kiriting va saqlang.</p>
+          </div>
+          {budgetLoading ? <p role="status" className="p-8 text-center text-sm text-zinc-400">Byudjet yuklanmoqda...</p>
+            : budgetError ? <div role="alert" className="p-6 text-center space-y-3">
+              <p className="text-sm text-rose-600">Byudjetni yuklab bo'lmadi.</p>
+              <Button variant="secondary" onClick={() => setBudgetReload(value => value + 1)}>Qayta urinish</Button>
+            </div> : <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {EXPENSE_KEYS.map(category => <div key={category} className="p-5 flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex-1">
+                  <MoneyInput label={EXPENSE_LABELS[category]} value={budgetAmounts[category] ?? 0} disabled={budgetSaving !== null}
+                    onChange={planned => setBudgetAmounts(value => ({ ...value, [category]: planned }))} />
+                </div>
+                <Button disabled={budgetSaving !== null} isLoading={budgetSaving === category} onClick={() => saveBudget(category)}
+                  aria-label={`${EXPENSE_LABELS[category]} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
+              </div>)}
+            </div>}
+        </div>
+      )}
+
+      <Modal isOpen={expenseModalOpen} onClose={() => { if (!expenseSaving) setExpenseModalOpen(false); }}
+        title={editingExpenseId ? 'Xarajatni tahrirlash' : 'Yangi xarajat'} width="md">
+        <form className="space-y-4" onSubmit={e => { e.preventDefault(); void saveExpense(); }}>
+          <fieldset disabled={expenseSaving} className="space-y-4">
+            <MoneyInput label="Summa (UZS)" value={expenseForm.amount} required disabled={expenseSaving}
+              onChange={amount => setExpenseForm(value => ({ ...value, amount }))} />
+            <div className="space-y-1.5">
+              <label htmlFor="expense-category" className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
+              <select id="expense-category" value={expenseForm.category}
+                onChange={e => setExpenseForm(value => ({ ...value, category: e.target.value as ExpenseCategory }))}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                {EXPENSE_KEYS.map(category => <option key={category} value={category}>{EXPENSE_LABELS[category]}</option>)}
+              </select>
+            </div>
+            <Input id="expense-date" type="date" label="Sana" required value={expenseForm.date}
+              onChange={e => setExpenseForm(value => ({ ...value, date: e.target.value }))} />
+            <Input id="expense-description" label="Izoh" value={expenseForm.description}
+              onChange={e => setExpenseForm(value => ({ ...value, description: e.target.value }))} />
+            <Input id="expense-receipt" label="Chek havolasi (ixtiyoriy)" value={expenseForm.receipt}
+              onChange={e => setExpenseForm(value => ({ ...value, receipt: e.target.value }))} />
+          </fieldset>
+          <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <Button type="button" variant="ghost" disabled={expenseSaving} onClick={() => setExpenseModalOpen(false)}>Bekor qilish</Button>
+            <Button type="submit" isLoading={expenseSaving} leftIcon={<Check size={14} />}>Saqlash</Button>
+          </div>
+        </form>
+      </Modal>
+      <ConfirmDialog isOpen={!!expenseToDelete} title="Xarajatni o'chirish"
+        message={expenseToDelete ? `${EXPENSE_LABELS[expenseToDelete.category]}: ${formatMoney(expenseToDelete.amount)} xarajatni o'chirmoqchimisiz?` : ''}
+        confirmText={expenseDeleting ? "O'chirilmoqda..." : "O'chirish"}
+        onConfirm={() => { void deleteExpense(); }} onCancel={() => { if (!expenseDeleting) setExpenseToDelete(null); }} />
 
       {activeTab === 'transactions' && (
         <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
