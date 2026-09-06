@@ -11,11 +11,13 @@ import { StatCard } from '../../../components/ui/StatCard';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { formatNumber } from '../../../utils/formatters';
+import type { Position } from '../../../types/position';
 
 interface StaffMember {
   id: string;
   name: string;
   role: string;
+  positionId?: string | null;
   email: string;
   phone: string;
   salary: number;
@@ -31,6 +33,7 @@ interface StaffMember {
 export default function CrmStaff() {
   const { data: staff = [], loading, error, addDocument, updateDocument, deleteDocument } = useFirestore<StaffMember>('staff');
   const { showToast } = useToast();
+  const { data: positions, loading: positionsLoading, error: positionsError, refetch: reloadPositions } = useFirestore<Position>('positions');
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,6 +44,7 @@ export default function CrmStaff() {
   const [formData, setFormData] = useState<Partial<StaffMember>>({
     name: '',
     role: '',
+    positionId: null,
     email: '',
     phone: '',
     salary: 0,
@@ -108,6 +112,7 @@ export default function CrmStaff() {
       setFormData({
         name: '',
         role: '',
+        positionId: null,
         email: '',
         phone: '',
         salary: 0,
@@ -279,7 +284,30 @@ export default function CrmStaff() {
           <div className="space-y-4">
             <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-b border-zinc-100 dark:border-zinc-800 pb-2">Asosiy Ma'lumotlar</h4>
             <Input label="Ism Familiya" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Masalan: Alisher Navoiy" />
-            <Input label="Lavozim" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} placeholder="Masalan: O'qituvchi" />
+            <div className="space-y-2">
+              <label htmlFor="staff-position" className="text-sm font-bold text-slate-700 dark:text-zinc-300">Lavozim</label>
+              <select
+                id="staff-position"
+                value={formData.positionId || ''}
+                disabled={positionsLoading || !!positionsError}
+                onChange={(e) => {
+                  const positionId = e.target.value;
+                  const position = positions.find(p => p.id === positionId);
+                  setFormData(previous => ({ ...previous, positionId: positionId || null, ...(position ? { role: position.name } : {}) }));
+                }}
+                className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white disabled:opacity-60"
+              >
+                <option value="">{positionsLoading ? 'Yuklanmoqda...' : 'Lavozim tanlanmagan'}</option>
+                {formData.positionId && !positions.some(p => p.id === formData.positionId) && (
+                  <option value={formData.positionId}>{formData.role || 'Joriy lavozim'} (ro'yxatda mavjud emas)</option>
+                )}
+                {positions.filter(p => p.isActive || p.id === formData.positionId).map(position => (
+                  <option key={position.id} value={position.id}>{position.name}{!position.isActive ? ' (Nofaol)' : ''}</option>
+                ))}
+              </select>
+              {positionsError && <div role="alert" className="text-sm text-rose-600">Lavozimlar yuklanmadi. <Button type="button" variant="secondary" onClick={reloadPositions}>Qayta urinish</Button></div>}
+            </div>
+            <Input label="Lavozim nomi (matn)" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} placeholder="Masalan: O'qituvchi" />
             <Input label="Passport Seriya" value={formData.passport} onChange={(e) => setFormData({ ...formData, passport: e.target.value })} placeholder="AA 1234567" />
             <Input label="Manzil" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Toshkent sh, Chilonzor..." />
           </div>

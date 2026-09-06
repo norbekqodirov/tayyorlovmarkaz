@@ -111,6 +111,7 @@ export const MODULES: NavModule[] = [
         links: [
           { name: 'Ustozlar',           path: '/crmtayyorlovmarkaz/teachers',          icon: Presentation, permission: undefined },
           { name: 'Xodimlar',           path: '/crmtayyorlovmarkaz/staff',             icon: Users,        permission: undefined },
+          { name: 'Lavozimlar',         path: '/crmtayyorlovmarkaz/positions',         icon: UserCog,      permission: undefined },
           { name: 'Mehnat Ta\'tillari', path: '/crmtayyorlovmarkaz/leave-requests',    icon: Calendar,     permission: 'leave_requests' },
           { name: 'Xodim Davomati',     path: '/crmtayyorlovmarkaz/staff-attendance',  icon: Fingerprint,  permission: 'staff_attendance' },
           { name: 'Ish Joylari',        path: '/crmtayyorlovmarkaz/work-locations',    icon: MapPin,       permission: undefined },
