@@ -21,8 +21,15 @@ holda yuzaga keladi.
 | Nom | Yo'l | Branch | Kim ishlatadi | Frontend port | Backend port |
 |---|---|---|---|---|---|
 | main | `D:\tayyorlovmarkaz` | `master` | Claude Code (asosiy) | 3000 | 3001 |
-| codex | `D:\tayyorlovmarkaz-codex` | `agent/codex/*` | Codex CLI | 3010 | 3011 |
-| antigravity | `D:\tayyorlovmarkaz-antigravity` | `agent/antigravity/*` | Antigravity CLI (`agy`) | 3020 | 3021 |
+| codex | `D:\tayyorlovmarkaz-codex` | `agent/codex` | Codex CLI (1-oqim) | 3010 | 3011 |
+| codex-2 | `D:\tayyorlovmarkaz-codex-2` | `agent/codex-2` | Codex CLI (2-oqim, parallel) | 3012 | 3013 |
+| antigravity | `D:\tayyorlovmarkaz-antigravity` | `agent/antigravity` | Antigravity CLI (1-oqim) | 3020 | 3021 |
+| antigravity-2 | `D:\tayyorlovmarkaz-antigravity-2` | `agent/antigravity-2` | Antigravity CLI (2-oqim, parallel) | 3022 | 3023 |
+
+**Parallel oqimlar:** har bir AI (Codex, Antigravity) endi 2 tagacha vazifani
+BIR VAQTDA bajarishi mumkin — har biriga alohida worktree/branch/port.
+Claude vazifalarni taqsimlashda ikkala oqim bir xil faylga tegmasligini
+oldindan tekshiradi (masalan bitta faylni ikkala Codex oqimiga bermaydi).
 
 **Antigravity CLI haqida muhim eslatma (2026-09, `agy` hali yosh vosita):**
 `agy`ning headless/skript rejimi (`agy -p`/`--print`, subprocess'dan
