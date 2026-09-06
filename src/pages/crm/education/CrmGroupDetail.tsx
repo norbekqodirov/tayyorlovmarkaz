@@ -4,8 +4,11 @@
  * Orchestrator page: holds shared state, data fetching, and event handlers.
  * Rendering is delegated to sub-components in src/components/group-detail/.
  */
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
+import { Button } from '../../../components/ui/Button';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
 import { useFirestore } from '../../../hooks/useFirestore';
 import { exportToExcel } from '../../../utils/export';
@@ -23,18 +26,37 @@ const TABS = ['Davomat', 'Baholash', 'Reyting', 'Imtihonlar', 'Izoh'];
 
 export default function CrmGroupDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { showToast } = useToast();
 
   // ─── Data sources ───────────────────────────────────────────────────────────
-  const { data: groups = [] } = useFirestore<any>('groups');
+  const [groupResult, setGroupResult] = useState<{ id?: string; data: any; state: 'loading' | 'ready' | 'forbidden' | 'missing' | 'error' }>({ data: null, state: 'loading' });
+  const [retryCount, setRetryCount] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setGroupResult({ id, data: null, state: 'loading' });
+    if (!id) {
+      setGroupResult({ id, data: null, state: 'missing' });
+      return;
+    }
+    api.get(`/groups/${encodeURIComponent(id)}`).then(res => {
+      if (active) setGroupResult({ id, data: res.data, state: res.data ? 'ready' : 'missing' });
+    }).catch(error => {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      if (active) setGroupResult({ id, data: null, state: status === 401 || status === 403 ? 'forbidden' : status === 404 ? 'missing' : 'error' });
+    });
+    return () => { active = false; };
+  }, [id, retryCount]);
   const { data: students = [] } = useFirestore<any>('students');
   const { data: schedules = [] } = useFirestore<any>('schedule');
-  const { data: attendanceDocs = [], addDocument: addAtt, updateDocument: updateAtt } = useFirestore<any>('attendance');
+  const { data: attendanceDocs = [], loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance, addDocument: addAtt, updateDocument: updateAtt } = useFirestore<any>('attendance');
   const { data: assessmentDocs = [], addDocument: addAssess, updateDocument: updateAssess } = useFirestore<any>('assessment');
   const { data: examDocs = [], addDocument: addExam, updateDocument: updateExam } = useFirestore<any>('exams');
   const { data: noteDocs = [], addDocument: addNote, updateDocument: updateNote } = useFirestore<any>('notes');
 
   // ─── UI State ───────────────────────────────────────────────────────────────
+  const attendanceBusy = useRef(false);
+  const [attendanceSave, setAttendanceSave] = useState<{ state: 'idle' | 'saving' | 'saved' | 'error'; message: string }>({ state: 'idle', message: '' });
   const [activeTab, setActiveTab] = useState('Davomat');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
@@ -42,8 +64,11 @@ export default function CrmGroupDetail() {
   const [addStudentSearch, setAddStudentSearch] = useState('');
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null);
+  const [studentToRemove, setStudentToRemove] = useState<{ id: string; name: string } | null>(null);
+  const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
+  const removalBusy = useRef(false);
 
-  const group = useMemo(() => groups.find((g: any) => g.id === id) || null, [groups, id]);
+  const group = groupResult.id === id ? groupResult.data : null;
   // Vaqt/kunlar/xona Group modelida emas, alohida GroupSchedule ("schedule"
   // kolleksiyasi) da saqlanadi — shu yozuvni topib group bilan birlashtiramiz,
   // shunda AttendanceTab/AssessmentTab/GroupSidebar haqiqiy dars kunlarini
@@ -100,12 +125,19 @@ export default function CrmGroupDetail() {
   };
 
   const handleRemoveStudent = async (studentId: string) => {
+    if (removalBusy.current) return;
+    removalBusy.current = true;
+    setRemovingStudentId(studentId);
     try {
       await api.delete('/enrollments/remove', { data: { studentId, groupId: id } });
+      setStudentToRemove(null);
       await fetchEnrollments();
       showToast("O'quvchi guruhdan o'chirildi", 'success');
     } catch {
       showToast('Xatolik yuz berdi', 'error');
+    } finally {
+      removalBusy.current = false;
+      setRemovingStudentId(null);
     }
   };
 
@@ -120,29 +152,23 @@ export default function CrmGroupDetail() {
   }, [students, enrolledStudents, addStudentSearch]);
 
   // ─── Attendance ─────────────────────────────────────────────────────────────
-  const handleAttendanceClick = async (studentId: string, dateStr: string, currentStatus: string | undefined) => {
-    const statusCycle: Record<string, string | null> = {
-      undefined: 'present', present: 'absent', absent: 'late', late: null,
-    };
-    const nextStatus = statusCycle[String(currentStatus)];
-    const existingDoc = attendanceDocs.find((a: any) => a.groupId === group?.id && a.date === dateStr);
-
-    if (existingDoc) {
-      const records = [...(existingDoc.records || [])];
-      const idx = records.findIndex((r: any) => r.studentId === studentId);
-      if (idx > -1) {
-        if (nextStatus) records[idx].status = nextStatus;
-        else records.splice(idx, 1);
-      } else if (nextStatus) {
-        records.push({ studentId, status: nextStatus, time: new Date().toISOString() });
-      }
-      await updateAtt(existingDoc.id, { records });
-    } else if (nextStatus) {
-      await addAtt({
-        groupId: group?.id,
-        date: dateStr,
-        records: [{ studentId, status: nextStatus, time: new Date().toISOString() }],
-      });
+  const handleAttendanceClick = async (studentId: string, dateStr: string, nextStatus: string) => {
+    if (attendanceBusy.current || attendanceLoading || attendanceError || !group) return;
+    attendanceBusy.current = true;
+    const studentName = enrolledStudents.find(student => student.id === studentId)?.name || 'O‘quvchi';
+    const label = studentName + ' · ' + dateStr;
+    setAttendanceSave({ state: 'saving', message: label + ' — saqlanmoqda…' });
+    try {
+      const existingDoc = attendanceDocs.find((a: any) => a.groupId === group.id && a.date === dateStr);
+      const records = (existingDoc?.records || []).filter((record: any) => record.studentId !== studentId);
+      if (nextStatus) records.push({ studentId, status: nextStatus, time: new Date().toISOString() });
+      if (existingDoc) await updateAtt(existingDoc.id, { records });
+      else if (nextStatus) await addAtt({ groupId: group.id, date: dateStr, records });
+      setAttendanceSave({ state: 'saved', message: label + ' — saqlandi' });
+    } catch {
+      setAttendanceSave({ state: 'error', message: label + ' — saqlanmadi. Qayta tanlab urinib ko‘ring.' });
+    } finally {
+      attendanceBusy.current = false;
     }
   };
 
@@ -195,23 +221,31 @@ export default function CrmGroupDetail() {
 
   // ─── Guard ──────────────────────────────────────────────────────────────────
   if (!group) {
+    const state = groupResult.id === id ? groupResult.state : 'loading';
+    const message = state === 'loading' ? 'Guruh yuklanmoqda…' : state === 'forbidden' ? 'Bu guruhni ko‘rish uchun ruxsat yo‘q' : state === 'missing' ? 'Guruh topilmadi' : 'Guruhni yuklashda server yoki tarmoq xatosi yuz berdi';
     return (
-      <div className="p-10 flex justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div className="p-6 sm:p-10 flex flex-col items-center gap-4 text-center">
+        {state === 'loading' && <div aria-hidden="true" className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />}
+        <p role={state === 'loading' ? 'status' : 'alert'}>{message}</p>
+        <div className="flex flex-wrap justify-center gap-3">
+          {state !== 'loading' && <Button onClick={() => setRetryCount(count => count + 1)}>Qayta urinish</Button>}
+          <Button variant="secondary" onClick={() => navigate('/crmtayyorlovmarkaz/groups')}>Ro‘yxatga qaytish</Button>
+        </div>
       </div>
     );
   }
 
   const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
-  const isTeacher = user.role === 'TEACHER';
+  const canManage = ['MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-6 h-[calc(100vh-100px)] overflow-hidden">
+    <div className="flex flex-col xl:flex-row gap-4 xl:gap-6 min-w-0 xl:h-[calc(100vh-100px)] xl:overflow-hidden">
 
-      {/* Left Sidebar — admin/manager only */}
-      {!isTeacher && (
+      {/* Group information is available to all authorized roles. */}
         <GroupSidebar
+          canManage={canManage}
+          removingStudentId={removingStudentId}
           group={groupWithSchedule}
           groupStudents={enrolledStudents}
           enrollmentsLoading={enrollmentsLoading}
@@ -221,14 +255,24 @@ export default function CrmGroupDetail() {
           addingStudentId={addingStudentId}
           onExport={handleExport}
           onAddStudent={handleAddStudent}
-          onRemoveStudent={handleRemoveStudent}
+          onRemoveStudent={studentId => {
+            const student = enrolledStudents.find(s => s.id === studentId);
+            if (canManage && student) setStudentToRemove({ id: studentId, name: student.name });
+          }}
           onShowAddToggle={setShowAddStudent}
           onSearchChange={setAddStudentSearch}
         />
-      )}
+      <ConfirmDialog
+        isOpen={!!studentToRemove}
+        title="Guruhdan chiqarish"
+        message={`${studentToRemove?.name || 'O‘quvchi'} ushbu guruhdan chiqarilsinmi?`}
+        confirmText={removingStudentId ? 'Chiqarilmoqda…' : 'Ha, chiqarish'}
+        onConfirm={() => { if (canManage && studentToRemove) void handleRemoveStudent(studentToRemove.id); }}
+        onCancel={() => { if (!removalBusy.current) setStudentToRemove(null); }}
+      />
 
       {/* Right Content — Tabs */}
-      <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] flex flex-col shadow-sm overflow-hidden">
+      <div className="flex-1 min-w-0 h-[75dvh] xl:h-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] flex flex-col shadow-sm overflow-hidden">
         {/* Tab bar */}
         <div className="flex border-b border-zinc-100 dark:border-zinc-800 overflow-x-auto hide-scrollbar">
           {TABS.map(tab => (
@@ -247,7 +291,7 @@ export default function CrmGroupDetail() {
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 p-6 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 p-3 sm:p-6 overflow-hidden flex flex-col">
           {activeTab === 'Davomat' && (
             <AttendanceTab
               group={groupWithSchedule}
@@ -256,6 +300,11 @@ export default function CrmGroupDetail() {
               currentDate={currentDate}
               onDateChange={setCurrentDate}
               onCellClick={handleAttendanceClick}
+              disabled={attendanceLoading || !!attendanceError || attendanceSave.state === 'saving'}
+              saveState={attendanceSave}
+              loading={attendanceLoading}
+              loadError={!!attendanceError}
+              onRetry={refetchAttendance}
             />
           )}
 

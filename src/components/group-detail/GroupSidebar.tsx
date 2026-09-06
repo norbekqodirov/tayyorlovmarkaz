@@ -1,14 +1,17 @@
 /**
  * GroupSidebar.tsx
  * Left panel: group info, enrolled student list, add/remove student UI.
- * Only visible to admin/manager roles (hidden for TEACHER).
+ * Group information is visible to every authorized role.
  */
-import React from 'react';
+import React, { useState } from 'react';
+import { Button } from '../ui/Button';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, MoreVertical, User, Search, UserPlus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, User, Search, UserPlus, Trash2 } from 'lucide-react';
 import { formatNumber } from '../../utils/formatters';
 
 interface Props {
+  canManage: boolean;
+  removingStudentId: string | null;
   group: any;
   groupStudents: any[];
   enrollmentsLoading: boolean;
@@ -24,6 +27,8 @@ interface Props {
 }
 
 const GroupSidebar: React.FC<Props> = ({
+  canManage,
+  removingStudentId,
   group,
   groupStudents,
   enrollmentsLoading,
@@ -38,13 +43,18 @@ const GroupSidebar: React.FC<Props> = ({
   onSearchChange,
 }) => {
   const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="w-[380px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] flex flex-col shadow-sm overflow-hidden shrink-0">
+    <div className="w-full xl:w-[380px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] flex flex-col shadow-sm overflow-hidden shrink-0">
+      <Button variant="secondary" className="xl:hidden m-3" aria-expanded={expanded} aria-controls="group-sidebar-content" onClick={() => setExpanded(!expanded)}>
+        {group.name} — {expanded ? "Ma’lumotlarni yig‘ish" : "Guruh ma’lumotlari"}
+      </Button>
+      <div id="group-sidebar-content" className={`${expanded ? 'flex' : 'hidden'} xl:flex flex-col min-h-0 xl:overflow-y-auto`}>
       {/* Header */}
       <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/crmtayyorlovmarkaz/groups')}
           className="flex items-center gap-2 text-xs font-black text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors mb-4 uppercase tracking-widest"
         >
           <ArrowLeft size={14} /> Ortga qaytish
@@ -52,9 +62,6 @@ const GroupSidebar: React.FC<Props> = ({
 
         <div className="flex justify-between items-start mb-4">
           <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">{group.name}</h1>
-          <button className="text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 p-1.5 rounded-lg transition-colors">
-            <MoreVertical size={20} />
-          </button>
         </div>
 
         <div className="space-y-2 text-sm font-bold text-slate-700 dark:text-zinc-300">
@@ -109,13 +116,17 @@ const GroupSidebar: React.FC<Props> = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-zinc-500">{s.phone?.replace('+998', '').trim()}</span>
-                  <button
+                  {canManage && <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!!removingStudentId}
                     onClick={() => onRemoveStudent(s.id)}
                     title="Guruhdan chiqarish"
-                    className="p-1 text-zinc-300 dark:text-zinc-700 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all rounded"
+                    aria-label={`${s.name} — guruhdan chiqarish`}
+                    className="min-h-11 min-w-11 text-rose-600 dark:text-rose-400"
                   >
-                    <Trash2 size={12} />
-                  </button>
+                    <Trash2 size={16} />
+                  </Button>}
                 </div>
               </div>
             );
@@ -125,7 +136,7 @@ const GroupSidebar: React.FC<Props> = ({
 
       {/* Footer: Add Student / Export */}
       <div className="border-t border-zinc-100 dark:border-zinc-800">
-        {showAddStudent ? (
+        {canManage && showAddStudent ? (
           <div className="p-3 space-y-2">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -168,14 +179,15 @@ const GroupSidebar: React.FC<Props> = ({
             >
               <Download size={12} /> Excel
             </button>
-            <button
+            {canManage && <button
               onClick={() => onShowAddToggle(true)}
               className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 px-3 py-2 rounded-xl hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors uppercase tracking-widest"
             >
               <UserPlus size={12} /> O'quvchi qo'shish
-            </button>
+            </button>}
           </div>
         )}
+      </div>
       </div>
     </div>
   );
