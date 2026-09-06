@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 
 // Role hierarchy levels
-const ROLE_LEVEL: Record<string, number> = {
+export const ROLE_LEVEL: Record<string, number> = {
     TEACHER:     1,
     MANAGER:     2,
     ADMIN:       3,

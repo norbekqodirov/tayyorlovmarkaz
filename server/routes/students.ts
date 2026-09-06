@@ -5,7 +5,8 @@
 
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { withAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
@@ -42,10 +43,15 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // PUT /api/students/:id — update student
-router.put('/:id', requireAuth, async (req, res) => {
+// MANAGER+ talab qilinadi (crud.ts'ning COLLECTION_WRITE_LEVEL.students=2 siyosati
+// bilan mos) — bu maxsus router crud.ts'dan OLDIN mount qilingani uchun o'sha
+// tekshiruvni chetlab o'tar edi. 'balance' whitelist'da yo'q edi — CrmStudents.tsx'da
+// balans maydoni tahrirlansa jimgina saqlanmasdi; endi qo'shildi va withAudit orqali
+// har bir o'zgarish (balans jumladan) audit jurnaliga yoziladi.
+router.put('/:id', requireAuth, requireMinRole('MANAGER'), withAudit('student'), async (req, res) => {
     try {
         const allowed = ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone',
-            'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'joinedDate'];
+            'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'joinedDate', 'balance'];
         const data: Record<string, any> = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) data[key] = req.body[key];

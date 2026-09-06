@@ -108,7 +108,7 @@ router.get('/invoices/:id', requireAuth, async (req, res) => {
 });
 
 // POST /api/finance/invoices
-router.post('/invoices', requireAuth, async (req, res) => {
+router.post('/invoices', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { studentId, amount, discount, tax, dueDate, method, description, items } = req.body;
         if (!studentId || !amount || !dueDate) {
@@ -147,7 +147,7 @@ router.post('/invoices', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/finance/invoices/:id
-router.patch('/invoices/:id', requireAuth, async (req, res) => {
+router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { status, paidAt, method } = req.body;
         const data: any = {};
@@ -199,7 +199,7 @@ router.patch('/invoices/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/finance/invoices/:id
-router.delete('/invoices/:id', requireAuth, async (req, res) => {
+router.delete('/invoices/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         await prisma.invoice.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -250,7 +250,7 @@ router.get('/expenses', requireAuth, async (req, res) => {
 });
 
 // POST /api/finance/expenses
-router.post('/expenses', requireAuth, async (req, res) => {
+router.post('/expenses', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { category, amount, description, date, receipt } = req.body;
         if (!category || !amount || !date) {
@@ -276,7 +276,7 @@ router.post('/expenses', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/finance/expenses/:id
-router.patch('/expenses/:id', requireAuth, async (req, res) => {
+router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { category, amount, description, date, receipt } = req.body;
         const data: any = {};
@@ -294,7 +294,7 @@ router.patch('/expenses/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/finance/expenses/:id
-router.delete('/expenses/:id', requireAuth, async (req, res) => {
+router.delete('/expenses/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         await prisma.expense.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -319,7 +319,7 @@ router.get('/budget', requireAuth, async (req, res) => {
 });
 
 // POST /api/finance/budget
-router.post('/budget', requireAuth, async (req, res) => {
+router.post('/budget', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { month, year, category, planned } = req.body;
         if (!month || !year || !category || planned === undefined) {

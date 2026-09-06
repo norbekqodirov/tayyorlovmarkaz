@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { invalidate, NS } from '../services/cache.js';
 import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
@@ -38,7 +38,7 @@ router.get('/staff/:staffId', requireAuth, async (req, res) => {
 });
 
 // POST /api/salary — create or update salary for a staff/month
-router.post('/', requireAuth, requireRole, async (req, res) => {
+router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { staffId, month, baseSalary = 0, bonus = 0, deduction = 0, notes, paid = false } = req.body;
         if (!staffId || !month) {
@@ -82,7 +82,7 @@ router.post('/', requireAuth, requireRole, async (req, res) => {
 });
 
 // PUT /api/salary/:id/pay — mark salary as paid + create expense transaction
-router.put('/:id/pay', requireAuth, requireRole, async (req, res) => {
+router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({
             where: { id: req.params.id },
@@ -123,7 +123,7 @@ router.put('/:id/pay', requireAuth, requireRole, async (req, res) => {
 });
 
 // DELETE /api/salary/:id
-router.delete('/:id', requireAuth, requireRole, async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         await prisma.salary.delete({ where: { id: req.params.id } });
         invalidate(NS.FINANCE);
@@ -134,7 +134,7 @@ router.delete('/:id', requireAuth, requireRole, async (req, res) => {
 });
 
 // POST /api/salary/generate-month — bulk generate salaries for all staff for given month
-router.post('/generate-month', requireAuth, requireRole, async (req, res) => {
+router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { month } = req.body;
         if (!month) return res.status(400).json({ message: 'month kiritilishi shart' });
@@ -192,7 +192,9 @@ router.get('/attendance', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/attendance', requireAuth, async (req, res) => {
+// Qo'lda tuzatish — HR/menejer vakolati talab qiladi (Face ID check-in/out
+// staffPortal.ts orqali o'tadi, bu yerga tegishli emas).
+router.post('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { staffId, date, checkIn, checkOut, status = 'present', notes } = req.body;
         if (!staffId || !date) return res.status(400).json({ message: 'staffId va date kerak' });

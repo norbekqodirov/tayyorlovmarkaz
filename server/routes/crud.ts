@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, ROLE_LEVEL } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -232,14 +232,22 @@ function normalizePhone(raw: string): string {
 
 // Xodim uchun login (User) hisobini yaratadi. Telefon ikkala jadvalni bog'laydi.
 // Mavjud User bo'lsa — TEGILMAYDI (admin parolini tasodifan o'zgartirmaslik uchun).
-async function ensureStaffLoginAccount(staff: any, rawPassword?: string) {
+async function ensureStaffLoginAccount(staff: any, rawPassword?: string, requesterRole?: string) {
     const phone = normalizePhone(staff.phone);
     if (!phone) return null;
 
     const existing = await prisma.user.findUnique({ where: { phone } });
     if (existing) return existing; // allaqachon mavjud — o'zgartirmaymiz
 
-    const role = mapStaffRoleToUserRole(staff.role);
+    let role = mapStaffRoleToUserRole(staff.role);
+    // Lavozim matnidan avtomatik aniqlangan rol so'rov yuboruvchining o'z
+    // rolidan HECH QACHON yuqori bo'lmasin — aks holda masalan MANAGER
+    // lavozimga "Direktor" yozib, avtomatik ADMIN login ochilishiga
+    // (o'zidan yuqori vakolat yaratishga) erisha olardi.
+    const requesterLevel = ROLE_LEVEL[requesterRole || ''] || 0;
+    if ((ROLE_LEVEL[role] || 0) > requesterLevel && requesterRole) {
+        role = requesterRole;
+    }
     const hashed = await bcrypt.hash(rawPassword || '123456', 12);
     return await prisma.user.create({
         data: {
@@ -446,7 +454,7 @@ router.post('/:collection', async (req, res) => {
         // Xodim telefon bilan qo'shilsa, botga kirish uchun User yaratiladi
         if ((req as any).modelName === 'staffMember' && (req as any).staffCreateLogin && finalData?.phone) {
             try {
-                const loginUser = await ensureStaffLoginAccount(finalData, (req as any).staffLoginPassword);
+                const loginUser = await ensureStaffLoginAccount(finalData, (req as any).staffLoginPassword, (req as any).user?.role);
                 if (loginUser) {
                     finalData.loginCreated = true;
                     finalData.loginRole = loginUser.role;
