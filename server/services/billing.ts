@@ -124,6 +124,11 @@ export async function calculateTeacherMonthlyRevenue(
     month: number,
 ): Promise<{ revenue: number; salary: number; salaryPercent: number; groups: Array<{ groupId: string; groupName: string; studentCount: number; revenue: number }> }> {
     const settings = await getBillingSettings();
+    const teacher = await prisma.user.findUnique({
+        where: { id: teacherId },
+        select: { salaryPercent: true },
+    });
+    const salaryPercent = teacher?.salaryPercent ?? settings.teacherSalaryPercent;
     const groups = await prisma.group.findMany({
         where: { teacherId },
         include: { enrollments: { select: { studentId: true } } },
@@ -143,8 +148,8 @@ export async function calculateTeacherMonthlyRevenue(
 
     return {
         revenue,
-        salary: Math.round(revenue * (settings.teacherSalaryPercent / 100)),
-        salaryPercent: settings.teacherSalaryPercent,
+        salary: Math.round(revenue * (salaryPercent / 100)),
+        salaryPercent,
         groups: groupSummaries,
     };
 }

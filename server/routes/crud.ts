@@ -17,6 +17,8 @@ const MODEL_MAP: Record<string, string> = {
     'rooms':          'room',
     'staff':          'staffMember',
     'staffMembers':   'staffMember',
+    'positions':      'position',
+    'transactionCategories': 'transactionCategory',
     'finance':        'transaction',
     'transactions':   'transaction',
     'payments':       'payment',
@@ -56,7 +58,9 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'courseTier': ['courseId', 'name', 'price'],
     'transaction': ['type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
     'payment': ['studentId', 'amount', 'method', 'date', 'month', 'dueDate', 'status', 'notes'],
-    'staffMember': ['name', 'role', 'email', 'phone', 'salary', 'joinedDate', 'status', 'department', 'address', 'passport', 'education', 'experience', 'photo'],
+    'staffMember': ['name', 'role', 'positionId', 'email', 'phone', 'salary', 'joinedDate', 'status', 'department', 'address', 'passport', 'education', 'experience', 'photo'],
+    'position': ['name', 'description', 'responsibilities', 'suggestedRole', 'defaultPermissions', 'isActive'],
+    'transactionCategory': ['name', 'type', 'isActive'],
     'post': ['title', 'content', 'excerpt', 'imageUrl', 'author', 'status', 'category', 'date'],
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
     'task': ['title', 'completed', 'userId', 'staffId', 'priority', 'deadline'],
@@ -161,6 +165,8 @@ function normalizeData(modelName: string, data: any): any {
 
 // Validation rules
 const VALIDATION_RULES: Record<string, { required: string[]; messages: Record<string, string> }> = {
+    position: { required: ['name'], messages: { name: 'Lavozim nomi kiritilishi shart' } },
+    transactionCategory: { required: ['name', 'type'], messages: { name: 'Kategoriya nomi kiritilishi shart', type: 'Tur kiritilishi shart' } },
     student: { required: ['name'], messages: { name: "O'quvchi ismi kiritilishi shart" } },
     group: { required: ['name', 'courseId'], messages: { name: 'Guruh nomi kiritilishi shart', courseId: 'Kurs tanlanishi shart' } },
     course: { required: ['name'], messages: { name: 'Kurs nomi kiritilishi shart' } },
@@ -240,6 +246,14 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
     if (existing) return existing; // allaqachon mavjud — o'zgartirmaymiz
 
     let role = mapStaffRoleToUserRole(staff.role);
+    let permissions = '[]';
+    if (staff.positionId) {
+        const position = await prisma.position.findUnique({ where: { id: staff.positionId } });
+        if (position) {
+            role = position.suggestedRole;
+            permissions = position.defaultPermissions ?? '[]';
+        }
+    }
     // Lavozim matnidan avtomatik aniqlangan rol so'rov yuboruvchining o'z
     // rolidan HECH QACHON yuqori bo'lmasin — aks holda masalan MANAGER
     // lavozimga "Direktor" yozib, avtomatik ADMIN login ochilishiga
@@ -247,6 +261,7 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
     const requesterLevel = ROLE_LEVEL[requesterRole || ''] || 0;
     if ((ROLE_LEVEL[role] || 0) > requesterLevel && requesterRole) {
         role = requesterRole;
+        permissions = '[]';
     }
     const hashed = await bcrypt.hash(rawPassword || '123456', 12);
     return await prisma.user.create({
@@ -256,7 +271,7 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
             password: hashed,
             role,
             isActive: true,
-            permissions: '[]',
+            permissions,
         } as any,
     });
 }
