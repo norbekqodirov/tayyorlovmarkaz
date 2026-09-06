@@ -169,7 +169,10 @@ export default function CrmAdvancedBI() {
   const teacherPerformance = useMemo(() => {
     return teachers.slice(0, 6).map(teacher => {
       const tGroups = groups.filter(g => (g as any).teacherId === teacher.id || (g as any).teacher === teacher.name);
-      const studentCount = tGroups.reduce((a, g: any) => a + (g.students?.length || 0), 0);
+      const studentCount = tGroups.reduce((a, g: any) => {
+        const count = g._count?.enrollments ?? (g.enrollments?.length ?? students.filter((s: any) => s.groupId === g.id || s.group === g.name).length);
+        return a + count;
+      }, 0);
       const groupIds = tGroups.map(g => g.id);
       const attRecs = attendance.filter((a: any) => groupIds.includes(a.groupId));
       const allRec = attRecs.flatMap((a: any) => a.records || []);
@@ -182,7 +185,7 @@ export default function CrmAdvancedBI() {
         davomat: attRate,
       };
     });
-  }, [teachers, groups, attendance]);
+  }, [teachers, groups, attendance, students]);
 
   // ── KPI aggregates ───────────────────────────────────────────────────
   const ad = analyticsData;
