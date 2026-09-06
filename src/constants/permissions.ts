@@ -1,0 +1,25 @@
+export const ALL_PERMISSIONS = [
+    { id: 'dashboard', label: 'Dashboard', group: "Asosiy" },
+    { id: 'leads', label: 'Lidlar (Voronka)', group: "Marketing" },
+    { id: 'marketing', label: 'Marketing', group: "Marketing" },
+    { id: 'target_forms', label: 'Target Formalar', group: "Marketing" },
+    { id: 'students', label: "O'quvchilar", group: "Ta'lim" },
+    { id: 'groups', label: 'Guruhlar', group: "Ta'lim" },
+    { id: 'courses', label: 'Kurslar', group: "Ta'lim" },
+    { id: 'schedule', label: 'Dars Jadvali', group: "Ta'lim" },
+    { id: 'journal', label: 'Elektron Jurnal', group: "Ta'lim" },
+    { id: 'attendance', label: 'Davomat', group: "Ta'lim" },
+    { id: 'assessments', label: 'Baholash', group: "Ta'lim" },
+    { id: 'finance', label: 'Moliya', group: "Moliya" },
+    { id: 'bi', label: 'BI Analitika', group: "Moliya" },
+    { id: 'rooms', label: 'Xonalar', group: "Resurslar" },
+    { id: 'inventory', label: 'Inventar', group: "Resurslar" },
+    { id: 'content', label: 'Kontent/Yangiliklar', group: "Tizim" },
+    { id: 'settings', label: 'Sozlamalar', group: "Tizim" },
+    { id: 'leave_requests', label: "Mehnat Ta'tillari", group: 'HR' },
+    { id: 'staff_attendance', label: 'Xodim Davomati', group: 'HR' },
+    { id: 'users', label: 'Foydalanuvchilar', group: "Tizim" },
+    { id: 'parent_chat', label: 'Ota-ona xabarlari', group: "Kommunikatsiya" },
+];
+
+export const PERMISSION_GROUPS = [...new Set(ALL_PERMISSIONS.map(p => p.group))];
