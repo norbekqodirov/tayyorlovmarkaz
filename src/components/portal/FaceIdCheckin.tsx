@@ -207,6 +207,8 @@ function CameraView({
   const capturedRef = useRef(false);
 
   const [ready, setReady] = useState(false);
+  const [camError, setCamError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [faceFound, setFaceFound] = useState(false);
   const [blinkState, setBlinkState] = useState<BlinkState>('waiting_face');
   const [fallbackSecs, setFallbackSecs] = useState(0);
@@ -227,6 +229,7 @@ function CameraView({
   // Kamera
   useEffect(() => {
     let active = true;
+    setCamError(false);
     navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
     }).then(stream => {
@@ -236,14 +239,17 @@ function CameraView({
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => { videoRef.current!.play(); setReady(true); };
       }
-    }).catch(err => console.error('[CAM]', err));
+    }).catch(err => {
+      console.error('[CAM]', err);
+      if (active) setCamError(true);
+    });
 
     return () => {
       active = false;
       if (detectRef.current) clearInterval(detectRef.current);
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
-  }, []);
+  }, [retryKey]);
 
   // Yuz + ko'z yumish aniqlash (faqat modellar yuklangan bo'lsa)
   useEffect(() => {
@@ -351,9 +357,20 @@ function CameraView({
           faceFound                          ? 'border-white/60' : 'border-white/20'
         }`} />
 
-        {!ready && (
+        {!ready && !camError && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70">
             <Loader2 className="animate-spin text-white" size={24} />
+          </div>
+        )}
+
+        {camError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-4 text-center z-10">
+             <Camera size={32} className="text-red-400 mb-3" />
+             <p className="text-white text-sm font-semibold mb-1">Kameraga ruxsat kerak</p>
+             <p className="text-white/70 text-xs mb-4">Brauzer sozlamalaridan ruxsat bering</p>
+             <button onClick={() => setRetryKey(k => k + 1)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all rounded-xl text-white text-xs font-bold flex items-center gap-2">
+               <RefreshCw size={14} /> Qayta urinish
+             </button>
           </div>
         )}
 
@@ -455,7 +472,10 @@ export default function FaceIdCheckin({ initData, staffName }: Props) {
 
   useEffect(() => { if (step === 'loading_profile') loadProfile(); }, [step, loadProfile]);
 
-  const faceErr = (e: any) => `Yuzni aniqlab bo'lmadi. Yorug'roq joyda qayta urining.\n[${e?.message || 'xato'}]`;
+  const faceErr = (e: any) => {
+    console.error('Face error:', e);
+    return "Yuzni aniqlab bo'lmadi. Yorug'roq joyda qayta urining.";
+  };
 
   // 3. Ro'yxatga olish — haqiqiy descriptor saqlanadi (keyin solishtirish uchun)
   const handleRegisterCapture = async (canvas: HTMLCanvasElement) => {
