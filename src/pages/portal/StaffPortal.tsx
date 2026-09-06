@@ -126,7 +126,7 @@ function RoleLabel({ role }: { role: string }) {
 
 // ─── Tab configs ──────────────────────────────────────────────────────────────
 
-type TabId = 'today' | 'groups' | 'attendance' | 'grades' | 'profile' | 'stats' | 'students' | 'faceid' | 'chat';
+type TabId = 'today' | 'groups' | 'attendance' | 'grades' | 'profile' | 'stats' | 'students' | 'faceid' | 'chat' | 'staff';
 
 function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[] {
     const faceTab = { id: 'faceid' as TabId, label: 'Davomat', icon: Fingerprint };
@@ -156,7 +156,7 @@ function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[]
 
     // HR
     return [
-        { id: 'groups' as TabId, label: 'Xodimlar', icon: Users },
+        { id: 'staff' as TabId, label: 'Xodimlar', icon: Users },
         faceTab,
         base[2],
         base[3],
@@ -901,6 +901,96 @@ function ChatTab({ initData }: { initData: string }) {
     );
 }
 
+// ─── Tab: Staff ─────────────────────────────────────────────────────────────
+
+function StaffTab({ initData }: { initData: string }) {
+    const [staffList, setStaffList] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                // Biz mavjud generic CRUD endpointidan foydalanamiz
+                const token = getUrlToken();
+                // Agar URL token bo'lmasa, xodimlar ro'yxatini yuklashda muammo bo'lishi mumkin,
+                // lekin ko'p hollarda HR url token bilan kiradi
+                const headers: any = {};
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+                
+                const res = await fetch('/api/staffMembers', { headers });
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        throw new Error("Ruxsat yetarli emas yoki token eskirgan");
+                    }
+                    throw new Error("Xatolik yuz berdi");
+                }
+                const data = await res.json();
+                setStaffList(Array.isArray(data) ? data : (data.data || []));
+            } catch (err: any) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        load();
+    }, [initData]);
+
+    if (loading) return (
+        <div className="space-y-3 p-4">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-16" />)}
+        </div>
+    );
+
+    if (error) return (
+        <div className="flex flex-col items-center justify-center py-16 text-red-400">
+            <AlertCircle size={40} className="mb-3 opacity-40" />
+            <p className="text-sm font-medium">{error}</p>
+        </div>
+    );
+
+    if (staffList.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
+                <Users size={40} className="mb-3 opacity-40" />
+                <p className="text-sm font-medium">Xodimlar topilmadi</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="p-4 space-y-2">
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                {staffList.length} nafar xodim
+            </p>
+            {staffList.map((s, i) => (
+                <motion.div
+                    key={s.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3"
+                >
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0 overflow-hidden">
+                        {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.name?.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-zinc-800 dark:text-zinc-100 truncate">{s.name}</div>
+                        <div className="text-xs text-zinc-400 mt-0.5 truncate">
+                            <RoleLabel role={s.role} />
+                        </div>
+                        {s.phone && (
+                            <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400">
+                                <span>{s.phone}</span>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+            ))}
+        </div>
+    );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function StaffPortal() {
@@ -1060,6 +1150,9 @@ export default function StaffPortal() {
                         )}
                         {activeTab === 'chat' && (
                             <ChatTab initData={initData} />
+                        )}
+                        {activeTab === 'staff' && (
+                            <StaffTab initData={initData} />
                         )}
                         {activeTab === 'profile' && (
                             <ProfileTab staffUser={staffUser} initData={initData} />
