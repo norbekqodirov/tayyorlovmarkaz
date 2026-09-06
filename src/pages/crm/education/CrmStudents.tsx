@@ -82,17 +82,30 @@ export default function CrmStudents() {
   });
 
   const handleSave = async () => {
-    if (!formData.name) {
+    if (!formData.name?.trim()) {
       showToast("O'quvchi ismi kiritilishi shart!", 'error');
       return;
     }
-    if (!formData.phone) {
+    if (!formData.phone?.trim()) {
       showToast("Telefon raqam kiritilishi shart!", 'error');
       return;
     }
 
+    if (formData.email && formData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        showToast("Email formati noto'g'ri!", 'error');
+        return;
+      }
+    }
+
     try {
-      const studentData = { ...formData } as Omit<Student, 'id'>;
+      const studentData = {
+        ...formData,
+        name: formData.name.trim(),
+        phone: formData.phone.trim(),
+        email: formData.email ? formData.email.trim() : '',
+      } as Omit<Student, 'id'>;
       if (formData.id) {
         // Guruh o'zgargan bo'lsa — haqiqiy Enrollment yozuvini yangilaymiz
         // (Group.students maydoni sxemada yo'q, shuning uchun bevosita
@@ -145,7 +158,10 @@ export default function CrmStudents() {
 
   const openModal = (student: Student | null = null) => {
     if (student) {
-      setFormData(student);
+      setFormData({
+        ...student,
+        email: student.email || '',
+      });
       setSelectedGroupId(groupOptions.find((g: any) => g.name === student.group)?.id || '');
     } else {
       setFormData({
@@ -177,6 +193,7 @@ export default function CrmStudents() {
     return (students || []).filter(s => {
       const matchesSearch = (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (s.phone || '').includes(searchTerm) ||
+                          (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (s.group || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = filterStatus === 'Barchasi' || s.status === filterStatus;
       const matchesCourse = filterCourse === 'Barchasi' || s.course === filterCourse;
@@ -227,6 +244,7 @@ export default function CrmStudents() {
                 const cols = [
                   { header: 'Ism', key: 'name', width: 25 },
                   { header: 'Telefon', key: 'phone', width: 15 },
+                  { header: 'Email', key: 'email', width: 25 },
                   { header: 'Guruh', key: 'group', width: 15 },
                   { header: 'Holat', key: 'status', width: 12 },
                   { header: "To'lov", key: 'paymentStatus', width: 15 },
@@ -240,6 +258,7 @@ export default function CrmStudents() {
                 const cols = [
                   { header: 'Ism', key: 'name' },
                   { header: 'Telefon', key: 'phone' },
+                  { header: 'Email', key: 'email' },
                   { header: 'Guruh', key: 'group' },
                   { header: 'Holat', key: 'status' },
                   { header: "To'lov", key: 'paymentStatus' },
@@ -557,7 +576,7 @@ export default function CrmStudents() {
                       </div>
                       <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
                         <Mail size={16} className="text-zinc-400" />
-                        {selectedStudent.email}
+                        {selectedStudent.email || '—'}
                       </div>
                       <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
                         <MapPin size={16} className="text-zinc-400" />
@@ -681,7 +700,7 @@ export default function CrmStudents() {
               <div className="space-y-3">
                 <Input 
                   label="F.I.O"
-                  value={formData.name}
+                  value={formData.name || ''}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   placeholder="Aliyev Vali"
                 />
@@ -694,22 +713,22 @@ export default function CrmStudents() {
                   <Input
                     type="date"
                     label="Tug'ilgan sana"
-                    value={formData.birthDate}
+                    value={formData.birthDate || ''}
                     onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
                   />
                 </div>
                 <Input
-                  label="Manzil"
-                  value={formData.address}
-                  onChange={(e) => setFormData({...formData, address: e.target.value})}
-                  placeholder="Toshkent sh., Chilonzor tumani"
-                />
-                <Input
                   type="email"
                   label="Email"
-                  value={formData.email}
+                  value={formData.email || ''}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   placeholder="student@mail.uz"
+                />
+                <Input
+                  label="Manzil"
+                  value={formData.address || ''}
+                  onChange={(e) => setFormData({...formData, address: e.target.value})}
+                  placeholder="Toshkent sh., Chilonzor tumani"
                 />
               </div>
             </div>
