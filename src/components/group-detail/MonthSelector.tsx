@@ -32,7 +32,7 @@ const MonthSelector: React.FC<Props> = ({ currentDate, onChange, accentClass = '
         ))}
       </select>
 
-      <div className="flex border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden text-xs font-bold divide-x divide-zinc-200 dark:divide-zinc-700">
+      <div className="flex max-w-full overflow-x-auto border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold divide-x divide-zinc-200 dark:divide-zinc-700">
         {MONTHS.map(mon => (
           <button
             key={mon.i}
