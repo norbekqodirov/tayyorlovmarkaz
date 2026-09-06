@@ -49,7 +49,7 @@ const ExamTab: React.FC<Props> = ({ group, groupStudents, examDocs, onScoreChang
                       defaultValue={score}
                       placeholder="--"
                       onBlur={e => {
-                        if (e.target.value !== String(score)) {
+                        if (e.target.value !== '' && e.target.value !== String(score)) {
                           onScoreChange(s.id, examName, Number(e.target.value));
                         }
                       }}

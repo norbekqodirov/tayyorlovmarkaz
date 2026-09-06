@@ -72,7 +72,7 @@ const AssessmentTab: React.FC<Props> = ({
                         max="100"
                         defaultValue={score}
                         onBlur={e => {
-                          if (e.target.value !== String(score)) {
+                          if (e.target.value !== '' && e.target.value !== String(score)) {
                             onScoreChange(s.id, dateStr, Number(e.target.value));
                           }
                         }}

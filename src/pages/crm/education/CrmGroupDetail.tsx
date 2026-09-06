@@ -178,8 +178,8 @@ export default function CrmGroupDetail() {
       (a: any) => a.studentId === studentId && a.groupId === group?.id && a.date === dateStr,
     );
     if (existingDoc) {
-      if (score > 0) await updateAssess(existingDoc.id, { score });
-    } else if (score > 0) {
+      if (score >= 0) await updateAssess(existingDoc.id, { score });
+    } else if (score >= 0) {
       await addAssess({ groupId: group?.id, studentId, date: dateStr, score });
     }
   };
@@ -190,8 +190,8 @@ export default function CrmGroupDetail() {
       (a: any) => a.studentId === studentId && a.groupId === group?.id && a.examName === examName,
     );
     if (existingDoc) {
-      if (score > 0) await updateExam(existingDoc.id, { score });
-    } else if (score > 0) {
+      if (score >= 0) await updateExam(existingDoc.id, { score });
+    } else if (score >= 0) {
       await addExam({ groupId: group?.id, studentId, examName, score });
     }
   };
