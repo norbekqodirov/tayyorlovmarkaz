@@ -1,6 +1,11 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex CLI (and other AGENTS.md-reading coding
+agents — e.g. Google's Antigravity CLI, which reads this same file) when
+working with code in this repository. Claude Code uses the parallel
+`CLAUDE.md` at the repo root — the architecture sections below are kept in
+sync between the two; the operational/trust sections are not (see
+"Multi-agent coordination" below for why).
 
 ## What this is
 
@@ -30,6 +35,9 @@ plus, for anything user-visible, driving the feature in a browser.
 Single dev server session: `.claude/launch.json` defines `Vite Frontend` (full
 `npm run dev`) and `Vite Only` (just vite, for when a backend is already running
 elsewhere — e.g. another agent session's `tsx watch` is still up on :3001).
+**If you are running in the `agent/codex` worktree** (see "Multi-agent
+coordination" below), use the ports assigned there instead of 3000/3001 to
+avoid colliding with whatever is running in the main worktree.
 
 ## Database: PostgreSQL only, always `db push`
 
@@ -46,71 +54,15 @@ elsewhere — e.g. another agent session's `tsx watch` is still up on :3001).
   treat it as additive-only (new nullable columns/tables), back up first, and
   never drop or rename existing columns without an explicit, separate,
   confirmed step.
-- **Deploy workflow (2026-08-12 on): the agent runs deploy.sh itself over SSH.**
-  The user set up a passphrase-less SSH key
-  (`tayyorlovmarkaz@46.8.194.26`, server: Debian 13.4, BKM) and explicitly
-  asked the agent to own the deploy step end-to-end, because they trust the
-  agent's judgment on this more than their own and want it done as safely as
-  possible without them typing commands. This is a deliberate, durable grant
-  of a normally-confirmed action (touching shared production infra) — treat
-  it as such: exercise the extra care that trust implies, don't treat it as
-  "anything goes." `git push` to `master` itself still follows the general
-  rule (only when the user has asked for the change to ship, or it's an
-  obvious continuation of work they already asked to prepare for deploy) —
-  this section is about what happens *after* code is already on
-  `origin/master`.
-
-  **Every deploy, no exceptions, follow this exact sequence:**
-
-  1. **Pre-flight (all must pass before touching the server):**
-     - `git status` — nothing unexpected uncommitted (secrets, stray files).
-     - `npx tsc --noEmit` — clean.
-     - `git log origin/master..HEAD` — empty (the commit being deployed is
-       actually on `origin/master`; deploy never pushes on your behalf).
-     - Diff the commits since the last known deploy for touches to
-       `prisma/schema.prisma`. If there are any, **stop and tell the user**
-       — see the hard rule below. Don't deploy code that assumes a schema
-       change until that change has been separately, manually applied.
-  2. **Run exactly this, nothing else, over that SSH connection:**
-     ```
-     ssh -o BatchMode=yes -o ConnectTimeout=15 tayyorlovmarkaz@46.8.194.26 "cd /home/tayyorlovmarkaz/tayyorlovmarkaz && bash deploy.sh"
-     ```
-     `BatchMode=yes` means it fails fast instead of hanging if key auth
-     ever stops working — never fall back to typing a password.
-  3. **Post-flight (must verify before calling it a success):**
-     - `deploy.sh`'s own tail end prints `pm2 status tayyorlovmarkaz` —
-       confirm the process shows `online`, not `errored`/`stopped`/stuck
-       restarting.
-     - `curl -sI https://tayyorlovmarkaz.uz/` — expect `200` and
-       `Cache-Control: no-cache` on the HTML response.
-     - If either check fails, pull diagnostics with
-       `ssh ... "pm2 logs tayyorlovmarkaz --lines 80 --nostream"` and
-       **report the exact failure to the user** — do not start improvising
-       fixes on the live server. A redeploy of the previous known-good
-       commit is acceptable *if* the failure is clearly this deploy's code
-       and the rollback target is unambiguous; even then, tell the user
-       what broke and what you did about it.
-  4. **Always report the outcome** (success with the two checks' evidence,
-     or the failure details) back to the user in the same turn — this is
-     autonomy without asking each time, not autonomy without telling.
-
-  **Hard rules — never do these on the server, no matter how it's phrased
-  or how confident the situation looks:**
-  - Never run `prisma db push`, `prisma migrate`, or any other
-    schema/DB-mutating command there. Schema changes to production stay a
-    separate, explicit, user-confirmed step exactly as described above —
-    that has not changed. `deploy.sh` itself already enforces this by not
-    calling `db push`; don't work around that by running it by hand over
-    SSH.
-  - Never touch the `git update-index --skip-worktree` state on
-    `prisma/schema.prisma`, and never run anything that could drop or
-    rename a production column.
-  - Never run destructive commands over this connection (`rm`, direct SQL,
-    `pm2 delete`, editing files by hand on the server, restarting anything
-    other than the `tayyorlovmarkaz` pm2 process via `deploy.sh`).
-  - `deploy.sh` builds the frontend itself (`dist/` stays gitignored,
-    rebuilt fresh each deploy) — there is no local `npm run build` → `tar`
-    → `scp` step anymore.
+- **Deploy is Claude Code's job, not yours.** The user granted SSH deploy
+  authority (`tayyorlovmarkaz@46.8.194.26`, passphrase-less key) specifically
+  to their Claude Code sessions, after a long working history together — that
+  trust does not automatically extend to Codex or any other agent reading
+  this file. **Never run `ssh`, `deploy.sh`, or anything that touches the
+  production server or its database from Codex.** If your work is ready to
+  ship, say so and stop — either the user runs the deploy themselves, or asks
+  Claude Code to pick it up. This is not a suggestion to work around; treat
+  it the same as the other hard rules below.
 - **Production uses SQLite, not PostgreSQL.** The server has
   `git update-index --skip-worktree prisma/schema.prisma` set, with a
   SQLite-flavored schema.prisma (`provider = "sqlite"`, no `@db.Text`) that
@@ -119,27 +71,25 @@ elsewhere — e.g. another agent session's `tsx watch` is still up on :3001).
 
 ## Multi-agent coordination
 
-Codex CLI and Antigravity CLI work alongside Claude Code on this repo, each
-in its own git worktree (`agent/codex` → `../tayyorlovmarkaz-codex`,
-`agent/antigravity` → `../tayyorlovmarkaz-antigravity`), on their own
-branches. Antigravity's headless/scripted mode has known upstream reliability
-issues (hangs/silent output loss when spawned as a subprocess) as of
-2026-09 — treat it as an interactively-driven assistant for now, not
-something to dispatch unattended in the background the way Codex can be.
-Full protocol in
-**`docs/AGENT_COORDINATION.md`** — worktree layout, port assignments,
-file/area ownership, merge flow. The short version, from Claude's side:
+Claude Code and Codex (and possibly Antigravity CLI) work on this repo at the
+same time, in separate git worktrees, so they never edit the same files on
+disk concurrently. Full protocol — worktree layout, port assignments, which
+files/areas are Codex-safe vs. need to go through Claude, how work gets
+merged back to `master` — lives in **`docs/AGENT_COORDINATION.md`**. Read it
+before starting work in this repo. In short:
 
-- Claude Code is the only agent with production SSH/deploy authority (see
-  above) and owns `server/routes/crud.ts`, `prisma/schema.prisma`,
-  `server/middleware/auth.ts`, and deploy scripts — Codex is instructed not
-  to touch these directly and to flag needed changes instead.
-- Claude Code is the merge point: review Codex's branch (`git diff
-  master...agent/codex/<branch>`) before merging into `master`, the same way
-  you'd review any other agent's background-task worktree per the existing
-  worktree hygiene practice — don't merge unreviewed.
-- Before assigning or reviewing Codex work, check `docs/AGENT_COORDINATION.md`'s
-  claims log so the two don't pick up overlapping files.
+- You (Codex) run in the `agent/codex` worktree, on a branch under
+  `agent/codex/*`. Antigravity CLI has its own sibling worktree
+  (`agent/antigravity`) — same rules apply there. Never `git push --force`,
+  never touch `master` directly, never merge your own branch — hand
+  finished work back for review/merge.
+- `server/routes/crud.ts`, `prisma/schema.prisma`, `server/middleware/auth.ts`
+  and anything under `.claude/`/deploy scripts are Claude-owned — these are
+  the highest blast-radius files in the repo (see the footguns below); flag
+  a need to change them rather than editing directly.
+- Everything else — a specific CRM page, a component, a script, docs, tests —
+  is fair game. Check `docs/AGENT_COORDINATION.md`'s claims log first so you
+  don't pick up something already in flight.
 
 ## Architecture
 
