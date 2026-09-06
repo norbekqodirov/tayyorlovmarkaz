@@ -9,6 +9,8 @@ import { useCrmData } from '../../../hooks/useCrmData';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal';
+import { PageHeader } from '../../../components/ui/PageHeader';
+import { StatCard } from '../../../components/ui/StatCard';
 
 // ─── Types & Constants ────────────────────────────────────────────────────────
 interface ScheduleItem {
@@ -57,10 +59,12 @@ const timeToFraction = (t: string): number => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CrmSchedule() {
-  const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } =
+  const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule, loading: scheduleLoading, error: scheduleError } =
     useFirestore<Omit<ScheduleItem, 'id'>>('schedule');
-  const { data: roomsData = [], addDocument: addRoomDoc } = useFirestore<any>('rooms');
-  const { data: groups = [] } = useFirestore<any>('groups');
+  const { data: roomsData = [], addDocument: addRoomDoc, loading: roomsLoading } = useFirestore<any>('rooms');
+  const { data: groups = [], loading: groupsLoading } = useFirestore<any>('groups');
+  const isLoading = scheduleLoading || roomsLoading || groupsLoading;
+  const hasError = scheduleError;
   const { teachers: liveTeachers, getEndTime } = useCrmData();
   const { showToast } = useToast();
 
@@ -127,7 +131,8 @@ export default function CrmSchedule() {
       const ee = tS(ex.endTime   || '00:00');
       if (s < ee && e > es) {
         const rm = getRoomName(ex.room);
-        if (rm === item.room) result.push(`Xona band: ${rm} (${ex.groupName})`);
+        const itemRm = getRoomName(item.room);
+        if (rm === itemRm) result.push(`Xona band: ${rm} (${ex.groupName})`);
         if (ex.teacher === item.teacher) result.push(`O'qituvchi band: ${ex.teacher}`);
       }
     });
@@ -215,62 +220,53 @@ export default function CrmSchedule() {
         onConfirm={async () => { setConflictConfirm({ open: false, data: null }); if (conflictConfirm.data) await doSave(conflictConfirm.data); }}
         onCancel={() => setConflictConfirm({ open: false, data: null })}
       />
-      <AnimatePresence>
-        {roomModalOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-zinc-200 dark:border-zinc-700 space-y-4">
-              <h3 className="text-base font-black text-slate-900 dark:text-white">Yangi xona qo'shish</h3>
-              <input type="text" value={roomInput} onChange={e => setRoomInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRoomAndClose()}
-                placeholder="Masalan: 201-xona" autoFocus
-                className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
-              <div className="flex justify-end gap-3">
-                <button onClick={() => setRoomModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500 hover:text-zinc-700 transition-colors">Bekor</button>
-                <button onClick={addRoomAndClose} className="px-4 py-2 text-sm font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors">Qo'shish</button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Modal isOpen={roomModalOpen} onClose={() => setRoomModalOpen(false)} title="Yangi xona qo'shish" width="sm">
+        <div className="space-y-4">
+          <input type="text" value={roomInput} onChange={e => setRoomInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRoomAndClose()}
+            placeholder="Masalan: 201-xona" autoFocus
+            className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setRoomModalOpen(false)} className="px-4 py-2 text-sm font-bold text-zinc-500 hover:text-zinc-700 transition-colors">Bekor</button>
+            <button onClick={addRoomAndClose} className="px-4 py-2 text-sm font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors">Qo'shish</button>
+          </div>
+        </div>
+      </Modal>
 
       {/* ─ Header ─ */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Dars Jadvali</h1>
-          <p className="text-xs text-zinc-400 mt-0.5 font-medium">Haftalik dars dasturini boshqaring</p>
+      <PageHeader
+        title="Dars Jadvali"
+        subtitle="Haftalik dars dasturini boshqaring"
+        actions={
+          <>
+            {isLoading && <span className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>}
+            <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all shadow-sm">
+              <DoorOpen size={14} /> Xona Qo'shish
+            </button>
+            <button onClick={() => openModal()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-lg shadow-blue-600/25 transition-all">
+              <Plus size={16} /> Dars Qo'shish
+            </button>
+          </>
+        }
+      />
+
+      {hasError && (
+        <div className="p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-2xl flex items-center gap-2 mb-4">
+          <AlertCircle size={20} />
+          <p className="text-sm font-bold">Ma'lumotlarni yuklashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all shadow-sm">
-            <DoorOpen size={14} /> Xona Qo'shish
-          </button>
-          <button onClick={() => openModal()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-lg shadow-blue-600/25 transition-all">
-            <Plus size={16} /> Dars Qo'shish
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ─ Stats ─ */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: 'Bugun', value: (schedule || []).filter(s => (s.days || []).includes(todayReal)).length, unit: 'dars', icon: <Calendar size={18} />, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-500/10' },
-          { label: 'Jami darslar', value: (schedule || []).length, unit: 'ta', icon: <BookOpen size={18} />, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
-          { label: 'Xonalar', value: rooms.length, unit: 'ta', icon: <DoorOpen size={18} />, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-500/10' },
-        ].map(({ label, value, unit, icon, color, bg }) => (
-          <div key={label} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-            <div className={`w-10 h-10 rounded-xl ${bg} ${color} flex items-center justify-center flex-shrink-0`}>{icon}</div>
-            <div>
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{label}</p>
-              <p className="text-lg font-black text-slate-900 dark:text-white">{value} <span className="text-xs font-bold text-zinc-400">{unit}</span></p>
-            </div>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard label="Bugun" value={(schedule || []).filter(s => (s.days || []).includes(todayReal)).length} sub="dars" icon={<Calendar size={18} />} color="blue" />
+        <StatCard label="Jami darslar" value={(schedule || []).length} sub="ta" icon={<BookOpen size={18} />} color="emerald" />
+        <StatCard label="Xonalar" value={rooms.length} sub="ta" icon={<DoorOpen size={18} />} color="violet" />
       </div>
 
       {/* ─ Day Tabs ─ */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1 flex gap-1 shadow-sm">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1 flex overflow-x-auto gap-1 shadow-sm hide-scrollbar mt-4">
         {DAYS.map(day => {
           const isToday = todayReal === day.id;
           const isSelected = selectedDay === day.id;
