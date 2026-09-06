@@ -24,6 +24,8 @@ model User {
   subject     String?  // O'qituvchi uchun: fan nomi
   experience  String?  // O'qituvchi uchun: tajriba (masalan "5 yil")
   bio         String?  @db.Text // O'qituvchi uchun: tavsif
+  salaryPercent Float? // O'qituvchi uchun shaxsiy oylik foiz stavkasi — bo'sh
+                        // bo'lsa global 'teacher_salary_percent' sozlamasi ishlatiladi
   isActive       Boolean  @default(true)
   telegramChatId String?  @unique
   createdAt      DateTime @default(now())
@@ -281,7 +283,8 @@ model Payment {
 model StaffMember {
   id         String   @id @default(uuid())
   name       String
-  role       String   // "Direktor", "Administrator", "O'qituvchi"
+  role       String   // "Direktor", "Administrator", "O'qituvchi" — erkin matn (eski, mos kelish uchun saqlanadi)
+  positionId String?  // Agar tuzilgan Lavozim tanlangan bo'lsa (ixtiyoriy — eski yozuvlarda yo'q)
   email      String?
   phone      String?
   salary     Float    @default(0)
@@ -299,6 +302,7 @@ model StaffMember {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  position         Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
   salaries         Salary[]
   staffAttendances StaffAttendance[]
   leaveRequests    LeaveRequest[]
@@ -306,6 +310,41 @@ model StaffMember {
   tasks             Task[]
   performanceReviews PerformanceReview[]
   documents         StaffDocument[]
+}
+
+// Lavozim — xodim qo'shishdan oldin tashkil qilinadigan andoza: nomi,
+// yo'riqnoma/vazifalar va shu lavozim uchun standart ruxsatlar. StaffMember
+// yaratishda tanlansa, login (User) ochilganda shu yerdagi standart rol/
+// ruxsatlar ishlatiladi (requester o'z rolidan yuqorisini bera olmaydi —
+// server/routes/crud.ts'dagi ensureStaffLoginAccount()ga q.).
+model Position {
+  id                 String   @id @default(uuid())
+  name               String   @unique
+  description        String?  @db.Text // Yo'riqnoma
+  responsibilities   String?  @db.Text // Vazifalar
+  suggestedRole      String   @default("TEACHER") // TEACHER | MANAGER | ADMIN — login ochilganda taklif qilinadigan rol
+  defaultPermissions String?  @default("[]") @db.Text // JSON array — ALL_PERMISSIONS kalitlari
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  staffMembers StaffMember[]
+}
+
+// Moliyaviy kategoriyalar (kirim/chiqim) — admin o'zi qo'sha oladigan,
+// boshqariladigan ro'yxat. Expense.category/Transaction.category/
+// Budget.category haliham erkin matn (String) — bu jadval faqat UI uchun
+// "ruxsat etilgan qiymatlar" ro'yxatini beradi. Eski yozuvlar bilan mos
+// kelishi uchun o'chirilmaydi, faqat isActive=false qilinadi.
+model TransactionCategory {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // "income" | "expense"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, type])
 }
 
 // ============================================
