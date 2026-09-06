@@ -25,6 +25,8 @@ interface Campaign {
   status: 'Faol' | 'To\'xtatilgan' | 'Yakunlangan';
   startDate: string;
   endDate: string;
+  utmSource?: string | null;
+  utmCampaign?: string | null;
 }
 
 const PLATFORMS = ['Instagram', 'Facebook', 'Telegram', 'Google', 'YouTube'];
@@ -86,8 +88,13 @@ export default function CrmMarketing() {
 
   const handleCampSave = async () => {
     try {
-      if (editingCamp?.id) await updateCampaign(editingCamp.id, campForm);
-      else await addCampaign(campForm as Omit<Campaign, 'id'>);
+      const payload = {
+        ...campForm,
+        utmSource: campForm.utmSource?.trim() || null,
+        utmCampaign: campForm.utmCampaign?.trim() || null,
+      };
+      if (editingCamp?.id) await updateCampaign(editingCamp.id, payload);
+      else await addCampaign(payload as Omit<Campaign, 'id'>);
       setIsCampModal(false);
       showToast('Kampaniya saqlandi', 'success');
     } catch (e) { showToast('Xatolik yuz berdi', 'error'); }
@@ -213,6 +220,10 @@ export default function CrmMarketing() {
             <Modal isOpen={isCampModal} onClose={() => setIsCampModal(false)} title="Kampaniya tahriri">
                <div className="space-y-4">
                  <Input label="Kampaniya nomi" value={campForm.name} onChange={e => setCampForm({...campForm, name: e.target.value})} />
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                   <Input label="UTM Source" value={campForm.utmSource ?? ''} onChange={e => setCampForm({...campForm, utmSource: e.target.value})} placeholder="Masalan: instagram" helperText="Ixtiyoriy" />
+                   <Input label="UTM Campaign" value={campForm.utmCampaign ?? ''} onChange={e => setCampForm({...campForm, utmCampaign: e.target.value})} placeholder="Masalan: kuzgi_qabul" helperText="Ixtiyoriy" />
+                 </div>
                  <div className="grid grid-cols-2 gap-4">
                    <div className="space-y-1.5 flex flex-col">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Platforma</label>
