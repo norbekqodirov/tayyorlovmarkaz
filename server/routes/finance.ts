@@ -150,48 +150,72 @@ router.post('/invoices', requireAuth, requireMinRole('MANAGER'), async (req, res
 router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { status, paidAt, method } = req.body;
+
+        if (status === 'paid') {
+            // To'lov belgilash atomar va idempotent bo'lishi kerak — ikki marta
+            // bosish, tarmoq retry yoki parallel so'rov pulni/balansni ikki marta
+            // hisoblab qo'ymasligi uchun: (1) invoice.status'ni faqat "hali
+            // to'lanmagan" bo'lsa yangilaymiz (WHERE shartida, poyga holatisiz —
+            // updateMany + count orqali), (2) Payment/Transaction/balans
+            // yangilanishi FAQAT shu yangilanish haqiqatan sodir bo'lganda va
+            // bittа $transaction ichida bajariladi.
+            const todayStr = todayDateStr();
+            const paidAtDate = paidAt ? new Date(paidAt) : new Date();
+
+            const result = await prisma.$transaction(async (tx) => {
+                const { count } = await tx.invoice.updateMany({
+                    where: { id: req.params.id, status: { not: 'paid' } },
+                    data: { status: 'paid', paidAt: paidAtDate, ...(method !== undefined ? { method } : {}) },
+                });
+
+                const invoice = await tx.invoice.findUnique({
+                    where: { id: req.params.id },
+                    include: { student: true, items: true },
+                });
+                if (!invoice || count === 0) return { invoice, applied: false };
+
+                await tx.payment.create({
+                    data: {
+                        studentId: invoice.studentId,
+                        amount: invoice.amount,
+                        method: invoice.method || 'Naqd',
+                        date: todayStr,
+                        status: 'paid',
+                        notes: `Invoice ${invoice.number} to'landi`,
+                    },
+                });
+                await tx.transaction.create({
+                    data: {
+                        type: 'income',
+                        amount: invoice.amount,
+                        category: "Kurs to'lovi",
+                        description: `Invoice ${invoice.number} to'lovi`,
+                        date: todayStr,
+                        method: invoice.method || 'Naqd',
+                        studentId: invoice.studentId,
+                        studentName: invoice.student.name,
+                    },
+                });
+                await tx.student.update({
+                    where: { id: invoice.studentId },
+                    data: { balance: { increment: invoice.amount }, paymentStatus: 'Tolov qilingan' },
+                });
+
+                return { invoice, applied: true };
+            });
+
+            if (!result.invoice) return res.status(404).json({ error: 'Invoice topilmadi' });
+            return res.json(result.invoice);
+        }
+
         const data: any = {};
         if (status !== undefined) data.status = status;
         if (method !== undefined) data.method = method;
-        if (status === 'paid') data.paidAt = paidAt ? new Date(paidAt) : new Date();
-
         const invoice = await prisma.invoice.update({
             where: { id: req.params.id },
             data,
             include: { student: true, items: true },
         });
-
-        // If paid, create payment record and update student balance
-        if (status === 'paid') {
-            const todayStr = todayDateStr();
-            await prisma.payment.create({
-                data: {
-                    studentId: invoice.studentId,
-                    amount: invoice.amount,
-                    method: invoice.method || 'Naqd',
-                    date: todayStr,
-                    status: 'paid',
-                    notes: `Invoice ${invoice.number} to'landi`,
-                },
-            });
-            await prisma.transaction.create({
-                data: {
-                    type: 'income',
-                    amount: invoice.amount,
-                    category: "Kurs to'lovi",
-                    description: `Invoice ${invoice.number} to'lovi`,
-                    date: todayStr,
-                    method: invoice.method || 'Naqd',
-                    studentId: invoice.studentId,
-                    studentName: invoice.student.name,
-                },
-            });
-            await prisma.student.update({
-                where: { id: invoice.studentId },
-                data: { balance: { increment: invoice.amount }, paymentStatus: 'Tolov qilingan' },
-            });
-        }
-
         res.json(invoice);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
