@@ -83,6 +83,7 @@ const COLLECTION_READ_LEVEL: Record<string, number> = {
     exams:         1,
     notes:         1,
     journal:       1,
+    enrollments:   1, // guruh a'zolari ro'yxati — /enrollments/group/:id shu yerdan o'tadi
     // ── MANAGER (2) — finance/marketing permission holders ──────────────────
     finance:        2,
     transactions:   2,
