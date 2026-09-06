@@ -31,6 +31,25 @@ Single dev server session: `.claude/launch.json` defines `Vite Frontend` (full
 `npm run dev`) and `Vite Only` (just vite, for when a backend is already running
 elsewhere — e.g. another agent session's `tsx watch` is still up on :3001).
 
+**MUHIM — Claude Code'ning `preview_start` vositasi orqali ishga tushirilgan Vite
+hech qachon `/api` so'rovlarini proxy qila olmaydi (2026-09-06'da chuqur
+diagnostika bilan tasdiqlangan):** `preview_start`/named-launch-config orqali
+boshlangan Vite dev server'i `changeOrigin`/target/port sozlamalaridan qat'i
+nazar backend'ga proxy qilingan HAR QANDAY so'rovni (GET ham, POST ham)
+CHEKSIZ osilтirib qo'yadi — hatto backend to'g'ridan-to'g'ri (`curl localhost:3001`)
+darhol javob bersa ham. Sabab noaniq (Claude Code'ning preview infratuzilmasi
+tomonidan shu tarzda ishga tushirilgan Vite jarayoniga xos chegaralanish
+ko'rinadi — Bash orqali ishga tushirilgan bir xil Vite jarayonida bu muammo
+YO'Q), lekin **ishlaydigan yagona yechim topilgan**: ikkalasini ham (`npm run
+server` va `npx vite --port=3000 --host=0.0.0.0`) `Bash` vositasi orqali
+`run_in_background: true` bilan ishga tushirish, `preview_start`ni Vite/Express
+uchun UMUMAN ishlatmaslik — keyin Browser pane'ga oddiy `navigate` bilan
+`http://localhost:3000`ga o'tish yetarli. Bu holatda hamma narsa (login, CRUD,
+barcha `/api/*`) darhol ishlaydi. Keyingi sessiyada preview kerak bo'lsa — shu
+yo'ldan boshlang, `preview_start(name:"Vite Frontend"/"Vite Only"/"Express
+Backend")`ni sinab, keyin "osilib qoldi" deb qayta-qayta debugging qilib vaqt
+sarflamang.
+
 ## Database: PostgreSQL only, always `db push`
 
 - `datasource db` in `prisma/schema.prisma` is `postgresql`. `prisma/dev.db` is a
