@@ -9,7 +9,7 @@ export interface StatCardProps {
   value: string | number;
   icon?: React.ReactNode;
   trend?: {
-    value: number;
+    value: number | string;
     direction?: 'up' | 'down' | 'flat';
     label?: string;
   };
@@ -88,7 +88,7 @@ export function StatCard({
     );
   }
 
-  const trendDirection = trend?.direction || (trend && trend.value > 0 ? 'up' : trend && trend.value < 0 ? 'down' : 'flat');
+  const trendDirection = trend?.direction || (trend && typeof trend.value === 'number' ? (trend.value > 0 ? 'up' : trend.value < 0 ? 'down' : 'flat') : 'flat');
   const TrendIcon = trendDirection === 'up' ? ArrowUp : trendDirection === 'down' ? ArrowDown : Minus;
   const trendColor =
     trendDirection === 'up' ? 'text-emerald-500' :
@@ -155,7 +155,7 @@ export function StatCard({
             <div className={`flex items-center gap-1 ${isGradient || isSolid ? 'text-white' : trendColor}`}>
               <TrendIcon size={12} strokeWidth={3} />
               <span className="text-xs font-black">
-                {trend.value > 0 ? '+' : ''}{trend.value}
+                {typeof trend.value === 'number' && trend.value > 0 ? '+' : ''}{trend.value}
                 {typeof trend.value === 'number' && !trend.label ? '%' : ''}
               </span>
             </div>
