@@ -6,7 +6,7 @@ import {
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { exportToExcel } from '../../../utils/export';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
@@ -93,6 +93,9 @@ export default function CrmGroups() {
     if (!formData.name?.trim()) errors.name = "Guruh nomi kiritilishi shart";
     if (!formData.courseId) errors.courseId = "Kurs tanlanishi shart";
     if (!formData.teacherId) errors.teacherId = "O'qituvchi tanlanishi shart";
+    if (!Number.isInteger(formData.maxSize) || (formData.maxSize ?? 0) < 1) {
+      errors.maxSize = "Guruh sig'imi kamida 1 bo'lgan butun son bo'lishi shart";
+    }
     if (!scheduleForm.room) errors.room = "Xona tanlanishi shart";
     if (scheduleForm.days.length === 0) errors.days = "Kamida bitta dars kuni tanlanishi shart";
     setFormErrors(errors);
@@ -122,7 +125,7 @@ export default function CrmGroups() {
         courseId: formData.courseId,
         teacherId: formData.teacherId,
         status: formData.status,
-        maxSize: Number(formData.maxSize) || 15,
+        maxSize: Number(formData.maxSize),
         price: formData.price || null,
         startDate: formData.startDate,
         endDate: formData.endDate || null,
@@ -272,12 +275,16 @@ export default function CrmGroups() {
           <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
             <button
               onClick={() => setViewMode('grid')}
+              aria-label="Kartochkalar ko'rinishi"
+              aria-pressed={viewMode === 'grid'}
               className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600' : 'text-zinc-500'}`}
             >
               <LayoutGrid size={18} />
             </button>
             <button
               onClick={() => setViewMode('list')}
+              aria-label="Jadval ko'rinishi"
+              aria-pressed={viewMode === 'list'}
               className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600' : 'text-zinc-500'}`}
             >
               <ListIcon size={18} />
@@ -353,6 +360,43 @@ export default function CrmGroups() {
       </div>
 
       {/* Content */}
+      {viewMode === 'grid' ? (
+        filteredGroups.length === 0 ? (
+          <EmptyState title="Guruhlar topilmadi" message="Qidiruvni o'zgartiring yoki yangi guruh qo'shing." />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {filteredGroups.map(group => (
+              <article key={group.id} className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="min-w-0 text-lg font-bold text-slate-900 dark:text-white break-words">
+                    <Link to={`/crmtayyorlovmarkaz/groups/${group.id}`} className="hover:text-blue-600 hover:underline focus-visible:outline-blue-500">
+                      {group.name}
+                    </Link>
+                  </h2>
+                  <span className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                    group.status === 'active' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
+                      : group.status === 'paused' ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
+                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                  }`}>
+                    {group.status === 'active' ? 'Faol' : group.status === 'paused' ? 'Muzlatilgan' : group.status === 'completed' ? 'Tugallangan' : 'Noma\'lum'}
+                  </span>
+                </div>
+                <div className="space-y-3 text-sm text-slate-600 dark:text-zinc-400">
+                  <p className="flex items-center gap-2"><BookOpen size={16} className="shrink-0" /><span className="break-words min-w-0">{group.course?.name || 'Kurs belgilanmagan'}</span></p>
+                  <p className="flex items-center gap-2"><GraduationCap size={16} className="shrink-0" /><span className="break-words min-w-0">{group.teacher?.name || "O'qituvchi belgilanmagan"}</span></p>
+                  <p className="flex items-center gap-2"><Users size={16} className="shrink-0" />O'quvchilar: {group._count?.enrollments ?? 0} / {group.maxSize ?? '—'}</p>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                  <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{formatNumber(group.price ?? group.course?.price ?? 0)} so'm</span>
+                  <Button variant="ghost" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => openModal(group)} aria-label={`${group.name} guruhini tahrirlash`}>
+                    Tahrirlash
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )
+      ) : (
       <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse whitespace-nowrap">
@@ -446,6 +490,8 @@ export default function CrmGroups() {
           </table>
         </div>
       </div>
+
+      )}
 
       {/* Group Detail modal removed since it is now handled by CrmGroupDetail route */}
 
@@ -573,8 +619,12 @@ export default function CrmGroups() {
             <Input
               type="number"
               label="Maksimal O'quvchilar"
+              min={1}
+              step={1}
+              required
+              error={formErrors.maxSize}
               value={formData.maxSize ?? ''}
-              onChange={(e) => setFormData({ ...formData, maxSize: Number(e.target.value) })}
+              onChange={(e) => setFormData({ ...formData, maxSize: e.target.value === '' ? undefined : e.target.valueAsNumber })}
             />
           </div>
 
