@@ -15,6 +15,7 @@ interface Form {
   title: string;
   description?: string | null;
   course?: string | null;
+  campaignId?: string | null;
   isActive: boolean;
   submissions: number;
   shortCode?: string | null;
@@ -43,12 +44,14 @@ const EXTRA_FIELD_OPTIONS = [
 
 export default function CrmForms() {
   const { documents: forms, addDocument, updateDocument, deleteDocument } = useFirestore<Form>('forms');
+  const { data: campaigns, loading: campaignsLoading, error: campaignsError } = useFirestore<{ id: string; name: string }>('campaigns');
   const { courses } = useCrmData();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingForm, setEditingForm] = useState<Form | null>(null);
   const [formData, setFormData] = useState<Partial<Form>>({
+    campaignId: null,
     title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true,
     successTitle: '', successMessage: '', successButtonText: '', successButtonUrl: '',
   });
@@ -67,6 +70,7 @@ export default function CrmForms() {
     if (form) {
       setEditingForm(form);
       setFormData({
+        campaignId: form.campaignId ?? null,
         title: form.title, description: form.description || '', course: form.course || '',
         isActive: form.isActive, extraFieldType: form.extraFieldType ?? null, showCourseField: form.showCourseField ?? true,
         successTitle: form.successTitle || '', successMessage: form.successMessage || '',
@@ -75,6 +79,7 @@ export default function CrmForms() {
     } else {
       setEditingForm(null);
       setFormData({
+        campaignId: null,
         title: '', description: '', course: '', isActive: true, extraFieldType: null, showCourseField: true,
         successTitle: '', successMessage: '', successButtonText: '', successButtonUrl: '',
       });
@@ -249,6 +254,27 @@ export default function CrmForms() {
             onChange={(e) => setFormData({...formData, title: e.target.value})}
             placeholder="Masalan: Instagram Target - Kuzgi qabul"
           />
+          <div>
+            <label htmlFor="target-form-campaign" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Kampaniya</label>
+            <select
+              id="target-form-campaign"
+              value={formData.campaignId ?? ''}
+              onChange={(e) => setFormData({ ...formData, campaignId: e.target.value || null })}
+              disabled={campaignsLoading || !!campaignsError}
+              className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:text-white disabled:opacity-60"
+            >
+              <option value="">Tanlanmagan</option>
+              {formData.campaignId && !campaigns.some(c => c.id === formData.campaignId) && (
+                <option value={formData.campaignId}>Joriy kampaniya</option>
+              )}
+              {campaigns.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-zinc-400 mt-1">
+              {campaignsLoading ? 'Kampaniyalar yuklanmoqda...' : campaignsError ? "Kampaniyalarni yuklab bo'lmadi. Sahifani yangilang." : "Ixtiyoriy. Shu formadan kelgan lidlar tanlangan kampaniyaga bog'lanadi."}
+            </p>
+          </div>
           <div>
             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Tavsif</label>
             <textarea
