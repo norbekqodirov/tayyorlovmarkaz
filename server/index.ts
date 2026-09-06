@@ -49,7 +49,20 @@ dotenv.config();
 
 const app = express();
 app.set('trust proxy', 1); // CloudFlare + nginx compatibility
-const PORT = process.env.PORT || 3001;
+// .env'dagi PORT tashqi (ambient) process.env.PORT'dan ustun turishi kerak — ba'zi
+// dev-preview vositalari (masalan bir nechta xizmatni nom bilan ishga tushiradigan
+// launch konfiguratsiyasi) process.env.PORT'ni boshqa xizmat porti bilan oldindan
+// o'rnatib qo'yishi mumkin; dotenv.config() esa standart holatda mavjud qiymatni
+// bosib yozmaydi — natijada server .env'da 3001 yozilgan bo'lsa ham noto'g'ri portda
+// ochilib, Vite proxy'si hech qachon topa olmaydigan holatga tushib qolgan edi.
+// Production PM2 ham xuddi shu qiymatni (3001) explicit env sifatida beradi, shuning
+// uchun bu o'zgarish production xatti-harakatiga ta'sir qilmaydi.
+let dotenvPort: string | undefined;
+try {
+    const parsed = dotenv.parse(fs.readFileSync(path.resolve(process.cwd(), '.env')));
+    dotenvPort = parsed.PORT;
+} catch { /* .env topilmasa (masalan konteyner env'i) — process.env'ga tayanamiz */ }
+const PORT = Number(dotenvPort) || Number(process.env.PORT) || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
 // CORS - allow both dev and production origins
