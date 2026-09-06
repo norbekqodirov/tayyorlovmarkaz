@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   TrendingUp, Users, GraduationCap,
-  Download, ArrowUpRight, ArrowDownRight, Target,
+  Download, Target,
   CheckCircle2, AlertTriangle,
   Activity, Layers, DollarSign, Maximize2, Zap
 } from 'lucide-react';
@@ -16,6 +16,7 @@ import { exportToExcel } from '../../../utils/export';
 import { STAGES } from '../../../components/leads/types';
 import api from '../../../api/client';
 import { formatNumber } from '../../../utils/formatters';
+import { StatCard, type StatCardProps } from '../../../components/ui/StatCard';
 
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
@@ -54,35 +55,6 @@ function ChartCard({ title, desc, children, onExport }: {
         </div>
       </div>
       <div className="flex-1 min-h-[220px]">{children}</div>
-    </div>
-  );
-}
-
-function KpiCard({ label, value, sub, icon: Icon, color, trend, up }: {
-  label: string; value: string; sub: string; icon: any;
-  color: string; trend: string; up: boolean;
-}) {
-  const colorMap: Record<string, string> = {
-    blue: 'from-blue-600 to-indigo-700', emerald: 'from-emerald-500 to-teal-600',
-    violet: 'from-violet-600 to-purple-700', amber: 'from-amber-500 to-orange-600',
-    rose: 'from-rose-500 to-red-600', cyan: 'from-cyan-500 to-blue-600',
-    indigo: 'from-indigo-500 to-blue-600',
-  };
-  return (
-    <div className={`bg-gradient-to-br ${colorMap[color] || colorMap.blue} rounded-2xl p-4 text-white relative overflow-hidden shadow-lg`}>
-      <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/5" />
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
-          <Icon size={16} strokeWidth={2.5} />
-        </div>
-        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[9px] font-bold`}>
-          {up ? <ArrowUpRight size={9} /> : <ArrowDownRight size={9} />}
-          {trend}
-        </div>
-      </div>
-      <p className="text-[9px] font-black text-white/60 uppercase tracking-widest">{label}</p>
-      <p className="text-lg font-black text-white mt-0.5 truncate">{value}</p>
-      <p className="text-[10px] text-white/60 mt-0.5 truncate">{sub}</p>
     </div>
   );
 }
@@ -231,15 +203,98 @@ export default function CrmAdvancedBI() {
     expectedNextMonthRevenue += sGroup ? Number(sGroup.price || 0) : 400000; // default to 400k if group not found
   });
 
-  const kpis = [
-    { label: "Jami O'quvchilar", value: fN(students.length), sub: `${activeStudents} faol`, icon: GraduationCap, color: 'blue', trend: `${activeStudents}`, up: true },
-    { label: 'Oylik Daromad', value: fM(thisMonthIncome), sub: 'so\'m, joriy oy', icon: DollarSign, color: 'emerald', trend: ad ? `${ad.revenue?.growth_pct}%` : '–', up: (ad?.revenue?.growth_pct || 0) >= 0 },
-    { label: 'Umumiy LTV', value: fM(LTV), sub: 'so\'m / mijoz', icon: Target, color: 'blue', trend: 'Mijoz qadri', up: true },
-    { label: 'Prognoz Daromad', value: fM(expectedNextMonthRevenue), sub: 'kutilmoqda', icon: Zap, color: 'violet', trend: 'Keyingi oy', up: true },
-    { label: 'Sof Foyda', value: fM(totalIncome - totalExpense), sub: 'so\'m, jami', icon: TrendingUp, color: 'cyan', trend: totalIncome > totalExpense ? '+' : '–', up: totalIncome > totalExpense },
-    { label: 'Qarzdorlar', value: fN(debtorCount), sub: 'ta o\'quvchi', icon: AlertTriangle, color: debtorCount > 0 ? 'amber' : 'emerald', trend: debtorCount > 0 ? `${debtorCount} ta` : '0', up: debtorCount === 0 },
-    { label: 'Faol Guruhlar', value: fN(groups.filter((g: any) => g.status === 'Faol' || g.status === 'active').length), sub: `${groups.length} ta jami`, icon: Layers, color: 'indigo', trend: `${groups.length}`, up: true },
-    { label: 'Lid Konversiya', value: `${convRate}%`, sub: `${wonLeads} ta o'quvchiga aylandi`, icon: Target, color: 'violet', trend: `${convRate}%`, up: convRate >= 15 },
+  const kpis: StatCardProps[] = [
+    {
+      label: "Jami O'quvchilar",
+      value: `${fN(students.length)} ta`,
+      sub: `${activeStudents} faol o'quvchi`,
+      icon: <GraduationCap size={18} strokeWidth={2.5} />,
+      color: 'blue',
+      variant: 'gradient',
+      trend: { value: activeStudents, direction: 'up', label: 'faol' },
+      sparkline: studentGrowthData.map(s => s.yangi),
+    },
+    {
+      label: 'Oylik Daromad',
+      value: `${fM(thisMonthIncome)} so'm`,
+      sub: 'Joriy oy kirimi',
+      icon: <DollarSign size={18} strokeWidth={2.5} />,
+      color: 'emerald',
+      variant: 'gradient',
+      trend: ad?.revenue?.growth_pct !== undefined
+        ? { value: ad.revenue.growth_pct, direction: (ad.revenue.growth_pct || 0) >= 0 ? 'up' : 'down', label: "o'tgan oyga" }
+        : managerSummary?.income_growth !== undefined
+        ? { value: managerSummary.income_growth, direction: managerSummary.income_growth >= 0 ? 'up' : 'down', label: "o'tgan oyga" }
+        : undefined,
+      sparkline: revenueChartData.map(r => r.kirim),
+    },
+    {
+      label: 'Umumiy LTV',
+      value: `${fM(LTV)} so'm`,
+      sub: "so'm / mijoz (o'rtacha)",
+      icon: <Target size={18} strokeWidth={2.5} />,
+      color: 'indigo',
+      variant: 'gradient',
+      trend: { value: 'Mijoz qadri', direction: 'up' },
+    },
+    {
+      label: 'Prognoz Daromad',
+      value: `${fM(expectedNextMonthRevenue)} so'm`,
+      sub: 'Keyingi oy kutilmoqda',
+      icon: <Zap size={18} strokeWidth={2.5} />,
+      color: 'violet',
+      variant: 'gradient',
+      trend: { value: 'Keyingi oy', direction: 'up' },
+    },
+    {
+      label: 'Sof Foyda',
+      value: `${fM(totalIncome - totalExpense)} so'm`,
+      sub: 'Jami kirim - chiqim',
+      icon: <TrendingUp size={18} strokeWidth={2.5} />,
+      color: 'cyan',
+      variant: 'gradient',
+      trend: {
+        value: totalIncome >= totalExpense ? '+' : '–',
+        direction: totalIncome >= totalExpense ? 'up' : 'down',
+        label: totalIncome >= totalExpense ? 'Foydada' : 'Zararda',
+      },
+      sparkline: revenueChartData.map(r => r.foyda),
+    },
+    {
+      label: 'Qarzdorlar',
+      value: `${fN(debtorCount)} ta`,
+      sub: debtorCount > 0 ? "To'lov kechikkan" : "Qarzdorlik yo'q",
+      icon: <AlertTriangle size={18} strokeWidth={2.5} />,
+      color: debtorCount > 0 ? 'amber' : 'emerald',
+      variant: 'gradient',
+      trend: {
+        value: debtorCount,
+        direction: debtorCount > 0 ? 'down' : 'up',
+        label: debtorCount > 0 ? 'qarzdor' : 'hammasi toza',
+      },
+    },
+    {
+      label: 'Faol Guruhlar',
+      value: `${fN(groups.filter((g: any) => g.status === 'Faol' || g.status === 'active').length)} ta`,
+      sub: `${groups.length} ta jami guruh`,
+      icon: <Layers size={18} strokeWidth={2.5} />,
+      color: 'blue',
+      variant: 'gradient',
+      trend: { value: `${groups.length} jami`, direction: 'up' },
+    },
+    {
+      label: 'Lid Konversiya',
+      value: `${convRate}%`,
+      sub: `${wonLeads} ta o'quvchiga aylandi`,
+      icon: <Target size={18} strokeWidth={2.5} />,
+      color: 'rose',
+      variant: 'gradient',
+      trend: {
+        value: convRate,
+        direction: convRate >= 15 ? 'up' : 'down',
+        label: `${wonLeads}/${leads.length || 0}`,
+      },
+    },
   ];
 
   const sections = [
@@ -310,7 +365,7 @@ export default function CrmAdvancedBI() {
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
+        {kpis.map((k, i) => <StatCard key={i} {...k} size="sm" />)}
       </div>
 
       {/* Overview Section */}
@@ -434,18 +489,10 @@ export default function CrmAdvancedBI() {
           <div className="lg:col-span-2 bg-white dark:bg-[#0f172a] rounded-2xl border border-zinc-200/80 dark:border-white/5 p-5 shadow-sm">
             <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4">Moliyaviy Xulosa</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { label: 'Jami Kirim', value: fM(totalIncome), color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
-                { label: 'Jami Chiqim', value: fM(totalExpense), color: 'text-rose-600', bg: 'bg-rose-50 dark:bg-rose-500/10' },
-                { label: 'Sof Foyda', value: fM(totalIncome - totalExpense), color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-500/10' },
-                { label: 'Bu Oy', value: fM(thisMonthIncome), color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-500/10' },
-              ].map((s, i) => (
-                <div key={i} className={`${s.bg} p-4 rounded-xl`}>
-                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">{s.label}</p>
-                  <p className={`text-xl font-black ${s.color}`}>{s.value}</p>
-                  <p className="text-[10px] text-zinc-400 mt-0.5">so'm</p>
-                </div>
-              ))}
+              <StatCard variant="minimal" color="emerald" label="Jami Kirim" value={`${fM(totalIncome)} so'm`} sub="Barcha kirimlar" icon={<DollarSign size={18} />} size="sm" />
+              <StatCard variant="minimal" color="rose" label="Jami Chiqim" value={`${fM(totalExpense)} so'm`} sub="Barcha xarajatlar" icon={<TrendingUp size={18} className="rotate-180" />} size="sm" />
+              <StatCard variant="minimal" color="blue" label="Sof Foyda" value={`${fM(totalIncome - totalExpense)} so'm`} sub="Kirim - Chiqim" icon={<TrendingUp size={18} />} size="sm" />
+              <StatCard variant="minimal" color="violet" label="Bu Oy" value={`${fM(thisMonthIncome)} so'm`} sub="Joriy oy tushumi" icon={<DollarSign size={18} />} size="sm" />
             </div>
           </div>
         </div>
@@ -494,20 +541,10 @@ export default function CrmAdvancedBI() {
           <div className="lg:col-span-2 bg-white dark:bg-[#0f172a] rounded-2xl border border-zinc-200/80 dark:border-white/5 p-5 shadow-sm">
             <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4">O'quvchilar Holati</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { label: 'Faol', count: students.filter((s: any) => s.status === 'Faol').length, color: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700' },
-                { label: "To'lov qilgan", count: students.filter((s: any) => s.paymentStatus === 'Tolov qilingan').length, color: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700' },
-                { label: 'Qarzdor', count: students.filter((s: any) => s.paymentStatus === 'Qarzdorlik').length, color: 'bg-rose-100 dark:bg-rose-500/20 text-rose-700' },
-                { label: 'Muzlatilgan', count: students.filter((s: any) => s.status === 'Muzlatilgan').length, color: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700' },
-              ].map((s, i) => (
-                <div key={i} className={`${s.color} p-4 rounded-xl flex items-center justify-between`}>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{s.label}</p>
-                    <p className="text-2xl font-black mt-1">{s.count}</p>
-                  </div>
-                  <CheckCircle2 size={24} className="opacity-30" />
-                </div>
-              ))}
+              <StatCard variant="minimal" color="emerald" label="Faol" value={`${students.filter((s: any) => s.status === 'Faol' || s.status === 'active').length} ta`} sub="O'qishni davom ettirmoqda" icon={<GraduationCap size={18} />} size="sm" />
+              <StatCard variant="minimal" color="blue" label="To'lov qilgan" value={`${students.filter((s: any) => s.paymentStatus === 'Tolov qilingan').length} ta`} sub="Balans to'liq" icon={<CheckCircle2 size={18} />} size="sm" />
+              <StatCard variant="minimal" color="rose" label="Qarzdor" value={`${students.filter((s: any) => s.paymentStatus === 'Qarzdorlik' || (Number(s.balance) || 0) < 0).length} ta`} sub="Qarzdorlik mavjud" icon={<AlertTriangle size={18} />} size="sm" />
+              <StatCard variant="minimal" color="amber" label="Muzlatilgan" value={`${students.filter((s: any) => s.status === 'Muzlatilgan').length} ta`} sub="Vaqtincha to'xtatilgan" icon={<Activity size={18} />} size="sm" />
             </div>
           </div>
         </div>
@@ -569,17 +606,10 @@ export default function CrmAdvancedBI() {
           <div className="lg:col-span-2 bg-white dark:bg-[#0f172a] rounded-2xl border border-zinc-200/80 dark:border-white/5 p-5 shadow-sm">
             <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4">Marketing Samaradorligi</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { label: 'Jami Lidlar', value: leads.length, unit: 'ta', color: 'text-blue-600' },
-                { label: "O'quvchiga aylandi", value: wonLeads, unit: 'ta', color: 'text-emerald-600' },
-                { label: 'Konversiya', value: `${convRate}%`, unit: '', color: convRate >= 20 ? 'text-emerald-600' : 'text-amber-600' },
-                { label: 'Rad etildi', value: leads.filter((l: any) => l.stage === 'lost').length, unit: 'ta', color: 'text-rose-600' },
-              ].map((s, i) => (
-                <div key={i} className="bg-zinc-50 dark:bg-white/[0.03] rounded-xl p-4 border border-zinc-100 dark:border-white/[0.05]">
-                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">{s.label}</p>
-                  <p className={`text-2xl font-black ${s.color}`}>{s.value}<span className="text-sm ml-1">{s.unit}</span></p>
-                </div>
-              ))}
+              <StatCard variant="minimal" color="blue" label="Jami Lidlar" value={`${leads.length} ta`} sub="Barcha ro'yxatdagilar" icon={<Target size={18} />} size="sm" />
+              <StatCard variant="minimal" color="emerald" label="O'quvchiga aylandi" value={`${wonLeads} ta`} sub="Muvaffaqiyatli qabul" icon={<CheckCircle2 size={18} />} size="sm" />
+              <StatCard variant="minimal" color={convRate >= 20 ? 'emerald' : 'amber'} label="Konversiya" value={`${convRate}%`} sub="O'rtacha konversiya" trend={{ value: convRate, direction: convRate >= 20 ? 'up' : 'down' }} icon={<TrendingUp size={18} />} size="sm" />
+              <StatCard variant="minimal" color="rose" label="Rad etildi" value={`${leads.filter((l: any) => l.stage === 'lost').length} ta`} sub="Yo'qotilgan lidlar" icon={<AlertTriangle size={18} />} size="sm" />
             </div>
           </div>
         </div>
