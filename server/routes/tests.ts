@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { gradeSubmission } from '../services/gradingService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';

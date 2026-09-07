@@ -1,12 +1,12 @@
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
 // GET /api/audit — list with filter, pagination
-router.get('/', requireAuth, requireRole, async (req, res) => {
+router.get('/', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const {
             page = '1',
@@ -69,7 +69,7 @@ router.get('/', requireAuth, requireRole, async (req, res) => {
 });
 
 // GET /api/audit/timeline/:resource/:id — single resource history
-router.get('/timeline/:resource/:id', requireAuth, async (req, res) => {
+router.get('/timeline/:resource/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { resource, id } = req.params;
         const items = await prisma.auditLog.findMany({
@@ -89,7 +89,7 @@ router.get('/timeline/:resource/:id', requireAuth, async (req, res) => {
 });
 
 // GET /api/audit/stats — quick stats for dashboard widget
-router.get('/stats', requireAuth, requireRole, async (_req, res) => {
+router.get('/stats', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
     try {
         const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const [total, last24hCount, byAction, topUsers] = await Promise.all([
@@ -120,7 +120,7 @@ router.get('/stats', requireAuth, requireRole, async (_req, res) => {
 });
 
 // POST /api/audit/:id/restore — restore from before snapshot
-router.post('/:id/restore', requireAuth, requireRole, async (req, res) => {
+router.post('/:id/restore', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const audit = await prisma.auditLog.findUnique({ where: { id: req.params.id } });
         if (!audit || !audit.before) {

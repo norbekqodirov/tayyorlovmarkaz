@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { generateCertificate, generateBatch } from '../services/certificateService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
@@ -39,7 +39,7 @@ router.get('/templates/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/templates', requireAuth, requireRole, async (req, res) => {
+router.post('/templates', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { name, type, background, config, width, height, isActive } = req.body;
         const template = await prisma.certificateTemplate.create({
@@ -59,7 +59,7 @@ router.post('/templates', requireAuth, requireRole, async (req, res) => {
     }
 });
 
-router.put('/templates/:id', requireAuth, requireRole, async (req, res) => {
+router.put('/templates/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { config, ...rest } = req.body;
         const data: any = { ...rest };
@@ -76,7 +76,7 @@ router.put('/templates/:id', requireAuth, requireRole, async (req, res) => {
     }
 });
 
-router.delete('/templates/:id', requireAuth, requireRole, async (req, res) => {
+router.delete('/templates/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         await prisma.certificateTemplate.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -117,7 +117,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/generate', requireAuth, requireRole, async (req, res) => {
+router.post('/generate', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { templateId, studentIds, courseId, grade, signature, metadata } = req.body;
         if (!templateId || !Array.isArray(studentIds) || studentIds.length === 0) {
@@ -220,7 +220,7 @@ router.post('/zip', requireAuth, async (req, res) => {
 });
 
 // Revoke certificate
-router.put('/:id/revoke', requireAuth, requireRole, async (req, res) => {
+router.put('/:id/revoke', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { reason } = req.body;
         const cert = await prisma.certificate.update({
@@ -234,7 +234,7 @@ router.put('/:id/revoke', requireAuth, requireRole, async (req, res) => {
 });
 
 // Delete
-router.delete('/:id', requireAuth, requireRole, async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const cert = await prisma.certificate.findUnique({ where: { id: req.params.id } });
         if (cert?.pdfUrl) {
