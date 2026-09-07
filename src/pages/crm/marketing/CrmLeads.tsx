@@ -15,6 +15,8 @@ import ConfirmDialog from '../../../components/ConfirmDialog';
 import ImportWizard from '../../../components/ImportWizard';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
+import { ErrorState } from '../../../components/States';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import api from '../../../api/client';
 
 import LeadStatsBar from '../../../components/leads/LeadStatsBar';
@@ -42,16 +44,22 @@ const EXCEL_COLS = [
 export default function CrmLeads() {
   // ─── Data ────────────────────────────────────────────────────────────────────
   const {
-    leads, total, stageCounts, loading, filters, updateFilters, clearFilters,
+    leads, total, stageCounts, loading, error, filters, updateFilters, clearFilters,
     qInput, setQInput, sort, setSort, page, setPage, limit, setLimit,
     refetch, optimisticUpdate,
   } = useLeads();
   const { courses } = useCrmData();
   const { showToast } = useToast();
 
+  const userRoleLevel = getCurrentRoleLevel();
+  const canWriteLeads = userRoleLevel >= ROLE_LEVEL.MANAGER;
+  const canHardDelete = userRoleLevel >= ROLE_LEVEL.ADMIN;
+
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
-    api.get('/leads/assignable-users').then(res => setManagers(res.data || [])).catch(() => {});
+    api.get('/leads/assignable-users').then(res => setManagers(res.data || [])).catch((err: any) => {
+      console.warn("Menejerlarni yuklashda xatolik:", err);
+    });
   }, []);
 
   // ─── UI State ─────────────────────────────────────────────────────────────────
@@ -70,7 +78,11 @@ export default function CrmLeads() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
-  useEffect(() => { api.get('/groups').then(res => setGroups(res.data?.data || res.data || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get('/groups').then(res => setGroups(res.data?.data || res.data || [])).catch((err: any) => {
+      console.warn("Guruhlarni yuklashda xatolik:", err);
+    });
+  }, []);
 
   const [formData, setFormData] = useState<Partial<Lead>>({
     name: '', phone: '', stage: 'new',
@@ -84,6 +96,10 @@ export default function CrmLeads() {
 
   // ─── Modal helpers ────────────────────────────────────────────────────────────
   const openModal = (lead: Lead | null = null) => {
+    if (!canWriteLeads) {
+      showToast("Sizda lid yaratish/tahrirlash uchun ruxsat yo'q", 'error');
+      return;
+    }
     setEditingLead(lead);
     setFormData(lead ?? emptyForm());
     setIsModalOpen(true);
@@ -92,9 +108,22 @@ export default function CrmLeads() {
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!formData.name || !formData.phone) {
-      showToast('Ism va telefon raqami majburiy!', 'error'); return;
+    if (!canWriteLeads) {
+      showToast("Sizda saqlash uchun ruxsat yo'q", 'error');
+      return;
     }
+    const nameTrimmed = formData.name?.trim() || '';
+    const cleanPhone = (formData.phone || '').replace(/\D/g, '');
+
+    if (!nameTrimmed || nameTrimmed.length < 2) {
+      showToast("Ism familiya kamida 2 ta belgidan iborat bo'lishi kerak!", 'error');
+      return;
+    }
+    if (!cleanPhone || cleanPhone.length < 9) {
+      showToast("Telefon raqami to'liq kiritilishi kerak (kamida 9 ta raqam)!", 'error');
+      return;
+    }
+
     setIsSaving(true);
     try {
       if (editingLead) {
@@ -115,12 +144,17 @@ export default function CrmLeads() {
   };
 
   const confirmDelete = async () => {
+    if (!canHardDelete) {
+      showToast("Faqat administrator lidlarni o'chira oladi", 'error');
+      setDeleteConfirm({ open: false, id: '' });
+      return;
+    }
     try {
       await api.delete(`/leads/${deleteConfirm.id}`);
       showToast("Lid o'chirildi", 'success');
       refetch();
-    } catch {
-      showToast("O'chirishda xatolik yuz berdi", 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "O'chirishda xatolik yuz berdi", 'error');
     }
     setDeleteConfirm({ open: false, id: '' });
     setIsDetailOpen(false);
@@ -128,15 +162,13 @@ export default function CrmLeads() {
 
   // ─── Kanban drag / bosqich o'zgartirish (optimistik) ──────────────────────────
   const changeStage = async (id: string, stage: string, lostReason?: string) => {
+    if (!canWriteLeads) {
+      showToast("Sizda bosqichni o'zgartirish ruxsati yo'q", 'error');
+      return;
+    }
     const current = leads.find(l => l.id === id) || (selectedLead?.id === id ? selectedLead : null);
     if (current && current.stage === stage) return;
 
-    // "O'qishni boshladi" (won) — to'g'ridan-to'g'ri PUT emas, balki haqiqiy
-    // konversiya (talaba yaratish + guruhga yozish, POST /leads/:id/convert)
-    // orqali o'tishi SHART. Aks holda lid Kanban'da shu ustunga sudralib
-    // qo'yilardi-yu, hech qanday Student yozuvi yaratilmasdi — Marketing >
-    // ROI'dagi barcha hisob-kitoblar (studentId'ga tayanadi, server/routes/
-    // marketing.ts) bunday lidni umuman "g'olib" deb hisobga olmay qolardi.
     if (stage === 'won') {
       if (current) setSelectedLead(current);
       setSelectedGroupId('');
@@ -148,27 +180,35 @@ export default function CrmLeads() {
     if (selectedLead?.id === id) setSelectedLead({ ...selectedLead, stage: stage as Lead['stage'], lostReason });
     try {
       await api.put(`/leads/${id}`, { stage, ...(lostReason ? { lostReason } : {}) });
-    } catch {
-      showToast("Bosqichni o'zgartirishda xatolik — qayta yuklanmoqda", 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Bosqichni o'zgartirishda xatolik — qayta yuklanmoqda", 'error');
       refetch();
     }
   };
 
   // ─── Menejerga biriktirish ────────────────────────────────────────────────────
   const handleAssign = async (id: string, userId: string | null) => {
+    if (!canWriteLeads) {
+      showToast("Sizda menejerga biriktirish ruxsati yo'q", 'error');
+      return;
+    }
     const manager = managers.find(m => m.id === userId) || null;
     optimisticUpdate(id, { assignedToId: userId, assignedTo: manager });
     if (selectedLead?.id === id) setSelectedLead({ ...selectedLead, assignedToId: userId, assignedTo: manager });
     try {
       await api.post(`/leads/${id}/assign`, { userId });
-    } catch {
-      showToast('Biriktirishda xatolik', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Biriktirishda xatolik', 'error');
       refetch();
     }
   };
 
   // ─── Faoliyat qo'shish ────────────────────────────────────────────────────────
   const handleLogActivity = async (leadId: string, data: any) => {
+    if (!canWriteLeads) {
+      showToast("Sizda faoliyat qo'shish ruxsati yo'q", 'error');
+      return;
+    }
     try {
       const res = await api.post(`/leads/${leadId}/activities`, data);
       if (selectedLead?.id === leadId) {
@@ -176,8 +216,8 @@ export default function CrmLeads() {
       }
       showToast('Faoliyat qo\'shildi', 'success');
       refetch();
-    } catch {
-      showToast('Faollikni saqlashda xatolik yuz berdi', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Faollikni saqlashda xatolik yuz berdi', 'error');
     }
   };
 
@@ -188,8 +228,8 @@ export default function CrmLeads() {
     try {
       const res = await api.get(`/leads/${lead.id}`);
       setSelectedLead(res.data);
-    } catch {
-      showToast('Lid tafsilotini yuklashda xatolik', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lid tafsilotini yuklashda xatolik', 'error');
     }
   };
 
@@ -240,18 +280,22 @@ export default function CrmLeads() {
               </button>
             ))}
           </div>
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-2 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold transition-all text-sm"
-          >
-            <Upload size={16} /> Import
-          </button>
-          <button
-            onClick={() => openModal()}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
-          >
-            <Plus size={20} /> Yangi Lid
-          </button>
+          {canWriteLeads && (
+            <>
+              <button
+                onClick={() => setIsImportOpen(true)}
+                className="flex items-center gap-2 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-xl font-bold transition-all text-sm"
+              >
+                <Upload size={16} /> Import
+              </button>
+              <button
+                onClick={() => openModal()}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
+              >
+                <Plus size={20} /> Yangi Lid
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -290,13 +334,16 @@ export default function CrmLeads() {
       </div>
 
       {/* Main content */}
-      {view === 'kanban' ? (
+      {error ? (
+        <ErrorState message={error.message || "Lidlarni yuklashda xatolik yuz berdi"} onRetry={refetch} />
+      ) : view === 'kanban' ? (
         <KanbanBoard
           leads={leads}
           stageCounts={stageCounts}
           onDrop={(id, stage) => changeStage(id, stage)}
           onStageChange={changeStage}
           onLeadClick={openDetail}
+          canWrite={canWriteLeads}
         />
       ) : (
         <LeadListView
@@ -311,6 +358,7 @@ export default function CrmLeads() {
           onRowClick={openDetail}
           onEdit={openModal}
           selection={{ value: selectedIds, onChange: setSelectedIds }}
+          canWrite={canWriteLeads}
         />
       )}
 
@@ -334,6 +382,8 @@ export default function CrmLeads() {
             onStageChange={changeStage}
             onAssign={handleAssign}
             onLogActivity={handleLogActivity}
+            canWrite={canWriteLeads}
+            canHardDelete={canHardDelete}
           />
         )}
       </AnimatePresence>

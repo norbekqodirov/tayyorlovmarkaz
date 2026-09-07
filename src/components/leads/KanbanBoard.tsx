@@ -21,9 +21,10 @@ interface Props {
   onDrop: (id: string, stageId: string) => void;
   onLeadClick: (lead: Lead) => void;
   onStageChange: (id: string, stageId: string) => void;
+  canWrite?: boolean;
 }
 
-function LeadCard({ lead, onLeadClick, onStageChange }: { lead: Lead; onLeadClick: (l: Lead) => void; onStageChange: (id: string, stage: string) => void }) {
+function LeadCard({ lead, onLeadClick, onStageChange, canWrite = true }: { lead: Lead; onLeadClick: (l: Lead) => void; onStageChange: (id: string, stage: string) => void; canWrite?: boolean }) {
   const dragMoved = useRef(false);
   const stage = STAGES.find(s => s.id === lead.stage) || STAGES[0];
 
@@ -44,13 +45,14 @@ function LeadCard({ lead, onLeadClick, onStageChange }: { lead: Lead; onLeadClic
   return (
     <motion.div
       layoutId={lead.id}
-      draggable
+      draggable={canWrite}
       onDragStartCapture={e => {
+        if (!canWrite) return;
         dragMoved.current = true;
         e.dataTransfer.setData('leadId', lead.id);
       }}
       onClick={() => { if (!dragMoved.current) onLeadClick(lead); dragMoved.current = false; }}
-      className={`bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-grab active:cursor-grabbing transition-all group relative ${ringClass}`}
+      className={`bg-white dark:bg-zinc-800 p-3 rounded-xl shadow-sm border border-zinc-200 dark:border-zinc-700 ${canWrite ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} transition-all group relative ${ringClass}`}
     >
       <div className="flex justify-between items-start gap-2 mb-1.5">
         <div className="min-w-0 flex items-start gap-1.5">
@@ -121,19 +123,21 @@ function LeadCard({ lead, onLeadClick, onStageChange }: { lead: Lead; onLeadClic
       </div>
 
       {/* Mobil uchun — HTML5 drag ishlamaydi, shuning uchun bosqich select'i */}
-      <select
-        value={lead.stage}
-        onClick={e => e.stopPropagation()}
-        onChange={e => onStageChange(lead.id, e.target.value)}
-        className="w-full sm:hidden mt-2 px-2 py-1.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[11px] font-bold outline-none"
-      >
-        {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
+      {canWrite && (
+        <select
+          value={lead.stage}
+          onClick={e => e.stopPropagation()}
+          onChange={e => onStageChange(lead.id, e.target.value)}
+          className="w-full sm:hidden mt-2 px-2 py-1.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[11px] font-bold outline-none"
+        >
+          {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      )}
     </motion.div>
   );
 }
 
-const KanbanBoard: React.FC<Props> = ({ leads, stageCounts, onDrop, onLeadClick, onStageChange }) => {
+const KanbanBoard: React.FC<Props> = ({ leads, stageCounts, onDrop, onLeadClick, onStageChange, canWrite = true }) => {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
 
   return (
@@ -145,11 +149,16 @@ const KanbanBoard: React.FC<Props> = ({ leads, stageCounts, onDrop, onLeadClick,
             className={`w-80 flex flex-col bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border p-4 transition-colors ${
               dragOverStage === stage.id ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-500/5' : 'border-zinc-200 dark:border-zinc-800'
             }`}
-            onDragOver={e => { e.preventDefault(); setDragOverStage(stage.id); }}
+            onDragOver={e => {
+              if (!canWrite) return;
+              e.preventDefault();
+              setDragOverStage(stage.id);
+            }}
             onDragLeave={() => setDragOverStage(prev => (prev === stage.id ? null : prev))}
             onDrop={e => {
               e.preventDefault();
               setDragOverStage(null);
+              if (!canWrite) return;
               const id = e.dataTransfer.getData('leadId');
               if (id) onDrop(id, stage.id);
             }}
@@ -168,7 +177,7 @@ const KanbanBoard: React.FC<Props> = ({ leads, stageCounts, onDrop, onLeadClick,
             {/* Cards */}
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
               {leads.filter(l => l.stage === stage.id).map(lead => (
-                <LeadCard key={lead.id} lead={lead} onLeadClick={onLeadClick} onStageChange={onStageChange} />
+                <LeadCard key={lead.id} lead={lead} onLeadClick={onLeadClick} onStageChange={onStageChange} canWrite={canWrite} />
               ))}
               {leads.filter(l => l.stage === stage.id).length === 0 && (
                 <div className="text-center py-8 text-zinc-300 dark:text-zinc-700 text-xs font-bold">Bo'sh</div>
