@@ -8,6 +8,8 @@ import {
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { ErrorState } from '../../../components/States';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface QuizOption { id?: string; text: string; isCorrect: boolean; order?: number; }
 interface QuizQuestion {
@@ -33,8 +35,12 @@ const emptyQuestion = (): QuizQuestion => ({
 
 export default function CrmQuiz() {
   const { showToast } = useToast();
+  const userRoleLevel = getCurrentRoleLevel();
+  const canWrite = userRoleLevel >= ROLE_LEVEL.TEACHER;
+
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(true);
+  const [quizzesError, setQuizzesError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'builder' | 'results'>('list');
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
@@ -52,19 +58,27 @@ export default function CrmQuiz() {
   const [selectedQuizId, setSelectedQuizId] = useState('');
   const [attempts, setAttempts] = useState<any[]>([]);
   const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [attemptsError, setAttemptsError] = useState<string | null>(null);
 
   const fetchQuizzes = useCallback(async () => {
     setLoading(true);
+    setQuizzesError(null);
     try {
       const r = await api.get<{ data: Quiz[] }>('/quiz');
       setQuizzes(r.data.data ?? []);
-    } catch { showToast('Testlarni yuklab bo\'lmadi', 'error'); }
-    finally { setLoading(false); }
-  }, []);
+    } catch {
+      setQuizzesError('Testlarni yuklab bo\'lmadi');
+      showToast('Testlarni yuklab bo\'lmadi', 'error');
+    } finally { setLoading(false); }
+  }, [showToast]);
 
   useEffect(() => { fetchQuizzes(); }, [fetchQuizzes]);
 
-  const openBuilder = (quiz?: Quiz) => {
+  const openBuilder = async (quiz?: Quiz) => {
+    if (!canWrite) {
+      showToast('Test yaratish yoki tahrirlash uchun ruxsat yo\'q', 'error');
+      return;
+    }
     if (quiz) {
       setEditingQuiz(quiz);
       setQuizForm({
@@ -72,7 +86,17 @@ export default function CrmQuiz() {
         duration: quiz.duration, passingScore: quiz.passingScore,
         isPublic: quiz.isPublic, publicSlug: quiz.publicSlug || '', status: quiz.status
       });
-      setQuestions(quiz.questions?.length ? quiz.questions.map(q => ({ ...q, options: q.options || [] })) : [emptyQuestion()]);
+      setSaving(true);
+      try {
+        const res = await api.get<{ data: Quiz }>(`/quiz/${quiz.id}`);
+        const fullQuiz = res.data.data;
+        setQuestions(fullQuiz.questions?.length ? fullQuiz.questions.map(q => ({ ...q, options: q.options || [] })) : [emptyQuestion()]);
+      } catch {
+        showToast('Test savollarini yuklab bo\'lmadi', 'error');
+        setQuestions([emptyQuestion()]);
+      } finally {
+        setSaving(false);
+      }
     } else {
       setEditingQuiz(null);
       setQuizForm({ title: '', description: '', duration: 30, passingScore: 60, isPublic: false, publicSlug: '', status: 'draft' });
@@ -83,8 +107,34 @@ export default function CrmQuiz() {
   };
 
   const handleSaveQuiz = async () => {
+    if (!canWrite) {
+      showToast('Test saqlash uchun ruxsat yo\'q', 'error');
+      return;
+    }
     if (!quizForm.title.trim()) { showToast('Sarlavha kiritilishi shart', 'error'); return; }
-    if (questions.some(q => !q.text.trim())) { showToast('Barcha savol matnlarini to\'ldiring', 'error'); return; }
+    if (!questions.length) { showToast('Kamida 1 ta savol qo\'shing', 'error'); return; }
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q.text.trim()) {
+        showToast(`${i + 1}-savol matni kiritilishi shart`, 'error');
+        return;
+      }
+      if (q.type !== 'text') {
+        if (!q.options || q.options.length < 2) {
+          showToast(`${i + 1}-savolda kamida 2 ta variant bo'lishi kerak`, 'error');
+          return;
+        }
+        if (q.options.some(o => !o.text.trim())) {
+          showToast(`${i + 1}-savoldagi barcha variant matnlarini to'ldiring`, 'error');
+          return;
+        }
+        if (!q.options.some(o => o.isCorrect)) {
+          showToast(`${i + 1}-savol uchun kamida bitta to'g'ri javobni belgilang`, 'error');
+          return;
+        }
+      }
+    }
 
     setSaving(true);
     try {
@@ -117,6 +167,11 @@ export default function CrmQuiz() {
   };
 
   const handleDelete = async () => {
+    if (!canWrite) {
+      showToast('O\'chirish uchun ruxsat yo\'q', 'error');
+      setDeleteConfirm({ open: false, id: '' });
+      return;
+    }
     try {
       await api.delete(`/quiz/${deleteConfirm.id}`);
       showToast("Test o'chirildi", 'success');
@@ -128,11 +183,14 @@ export default function CrmQuiz() {
   const fetchAttempts = async (quizId: string) => {
     setSelectedQuizId(quizId);
     setAttemptsLoading(true);
+    setAttemptsError(null);
     try {
       const r = await api.get<{ data: any[] }>(`/quiz/${quizId}/attempts`);
       setAttempts(r.data.data ?? []);
-    } catch { showToast('Natijalarni yuklab bo\'lmadi', 'error'); }
-    finally { setAttemptsLoading(false); }
+    } catch {
+      setAttemptsError('Natijalarni yuklab bo\'lmadi');
+      showToast('Natijalarni yuklab bo\'lmadi', 'error');
+    } finally { setAttemptsLoading(false); }
     setActiveTab('results');
   };
 
@@ -184,7 +242,7 @@ export default function CrmQuiz() {
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-violet-500/10">
             <ClipboardList className="w-6 h-6 text-violet-500" />
@@ -194,17 +252,19 @@ export default function CrmQuiz() {
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Online testlar yaratish va boshqarish</p>
           </div>
         </div>
-        <button onClick={() => openBuilder()}
-          className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors">
-          <Plus className="w-4 h-4" /> Yangi test
-        </button>
+        {canWrite && (
+          <button onClick={() => openBuilder()}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors w-fit">
+            <Plus className="w-4 h-4" /> Yangi test
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit">
+      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit overflow-x-auto">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id
                 ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm'
                 : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -222,6 +282,8 @@ export default function CrmQuiz() {
             <div className="space-y-3">
               {loading ? (
                 <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>
+              ) : quizzesError ? (
+                <ErrorState message={quizzesError} onRetry={fetchQuizzes} />
               ) : quizzes.length === 0 ? (
                 <div className="text-center py-16 text-zinc-400">
                   <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-40" />
@@ -229,7 +291,7 @@ export default function CrmQuiz() {
                   <p className="text-sm mt-1">Yangi test yarating</p>
                 </div>
               ) : quizzes.map(quiz => (
-                <div key={quiz.id} className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-5 flex items-start justify-between gap-4">
+                <div key={quiz.id} className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">{quiz.title}</h3>
@@ -241,7 +303,7 @@ export default function CrmQuiz() {
                       )}
                     </div>
                     {quiz.description && <p className="text-sm text-zinc-500 mt-1 line-clamp-1">{quiz.description}</p>}
-                    <div className="flex items-center gap-4 mt-2 text-xs text-zinc-400">
+                    <div className="flex items-center gap-4 mt-2 text-xs text-zinc-400 flex-wrap">
                       <span className="flex items-center gap-1"><ClipboardList className="w-3 h-3" />{quiz._count?.questions ?? 0} savol</span>
                       <span className="flex items-center gap-1"><Users className="w-3 h-3" />{quiz._count?.attempts ?? 0} urinish</span>
                       <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{quiz.duration} daq</span>
@@ -259,14 +321,18 @@ export default function CrmQuiz() {
                         <Copy className="w-4 h-4" />
                       </button>
                     )}
-                    <button onClick={() => openBuilder(quiz)}
-                      className="p-2 text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => setDeleteConfirm({ open: true, id: quiz.id })}
-                      className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {canWrite && (
+                      <>
+                        <button onClick={() => openBuilder(quiz)}
+                          className="p-2 text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors" title="Tahrirlash">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setDeleteConfirm({ open: true, id: quiz.id })}
+                          className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="O'chirish">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -456,6 +522,8 @@ export default function CrmQuiz() {
 
               {attemptsLoading ? (
                 <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>
+              ) : attemptsError ? (
+                <ErrorState message={attemptsError} onRetry={() => selectedQuizId && fetchAttempts(selectedQuizId)} />
               ) : attempts.length === 0 ? (
                 <div className="text-center py-16 text-zinc-400">
                   <Users className="w-12 h-12 mx-auto mb-3 opacity-40" />
@@ -482,8 +550,8 @@ export default function CrmQuiz() {
                   </div>
 
                   {/* Table */}
-                  <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-                    <table className="w-full text-sm">
+                  <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto">
+                    <table className="w-full text-sm min-w-[600px]">
                       <thead className="border-b border-zinc-100 dark:border-zinc-800">
                         <tr className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide">
                           <th className="px-5 py-3">O'quvchi</th>
