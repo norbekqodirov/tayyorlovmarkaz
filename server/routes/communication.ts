@@ -5,7 +5,7 @@
 
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { sendBroadcast } from '../services/telegramService.js';
 
 const router = express.Router();
@@ -21,7 +21,7 @@ router.get('/templates', requireAuth, async (_req, res) => {
     }
 });
 
-router.post('/templates', requireAuth, async (req, res) => {
+router.post('/templates', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { name, content, type, language } = req.body;
         if (!name || !content) return res.status(400).json({ error: 'name va content majburiy' });
@@ -34,7 +34,7 @@ router.post('/templates', requireAuth, async (req, res) => {
     }
 });
 
-router.put('/templates/:id', requireAuth, async (req, res) => {
+router.put('/templates/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { name, content, type, language } = req.body;
         const template = await prisma.messageTemplate.update({
@@ -47,7 +47,7 @@ router.put('/templates/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/templates/:id', requireAuth, async (req, res) => {
+router.delete('/templates/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         await prisma.messageTemplate.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -67,7 +67,7 @@ router.get('/bulk-messages', requireAuth, async (_req, res) => {
     }
 });
 
-router.post('/bulk-messages/send', requireAuth, async (req, res) => {
+router.post('/bulk-messages/send', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { content, targetType, targetId, templateId } = req.body;
         if (!content) return res.status(400).json({ error: 'content majburiy' });
