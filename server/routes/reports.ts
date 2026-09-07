@@ -290,6 +290,63 @@ router.get('/teachers', requireAuth, async (req, res) => {
     }
 });
 
+// GET /api/reports/executive — Investor/Direktor hisoboti (CrmExecutiveReport.tsx
+// shu endpointga so'rov yuborardi, lekin u hech qachon mavjud bo'lmagan — sahifa
+// 2026-09-07'gacha butunlay ishlamas edi, Codex audit paytida aniqladi).
+router.get('/executive', requireAuth, async (_req, res) => {
+    try {
+        const now = new Date();
+        const currentMonth = now.getMonth(); // 0-indeksli
+        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+        const currentYear = now.getFullYear();
+
+        const [students, transactions, leads, groups] = await Promise.all([
+            prisma.student.findMany({ select: { status: true, balance: true, paymentStatus: true } }),
+            prisma.transaction.findMany({ where: { type: 'income' }, select: { amount: true, date: true } }),
+            prisma.lead.findMany({ select: { stage: true } }),
+            prisma.group.findMany({
+                where: { status: 'active' },
+                select: { course: { select: { name: true } } },
+            }),
+        ]);
+
+        const activeStudents = students.filter(s => s.status === 'Faol' || s.status === 'active');
+        const overduePayments = students.filter(s => (Number(s.balance) || 0) < 0 || s.paymentStatus === 'Qarzdorlik').length;
+
+        const sumIncome = (rows: typeof transactions) => rows.reduce((a, t) => a + (Number(t.amount) || 0), 0);
+        const thisMonthIncome = sumIncome(transactions.filter(t => t.date && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear));
+        const prevMonthIncome = sumIncome(transactions.filter(t => t.date && new Date(t.date).getMonth() === prevMonth && new Date(t.date).getFullYear() === (currentMonth === 0 ? currentYear - 1 : currentYear)));
+        const yearToDateIncome = sumIncome(transactions.filter(t => t.date && new Date(t.date).getFullYear() === currentYear));
+        const growthPct = prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : (thisMonthIncome > 0 ? 100 : 0);
+
+        const totalLeads = leads.length;
+        const wonLeads = leads.filter(l => l.stage === 'won').length;
+
+        const courseGroupCounts: Record<string, number> = {};
+        groups.forEach(g => {
+            const name = g.course?.name || "Noma'lum kurs";
+            courseGroupCounts[name] = (courseGroupCounts[name] || 0) + 1;
+        });
+        const topCourses = Object.entries(courseGroupCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([name, groups]) => ({ name, groups }));
+
+        const MONTH_NAMES = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
+
+        res.json({
+            period: { month: MONTH_NAMES[currentMonth], year: currentYear },
+            students: { total: students.length, active: activeStudents.length },
+            revenue: { thisMonth: thisMonthIncome, prevMonth: prevMonthIncome, growthPct, yearToDate: yearToDateIncome },
+            leads: { total: totalLeads, won: wonLeads, conversionRate: totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0 },
+            overduePayments,
+            topCourses,
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/reports/workflows — workflow'lar tarixi
 router.get('/workflows', requireAuth, async (req, res) => {
     try {
