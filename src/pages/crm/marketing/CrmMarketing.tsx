@@ -1,3 +1,4 @@
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -32,6 +33,7 @@ interface Campaign {
 const PLATFORMS = ['Instagram', 'Facebook', 'Telegram', 'Google', 'YouTube'];
 
 export default function CrmMarketing() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const [activeTab, setActiveTab] = useState<'KAMPANIYALAR' | 'ROI'>('KAMPANIYALAR');
   const { showToast } = useToast();
 
@@ -87,6 +89,7 @@ export default function CrmMarketing() {
   const realWonTotal = Object.values(byCampaign).reduce((s: number, c: any) => s + (c.won || 0), 0);
 
   const handleCampSave = async () => {
+    if (!canManage) return;
     try {
       const payload = {
         ...campForm,
@@ -101,6 +104,7 @@ export default function CrmMarketing() {
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     try {
       await delCampaign(deleteConfirm.id);
       showToast('O\'chirildi', 'success');
@@ -111,7 +115,7 @@ export default function CrmMarketing() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="O'chirishni tasdiqlash"
         message="Haqiqatan ham o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
@@ -168,9 +172,9 @@ export default function CrmMarketing() {
 
             <div className="flex justify-between items-center mb-2">
                <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Faol Kampaniyalar</h2>
-               <Button onClick={() => { setEditingCamp(null); setCampForm({name:'', platform: 'Instagram', budget:0, spent:0, leads:0, status:'Faol', startDate: new Date().toISOString().split('T')[0], endDate: ''}); setIsCampModal(true); }} leftIcon={<Plus size={18}/>}>
+               {canManage && <Button onClick={() => { setEditingCamp(null); setCampForm({name:'', platform: 'Instagram', budget:0, spent:0, leads:0, status:'Faol', startDate: new Date().toISOString().split('T')[0], endDate: ''}); setIsCampModal(true); }} leftIcon={<Plus size={18}/>}>
                   Yangi Kampaniya
-               </Button>
+               </Button>}
             </div>
 
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
@@ -207,8 +211,8 @@ export default function CrmMarketing() {
                         </td>
                         <td className="px-6 py-4 text-right">
                            <div className="flex justify-end gap-2">
-                             <button onClick={() => { setEditingCamp(c); setCampForm(c); setIsCampModal(true); }} className="p-2 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16}/></button>
-                             <button onClick={() => setDeleteConfirm({ open: true, id: c.id! })} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>
+                             {canManage && <button onClick={() => { setEditingCamp(c); setCampForm(c); setIsCampModal(true); }} className="p-2 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16}/></button>}
+                             {canManage && <button onClick={() => setDeleteConfirm({ open: true, id: c.id! })} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>}
                            </div>
                         </td>
                       </tr>
@@ -217,7 +221,7 @@ export default function CrmMarketing() {
                </table>
             </div>
 
-            <Modal isOpen={isCampModal} onClose={() => setIsCampModal(false)} title="Kampaniya tahriri">
+            <Modal isOpen={canManage && isCampModal} onClose={() => setIsCampModal(false)} title="Kampaniya tahriri">
                <div className="space-y-4">
                  <Input label="Kampaniya nomi" value={campForm.name} onChange={e => setCampForm({...campForm, name: e.target.value})} />
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

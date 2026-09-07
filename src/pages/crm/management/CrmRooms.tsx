@@ -1,3 +1,4 @@
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Search, DoorOpen, Users, Monitor, Wifi, Wind, X, Edit2, Trash2, CheckCircle2, Download } from 'lucide-react';
@@ -23,6 +24,7 @@ const AMENITIES = [
 ];
 
 export default function CrmRooms() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { data: rooms = [], addDocument, updateDocument, deleteDocument } = useFirestore<Room>('rooms');
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -50,6 +52,7 @@ export default function CrmRooms() {
   });
 
   const handleSave = async () => {
+    if (!canManage) return;
     try {
       const dbPayload = {
         name: formData.name,
@@ -75,10 +78,12 @@ export default function CrmRooms() {
   };
 
   const handleDelete = (id: string) => {
+    if (!canManage) return;
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     try {
       await deleteDocument(deleteConfirm.id);
       showToast('Xona o\'chirildi', 'success');
@@ -89,6 +94,7 @@ export default function CrmRooms() {
   };
 
   const openModal = (room: Room | null = null) => {
+    if (!canManage) return;
     if (room) {
       setEditingRoom(room);
       setFormData(room);
@@ -122,7 +128,7 @@ export default function CrmRooms() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Xonani o'chirish"
         message="Haqiqatan ham ushbu xonani o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
@@ -151,13 +157,13 @@ export default function CrmRooms() {
           >
             <Download size={16} />
           </button>
-          <button
+          {canManage && <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
           >
             <Plus size={20} />
             Yangi Xona
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -184,12 +190,12 @@ export default function CrmRooms() {
                   </div>
                 </div>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => openModal(room)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-blue-600 transition-colors">
+                  {canManage && <button onClick={() => openModal(room)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-blue-600 transition-colors">
                     <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(room.id)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-rose-600 transition-colors">
+                  </button>}
+                  {canManage && <button onClick={() => handleDelete(room.id)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-rose-600 transition-colors">
                     <Trash2 size={16} />
-                  </button>
+                  </button>}
                 </div>
               </div>
 
@@ -229,7 +235,7 @@ export default function CrmRooms() {
 
       {/* Modal */}
       <AnimatePresence>
-        {isModalOpen && (
+        {canManage && isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}

@@ -1,3 +1,4 @@
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useState, useEffect } from 'react';
 import { Link as LinkIcon, Copy, ExternalLink, Plus, Edit2, Trash2, Eye, TrendingUp } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
@@ -43,6 +44,7 @@ const EXTRA_FIELD_OPTIONS = [
 ] as const;
 
 export default function CrmForms() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { documents: forms, addDocument, updateDocument, deleteDocument } = useFirestore<Form>('forms');
   const { data: campaigns, loading: campaignsLoading, error: campaignsError } = useFirestore<{ id: string; name: string }>('campaigns');
   const { courses } = useCrmData();
@@ -67,6 +69,7 @@ export default function CrmForms() {
   }, [forms.length]);
 
   const openModal = (form: Form | null = null) => {
+    if (!canManage) return;
     if (form) {
       setEditingForm(form);
       setFormData({
@@ -93,6 +96,7 @@ export default function CrmForms() {
   };
 
   const handleSave = async () => {
+    if (!canManage) return;
     if (!formData.title?.trim()) {
       showToast('Forma nomi kiritilishi shart', 'error');
       return;
@@ -119,10 +123,12 @@ export default function CrmForms() {
   };
 
   const handleDelete = (id: string) => {
+    if (!canManage) return;
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     try {
       await deleteDocument(deleteConfirm.id);
       showToast('Forma o\'chirildi', 'success');
@@ -151,7 +157,7 @@ export default function CrmForms() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Formani o'chirish"
         message="Haqiqatan ham bu formani o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
@@ -163,9 +169,9 @@ export default function CrmForms() {
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Target Formalar</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Reklama uchun qisqa lid-yig'ish sahifalari</p>
         </div>
-        <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
+        {canManage && <Button onClick={() => openModal()} leftIcon={<Plus size={18} />}>
           Yangi forma yaratish
-        </Button>
+        </Button>}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -198,8 +204,8 @@ export default function CrmForms() {
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => openModal(form)} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"><Edit2 size={16}/></button>
-                  <button onClick={() => handleDelete(form.id)} className="p-1.5 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"><Trash2 size={16}/></button>
+                  {canManage && <button onClick={() => openModal(form)} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"><Edit2 size={16}/></button>}
+                  {canManage && <button onClick={() => handleDelete(form.id)} className="p-1.5 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"><Trash2 size={16}/></button>}
                 </div>
               </div>
 
@@ -243,7 +249,7 @@ export default function CrmForms() {
 
       {/* Modal */}
       <Modal
-        isOpen={isModalOpen}
+        isOpen={canManage && isModalOpen}
         onClose={closeModal}
         title={editingForm ? 'Formani tahrirlash' : 'Yangi forma yaratish'}
       >
