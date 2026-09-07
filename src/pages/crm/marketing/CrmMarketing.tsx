@@ -11,6 +11,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { ErrorState } from '../../../components/States';
 import api from '../../../api/client';
 import { formatNumber } from '../../../utils/formatters';
 
@@ -37,11 +38,12 @@ export default function CrmMarketing() {
   const [activeTab, setActiveTab] = useState<'KAMPANIYALAR' | 'ROI'>('KAMPANIYALAR');
   const { showToast } = useToast();
 
-  const { data: campaigns = [], addDocument: addCampaign, updateDocument: updateCampaign, deleteDocument: delCampaign } = useFirestore<Campaign>('campaigns');
+  const { data: campaigns = [], loading, error, refetch, addDocument: addCampaign, updateDocument: updateCampaign, deleteDocument: delCampaign } = useFirestore<Campaign>('campaigns');
 
   // Modals state
   const [isCampModal, setIsCampModal] = useState(false);
   const [editingCamp, setEditingCamp] = useState<Campaign | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
   const [campForm, setCampForm] = useState<Partial<Campaign>>({
@@ -90,17 +92,48 @@ export default function CrmMarketing() {
 
   const handleCampSave = async () => {
     if (!canManage) return;
+
+    const trimmedName = campForm.name?.trim();
+    if (!trimmedName) {
+      showToast('Kampaniya nomini kiriting!', 'error');
+      return;
+    }
+
+    const budget = Number(campForm.budget);
+    if (isNaN(budget) || budget < 0) {
+      showToast('Budjet 0 yoki undan katta bo\'lishi kerak!', 'error');
+      return;
+    }
+
+    const spent = Number(campForm.spent);
+    if (isNaN(spent) || spent < 0) {
+      showToast('Sarf qilingan summa 0 yoki undan katta bo\'lishi kerak!', 'error');
+      return;
+    }
+
+    const leads = Number(campForm.leads);
+    if (isNaN(leads) || leads < 0) {
+      showToast('Lidlar soni 0 yoki undan katta bo\'lishi kerak!', 'error');
+      return;
+    }
+
+    setIsSaving(true);
     try {
       const payload = {
         ...campForm,
+        name: trimmedName,
+        budget,
+        spent,
+        leads,
         utmSource: campForm.utmSource?.trim() || null,
         utmCampaign: campForm.utmCampaign?.trim() || null,
       };
       if (editingCamp?.id) await updateCampaign(editingCamp.id, payload);
       else await addCampaign(payload as Omit<Campaign, 'id'>);
       setIsCampModal(false);
-      showToast('Kampaniya saqlandi', 'success');
+      showToast(editingCamp?.id ? 'Kampaniya yangilandi' : 'Kampaniya saqlandi', 'success');
     } catch (e) { showToast('Xatolik yuz berdi', 'error'); }
+    finally { setIsSaving(false); }
   };
 
   const confirmDelete = async () => {
@@ -111,6 +144,21 @@ export default function CrmMarketing() {
     } catch { showToast('Xatolik', 'error'); }
     setDeleteConfirm({ open: false, id: '' });
   };
+
+  if (loading) {
+    return (
+      <div role="status" className="flex items-center justify-center gap-3 p-12 text-zinc-500 font-bold">
+        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        Kampaniyalar ma'lumotlari yuklanmoqda...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <ErrorState message="Kampaniyalar ro'yxatini yuklashda xatolik yuz berdi." onRetry={refetch} />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -177,8 +225,8 @@ export default function CrmMarketing() {
                </Button>}
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-               <table className="w-full text-left">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-x-auto">
+               <table className="w-full text-left min-w-[600px]">
                   <thead className="bg-zinc-50 dark:bg-zinc-950/50">
                     <tr>
                        <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Nomi / Platforma</th>
@@ -189,7 +237,7 @@ export default function CrmMarketing() {
                   </thead>
                   <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                     {safeCampaigns.map(c => (
-                      <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                      <tr key={c.id} className="group hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                         <td className="px-6 py-4">
                            <p className="font-bold text-slate-900 dark:text-white">{c.name}</p>
                            <p className="text-xs font-medium text-zinc-500 mt-1">{c.platform}</p>
@@ -210,20 +258,30 @@ export default function CrmMarketing() {
                            </div>
                         </td>
                         <td className="px-6 py-4 text-right">
-                           <div className="flex justify-end gap-2">
-                             {canManage && <button onClick={() => { setEditingCamp(c); setCampForm(c); setIsCampModal(true); }} className="p-2 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16}/></button>}
-                             {canManage && <button onClick={() => setDeleteConfirm({ open: true, id: c.id! })} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors"><Trash2 size={16}/></button>}
+                           <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                             {canManage && <button type="button" onClick={() => { setEditingCamp(c); setCampForm(c); setIsCampModal(true); }} className="p-2 text-zinc-400 hover:text-blue-500 transition-colors" title="Tahrirlash"><Edit2 size={16}/></button>}
+                             {canManage && <button type="button" onClick={() => setDeleteConfirm({ open: true, id: c.id! })} className="p-2 text-zinc-400 hover:text-rose-500 transition-colors" title="O'chirish"><Trash2 size={16}/></button>}
                            </div>
                         </td>
                       </tr>
                     ))}
+                    {safeCampaigns.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-12 text-center text-zinc-400 font-bold text-sm">
+                          Hali hech qanday kampaniya yaratilmagan
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                </table>
             </div>
 
             <Modal isOpen={canManage && isCampModal} onClose={() => setIsCampModal(false)} title="Kampaniya tahriri">
                <div className="space-y-4">
-                 <Input label="Kampaniya nomi" value={campForm.name} onChange={e => setCampForm({...campForm, name: e.target.value})} />
+                 <div>
+                   <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Kampaniya nomi<span className="text-rose-500 ml-0.5">*</span></label>
+                   <Input value={campForm.name || ''} onChange={e => setCampForm({...campForm, name: e.target.value})} placeholder="Masalan: Telegram Target 2026" />
+                 </div>
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                    <Input label="UTM Source" value={campForm.utmSource ?? ''} onChange={e => setCampForm({...campForm, utmSource: e.target.value})} placeholder="Masalan: instagram" helperText="Ixtiyoriy" />
                    <Input label="UTM Campaign" value={campForm.utmCampaign ?? ''} onChange={e => setCampForm({...campForm, utmCampaign: e.target.value})} placeholder="Masalan: kuzgi_qabul" helperText="Ixtiyoriy" />
@@ -231,13 +289,13 @@ export default function CrmMarketing() {
                  <div className="grid grid-cols-2 gap-4">
                    <div className="space-y-1.5 flex flex-col">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Platforma</label>
-                      <select value={campForm.platform} onChange={e => setCampForm({...campForm, platform: e.target.value})} className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-500 text-slate-800 dark:text-white transition-colors">
+                      <select value={campForm.platform || 'Instagram'} onChange={e => setCampForm({...campForm, platform: e.target.value})} className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-500 text-slate-800 dark:text-white transition-colors">
                         {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
                       </select>
                    </div>
                    <div className="space-y-1.5 flex flex-col">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
-                      <select value={campForm.status} onChange={e => setCampForm({...campForm, status: e.target.value as any})} className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-500 text-slate-800 dark:text-white transition-colors">
+                      <select value={campForm.status || 'Faol'} onChange={e => setCampForm({...campForm, status: e.target.value as any})} className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:border-blue-500 text-slate-800 dark:text-white transition-colors">
                         <option value="Faol">Faol</option>
                         <option value="To'xtatilgan">To'xtatilgan</option>
                         <option value="Yakunlangan">Yakunlangan</option>
@@ -245,13 +303,13 @@ export default function CrmMarketing() {
                    </div>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
-                   <Input type="number" label="Budjet" value={campForm.budget} onChange={e => setCampForm({...campForm, budget: Number(e.target.value)})} />
-                   <Input type="number" label="Sarflandi" value={campForm.spent} onChange={e => setCampForm({...campForm, spent: Number(e.target.value)})} />
+                   <Input type="number" min="0" label="Budjet" value={campForm.budget ?? 0} onChange={e => setCampForm({...campForm, budget: Math.max(0, Number(e.target.value))})} />
+                   <Input type="number" min="0" label="Sarflandi" value={campForm.spent ?? 0} onChange={e => setCampForm({...campForm, spent: Math.max(0, Number(e.target.value))})} />
                  </div>
-                 <Input type="number" label="Lidlar (platforma ko'rsatkichi)" value={campForm.leads} onChange={e => setCampForm({...campForm, leads: Number(e.target.value)})} />
+                 <Input type="number" min="0" label="Lidlar (platforma ko'rsatkichi)" value={campForm.leads ?? 0} onChange={e => setCampForm({...campForm, leads: Math.max(0, Number(e.target.value))})} />
                  <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                   <Button variant="secondary" onClick={() => setIsCampModal(false)}>Bekor qilish</Button>
-                   <Button variant="primary" onClick={handleCampSave}>Saqlash</Button>
+                   <Button type="button" variant="secondary" onClick={() => setIsCampModal(false)}>Bekor qilish</Button>
+                   <Button type="button" variant="primary" onClick={handleCampSave} isLoading={isSaving}>Saqlash</Button>
                  </div>
                </div>
             </Modal>
