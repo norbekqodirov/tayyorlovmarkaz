@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
     FileBarChart2, Download, RefreshCw, Loader2, TrendingUp,
@@ -16,32 +16,49 @@ const fmt = (n: number) => n >= 1_000_000
     ? (n / 1_000_000).toFixed(1) + 'M'
     : n >= 1_000 ? (n / 1_000).toFixed(0) + 'K' : String(n);
 
+const todayInTashkent = () => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+
 export default function CrmReports() {
     const { showToast } = useToast();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
-    const [fromDate, setFromDate] = useState(() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-    });
-    const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [error, setError] = useState('');
+    const request = useRef<AbortController | null>(null);
+    const [fromDate, setFromDate] = useState(() => todayInTashkent().slice(0, 7) + '-01');
+    const [toDate, setToDate] = useState(todayInTashkent);
+    const dateError = !validDate(fromDate) || !validDate(toDate)
+        ? "Boshlanish va tugash sanalarini to'liq kiriting."
+        : fromDate > toDate ? "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak." : '';
+    const currentData = data?.period?.from === fromDate && data?.period?.to === toDate;
 
     const load = useCallback(async () => {
+        request.current?.abort();
+        const controller = new AbortController();
+        request.current = controller;
+        setData(null);
+        setError('');
+        if (dateError) { setLoading(false); return; }
         setLoading(true);
         try {
-            const res = await api.get(`/reports/summary?from=${fromDate}&to=${toDate}`);
-            setData(res.data);
+            const res = await api.get('/reports/summary', {
+                params: { from: fromDate, to: toDate }, signal: controller.signal,
+            });
+            if (!controller.signal.aborted) setData(res.data);
         } catch {
-            showToast("Hisobot yuklanmadi", 'error');
+            if (!controller.signal.aborted) setError("Hisobot yuklanmadi. Qayta urinib ko'ring.");
         } finally {
-            setLoading(false);
+            if (!controller.signal.aborted) setLoading(false);
         }
-    }, [fromDate, toDate]);
+    }, [fromDate, toDate, dateError]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => { void load(); return () => request.current?.abort(); }, [load]);
 
     const exportReport = () => {
-        if (!data) return;
+        if (!data || loading || error || dateError || !currentData) return;
         const rows = [
             ['Hisobot davri', `${fromDate} — ${toDate}`],
             [],
@@ -64,7 +81,7 @@ export default function CrmReports() {
         const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url;
-        a.download = `hisobot_${fromDate}_${toDate}.csv`; a.click();
+        a.download = `hisobot_${data.period.from}_${data.period.to}.csv`; a.click();
         URL.revokeObjectURL(url);
         showToast('CSV yuklab olindi', 'success');
     };
@@ -89,7 +106,7 @@ export default function CrmReports() {
         : [];
 
     return (
-        <div className="p-6 space-y-5 max-w-4xl mx-auto">
+        <div className="p-3 sm:p-6 space-y-5 max-w-4xl mx-auto min-w-0">
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3">
@@ -102,23 +119,30 @@ export default function CrmReports() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                    <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                    <input type="date" aria-label="Boshlanish sanasi" aria-invalid={!!dateError} aria-describedby={dateError ? "report-date-error" : undefined} max={toDate || undefined} value={fromDate} onChange={e => setFromDate(e.target.value)}
                         className="px-3 py-2 text-sm rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
                     <span className="text-zinc-400 text-sm">—</span>
-                    <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+                    <input type="date" aria-label="Tugash sanasi" aria-invalid={!!dateError} aria-describedby={dateError ? "report-date-error" : undefined} min={fromDate || undefined} value={toDate} onChange={e => setToDate(e.target.value)}
                         className="px-3 py-2 text-sm rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
-                    <button onClick={load} className="p-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+                    <button onClick={load} aria-label="Hisobotni yangilash" disabled={loading || !!dateError} className="p-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
                         <RefreshCw size={15} />
                     </button>
-                    <button onClick={exportReport} disabled={!data}
+                    <button onClick={exportReport} disabled={!data || loading || !!error || !!dateError || !currentData}
                         className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors">
                         <Download size={14} /> CSV
                     </button>
                 </div>
             </div>
 
-            {loading ? (
-                <div className="flex items-center justify-center h-64">
+            {dateError ? (
+                <p id="report-date-error" role="alert" className="text-sm text-red-600 dark:text-red-400">{dateError}</p>
+            ) : error ? (
+                <div role="alert" className="py-12 text-center space-y-3">
+                    <p className="text-zinc-600 dark:text-zinc-400">{error}</p>
+                    <button onClick={load} className="px-4 py-2 rounded-xl bg-indigo-600 text-white">Qayta urinish</button>
+                </div>
+            ) : loading || !currentData ? (
+                <div role="status" aria-label="Hisobot yuklanmoqda" className="flex items-center justify-center h-64">
                     <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                 </div>
             ) : (
@@ -131,7 +155,7 @@ export default function CrmReports() {
                                     <s.icon size={14} className={s.color} />
                                     <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">{s.label}</span>
                                 </div>
-                                <p className="text-xl font-black text-zinc-900 dark:text-zinc-100">{s.value}</p>
+                                <p className="text-xl font-black break-words text-zinc-900 dark:text-zinc-100">{s.value}</p>
                             </div>
                         ))}
                     </div>
@@ -147,10 +171,11 @@ export default function CrmReports() {
                                 </div>
                                 <ResponsiveContainer width="100%" height={180}>
                                     <PieChart>
-                                        <Pie data={incomeByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                                        <Pie data={incomeByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={65} label={false}>
                                             {incomeByCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                                         </Pie>
                                         <Tooltip formatter={(v: any) => fmt(v) + " so'm"} />
+                                        <Legend wrapperStyle={{ fontSize: 12, overflowWrap: 'anywhere' }} />
                                     </PieChart>
                                 </ResponsiveContainer>
                             </div>

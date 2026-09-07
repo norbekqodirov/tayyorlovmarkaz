@@ -1,54 +1,81 @@
-import { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Users, DollarSign, Target, Award, FileDown, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { TrendingUp, Users, DollarSign, Target, Award, FileDown, RefreshCw } from 'lucide-react';
 import api from '../../../api/client';
 
 export default function CrmExecutiveReport() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { load(); }, []);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const request = useRef<AbortController | null>(null);
+
+  useEffect(() => { void load(); return () => request.current?.abort(); }, []);
 
   const load = async () => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
     setLoading(true);
+    setExportError('');
     try {
-      const res = await api.get('/reports/executive');
-      setData(res.data);
-    } catch { setData(null); }
-    setLoading(false);
+      const res = await api.get('/reports/executive', { signal: controller.signal });
+      if (!controller.signal.aborted) setData(res.data);
+    } catch { if (!controller.signal.aborted) setData(null); }
+    finally { if (!controller.signal.aborted) setLoading(false); }
   };
 
-  const exportPDF = () => {
-    if (!data) return;
-    const printContent = document.getElementById('executive-report');
-    if (!printContent) return;
+  const exportPDF = async () => {
+    if (!data || exporting) return;
+    setExportError('');
+    const content = document.getElementById('executive-report');
+    if (!content) return;
     const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`<html><head><title>Executive Report</title><style>
-      * { box-sizing: border-box; font-family: sans-serif; }
-      body { margin: 20px; color: #111; }
-      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
-      .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
-      .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; }
-      .value { font-size: 24px; font-weight: 900; color: #0f172a; margin-top: 4px; }
-      .sub { font-size: 12px; color: #64748b; margin-top: 2px; }
-      h1 { font-size: 22px; font-weight: 900; margin-bottom: 4px; }
-      h2 { font-size: 14px; font-weight: 900; margin: 20px 0 10px; }
-      .green { color: #16a34a; } .red { color: #dc2626; }
-    </style></head><body>`);
-    win.document.write(printContent.innerHTML);
-    win.document.write(`</body></html>`);
-    win.document.close();
-    win.print();
+    if (!win) {
+      setExportError("PDF uchun yangi oynaga ruxsat bering va qayta urinib ko'ring.");
+      return;
+    }
+    setExporting(true);
+    try {
+      win.opener = null;
+      win.document.title = 'Direktor hisoboti';
+      win.document.documentElement.lang = 'uz';
+      const stylesReady = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]')).map(node => {
+        const clone = node.cloneNode(true) as HTMLElement;
+        const ready = node instanceof HTMLLinkElement ? new Promise<void>((resolve, reject) => {
+          clone.onload = () => resolve();
+          clone.onerror = () => reject(new Error('Stylesheet failed'));
+        }) : Promise.resolve();
+        win.document.head.appendChild(clone);
+        return ready;
+      });
+      const style = win.document.createElement('style');
+      style.textContent = '@page { margin: 12mm; } body { color: #111; background: white; padding: 16px; } h1 { font-size: 22px; font-weight: bold; } header { margin-bottom: 24px; } #executive-report > div { break-inside: avoid; }';
+      win.document.head.appendChild(style);
+      const header = win.document.createElement('header');
+      const title = win.document.createElement('h1');
+      title.textContent = 'Investor/Direktor Hisoboti';
+      const period = win.document.createElement('p');
+      period.textContent = String(data.period?.month ?? '') + ' · ' + String(data.period?.year ?? '') + '-yil';
+      header.append(title, period);
+      win.document.body.append(header, content.cloneNode(true));
+      await Promise.all(stylesReady);
+      await win.document.fonts.ready;
+      if (!win.closed) { win.focus(); win.print(); }
+    } catch {
+      win.close();
+      setExportError("PDF tayyorlanmadi. Qayta urinib ko'ring.");
+    } finally { setExporting(false); }
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-64">
+    <div role="status" aria-label="Hisobot yuklanmoqda" className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   if (!data) return (
-    <div className="text-center py-16">
+    <div role="alert" className="text-center py-16">
       <p className="text-zinc-500">Hisobot yuklashda xatolik</p>
       <button onClick={load} className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold">Qayta urinish</button>
     </div>
@@ -59,21 +86,22 @@ export default function CrmExecutiveReport() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white">Investor/Direktor Hisoboti</h1>
           <p className="text-sm text-zinc-500 mt-0.5">{data.period?.month} · {data.period?.year}-yil</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500">
+          <button onClick={load} aria-label="Hisobotni yangilash" className="p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500">
             <RefreshCw size={15} />
           </button>
-          <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold">
-            <FileDown size={15} /> PDF Export
+          <button onClick={exportPDF} disabled={exporting} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold">
+            <FileDown size={15} /> {exporting ? "Tayyorlanmoqda..." : "PDF yuklab olish"}
           </button>
         </div>
       </div>
 
+      {exportError && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{exportError}</p>}
       <div id="executive-report" className="space-y-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -93,22 +121,22 @@ export default function CrmExecutiveReport() {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5">
             <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">Daromad tahlili</h2>
             <div className="space-y-3">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap gap-2 justify-between items-center">
                 <span className="text-sm text-zinc-600 dark:text-zinc-400">Bu oy</span>
                 <span className="font-black text-slate-900 dark:text-white">{(data.revenue?.thisMonth || 0).toLocaleString()} so'm</span>
               </div>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap gap-2 justify-between items-center">
                 <span className="text-sm text-zinc-600 dark:text-zinc-400">O'tgan oy</span>
                 <span className="font-black text-slate-900 dark:text-white">{(data.revenue?.prevMonth || 0).toLocaleString()} so'm</span>
               </div>
               <div className="h-px bg-zinc-100 dark:bg-zinc-800" />
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap gap-2 justify-between items-center">
                 <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">O'sish</span>
                 <span className={`font-black text-lg ${growthPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
                   {growthPositive ? '+' : ''}{data.revenue?.growthPct || 0}%
                 </span>
               </div>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap gap-2 justify-between items-center">
                 <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">Yil davomida</span>
                 <span className="font-black text-indigo-600">{(data.revenue?.yearToDate || 0).toLocaleString()} so'm</span>
               </div>
@@ -155,8 +183,8 @@ export default function CrmExecutiveReport() {
                   <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black ${
                     i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' : 'bg-orange-100 text-orange-700'
                   }`}>{i + 1}</span>
-                  <span className="flex-1 text-sm font-semibold text-slate-900 dark:text-white">{c.name}</span>
-                  <span className="text-sm font-black text-zinc-500">{c.groups} guruh</span>
+                  <span className="min-w-0 break-words flex-1 text-sm font-semibold text-slate-900 dark:text-white">{c.name}</span>
+                  <span className="shrink-0 text-sm font-black text-zinc-500">{c.groups} guruh</span>
                 </div>
               ))}
             </div>
@@ -182,7 +210,7 @@ function KpiCard({ label, value, icon: Icon, color, sub }: any) {
         <Icon size={15} />
       </div>
       <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{label}</p>
-      <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{value}</p>
+      <p className="text-2xl break-words font-black text-slate-900 dark:text-white mt-0.5">{value}</p>
       {sub && <p className="text-xs mt-0.5">{sub}</p>}
     </div>
   );
