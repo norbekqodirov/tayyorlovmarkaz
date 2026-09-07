@@ -8,6 +8,9 @@ import api from '../../../api/client';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
+import { ErrorState } from '../../../components/States';
+import { useToast } from '../../../components/Toast';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,6 +69,7 @@ function EditModal({ row, isOpen, onClose, onSave }: {
 }) {
   const [form, setForm] = useState({ status: 'present', checkIn: '', checkOut: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (row) {
@@ -75,24 +79,45 @@ function EditModal({ row, isOpen, onClose, onSave }: {
         checkOut: row.record?.checkOut || '',
         notes: row.record?.notes || '',
       });
+      setModalError(null);
     }
   }, [row]);
 
   const handle = async () => {
+    setModalError(null);
+
+    // Validation: checkIn vs checkOut range
+    if (form.checkIn && form.checkOut && form.checkIn > form.checkOut) {
+      setModalError("Chiqish vaqti kirish vaqtidan oldin bo'lishi mumkin emas.");
+      return;
+    }
+
     setSaving(true);
-    await onSave(form);
-    setSaving(false);
+    try {
+      await onSave(form);
+      onClose();
+    } catch (err: any) {
+      setModalError(err?.response?.data?.message || "Saqlashda xatolik yuz berdi.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={row?.staff.name || ''} width="sm">
       <div className="space-y-4">
+        {modalError && (
+          <div className="p-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-900/30 rounded-xl text-xs text-rose-600 dark:text-rose-400 font-medium">
+            {modalError}
+          </div>
+        )}
+
         <div>
           <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Status</label>
           <select
             value={form.status}
             onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-            className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+            className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-medium text-slate-800 dark:text-white"
           >
             <option value="present">Keldi</option>
             <option value="late">Kechikdi</option>
@@ -107,7 +132,7 @@ function EditModal({ row, isOpen, onClose, onSave }: {
           <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Izoh</label>
           <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
             rows={2} placeholder="Ixtiyoriy..."
-            className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm resize-none" />
+            className="mt-1 w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-slate-800 dark:text-white resize-none" />
         </div>
 
         <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
@@ -122,35 +147,50 @@ function EditModal({ row, isOpen, onClose, onSave }: {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function CrmStaffAttendance() {
+  const { showToast } = useToast();
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [data, setData] = useState<{ summary: DaySummary; rows: AttRow[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [dayError, setDayError] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<AttRow | null>(null);
   const [filter, setFilter] = useState<'all' | 'present' | 'late' | 'absent' | 'pending'>('all');
   const [view, setView] = useState<'day' | 'month'>('day');
   const [monthReport, setMonthReport] = useState<any[]>([]);
   const [monthLoading, setMonthLoading] = useState(false);
+  const [monthError, setMonthError] = useState<string | null>(null);
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+
+  const userRoleLevel = getCurrentRoleLevel();
+  // server/routes/staffAttendance.ts requireMinRole('ADMIN') -> ROLE_LEVEL.ADMIN (3)
+  const canManage = userRoleLevel >= ROLE_LEVEL.ADMIN;
 
   const loadDay = useCallback(async (d: string, silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
+    setDayError(null);
     try {
       const res = await api.get('/staff-attendance', { params: { date: d } });
       setData(res.data);
-    } catch { /* ignore */ }
-    setLoading(false);
-    setRefreshing(false);
+    } catch (err: any) {
+      setDayError(err?.response?.data?.message || "Xodimlar davomatini yuklashda xatolik yuz berdi.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
   const loadMonth = useCallback(async (m: string) => {
     setMonthLoading(true);
+    setMonthError(null);
     try {
       const res = await api.get('/staff-attendance/report', { params: { month: m } });
       setMonthReport(Array.isArray(res.data.data) ? res.data.data : []);
-    } catch { /* ignore */ }
-    setMonthLoading(false);
+    } catch (err: any) {
+      setMonthError(err?.response?.data?.message || "Oylik hisobotni yuklashda xatolik yuz berdi.");
+    } finally {
+      setMonthLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadDay(date); }, [date, loadDay]);
@@ -171,6 +211,10 @@ export default function CrmStaffAttendance() {
   };
 
   const handleEdit = async (row: AttRow, formData: any) => {
+    if (!canManage) {
+      showToast("Sizda tahrirlash uchun ruxsat yetarli emas", 'error');
+      return;
+    }
     try {
       if (row.record) {
         await api.patch(`/staff-attendance/${row.record.id}`, formData);
@@ -181,9 +225,13 @@ export default function CrmStaffAttendance() {
           ...formData,
         });
       }
-      setEditRow(null);
+      showToast("Davomat ma'lumoti saqlandi", 'success');
       loadDay(date);
-    } catch { /* ignore */ }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || "Saqlashda xatolik yuz berdi";
+      showToast(msg, 'error');
+      throw err;
+    }
   };
 
   const filtered = data?.rows.filter(r => filter === 'all' || r.status === filter) ?? [];
@@ -209,23 +257,25 @@ export default function CrmStaffAttendance() {
               type="month"
               value={month}
               onChange={e => setMonth(e.target.value)}
-              className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+              className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-medium text-slate-800 dark:text-white"
             />
           </div>
         </div>
 
-        {monthLoading ? (
+        {monthError ? (
+          <ErrorState message={monthError} onRetry={() => loadMonth(month)} />
+        ) : monthLoading ? (
           <div className="flex items-center justify-center h-40">
             <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-x-auto">
             {monthReport.map((item: any) => {
               const pct = item.summary.total > 0
                 ? Math.round(((item.summary.present + item.summary.late) / item.summary.total) * 100)
                 : 0;
               return (
-                <div key={item.staff.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
+                <div key={item.staff.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4 min-w-[300px]">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-9 h-9 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex-shrink-0">
                       {item.staff.photo
@@ -234,7 +284,7 @@ export default function CrmStaffAttendance() {
                       }
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-slate-800 dark:text-white">{item.staff.name}</div>
+                      <div className="font-semibold text-sm text-slate-800 dark:text-white truncate">{item.staff.name}</div>
                       <div className="text-xs text-zinc-400">{item.staff.role}</div>
                     </div>
                     <div className="text-right">
@@ -245,7 +295,7 @@ export default function CrmStaffAttendance() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
                     {[
                       { label: 'Keldi', val: item.summary.present, cls: 'text-emerald-600' },
                       { label: 'Kechikdi', val: item.summary.late, cls: 'text-amber-600' },
@@ -330,7 +380,7 @@ export default function CrmStaffAttendance() {
 
       {/* Summary cards */}
       {data && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { key: 'present', label: 'Keldi',      val: data.summary.present, icon: CheckCircle2, color: 'emerald' },
             { key: 'late',    label: 'Kechikdi',   val: data.summary.late,    icon: Clock,        color: 'amber'   },
@@ -361,18 +411,20 @@ export default function CrmStaffAttendance() {
       )}
 
       {/* Attendance list */}
-      {loading ? (
+      {dayError ? (
+        <ErrorState message={dayError} onRetry={() => loadDay(date)} />
+      ) : loading ? (
         <div className="space-y-2">
           {[0,1,2,3,4].map(i => (
             <div key={i} className="h-16 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden overflow-x-auto">
           {filtered.length === 0 ? (
             <div className="py-12 text-center text-zinc-400 text-sm">Ma'lumot yo'q</div>
           ) : (
-            <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+            <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50 min-w-[300px]">
               {filtered.map(row => (
                 <div key={row.staff.id} className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
                   {/* Avatar */}
@@ -418,13 +470,15 @@ export default function CrmStaffAttendance() {
                     </div>
                   </div>
 
-                  {/* Edit */}
-                  <button
-                    onClick={() => setEditRow(row)}
-                    className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-xl transition-colors flex-shrink-0"
-                  >
-                    <Edit2 size={13} />
-                  </button>
+                  {/* Edit - only shown if user has ADMIN permission */}
+                  {canManage && (
+                    <button
+                      onClick={() => setEditRow(row)}
+                      className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-xl transition-colors flex-shrink-0"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -437,7 +491,7 @@ export default function CrmStaffAttendance() {
         row={editRow}
         isOpen={!!editRow}
         onClose={() => setEditRow(null)}
-        onSave={formData => editRow && handleEdit(editRow, formData)}
+        onSave={formData => editRow ? handleEdit(editRow, formData) : Promise.resolve()}
       />
     </div>
   );
