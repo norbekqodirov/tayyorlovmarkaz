@@ -5,6 +5,7 @@ import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { ErrorState } from '../../../components/States';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
@@ -45,7 +46,7 @@ const EXTRA_FIELD_OPTIONS = [
 
 export default function CrmForms() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
-  const { documents: forms, addDocument, updateDocument, deleteDocument } = useFirestore<Form>('forms');
+  const { documents: forms, loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<Form>('forms');
   const { data: campaigns, loading: campaignsLoading, error: campaignsError } = useFirestore<{ id: string; name: string }>('campaigns');
   const { courses } = useCrmData();
   const { showToast } = useToast();
@@ -97,20 +98,32 @@ export default function CrmForms() {
 
   const handleSave = async () => {
     if (!canManage) return;
-    if (!formData.title?.trim()) {
-      showToast('Forma nomi kiritilishi shart', 'error');
+    const trimmedTitle = formData.title?.trim();
+    if (!trimmedTitle) {
+      showToast('Forma nomi kiritilishi shart!', 'error');
       return;
     }
     if (formData.successButtonUrl?.trim() && !isSafeRedirectUrl(formData.successButtonUrl)) {
       showToast("Tugma havolasi \"/\" bilan (ichki sahifa) yoki \"https://\" bilan (tashqi havola) boshlanishi shart", 'error');
       return;
     }
+
+    const payload = {
+      ...formData,
+      title: trimmedTitle,
+      description: formData.description?.trim() || null,
+      successTitle: formData.successTitle?.trim() || null,
+      successMessage: formData.successMessage?.trim() || null,
+      successButtonText: formData.successButtonText?.trim() || null,
+      successButtonUrl: formData.successButtonUrl?.trim() || null,
+    };
+
     setIsSaving(true);
     try {
       if (editingForm) {
-        await updateDocument(editingForm.id, formData);
+        await updateDocument(editingForm.id, payload);
       } else {
-        await addDocument({ ...formData, submissions: 0 } as Omit<Form, 'id'>);
+        await addDocument({ ...payload, submissions: 0 } as Omit<Form, 'id'>);
       }
       showToast(editingForm ? 'Forma yangilandi' : 'Forma qo\'shildi', 'success');
       closeModal();
@@ -141,12 +154,48 @@ export default function CrmForms() {
   // shortCode (6 belgi) — crud.ts CREATE'da avtomatik generatsiya qiladi.
   // Eski (shortCode yaratilishidan oldingi) formalar uchun to'liq id'ga tushiladi
   // (scripts/backfill_form_short_codes.ts orqali ular ham tuzatiladi).
-  const shareUrl = (form: Form) => `${window.location.origin}/l/${form.shortCode || form.id}`;
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    showToast('Nusxa olindi!', 'success');
+  const shareUrl = (form: Form) => {
+    const code = form.shortCode?.trim() || form.id;
+    return `${window.location.origin}/l/${code}`;
   };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      showToast('Nusxa olindi!', 'success');
+    } catch (err) {
+      console.error('Copy to clipboard failed:', err);
+      showToast('Nusxa olishda xatolik yuz berdi', 'error');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div role="status" className="flex items-center justify-center gap-3 p-12 text-zinc-500 font-bold">
+        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        Target formalari ma'lumotlari yuklanmoqda...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <ErrorState message="Target formalari ro'yxatini yuklashda xatolik yuz berdi." onRetry={refetch} />
+    );
+  }
 
   const totalForms = forms.length;
   const activeForms = forms.filter(f => f.isActive).length;
@@ -190,7 +239,7 @@ export default function CrmForms() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {forms.map(form => (
-            <div key={form.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6 flex flex-col">
+            <div key={form.id} className="group relative bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6 flex flex-col">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -203,9 +252,9 @@ export default function CrmForms() {
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  {canManage && <button onClick={() => openModal(form)} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"><Edit2 size={16}/></button>}
-                  {canManage && <button onClick={() => handleDelete(form.id)} className="p-1.5 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"><Trash2 size={16}/></button>}
+                <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  {canManage && <button type="button" onClick={() => openModal(form)} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors" title="Tahrirlash"><Edit2 size={16}/></button>}
+                  {canManage && <button type="button" onClick={() => handleDelete(form.id)} className="p-1.5 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors" title="O'chirish"><Trash2 size={16}/></button>}
                 </div>
               </div>
 
@@ -216,9 +265,11 @@ export default function CrmForms() {
                   type="text"
                   value={shareUrl(form)}
                   readOnly
-                  className="bg-transparent text-xs font-mono text-zinc-600 dark:text-zinc-400 flex-1 outline-none truncate"
+                  onClick={() => copyToClipboard(shareUrl(form))}
+                  className="bg-transparent text-xs font-mono text-zinc-600 dark:text-zinc-400 flex-1 outline-none truncate cursor-pointer"
+                  title="Nusxa olish uchun bosing"
                 />
-                <button onClick={() => copyToClipboard(shareUrl(form))} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors" title="Nusxa olish">
+                <button type="button" onClick={() => copyToClipboard(shareUrl(form))} className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors" title="Nusxa olish">
                   <Copy size={14} />
                 </button>
                 <a href={shareUrl(form)} target="_blank" rel="noopener noreferrer" className="p-1.5 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors" title="Ochish">
@@ -254,12 +305,14 @@ export default function CrmForms() {
         title={editingForm ? 'Formani tahrirlash' : 'Yangi forma yaratish'}
       >
         <div className="space-y-4">
-          <Input
-            label="Forma nomi"
-            value={formData.title}
-            onChange={(e) => setFormData({...formData, title: e.target.value})}
-            placeholder="Masalan: Instagram Target - Kuzgi qabul"
-          />
+          <div>
+            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Forma nomi<span className="text-rose-500 ml-0.5">*</span></label>
+            <Input
+              value={formData.title || ''}
+              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              placeholder="Masalan: Instagram Target - Kuzgi qabul"
+            />
+          </div>
           <div>
             <label htmlFor="target-form-campaign" className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-1">Kampaniya</label>
             <select
