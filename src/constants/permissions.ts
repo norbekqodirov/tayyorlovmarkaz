@@ -23,3 +23,10 @@ export const ALL_PERMISSIONS = [
 ];
 
 export const PERMISSION_GROUPS = [...new Set(ALL_PERMISSIONS.map(p => p.group))];
+
+// CrmUsers.tsx'dagi TEACHER shablon bilan bir xil bo'lishi shart — o'qituvchi
+// CrmTeachers.tsx orqali yaratilganda (Foydalanuvchilar sahifasidan emas)
+// standart ruxsatlarsiz qolib ketmasligi uchun.
+export const DEFAULT_TEACHER_PERMISSIONS = [
+    'dashboard', 'schedule', 'journal', 'attendance', 'assessments', 'students', 'groups', 'parent_chat',
+];

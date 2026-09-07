@@ -15,6 +15,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { DEFAULT_TEACHER_PERMISSIONS } from '../../../constants/permissions';
 
 interface Teacher {
   id: string;
@@ -135,11 +136,17 @@ export default function CrmTeachers() {
       };
 
       if (formData.id) {
+        // Tahrirlashda permissions'ga tegilmaydi — admin buni Foydalanuvchilar
+        // sahifasida alohida sozlagan bo'lishi mumkin, shu yerdan bosib
+        // qo'yish PUT /users/:id'ning "faqat aniq yuborilganda yangilanadi"
+        // qoidasini chetlab o'tib, ularni bo'sh massivga aylantirib qo'yardi.
         await api.put(`/auth/users/${formData.id}`, dbPayload);
         showToast("Ustoz muvaffaqiyatli saqlandi!");
       } else {
         if (!formData.password) { showToast("Yangi ustoz uchun parol shart!", 'error'); return; }
-        await api.post('/auth/users', dbPayload);
+        // Standart o'qituvchi ruxsatlari — bo'lmasa yangi ustoz login qilganda
+        // menyusi butunlay bo'sh ko'rinardi (server permissions yuborilmasa '[]' saqlaydi).
+        await api.post('/auth/users', { ...dbPayload, permissions: DEFAULT_TEACHER_PERMISSIONS });
         showToast("Yangi ustoz muvaffaqiyatli qo'shildi!");
       }
       loadTeachers();
