@@ -45,6 +45,7 @@ router.get('/:studentId', requireAuth, async (req, res) => {
 
         const assessments = await prisma.assessment.findMany({
             where: { studentId },
+            include: { group: { select: { name: true } } },
             orderBy: { date: 'asc' },
         });
 

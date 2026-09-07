@@ -1,5 +1,5 @@
 export function TopStudents({ students }: { students: any[] }) {
-  const top = students.filter(s => s.status === 'Faol').slice(0, 7);
+  const top = students.filter(s => s.status === 'Faol' || s.status === 'active').slice(0, 7);
   return (
     <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-4 h-full shadow-sm">
       <div className="mb-3">
