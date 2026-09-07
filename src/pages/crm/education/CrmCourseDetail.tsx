@@ -3,14 +3,23 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Edit2, ChevronDown, ChevronRight, GripVertical, Copy, ArrowLeft, BookOpen, Layers, Clock } from 'lucide-react';
 import { AnimatePresence, motion, Reorder } from 'framer-motion';
 import api from '../../../api/client';
+import { useToast } from '../../../components/Toast';
+import { ErrorState } from '../../../components/States';
+import ConfirmDialog from '../../../components/ConfirmDialog';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 export default function CrmCourseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { showToast } = useToast();
+
+  const currentRoleLevel = getCurrentRoleLevel();
+  const canManageCurriculum = currentRoleLevel >= ROLE_LEVEL.MANAGER;
 
   const [course, setCourse]     = useState<any>(null);
   const [levels, setLevels]     = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [cloning, setCloning]   = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -27,10 +36,18 @@ export default function CrmCourseDetail() {
   const [activeLevelId, setActiveLevelId]     = useState<string | null>(null);
   const [savingModule, setSavingModule]       = useState(false);
 
+  // Delete confirm dialog
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; type: 'level' | 'module'; id: string }>({
+    open: false,
+    type: 'level',
+    id: '',
+  });
+
   useEffect(() => { if (id) load(); }, [id]);
 
   const load = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const [courseRes, currRes] = await Promise.all([
         api.get(`/courses/${id}`),
@@ -39,103 +56,215 @@ export default function CrmCourseDetail() {
       setCourse(courseRes.data);
       const lvls = Array.isArray(currRes.data) ? currRes.data : [];
       setLevels(lvls);
-      // auto-expand first
-      if (lvls.length > 0) setExpanded({ [lvls[0].id]: true });
-    } catch { setCourse(null); }
-    setLoading(false);
+      // auto-expand first level if not set
+      if (lvls.length > 0) {
+        setExpanded(prev => Object.keys(prev).length === 0 ? { [lvls[0].id]: true } : prev);
+      }
+    } catch (err: any) {
+      setCourse(null);
+      setFetchError(err.response?.data?.message || "Kurs ma'lumotlarini yuklashda xatolik yuz berdi");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── Levels ───────────────────────────────────────────────────────────────
   const openCreateLevel = () => {
+    if (!canManageCurriculum) {
+      showToast("Sizda daraja yaratish uchun ruxsat yo'q", 'error');
+      return;
+    }
     setEditingLevel(null);
     setLevelForm({ name: '', description: '' });
     setShowLevelModal(true);
   };
+
   const openEditLevel = (lv: any) => {
+    if (!canManageCurriculum) {
+      showToast("Sizda darajani tahrirlash uchun ruxsat yo'q", 'error');
+      return;
+    }
     setEditingLevel(lv);
-    setLevelForm({ name: lv.name, description: lv.description || '' });
+    setLevelForm({ name: lv.name || '', description: lv.description || '' });
     setShowLevelModal(true);
   };
+
   const saveLevel = async () => {
-    if (!levelForm.name.trim()) return;
+    if (!canManageCurriculum) {
+      showToast("Sizda bu amalni bajarish uchun ruxsat yo'q", 'error');
+      return;
+    }
+    const name = levelForm.name.trim();
+    const description = levelForm.description.trim();
+    if (!name) {
+      showToast("Daraja nomini kiriting", 'error');
+      return;
+    }
     setSavingLevel(true);
     try {
       if (editingLevel) {
-        await api.patch(`/curriculum/levels/${editingLevel.id}`, levelForm);
+        await api.patch(`/curriculum/levels/${editingLevel.id}`, { name, description });
+        showToast("Daraja tahrirlandi", 'success');
       } else {
-        await api.post(`/curriculum/${id}`, levelForm);
+        await api.post(`/curriculum/${id}/levels`, { name, description });
+        showToast("Daraja yaratildi", 'success');
       }
       setShowLevelModal(false);
       load();
-    } catch {}
-    setSavingLevel(false);
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Saqlashda xatolik yuz berdi", 'error');
+    } finally {
+      setSavingLevel(false);
+    }
   };
-  const deleteLevel = async (lvId: string) => {
-    if (!confirm("Darajani o'chirilsinmi? Barcha modullar ham o'chadi.")) return;
-    await api.delete(`/curriculum/levels/${lvId}`);
-    load();
+
+  const deleteLevel = (lvId: string) => {
+    if (!canManageCurriculum) {
+      showToast("Sizda darajani o'chirish uchun ruxsat yo'q", 'error');
+      return;
+    }
+    setDeleteConfirm({ open: true, type: 'level', id: lvId });
   };
 
   // ── Modules ──────────────────────────────────────────────────────────────
   const openCreateModule = (levelId: string) => {
+    if (!canManageCurriculum) {
+      showToast("Sizda modul yaratish uchun ruxsat yo'q", 'error');
+      return;
+    }
     setActiveLevelId(levelId);
     setEditingModule(null);
     setModuleForm({ title: '', description: '', duration: '' });
     setShowModuleModal(true);
   };
+
   const openEditModule = (mod: any, levelId: string) => {
+    if (!canManageCurriculum) {
+      showToast("Sizda modulni tahrirlash uchun ruxsat yo'q", 'error');
+      return;
+    }
     setActiveLevelId(levelId);
     setEditingModule(mod);
-    setModuleForm({ title: mod.title, description: mod.description || '', duration: mod.duration ? String(mod.duration) : '' });
+    setModuleForm({
+      title: mod.title || '',
+      description: mod.description || '',
+      duration: mod.duration ? String(mod.duration) : '',
+    });
     setShowModuleModal(true);
   };
+
   const saveModule = async () => {
-    if (!moduleForm.title.trim()) return;
+    if (!canManageCurriculum) {
+      showToast("Sizda bu amalni bajarish uchun ruxsat yo'q", 'error');
+      return;
+    }
+    const title = moduleForm.title.trim();
+    const description = moduleForm.description.trim();
+    if (!title) {
+      showToast("Modul nomini kiriting", 'error');
+      return;
+    }
+    const durationNum = moduleForm.duration ? Number(moduleForm.duration) : undefined;
+    if (durationNum !== undefined && (isNaN(durationNum) || durationNum < 0)) {
+      showToast("Davomiylik musbat son bo'lishi kerak", 'error');
+      return;
+    }
     setSavingModule(true);
     try {
-      const data = { ...moduleForm, duration: moduleForm.duration ? Number(moduleForm.duration) : undefined };
+      const data = { title, description, duration: durationNum };
       if (editingModule) {
         await api.patch(`/curriculum/modules/${editingModule.id}`, data);
+        showToast("Modul tahrirlandi", 'success');
       } else {
         await api.post(`/curriculum/levels/${activeLevelId}/modules`, data);
+        showToast("Modul yaratildi", 'success');
       }
       setShowModuleModal(false);
       load();
-    } catch {}
-    setSavingModule(false);
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Saqlashda xatolik yuz berdi", 'error');
+    } finally {
+      setSavingModule(false);
+    }
   };
-  const deleteModule = async (modId: string) => {
-    if (!confirm("Modulni o'chirilsinmi?")) return;
-    await api.delete(`/curriculum/modules/${modId}`);
-    load();
+
+  const deleteModule = (modId: string) => {
+    if (!canManageCurriculum) {
+      showToast("Sizda modulni o'chirish uchun ruxsat yo'q", 'error');
+      return;
+    }
+    setDeleteConfirm({ open: true, type: 'module', id: modId });
+  };
+
+  const confirmDelete = async () => {
+    if (!canManageCurriculum) {
+      showToast("Sizda bu amalni bajarish uchun ruxsat yo'q", 'error');
+      setDeleteConfirm({ open: false, type: 'level', id: '' });
+      return;
+    }
+    try {
+      if (deleteConfirm.type === 'level') {
+        await api.delete(`/curriculum/levels/${deleteConfirm.id}`);
+        showToast("Daraja o'chirildi", 'success');
+      } else {
+        await api.delete(`/curriculum/modules/${deleteConfirm.id}`);
+        showToast("Modul o'chirildi", 'success');
+      }
+      load();
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "O'chirishda xatolik yuz berdi", 'error');
+    } finally {
+      setDeleteConfirm({ open: false, type: 'level', id: '' });
+    }
   };
 
   // ── Reorder ──────────────────────────────────────────────────────────────
   const reorderLevels = async (newOrder: any[]) => {
+    if (!canManageCurriculum) return;
     setLevels(newOrder);
-    await api.post('/curriculum/levels/reorder', {
-      courseId: id,
-      ids: newOrder.map(l => l.id),
-    }).catch(() => {});
+    try {
+      await api.post('/curriculum/levels/reorder', {
+        items: newOrder.map((l, index) => ({ id: l.id, order: index })),
+      });
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Tartibni saqlashda xatolik", 'error');
+    }
   };
 
   const reorderModules = async (levelId: string, newMods: any[]) => {
+    if (!canManageCurriculum) return;
     setLevels(prev => prev.map(lv => lv.id === levelId ? { ...lv, modules: newMods } : lv));
-    await api.post('/curriculum/modules/reorder', {
-      levelId,
-      ids: newMods.map(m => m.id),
-    }).catch(() => {});
+    try {
+      await api.post('/curriculum/modules/reorder', {
+        items: newMods.map((m, index) => ({ id: m.id, order: index })),
+      });
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Tartibni saqlashda xatolik", 'error');
+    }
   };
 
   // ── Clone ─────────────────────────────────────────────────────────────────
   const cloneCourse = async () => {
+    if (!canManageCurriculum) {
+      showToast("Sizda kursni nusxalash uchun ruxsat yo'q", 'error');
+      return;
+    }
     if (!confirm("Kursni nusxalashni xohlaysizmi?")) return;
     setCloning(true);
     try {
       const res = await api.post(`/curriculum/${id}/clone`);
-      navigate(`/crmtayyorlovmarkaz/courses/${res.data.id}`);
-    } catch {}
-    setCloning(false);
+      showToast("Kurs nusxalandi", 'success');
+      const newCourseId = res.data?.courseId;
+      if (newCourseId) {
+        navigate(`/crmtayyorlovmarkaz/courses/${newCourseId}`);
+      } else {
+        load();
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Nusxalashda xatolik yuz berdi", 'error');
+    } finally {
+      setCloning(false);
+    }
   };
 
   // ── Counts ────────────────────────────────────────────────────────────────
@@ -150,6 +279,12 @@ export default function CrmCourseDetail() {
     </div>
   );
 
+  if (fetchError) return (
+    <div className="py-12">
+      <ErrorState message={fetchError} onRetry={load} />
+    </div>
+  );
+
   if (!course) return (
     <div className="text-center py-16">
       <p className="text-zinc-500">Kurs topilmadi</p>
@@ -159,16 +294,25 @@ export default function CrmCourseDetail() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title={deleteConfirm.type === 'level' ? "Darajani o'chirish" : "Modulni o'chirish"}
+        message={deleteConfirm.type === 'level' ? "Haqiqatan ham bu darajani o'chirmoqchimisiz? Barcha modullar ham o'chadi." : "Haqiqatan ham bu modulni o'chirmoqchimisiz?"}
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ open: false, type: 'level', id: '' })}
+      />
+
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-start gap-3">
-          <button onClick={() => navigate('/crmtayyorlovmarkaz/courses')} className="mt-1 p-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400">
+          <button onClick={() => navigate('/crmtayyorlovmarkaz/courses')} className="mt-1 p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400">
             <ArrowLeft size={16} />
           </button>
           <div>
             <h1 className="text-xl font-black text-slate-900 dark:text-white">{course.name}</h1>
             <p className="text-sm text-zinc-500 mt-0.5">{course.description || 'Tavsif yo\'q'}</p>
-            <div className="flex items-center gap-4 mt-2">
+            <div className="flex flex-wrap items-center gap-4 mt-2">
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
                 <Layers size={12} /> {levels.length} daraja
               </span>
@@ -183,21 +327,23 @@ export default function CrmCourseDetail() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={cloneCourse}
-            disabled={cloning}
-            className="flex items-center gap-2 px-3 py-2 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 transition-all"
-          >
-            <Copy size={14} /> {cloning ? 'Nusxalanmoqda...' : 'Nusxa olish'}
-          </button>
-          <button
-            onClick={openCreateLevel}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md"
-          >
-            <Plus size={14} /> Yangi Daraja
-          </button>
-        </div>
+        {canManageCurriculum && (
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={cloneCourse}
+              disabled={cloning}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 transition-all disabled:opacity-50"
+            >
+              <Copy size={14} /> {cloning ? 'Nusxalanmoqda...' : 'Nusxa olish'}
+            </button>
+            <button
+              onClick={openCreateLevel}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md"
+            >
+              <Plus size={14} /> Yangi Daraja
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Curriculum */}
@@ -206,38 +352,46 @@ export default function CrmCourseDetail() {
           <Layers size={48} className="text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
           <p className="font-bold text-zinc-500">Hozircha darajalar yo'q</p>
           <p className="text-sm text-zinc-400 mt-1">Birinchi darajani yarating</p>
-          <button onClick={openCreateLevel} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold">
-            <Plus size={13} className="inline mr-1" /> Daraja yaratish
-          </button>
+          {canManageCurriculum && (
+            <button onClick={openCreateLevel} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold">
+              <Plus size={13} className="inline mr-1" /> Daraja yaratish
+            </button>
+          )}
         </div>
       ) : (
         <Reorder.Group axis="y" values={levels} onReorder={reorderLevels} className="space-y-3">
           {levels.map((lv, li) => (
-            <Reorder.Item key={lv.id} value={lv} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+            <Reorder.Item key={lv.id} value={lv} dragListener={canManageCurriculum} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
               {/* Level header */}
               <div className="flex items-center gap-3 px-4 py-3.5 border-b border-zinc-100 dark:border-zinc-800">
-                <div className="cursor-grab active:cursor-grabbing text-zinc-300 dark:text-zinc-600 hover:text-zinc-400">
-                  <GripVertical size={16} />
-                </div>
+                {canManageCurriculum && (
+                  <div className="cursor-grab active:cursor-grabbing text-zinc-300 dark:text-zinc-600 hover:text-zinc-400">
+                    <GripVertical size={16} />
+                  </div>
+                )}
                 <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white text-xs font-black shrink-0">
                   {li + 1}
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-black text-sm text-slate-900 dark:text-white">{lv.name}</h3>
-                  {lv.description && <p className="text-xs text-zinc-500 mt-0.5">{lv.description}</p>}
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-black text-sm text-slate-900 dark:text-white truncate">{lv.name}</h3>
+                  {lv.description && <p className="text-xs text-zinc-500 mt-0.5 truncate">{lv.description}</p>}
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                <div className="flex items-center gap-1.5 text-xs text-zinc-400 shrink-0">
                   <BookOpen size={12} /> {lv.modules?.length || 0} modul
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => openEditLevel(lv)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-blue-600">
-                    <Edit2 size={13} />
-                  </button>
-                  <button onClick={() => deleteLevel(lv.id)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600">
-                    <Trash2 size={13} />
-                  </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  {canManageCurriculum && (
+                    <>
+                      <button onClick={() => openEditLevel(lv)} className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-blue-600" title="Tahrirlash">
+                        <Edit2 size={13} />
+                      </button>
+                      <button onClick={() => deleteLevel(lv.id)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600" title="O'chirish">
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
                   <button onClick={() => setExpanded(prev => ({ ...prev, [lv.id]: !prev[lv.id] }))}
-                    className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400">
+                    className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400">
                     {expanded[lv.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
                 </div>
@@ -258,11 +412,13 @@ export default function CrmCourseDetail() {
                       ) : (
                         <Reorder.Group axis="y" values={lv.modules} onReorder={mods => reorderModules(lv.id, mods)} className="space-y-2">
                           {lv.modules.map((mod: any, mi: number) => (
-                            <Reorder.Item key={mod.id} value={mod}
+                            <Reorder.Item key={mod.id} value={mod} dragListener={canManageCurriculum}
                               className="flex items-center gap-3 px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 rounded-xl group">
-                              <div className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-400">
-                                <GripVertical size={14} />
-                              </div>
+                              {canManageCurriculum && (
+                                <div className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-400">
+                                  <GripVertical size={14} />
+                                </div>
+                              )}
                               <span className="w-5 h-5 rounded-md bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-[10px] font-black text-zinc-600 dark:text-zinc-400 shrink-0">
                                 {mi + 1}
                               </span>
@@ -275,24 +431,28 @@ export default function CrmCourseDetail() {
                                   <Clock size={11} /> {mod.duration}m
                                 </span>
                               )}
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => openEditModule(mod, lv.id)} className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-zinc-700 text-zinc-400 hover:text-blue-600">
-                                  <Edit2 size={12} />
-                                </button>
-                                <button onClick={() => deleteModule(mod.id)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600">
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
+                              {canManageCurriculum && (
+                                <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => openEditModule(mod, lv.id)} className="p-2 rounded-lg hover:bg-white dark:hover:bg-zinc-700 text-zinc-400 hover:text-blue-600" title="Tahrirlash">
+                                    <Edit2 size={12} />
+                                  </button>
+                                  <button onClick={() => deleteModule(mod.id)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600" title="O'chirish">
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              )}
                             </Reorder.Item>
                           ))}
                         </Reorder.Group>
                       )}
-                      <button
-                        onClick={() => openCreateModule(lv.id)}
-                        className="w-full flex items-center justify-center gap-2 py-2 border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-blue-400 rounded-xl text-xs font-bold text-zinc-400 hover:text-blue-600 transition-all"
-                      >
-                        <Plus size={13} /> Modul qo'shish
-                      </button>
+                      {canManageCurriculum && (
+                        <button
+                          onClick={() => openCreateModule(lv.id)}
+                          className="w-full flex items-center justify-center gap-2 py-2 border-2 border-dashed border-zinc-200 dark:border-zinc-700 hover:border-blue-400 rounded-xl text-xs font-bold text-zinc-400 hover:text-blue-600 transition-all"
+                        >
+                          <Plus size={13} /> Modul qo'shish
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -372,7 +532,7 @@ export default function CrmCourseDetail() {
                     <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Davomiyligi (daqiqa)</label>
                     <input type="number" value={moduleForm.duration} onChange={e => setModuleForm(p => ({ ...p, duration: e.target.value }))}
                       className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="60" />
+                      placeholder="60" min="0" />
                   </div>
                 </div>
                 <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
