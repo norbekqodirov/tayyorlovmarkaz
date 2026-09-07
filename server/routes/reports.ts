@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { JOBS } from '../services/scheduler.js';
 import { todayDateStr, monthRangeStr } from '../utils/timezone.js';
 
@@ -310,7 +310,7 @@ router.get('/workflows', requireAuth, async (req, res) => {
 });
 
 // POST /api/reports/workflows/:trigger/run — Manual ishga tushirish
-router.post('/workflows/:trigger/run', requireAuth, async (req, res) => {
+router.post('/workflows/:trigger/run', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { trigger } = req.params;
         const job = JOBS[trigger];
@@ -326,7 +326,7 @@ router.post('/workflows/:trigger/run', requireAuth, async (req, res) => {
 });
 
 // PUT /api/reports/workflows/:id — Workflow toggle
-router.put('/workflows/:id', requireAuth, async (req, res) => {
+router.put('/workflows/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const { isActive } = req.body;
         const workflow = await prisma.workflow.update({
