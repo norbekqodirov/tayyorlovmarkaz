@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, User, Mail, Phone, Briefcase, DollarSign, Edit2, Trash2,
-  ShieldCheck, Clock, Plus, Building2, Calendar
+  ShieldCheck, Clock, Plus, Building2, Calendar, AlertCircle
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
@@ -11,10 +11,10 @@ import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
-import { ErrorState } from '../../../components/States';
 import { SkeletonCard } from '../../../components/Skeleton';
 import api from '../../../api/client';
 import { formatNumber } from '../../../utils/formatters';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface StaffMember {
   id: string;
@@ -50,8 +50,11 @@ const TABS = [
 export default function CrmStaffDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data: staff = [], loading } = useFirestore<StaffMember>('staff');
+  const { data: staff = [], loading, error, refetch } = useFirestore<StaffMember>('staff');
   const { showToast } = useToast();
+
+  const userRoleLevel = getCurrentRoleLevel();
+  const canManage = userRoleLevel >= ROLE_LEVEL.MANAGER;
 
   const member = (staff || []).find(s => s.id === id) || null;
 
@@ -60,6 +63,8 @@ export default function CrmStaffDetail() {
   const [deleteSubConfirm, setDeleteSubConfirm] = useState<{ open: boolean; type: string; index: number }>({ open: false, type: '', index: -1 });
   const [editingSubItemIndex, setEditingSubItemIndex] = useState<number | null>(null);
   const [subFormData, setSubFormData] = useState<any>({});
+  const [isSaving, setIsSaving] = useState(false);
+
   const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
   const [salaryRows, setSalaryRows] = useState<SalaryRow[]>([]);
   const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
@@ -80,16 +85,13 @@ export default function CrmStaffDetail() {
       setTaskRows((tasks.data || []).filter((t: any) => t.staffId === staffId));
       setReviewRows((reviews.data || []).filter((r: any) => r.staffId === staffId));
       setDocRows((docs.data || []).filter((d: any) => d.staffId === staffId));
-    } catch (error) {
-      console.error('Error loading staff extras:', error);
+    } catch (err) {
+      console.error('Error loading staff extras:', err);
     }
   }, []);
 
   useEffect(() => { if (id) loadStaffExtras(id); }, [id, loadStaffExtras]);
 
-  // type bo'yicha lokal ro'yxat + uni bevosita yangilaydigan setter — har bir
-  // "sub-item" turi haqiqiy jadvalga (StaffAttendance/Salary/Task/
-  // PerformanceReview/StaffDocument) yoziladi, StaffMember'ning o'ziga emas.
   const subItemRows = (type: string): any[] =>
     type === 'attendance' ? attendanceRows : type === 'salary' ? salaryRows
     : type === 'tasks' ? taskRows : type === 'reviews' ? reviewRows : docRows;
@@ -102,6 +104,10 @@ export default function CrmStaffDetail() {
   };
 
   const handleAddSubItem = (type: string, index: number | null = null) => {
+    if (!canManage) {
+      showToast("Sizda bu amalni bajarish uchun huquq yetarli emas", 'error');
+      return;
+    }
     setEditingSubItemIndex(index);
     if (index !== null) {
       setSubFormData(subItemRows(type)[index]);
@@ -123,31 +129,81 @@ export default function CrmStaffDetail() {
   };
 
   const handleDeleteSubItem = (type: string, index: number) => {
+    if (!canManage) {
+      showToast("Sizda bu amalni bajarish uchun huquq yetarli emas", 'error');
+      return;
+    }
     setDeleteSubConfirm({ open: true, type, index });
   };
 
   const confirmDeleteSubItem = async () => {
+    if (!canManage) {
+      showToast("Sizda bu amalni bajarish uchun huquq yetarli emas", 'error');
+      setDeleteSubConfirm({ open: false, type: '', index: -1 });
+      return;
+    }
     const { type, index } = deleteSubConfirm;
     const row = subItemRows(type)[index];
     try {
+      setIsSaving(true);
       if (type === 'attendance') await api.delete(`/staff-attendance/${row.id}`);
       else if (type === 'salary') await api.delete(`/salary/${row.id}`);
       else await api.delete(`/${type === 'tasks' ? 'tasks' : type === 'reviews' ? 'performanceReviews' : 'staffDocuments'}/${row.id}`);
       setSubItemRows(type, subItemRows(type).filter((_, i) => i !== index));
       showToast('Ma\'lumot o\'chirildi', 'success');
-    } catch (error) {
-      console.error("Error deleting sub item:", error);
+    } catch (err) {
+      console.error("Error deleting sub item:", err);
       showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
+    } finally {
+      setIsSaving(false);
+      setDeleteSubConfirm({ open: false, type: '', index: -1 });
     }
-    setDeleteSubConfirm({ open: false, type: '', index: -1 });
   };
 
   const saveSubItem = async () => {
     if (!member) return;
+    if (!canManage) {
+      showToast("Sizda bu amalni bajarish uchun huquq yetarli emas", 'error');
+      return;
+    }
+
     const type = isSubModalOpen.type;
     const editingRow = editingSubItemIndex !== null ? subItemRows(type)[editingSubItemIndex] : null;
 
+    // Form validations
+    if (type === 'attendance') {
+      if (!subFormData.date) {
+        showToast("Sana kiritilishi shart", 'error');
+        return;
+      }
+    } else if (type === 'salary') {
+      if (!subFormData.month) {
+        showToast("Oy kiritilishi shart", 'error');
+        return;
+      }
+      if (subFormData.baseSalary === undefined || subFormData.baseSalary === null || isNaN(Number(subFormData.baseSalary)) || Number(subFormData.baseSalary) < 0) {
+        showToast("Asosiy maosh noto'g'ri kiritildi", 'error');
+        return;
+      }
+    } else if (type === 'tasks') {
+      if (!subFormData.title || !subFormData.title.trim()) {
+        showToast("Vazifa nomi kiritilishi shart", 'error');
+        return;
+      }
+    } else if (type === 'reviews') {
+      if (!subFormData.feedback || !subFormData.feedback.trim()) {
+        showToast("Fikr-mulohaza kiritilishi shart", 'error');
+        return;
+      }
+    } else if (type === 'docs') {
+      if (!subFormData.name || !subFormData.name.trim()) {
+        showToast("Hujjat nomi kiritilishi shart", 'error');
+        return;
+      }
+    }
+
     try {
+      setIsSaving(true);
       let saved: any;
       if (type === 'attendance') {
         const res = await api.post('/salary/attendance', { staffId: member.id, ...subFormData });
@@ -182,20 +238,30 @@ export default function CrmStaffDetail() {
 
       setIsSubModalOpen({ type: '', isOpen: false });
       setEditingSubItemIndex(null);
+      setSubFormData({});
       showToast('Ma\'lumot saqlandi', 'success');
-    } catch (error) {
-      console.error("Error saving sub item:", error);
+    } catch (err) {
+      console.error("Error saving sub item:", err);
       showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const markSalaryPaid = async (salaryId: string) => {
+    if (!canManage) {
+      showToast("Sizda bu amalni bajarish uchun huquq yetarli emas", 'error');
+      return;
+    }
     try {
+      setIsSaving(true);
       const res = await api.put(`/salary/${salaryId}/pay`, {});
       setSalaryRows(rows => rows.map(r => r.id === salaryId ? res.data : r));
       showToast("Oylik to'landi deb belgilandi va moliyaga yozildi", 'success');
     } catch (err: any) {
       showToast(err?.response?.data?.message || 'Xatolik yuz berdi', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -207,8 +273,36 @@ export default function CrmStaffDetail() {
       </div>
     );
   }
-  if (!member) {
-    return <ErrorState message="Xodim topilmadi" onRetry={() => navigate('/crmtayyorlovmarkaz/staff')} />;
+
+  if (error || !member) {
+    return (
+      <div className="w-full flex justify-center py-12">
+        <div className="flex justify-center items-center flex-col text-center border border-rose-200 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-500/5 p-8 rounded-[24px] max-w-md">
+          <AlertCircle size={48} className="text-rose-500 mb-4" strokeWidth={1.5} />
+          <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2">Nosozlik</h3>
+          <p className="text-sm text-rose-600 dark:text-rose-400 font-medium mb-6">
+            {error ? (error.message || 'Serverga ulanishda xatolik yuz berdi') : 'Xodim topilmadi'}
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/crmtayyorlovmarkaz/staff')}
+              className="px-4 py-2.5 bg-white dark:bg-zinc-800 text-slate-700 dark:text-white font-bold text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 transition"
+            >
+              Orqaga
+            </button>
+            <button
+              onClick={() => {
+                refetch();
+                if (id) loadStaffExtras(id);
+              }}
+              className="px-4 py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-blue-700 transition"
+            >
+              Qayta urinish
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -268,9 +362,16 @@ export default function CrmStaffDetail() {
             </div>
           </div>
 
-          <Button variant="secondary" onClick={() => navigate(`/crmtayyorlovmarkaz/staff?edit=${member.id}`)} leftIcon={<Edit2 size={14} />} className="!bg-white/15 !text-white hover:!bg-white/25 shrink-0">
-            Tahrirlash
-          </Button>
+          {canManage && (
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/crmtayyorlovmarkaz/staff?edit=${member.id}`)}
+              leftIcon={<Edit2 size={14} />}
+              className="!bg-white/15 !text-white hover:!bg-white/25 shrink-0"
+            >
+              Tahrirlash
+            </Button>
+          )}
         </div>
       </div>
 
@@ -350,43 +451,51 @@ export default function CrmStaffDetail() {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Davomat Tarixi</h4>
-              <Button size="sm" onClick={() => handleAddSubItem('attendance')}>Davomatni belgilash</Button>
+              {canManage && (
+                <Button size="sm" onClick={() => handleAddSubItem('attendance')}>Davomatni belgilash</Button>
+              )}
             </div>
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-50 dark:bg-zinc-800">
-                  <tr>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sana</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kelgan vaqti</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ketgan vaqti</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {attendanceRows.map((a, i) => (
-                    <tr key={a.id || i} className="group">
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.date}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${a.status === 'present' ? 'bg-emerald-100 text-emerald-600' : a.status === 'late' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
-                          {a.status === 'present' ? 'Kelgan' : a.status === 'late' ? 'Kechikkan' : 'Kelmagan'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.checkIn || '--:--'}</td>
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.checkOut || '--:--'}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleAddSubItem('attendance', i)} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded"><Edit2 size={14} /></button>
-                          <button onClick={() => handleDeleteSubItem('attendance', i)} className="p-1 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded"><Trash2 size={14} /></button>
-                        </div>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[600px]">
+                  <thead className="bg-zinc-50 dark:bg-zinc-800">
+                    <tr>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Sana</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kelgan vaqti</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Ketgan vaqti</th>
+                      {canManage && (
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
+                      )}
                     </tr>
-                  ))}
-                  {attendanceRows.length === 0 && (
-                    <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500 font-bold italic">Davomat ma'lumotlari mavjud emas</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {attendanceRows.map((a, i) => (
+                      <tr key={a.id || i} className="group">
+                        <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.date}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${a.status === 'present' ? 'bg-emerald-100 text-emerald-600' : a.status === 'late' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
+                            {a.status === 'present' ? 'Kelgan' : a.status === 'late' ? 'Kechikkan' : 'Kelmagan'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.checkIn || '--:--'}</td>
+                        <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{a.checkOut || '--:--'}</td>
+                        {canManage && (
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => handleAddSubItem('attendance', i)} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded" title="Tahrirlash"><Edit2 size={14} /></button>
+                              <button onClick={() => handleDeleteSubItem('attendance', i)} className="p-1 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded" title="O'chirish"><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {attendanceRows.length === 0 && (
+                      <tr><td colSpan={canManage ? 5 : 4} className="px-6 py-12 text-center text-zinc-500 font-bold italic">Davomat ma'lumotlari mavjud emas</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -395,47 +504,57 @@ export default function CrmStaffDetail() {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">To'lovlar Tarixi</h4>
-              <Button size="sm" onClick={() => handleAddSubItem('salary')}>To'lov qo'shish</Button>
+              {canManage && (
+                <Button size="sm" onClick={() => handleAddSubItem('salary')}>To'lov qo'shish</Button>
+              )}
             </div>
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-50 dark:bg-zinc-800">
-                  <tr>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Oy</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Asosiy + Bonus − Ushlab qolish</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jami</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {salaryRows.map((h, i) => (
-                    <tr key={h.id || i} className="group">
-                      <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{h.month}</td>
-                      <td className="px-6 py-4 text-xs font-bold text-zinc-500">
-                        {formatNumber(h.baseSalary)} + {formatNumber(h.bonus)} − {formatNumber(h.deduction)}
-                      </td>
-                      <td className="px-6 py-4 font-black text-slate-900 dark:text-white">{formatNumber(h.total)} UZS</td>
-                      <td className="px-6 py-4">
-                        {h.paid ? (
-                          <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">To'landi</span>
-                        ) : (
-                          <button onClick={() => markSalaryPaid(h.id)} className="px-2 py-1 bg-amber-100 text-amber-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-amber-200 transition-colors">To'lash</button>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleAddSubItem('salary', i)} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded"><Edit2 size={14} /></button>
-                          <button onClick={() => handleDeleteSubItem('salary', i)} className="p-1 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded"><Trash2 size={14} /></button>
-                        </div>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[640px]">
+                  <thead className="bg-zinc-50 dark:bg-zinc-800">
+                    <tr>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Oy</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Asosiy + Bonus − Ushlab qolish</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jami</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
+                      {canManage && (
+                        <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
+                      )}
                     </tr>
-                  ))}
-                  {salaryRows.length === 0 && (
-                    <tr><td colSpan={5} className="px-6 py-12 text-center text-zinc-500 font-bold italic">To'lovlar tarixi mavjud emas</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {salaryRows.map((h, i) => (
+                      <tr key={h.id || i} className="group">
+                        <td className="px-6 py-4 font-bold text-slate-700 dark:text-zinc-300">{h.month}</td>
+                        <td className="px-6 py-4 text-xs font-bold text-zinc-500">
+                          {formatNumber(h.baseSalary)} + {formatNumber(h.bonus)} − {formatNumber(h.deduction)}
+                        </td>
+                        <td className="px-6 py-4 font-black text-slate-900 dark:text-white">{formatNumber(h.total)} UZS</td>
+                        <td className="px-6 py-4">
+                          {h.paid ? (
+                            <span className="px-2 py-1 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">To'landi</span>
+                          ) : canManage ? (
+                            <button disabled={isSaving} onClick={() => markSalaryPaid(h.id)} className="px-2 py-1 bg-amber-100 text-amber-600 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-amber-200 transition-colors disabled:opacity-50">To'lash</button>
+                          ) : (
+                            <span className="px-2 py-1 bg-amber-100 text-amber-600 rounded-full text-[10px] font-black uppercase tracking-widest">Kutilmoqda</span>
+                          )}
+                        </td>
+                        {canManage && (
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => handleAddSubItem('salary', i)} className="p-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded" title="Tahrirlash"><Edit2 size={14} /></button>
+                              <button onClick={() => handleDeleteSubItem('salary', i)} className="p-1 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded" title="O'chirish"><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {salaryRows.length === 0 && (
+                      <tr><td colSpan={canManage ? 5 : 4} className="px-6 py-12 text-center text-zinc-500 font-bold italic">To'lovlar tarixi mavjud emas</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -444,20 +563,30 @@ export default function CrmStaffDetail() {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Vazifalar</h4>
-              <Button size="sm" onClick={() => handleAddSubItem('tasks')}>Vazifa Qo'shish</Button>
+              {canManage && (
+                <Button size="sm" onClick={() => handleAddSubItem('tasks')}>Vazifa Qo'shish</Button>
+              )}
             </div>
             <div className="grid grid-cols-1 gap-4">
               {taskRows.map((task, i) => (
                 <div key={task.id} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex items-center justify-between group">
                   <div className="flex items-center gap-4">
-                    <button
-                      onClick={async () => {
-                        const res = await api.put(`/tasks/${task.id}`, { completed: !task.completed });
-                        setTaskRows(rows => rows.map(r => r.id === task.id ? res.data : r));
-                      }}
-                      className={`w-4 h-4 rounded-full border-2 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-amber-400'}`}
-                      title={task.completed ? 'Bajarilgan' : 'Bajarilmagan'}
-                    />
+                    {canManage ? (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await api.put(`/tasks/${task.id}`, { completed: !task.completed });
+                            setTaskRows(rows => rows.map(r => r.id === task.id ? res.data : r));
+                          } catch (err) {
+                            showToast("Xatolik yuz berdi", 'error');
+                          }
+                        }}
+                        className={`w-4 h-4 rounded-full border-2 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-amber-400'}`}
+                        title={task.completed ? 'Bajarilgan' : 'Bajarilmagan'}
+                      />
+                    ) : (
+                      <div className={`w-4 h-4 rounded-full border-2 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-amber-400'}`} />
+                    )}
                     <div>
                       <p className={`font-bold text-slate-900 dark:text-white ${task.completed ? 'line-through opacity-50' : ''}`}>{task.title}</p>
                       <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Muddati: {task.deadline || '—'}</p>
@@ -467,10 +596,12 @@ export default function CrmStaffDetail() {
                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${task.priority === 'High' ? 'bg-rose-100 text-rose-600' : task.priority === 'Medium' ? 'bg-blue-100 text-blue-600' : 'bg-zinc-100 text-zinc-600'}`}>
                       {task.priority}
                     </span>
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleAddSubItem('tasks', i)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDeleteSubItem('tasks', i)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg"><Trash2 size={14} /></button>
-                    </div>
+                    {canManage && (
+                      <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleAddSubItem('tasks', i)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg" title="Tahrirlash"><Edit2 size={14} /></button>
+                        <button onClick={() => handleDeleteSubItem('tasks', i)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg" title="O'chirish"><Trash2 size={14} /></button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -485,21 +616,25 @@ export default function CrmStaffDetail() {
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Fikrlar va Baholash</h4>
-              <Button size="sm" onClick={() => handleAddSubItem('reviews')}>Fikr Qoldirish</Button>
+              {canManage && (
+                <Button size="sm" onClick={() => handleAddSubItem('reviews')}>Fikr Qoldirish</Button>
+              )}
             </div>
             <div className="space-y-4">
               {reviewRows.map((review, i) => (
                 <div key={review.id || i} className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 group relative">
-                  <div className="absolute top-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleAddSubItem('reviews', i)} className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
-                    <button onClick={() => handleDeleteSubItem('reviews', i)} className="p-2 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-600 rounded-lg"><Trash2 size={14} /></button>
-                  </div>
+                  {canManage && (
+                    <div className="absolute top-6 right-6 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleAddSubItem('reviews', i)} className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 rounded-lg" title="Tahrirlash"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDeleteSubItem('reviews', i)} className="p-2 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-600 rounded-lg" title="O'chirish"><Trash2 size={14} /></button>
+                    </div>
+                  )}
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <p className="font-black text-slate-900 dark:text-white">{review.reviewer}</p>
                       <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{review.date}</p>
                     </div>
-                    <div className="flex gap-1 mr-16">
+                    <div className={`flex gap-1 ${canManage ? 'mr-16 md:mr-16' : ''}`}>
                       {[1, 2, 3, 4, 5].map(star => (
                         <span key={star} className={`text-lg ${star <= review.rating ? 'text-amber-400' : 'text-zinc-300'}`}>★</span>
                       ))}
@@ -522,7 +657,9 @@ export default function CrmStaffDetail() {
                 <h4 className="text-xs font-black text-zinc-400 uppercase tracking-[0.2em]">Hujjatlar</h4>
                 <p className="text-[10px] text-zinc-400 mt-0.5">Fayl saqlanmaydi — faqat nom/tur/sana yozuvi</p>
               </div>
-              <Button size="sm" onClick={() => handleAddSubItem('docs')}>Hujjat Qo'shish</Button>
+              {canManage && (
+                <Button size="sm" onClick={() => handleAddSubItem('docs')}>Hujjat Qo'shish</Button>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {docRows.map((doc, i) => (
@@ -536,10 +673,12 @@ export default function CrmStaffDetail() {
                       <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{doc.type} • {doc.uploadDate}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleAddSubItem('docs', i)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg"><Edit2 size={14} /></button>
-                    <button onClick={() => handleDeleteSubItem('docs', i)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg"><Trash2 size={14} /></button>
-                  </div>
+                  {canManage && (
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleAddSubItem('docs', i)} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg" title="Tahrirlash"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDeleteSubItem('docs', i)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg" title="O'chirish"><Trash2 size={14} /></button>
+                    </div>
+                  )}
                 </div>
               ))}
               {docRows.length === 0 && (
@@ -553,7 +692,11 @@ export default function CrmStaffDetail() {
       {/* Sub-item Modal */}
       <Modal
         isOpen={isSubModalOpen.isOpen}
-        onClose={() => setIsSubModalOpen({ type: '', isOpen: false })}
+        onClose={() => {
+          setIsSubModalOpen({ type: '', isOpen: false });
+          setSubFormData({});
+          setEditingSubItemIndex(null);
+        }}
         title={
           isSubModalOpen.type === 'attendance' ? 'Davomatni belgilash' :
           isSubModalOpen.type === 'salary' ? "To'lov qo'shish" :
@@ -565,29 +708,29 @@ export default function CrmStaffDetail() {
         <div className="space-y-4">
           {isSubModalOpen.type === 'attendance' && (
             <>
-              <Input type="date" label="Sana" value={subFormData.date} onChange={(e) => setSubFormData({ ...subFormData, date: e.target.value })} />
+              <Input type="date" label="Sana *" value={subFormData.date || ''} onChange={(e) => setSubFormData({ ...subFormData, date: e.target.value })} />
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</label>
-                <select value={subFormData.status} onChange={(e) => setSubFormData({ ...subFormData, status: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
+                <select value={subFormData.status || 'present'} onChange={(e) => setSubFormData({ ...subFormData, status: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
                   <option value="present">Kelgan</option>
                   <option value="absent">Kelmagan</option>
                   <option value="late">Kechikkan</option>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Input type="time" label="Kelgan vaqti" value={subFormData.checkIn} onChange={(e) => setSubFormData({ ...subFormData, checkIn: e.target.value })} />
-                <Input type="time" label="Ketgan vaqti" value={subFormData.checkOut} onChange={(e) => setSubFormData({ ...subFormData, checkOut: e.target.value })} />
+                <Input type="time" label="Kelgan vaqti" value={subFormData.checkIn || ''} onChange={(e) => setSubFormData({ ...subFormData, checkIn: e.target.value })} />
+                <Input type="time" label="Ketgan vaqti" value={subFormData.checkOut || ''} onChange={(e) => setSubFormData({ ...subFormData, checkOut: e.target.value })} />
               </div>
             </>
           )}
 
           {isSubModalOpen.type === 'salary' && (
             <>
-              <Input type="month" label="Oy" value={subFormData.month} onChange={(e) => setSubFormData({ ...subFormData, month: e.target.value })} />
+              <Input type="month" label="Oy *" value={subFormData.month || ''} onChange={(e) => setSubFormData({ ...subFormData, month: e.target.value })} />
               <div className="grid grid-cols-3 gap-3">
-                <MoneyInput label="Asosiy" value={subFormData.baseSalary} onChange={(baseSalary) => setSubFormData({ ...subFormData, baseSalary })} />
-                <MoneyInput label="Bonus" value={subFormData.bonus} onChange={(bonus) => setSubFormData({ ...subFormData, bonus })} />
-                <MoneyInput label="Ushlab qolish" value={subFormData.deduction} onChange={(deduction) => setSubFormData({ ...subFormData, deduction })} />
+                <MoneyInput label="Asosiy *" value={subFormData.baseSalary || 0} onChange={(baseSalary) => setSubFormData({ ...subFormData, baseSalary })} />
+                <MoneyInput label="Bonus" value={subFormData.bonus || 0} onChange={(bonus) => setSubFormData({ ...subFormData, bonus })} />
+                <MoneyInput label="Ushlab qolish" value={subFormData.deduction || 0} onChange={(deduction) => setSubFormData({ ...subFormData, deduction })} />
               </div>
               <Input label="Izoh (ixtiyoriy)" value={subFormData.notes || ''} onChange={(e) => setSubFormData({ ...subFormData, notes: e.target.value })} />
             </>
@@ -595,17 +738,17 @@ export default function CrmStaffDetail() {
 
           {isSubModalOpen.type === 'tasks' && (
             <>
-              <Input label="Vazifa nomi" value={subFormData.title} onChange={(e) => setSubFormData({ ...subFormData, title: e.target.value })} placeholder="Masalan: Hisobot tayyorlash" />
+              <Input label="Vazifa nomi *" value={subFormData.title || ''} onChange={(e) => setSubFormData({ ...subFormData, title: e.target.value })} placeholder="Masalan: Hisobot tayyorlash" />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Muhimlik</label>
-                  <select value={subFormData.priority} onChange={(e) => setSubFormData({ ...subFormData, priority: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
+                  <select value={subFormData.priority || 'Medium'} onChange={(e) => setSubFormData({ ...subFormData, priority: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
                     <option value="Low">Past</option>
                     <option value="Medium">O'rta</option>
                     <option value="High">Yuqori</option>
                   </select>
                 </div>
-                <Input type="date" label="Muddati" value={subFormData.deadline} onChange={(e) => setSubFormData({ ...subFormData, deadline: e.target.value })} />
+                <Input type="date" label="Muddati" value={subFormData.deadline || ''} onChange={(e) => setSubFormData({ ...subFormData, deadline: e.target.value })} />
               </div>
             </>
           )}
@@ -616,23 +759,23 @@ export default function CrmStaffDetail() {
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Baholash (1-5)</label>
                 <div className="flex gap-2">
                   {[1, 2, 3, 4, 5].map(star => (
-                    <button key={star} onClick={() => setSubFormData({ ...subFormData, rating: star })} className={`text-2xl ${star <= subFormData.rating ? 'text-amber-400' : 'text-zinc-300'}`}>★</button>
+                    <button key={star} onClick={() => setSubFormData({ ...subFormData, rating: star })} className={`text-2xl ${star <= (subFormData.rating || 5) ? 'text-amber-400' : 'text-zinc-300'}`}>★</button>
                   ))}
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fikr-mulohaza</label>
-                <textarea value={subFormData.feedback} onChange={(e) => setSubFormData({ ...subFormData, feedback: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white resize-none" rows={4} placeholder="Xodim faoliyati haqida fikringiz..." />
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Fikr-mulohaza *</label>
+                <textarea value={subFormData.feedback || ''} onChange={(e) => setSubFormData({ ...subFormData, feedback: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white resize-none" rows={4} placeholder="Xodim faoliyati haqida fikringiz..." />
               </div>
             </>
           )}
 
           {isSubModalOpen.type === 'docs' && (
             <>
-              <Input label="Hujjat nomi" value={subFormData.name} onChange={(e) => setSubFormData({ ...subFormData, name: e.target.value })} placeholder="Masalan: Passport nusxasi" />
+              <Input label="Hujjat nomi *" value={subFormData.name || ''} onChange={(e) => setSubFormData({ ...subFormData, name: e.target.value })} placeholder="Masalan: Passport nusxasi" />
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Turi</label>
-                <select value={subFormData.type} onChange={(e) => setSubFormData({ ...subFormData, type: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
+                <select value={subFormData.type || 'Passport nusxasi'} onChange={(e) => setSubFormData({ ...subFormData, type: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold dark:text-white">
                   <option value="Passport nusxasi">Passport nusxasi</option>
                   <option value="Diplom">Diplom</option>
                   <option value="Shartnoma">Shartnoma</option>
@@ -643,8 +786,18 @@ export default function CrmStaffDetail() {
           )}
 
           <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
-            <Button variant="secondary" onClick={() => setIsSubModalOpen({ type: '', isOpen: false })}>Bekor qilish</Button>
-            <Button onClick={saveSubItem}>Saqlash</Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsSubModalOpen({ type: '', isOpen: false });
+                setSubFormData({});
+                setEditingSubItemIndex(null);
+              }}
+              disabled={isSaving}
+            >
+              Bekor qilish
+            </Button>
+            <Button onClick={saveSubItem} disabled={isSaving} isLoading={isSaving}>Saqlash</Button>
           </div>
         </div>
       </Modal>
