@@ -32,6 +32,7 @@ const CrmForms      = React.lazy(() => import('./pages/crm/marketing/CrmForms'))
 const CrmSettings   = React.lazy(() => import('./pages/crm/management/CrmSettings'));
 const CrmStudents   = React.lazy(() => import('./pages/crm/education/CrmStudents'));
 const CrmTeachers   = React.lazy(() => import('./pages/crm/hr/CrmTeachers'));
+const CrmCategories = React.lazy(() => import('./pages/crm/finance/CrmCategories'));
 const CrmFinance    = React.lazy(() => import('./pages/crm/finance/CrmFinance'));
 const CrmGroups     = React.lazy(() => import('./pages/crm/education/CrmGroups'));
 const CrmGroupDetail= React.lazy(() => import('./pages/crm/education/CrmGroupDetail'));
@@ -161,6 +162,7 @@ export default function App() {
 
               {/* ─── Moliya ─── */}
               <Route path="finance"   element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmFinance /></ProtectedRoute>} />
+              <Route path="transaction-categories" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmCategories /></ProtectedRoute>} />
               <Route path="discounts" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmDiscounts /></ProtectedRoute>} />
 
               {/* ─── Analitika ─── */}
