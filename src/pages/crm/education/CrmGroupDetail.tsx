@@ -47,8 +47,8 @@ export default function CrmGroupDetail() {
     });
     return () => { active = false; };
   }, [id, retryCount]);
-  const { data: students = [] } = useFirestore<any>('students');
-  const { data: schedules = [] } = useFirestore<any>('schedule');
+  const { data: students = [], loading: studentsLoading, error: studentsError, refetch: refetchStudents } = useFirestore<any>('students');
+  const { data: schedules = [], loading: schedulesLoading, error: schedulesError, refetch: refetchSchedules } = useFirestore<any>('schedule');
   const { data: attendanceDocs = [], loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance, addDocument: addAtt, updateDocument: updateAtt } = useFirestore<any>('attendance');
   const { data: assessmentDocs = [], addDocument: addAssess, updateDocument: updateAssess } = useFirestore<any>('assessment');
   const { data: examDocs = [], addDocument: addExam, updateDocument: updateExam } = useFirestore<any>('exams');
@@ -61,6 +61,9 @@ export default function CrmGroupDetail() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
   const [enrollmentsLoading, setEnrollmentsLoading] = useState(true);
+  const [enrollmentsError, setEnrollmentsError] = useState(false);
+  const enrollmentRequest = useRef(0);
+  const additionBusy = useRef(false);
   const [addStudentSearch, setAddStudentSearch] = useState('');
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null);
@@ -96,44 +99,73 @@ export default function CrmGroupDetail() {
   // sababini toast bilan aytamiz — jimgina "hech kim yo'q" deb ko'rsatmaymiz.
   const fetchEnrollments = useCallback(async () => {
     if (!id) return;
+    const request = ++enrollmentRequest.current;
     setEnrollmentsLoading(true);
     try {
       const res = await api.get(`/enrollments/group/${id}`);
+      if (request !== enrollmentRequest.current) return;
       setEnrolledStudents((res.data || []).map((e: any) => e.student || { id: e.studentId }));
+      setEnrollmentsError(false);
     } catch {
-      setEnrolledStudents([]);
-      showToast("O'quvchilar ro'yxatini yuklashda xatolik yuz berdi", 'error');
+      if (request === enrollmentRequest.current) setEnrollmentsError(true);
     } finally {
-      setEnrollmentsLoading(false);
+      if (request === enrollmentRequest.current) setEnrollmentsLoading(false);
     }
-  }, [id, showToast]);
+  }, [id]);
 
-  useEffect(() => { fetchEnrollments(); }, [fetchEnrollments]);
+  useEffect(() => {
+    setEnrolledStudents([]);
+    setEnrollmentsError(false);
+    setShowAddStudent(false);
+    setStudentToRemove(null);
+    void fetchEnrollments();
+    return () => { enrollmentRequest.current++; };
+  }, [fetchEnrollments]);
 
   // ─── Enrollment actions ─────────────────────────────────────────────────────
   const handleAddStudent = async (studentId: string) => {
+    if (additionBusy.current || removalBusy.current || enrollmentsLoading || enrollmentsError || studentsLoading || studentsError || !group) return;
+    if (enrolledStudents.some(s => s.id === studentId)) {
+      showToast("Bu o'quvchi allaqachon guruhga qo'shilgan", 'error');
+      return;
+    }
+    if (enrolledStudents.length >= group.maxSize) {
+      showToast("Guruhda bo'sh o'rin qolmagan", 'error');
+      return;
+    }
+    additionBusy.current = true;
+    const request = enrollmentRequest.current;
     setAddingStudentId(studentId);
     try {
-      await api.post('/enrollments', { studentId, groupId: id });
+      const res = await api.post('/enrollments', { studentId, groupId: id });
+      if (request !== enrollmentRequest.current) return;
+      const student = students.find(s => s.id === studentId);
+      if (student) setEnrolledStudents(prev => prev.some(s => s.id === studentId) ? prev : [...prev, student]);
+      showToast(res.data?.alreadyEnrolled ? "Bu o'quvchi allaqachon guruhga qo'shilgan" : "O'quvchi guruhga qo'shildi!", res.data?.alreadyEnrolled ? 'info' : 'success');
       await fetchEnrollments();
-      showToast("O'quvchi guruhga qo'shildi!", 'success');
     } catch (err: any) {
+      if (request !== enrollmentRequest.current) return;
       showToast(err?.response?.data?.message || 'Xatolik yuz berdi', 'error');
     } finally {
+      additionBusy.current = false;
       setAddingStudentId(null);
     }
   };
 
   const handleRemoveStudent = async (studentId: string) => {
-    if (removalBusy.current) return;
+    if (removalBusy.current || additionBusy.current || enrollmentsLoading || enrollmentsError) return;
     removalBusy.current = true;
+    const request = enrollmentRequest.current;
     setRemovingStudentId(studentId);
     try {
       await api.delete('/enrollments/remove', { data: { studentId, groupId: id } });
+      if (request !== enrollmentRequest.current) return;
       setStudentToRemove(null);
+      setEnrolledStudents(prev => prev.filter(s => s.id !== studentId));
       await fetchEnrollments();
       showToast("O'quvchi guruhdan o'chirildi", 'success');
     } catch {
+      if (request !== enrollmentRequest.current) return;
       showToast('Xatolik yuz berdi', 'error');
     } finally {
       removalBusy.current = false;
@@ -249,6 +281,14 @@ export default function CrmGroupDetail() {
           group={groupWithSchedule}
           groupStudents={enrolledStudents}
           enrollmentsLoading={enrollmentsLoading}
+          enrollmentsError={enrollmentsError}
+          onRetryEnrollments={fetchEnrollments}
+          studentsLoading={studentsLoading}
+          studentsError={!!studentsError}
+          onRetryStudents={refetchStudents}
+          schedulesLoading={schedulesLoading}
+          schedulesError={!!schedulesError}
+          onRetrySchedules={refetchSchedules}
           showAddStudent={showAddStudent}
           addStudentSearch={addStudentSearch}
           availableStudents={availableStudents}
@@ -292,6 +332,7 @@ export default function CrmGroupDetail() {
 
         {/* Tab content */}
         <div className="flex-1 min-h-0 p-3 sm:p-6 overflow-hidden flex flex-col">
+          {enrollmentsLoading ? <p role="status" className="p-6">Guruh o‘quvchilari yuklanmoqda...</p> : enrollmentsError ? <div role="alert" className="space-y-3 p-6"><p>Guruh o‘quvchilari yuklanmadi.</p><Button onClick={fetchEnrollments}>Qayta urinish</Button></div> : <>
           {activeTab === 'Davomat' && (
             <AttendanceTab
               group={groupWithSchedule}
@@ -347,6 +388,7 @@ export default function CrmGroupDetail() {
               onNoteChange={handleNoteChange}
             />
           )}
+          </>}
         </div>
       </div>
     </div>
