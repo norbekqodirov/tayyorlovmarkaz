@@ -8,14 +8,14 @@ export function UpcomingLessons({ schedules }: { schedules: any[] }) {
   const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay(); // 1=Dush...7=Yak
 
   const items = schedules
-    .filter(s => Array.isArray(s.days) && s.days.includes(dayOfWeek))
+    .filter(s => (Array.isArray(s.days) && s.days.includes(dayOfWeek)) || s.dayOfWeek === dayOfWeek)
     .slice(0, 6)
     .map(s => ({
       id: s.id,
-      name: s.groupName || 'Guruh',
-      teacher: s.teacher || '',
-      time: s.startTime && s.endTime ? `${s.startTime} - ${s.endTime}` : '',
-      room: s.room || '',
+      name: s.groupName || s.group?.name || 'Guruh',
+      teacher: s.teacher || s.group?.teacher?.name || '',
+      time: s.startTime && s.endTime ? `${s.startTime} - ${s.endTime}` : (s.time || ''),
+      room: s.room || s.room?.name || '',
     }))
     .sort((a, b) => a.time.localeCompare(b.time));
 

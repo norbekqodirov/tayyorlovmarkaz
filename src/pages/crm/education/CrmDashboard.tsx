@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GraduationCap, Wallet, TrendingUp, Layers,
@@ -6,6 +6,7 @@ import {
   Check, Sparkles, Zap, Clock, AlertTriangle,
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
+import { ErrorState } from '../../../components/States';
 import { WIDGET_REGISTRY, getDefaultWidgets, formatCompact, MONTHS } from '../../../components/dashboard/registry';
 import { WidgetPicker } from '../../../components/dashboard/WidgetPicker';
 import { StatCard } from '../../../components/dashboard/widgets/StatCard';
@@ -23,13 +24,20 @@ import { QuickLinks } from '../../../components/dashboard/widgets/QuickLinks';
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────
 export default function CrmDashboard() {
-  const { data: students = [] } = useFirestore<any>('students');
-  const { data: groups = [] } = useFirestore<any>('groups');
-  const { data: leads = [] } = useFirestore<any>('leads');
-  const { data: transactions = [] } = useFirestore<any>('finance');
+  const { data: students = [], loading: loadingStudents, error: errorStudents, refetch: refetchStudents } = useFirestore<any>('students');
+  const { data: groups = [], loading: loadingGroups, error: errorGroups, refetch: refetchGroups } = useFirestore<any>('groups');
+  const { data: leads = [], loading: loadingLeads, error: errorLeads, refetch: refetchLeads } = useFirestore<any>('leads');
+  const { data: transactions = [], loading: loadingTransactions, error: errorTransactions, refetch: refetchTransactions } = useFirestore<any>('transactions');
   const { data: teachers = [] } = useFirestore<any>('teachers');
   const { data: schedule = [] } = useFirestore<any>('schedule');
   const { data: attendance = [] } = useFirestore<any>('attendance');
+
+  const refetchAll = useCallback(() => {
+    refetchStudents();
+    refetchGroups();
+    refetchLeads();
+    refetchTransactions();
+  }, [refetchStudents, refetchGroups, refetchLeads, refetchTransactions]);
 
   const [userRole] = useState(() => {
     try { return JSON.parse(localStorage.getItem('crm_user') || '{}').role || 'ADMIN'; } catch { return 'ADMIN'; }
@@ -186,12 +194,28 @@ export default function CrmDashboard() {
   const getWidgetMeta = (id: string) => WIDGET_REGISTRY.find(w => w.id === id);
   const getSizeClass = (id: string) => {
     const meta = getWidgetMeta(id);
-    if (meta?.size === 'lg') return 'col-span-2';
+    if (meta?.size === 'lg') return 'col-span-1 sm:col-span-2';
     return 'col-span-1';
   };
 
   const hour = new Date().getHours();
   const greeting = hour < 6 ? 'Xayrli tun' : hour < 12 ? 'Xayrli tong' : hour < 18 ? 'Xayrli kun' : 'Xayrli kech';
+
+  const isInitialLoading = loadingStudents && loadingGroups && loadingLeads && loadingTransactions;
+  const isFatalError = (errorStudents && errorGroups && errorLeads && errorTransactions) &&
+    students.length === 0 && groups.length === 0 && leads.length === 0;
+
+  if (isInitialLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (isFatalError) {
+    return <ErrorState message="Dashboard ma'lumotlarini yuklashda xatolik yuz berdi" onRetry={refetchAll} />;
+  }
 
   return (
     <div className="space-y-4 page-enter">
@@ -218,7 +242,7 @@ export default function CrmDashboard() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {[
               { label: "O'quvchi", value: aggrData.studentsTotal, icon: GraduationCap },
               { label: 'Guruh', value: aggrData.groupsActive, icon: Layers },
@@ -257,8 +281,8 @@ export default function CrmDashboard() {
         </div>
 
         {/* Revenue highlight */}
-        <div className="relative border-t border-white/10 px-5 py-2.5 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-4">
+        <div className="relative border-t border-white/10 px-5 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <Zap size={12} className="text-yellow-300" />
               <span className="text-white/70 text-[10px] font-semibold">Bu oylik daromad:</span>

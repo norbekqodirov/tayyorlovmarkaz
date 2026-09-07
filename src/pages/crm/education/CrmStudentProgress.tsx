@@ -2,22 +2,29 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, TrendingUp, CheckCircle2, XCircle, Clock, FileDown, Award, BookOpen } from 'lucide-react';
 import api from '../../../api/client';
+import { ErrorState } from '../../../components/States';
 
 export default function CrmStudentProgress() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [data, setData]       = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => { if (id) load(); }, [id]);
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get(`/progress/${id}`);
       setData(res.data);
-    } catch { setData(null); }
-    setLoading(false);
+    } catch (err: any) {
+      setData(null);
+      setError(err?.response?.data?.message || err?.message || 'Hisobotni yuklab bo\'lmadi');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const exportPDF = () => {
@@ -51,29 +58,37 @@ export default function CrmStudentProgress() {
     </div>
   );
 
-  if (!data) return (
-    <div className="text-center py-16">
-      <p className="text-zinc-500">Hisobot yuklanmadi</p>
-      <button onClick={() => navigate('/crmtayyorlovmarkaz/students')} className="mt-3 text-blue-600 text-sm font-bold">← O'quvchilarga qaytish</button>
+  if (error || !data) return (
+    <div className="space-y-4">
+      <button onClick={() => navigate('/crmtayyorlovmarkaz/students')} className="inline-flex items-center gap-1.5 text-sm font-bold text-zinc-500 hover:text-slate-900 dark:hover:text-white">
+        <ArrowLeft size={16} /> O'quvchilarga qaytish
+      </button>
+      <ErrorState message={error || "O'quvchi hisoboti topilmadi"} onRetry={load} />
     </div>
   );
 
   const { student, attendance, certificates } = data;
 
-  // Backend /api/progress/:id "assessments"/"tests" ob'ekt sifatida qaytaradi
-  // ({ total, avgScore/passed, items }) — tekis massiv emas. "homework" alohida
-  // maydon sifatida kelmaydi, u Assessment.type === 'homework' orqali ajratiladi.
   const assessmentItems: any[] = data.assessments?.items || [];
   const assessments = assessmentItems.filter((a) => a.type !== 'homework');
   const homework = assessmentItems
     .filter((a) => a.type === 'homework')
     .map((a) => ({ title: a.title || 'Uy vazifasi', dueDate: a.date, submittedAt: a.date, grade: a.score }));
 
-  const testResults = (data.tests?.items || []).map((t: any) => ({
-    testName: t.quiz?.title,
-    date: t.startedAt,
-    score: t.maxScore > 0 ? Math.round((t.score / t.maxScore) * 100) : 0,
-  }));
+  const testResults = (data.tests?.items || []).map((t: any) => {
+    // t.maxScore (QuizAttempt'ning o'zida) — server/routes/quiz.ts POST /:id/start'da
+    // savol ballari yig'indisidan hisoblanadi, t.score bilan BIR XIL shkala.
+    // t.quiz.maxScore — Quiz shablonining nominal (admin belgilagan) qiymati,
+    // savollar ballari yig'indisiga teng bo'lmasligi mumkin — faqat eski/
+    // to'ldirilmagan yozuvlar uchun zaxira sifatida ishlatiladi.
+    const maxScore = t.maxScore || t.quiz?.maxScore || 100;
+    const score = maxScore > 0 ? Math.round(((t.score || 0) / maxScore) * 100) : 0;
+    return {
+      testName: t.quiz?.title || t.testName,
+      date: t.startedAt ? new Date(t.startedAt).toLocaleDateString('uz-UZ') : '—',
+      score,
+    };
+  });
 
   const payments = data.payments
     ? { paid: data.payments.totalPaid, debt: data.payments.pendingAmount, count: data.payments.count }
@@ -87,9 +102,16 @@ export default function CrmStudentProgress() {
   const hwDone    = homework.filter((h: any) => h.grade !== null && h.grade !== undefined).length;
   const hwTotal   = homework.length;
 
+  const attBreakdownMap: Record<string, { bg: string; text: string }> = {
+    emerald: { bg: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400' },
+    rose:    { bg: 'bg-rose-50 dark:bg-rose-500/10', text: 'text-rose-600 dark:text-rose-400' },
+    amber:   { bg: 'bg-amber-50 dark:bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400' },
+    blue:    { bg: 'bg-blue-50 dark:bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/crmtayyorlovmarkaz/students')}
             className="p-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400">
@@ -97,11 +119,11 @@ export default function CrmStudentProgress() {
           </button>
           <div>
             <h1 className="text-xl font-black text-slate-900 dark:text-white">{student?.name} — Progress Hisobot</h1>
-            <p className="text-sm text-zinc-500 mt-0.5">{student?.phone} · {student?.group || 'Guruhsiz'}</p>
+            <p className="text-sm text-zinc-500 mt-0.5">{student?.phone} · {student?.group || student?.enrollments?.[0]?.group?.name || 'Guruhsiz'}</p>
           </div>
         </div>
         <button onClick={exportPDF}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold">
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shrink-0">
           <FileDown size={14} /> PDF Eksport
         </button>
       </div>
@@ -143,18 +165,21 @@ export default function CrmStudentProgress() {
         {attendance && (
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5">
             <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">Davomat Tafsiloti</h2>
-            <div className="grid grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
               {[
                 { label: 'Keldi',     value: attendance.present || 0, color: 'emerald' },
                 { label: 'Kelmadi',   value: attendance.absent  || 0, color: 'rose'    },
                 { label: 'Kech',      value: attendance.late    || 0, color: 'amber'   },
                 { label: 'Sababli',   value: attendance.excused || 0, color: 'blue'    },
-              ].map(item => (
-                <div key={item.label} className={`text-center p-3 rounded-xl bg-${item.color}-50 dark:bg-${item.color}-500/10`}>
-                  <p className={`text-2xl font-black text-${item.color}-600`}>{item.value}</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{item.label}</p>
-                </div>
-              ))}
+              ].map(item => {
+                const cls = attBreakdownMap[item.color] || attBreakdownMap.blue;
+                return (
+                  <div key={item.label} className={`text-center p-3 rounded-xl ${cls.bg}`}>
+                    <p className={`text-2xl font-black ${cls.text}`}>{item.value}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">{item.label}</p>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Progress bar */}
@@ -214,7 +239,7 @@ export default function CrmStudentProgress() {
                   {assessments.map((a: any, i: number) => (
                     <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                       <td className="py-2.5 px-2 text-zinc-600 dark:text-zinc-400">{a.date}</td>
-                      <td className="py-2.5 px-2 text-slate-900 dark:text-white">{a.groupName || '—'}</td>
+                      <td className="py-2.5 px-2 text-slate-900 dark:text-white">{a.group?.name || a.groupName || '—'}</td>
                       <td className="py-2.5 px-2 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black ${
                           a.score >= 80 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
@@ -224,7 +249,7 @@ export default function CrmStudentProgress() {
                           {a.score}
                         </span>
                       </td>
-                      <td className="py-2.5 px-2 text-zinc-500 text-xs">{a.comment || '—'}</td>
+                      <td className="py-2.5 px-2 text-zinc-500 text-xs">{a.notes || a.comment || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -311,16 +336,20 @@ export default function CrmStudentProgress() {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5">
             <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">Sertifikatlar</h2>
             <div className="space-y-2">
-              {certificates.map((c: any, i: number) => (
-                <div key={i} className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-500/10 rounded-xl">
-                  <Award size={16} className="text-amber-600 shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">{c.courseName || 'Kurs'}</p>
-                    <p className="text-xs text-zinc-500">{c.issuedAt}</p>
+              {certificates.map((c: any, i: number) => {
+                const courseName = c.course?.name || c.courseName || 'Kurs';
+                const dateStr = c.issuedAt ? (isNaN(Date.parse(c.issuedAt)) ? c.issuedAt : new Date(c.issuedAt).toLocaleDateString('uz-UZ')) : '—';
+                return (
+                  <div key={i} className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-500/10 rounded-xl">
+                    <Award size={16} className="text-amber-600 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{courseName}</p>
+                      <p className="text-xs text-zinc-500">{dateStr}</p>
+                    </div>
+                    <span className="text-xs font-mono text-zinc-400">{c.serialNumber}</span>
                   </div>
-                  <span className="text-xs font-mono text-zinc-400">{c.serialNumber}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -329,7 +358,7 @@ export default function CrmStudentProgress() {
         {payments && (
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5">
             <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">To'lovlar Xulosasi</h2>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="text-center p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl">
                 <p className="text-lg font-black text-emerald-600">{((payments.paid || 0) / 1000000).toFixed(1)}M</p>
                 <p className="text-xs text-zinc-500">To'landi</p>
