@@ -12,6 +12,8 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { useFirestore } from '../../../hooks/useFirestore';
+import { ErrorState } from '../../../components/States';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface Test {
   id: string;
@@ -52,8 +54,12 @@ const QUESTION_TYPE_LABEL = {
 };
 
 export default function CrmTests() {
+  const userRoleLevel = getCurrentRoleLevel();
+  const canWrite = userRoleLevel >= ROLE_LEVEL.TEACHER;
+
   const [tests, setTests] = useState<Test[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingTest, setEditingTest] = useState<Test | null>(null);
   const [questionEditorOpen, setQuestionEditorOpen] = useState(false);
@@ -73,10 +79,12 @@ export default function CrmTests() {
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.get('/tests');
       setTests(res.data?.data || []);
     } catch {
+      setError('Testlarni yuklab bo\'lmadi');
       showToast('Testlarni yuklab bo\'lmadi', 'error');
     } finally {
       setLoading(false);
@@ -129,10 +137,14 @@ export default function CrmTests() {
       id: 'status',
       header: 'Holat',
       cell: (t) => {
-        const color = t.status === 'published' ? 'emerald' : t.status === 'draft' ? 'amber' : 'zinc';
+        const statusStyles: Record<string, string> = {
+          published: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+          draft: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400',
+          closed: 'bg-zinc-100 dark:bg-zinc-500/15 text-zinc-700 dark:text-zinc-400',
+        };
         const label = t.status === 'published' ? 'Faol' : t.status === 'draft' ? 'Qoralama' : 'Yopilgan';
         return (
-          <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase bg-${color}-100 dark:bg-${color}-500/15 text-${color}-700 dark:text-${color}-400`}>
+          <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${statusStyles[t.status] || statusStyles.closed}`}>
             {label}
           </span>
         );
@@ -148,7 +160,12 @@ export default function CrmTests() {
   ];
 
   const handleSave = async () => {
-    if (!form.title?.trim()) { showToast('Sarlavha kerak', 'error'); return; }
+    if (!canWrite) { showToast('Test saqlash uchun ruxsat yo\'q', 'error'); return; }
+    if (!form.title?.trim()) { showToast('Sarlavha kiritilishi shart', 'error'); return; }
+    if (!form.duration || form.duration < 1) { showToast('Vaqt 1 daqiqadan kam bo\'lmasligi kerak', 'error'); return; }
+    if (!form.totalScore || form.totalScore < 1) { showToast('Jami ball 1 dan kam bo\'lmasligi kerak', 'error'); return; }
+    if (form.passingScore == null || form.passingScore < 0 || form.passingScore > 100) { showToast('O\'tish bali 0-100 orasida bo\'lishi kerak', 'error'); return; }
+
     try {
       if (editingTest) {
         await api.put(`/tests/${editingTest.id}`, form);
@@ -162,17 +179,18 @@ export default function CrmTests() {
       setForm({ title: '', description: '', courseId: '', groupId: '', duration: 60, totalScore: 100, passingScore: 60, status: 'draft' });
       load();
     } catch {
-      showToast('Xatolik', 'error');
+      showToast('Xatolik yuz berdi', 'error');
     }
   };
 
   const publishTest = async (id: string) => {
+    if (!canWrite) { showToast('E\'lon qilish uchun ruxsat yo\'q', 'error'); return; }
     try {
       await api.post(`/tests/${id}/publish`);
       showToast('Test e\'lon qilindi');
       load();
     } catch {
-      showToast('Xatolik', 'error');
+      showToast('Xatolik yuz berdi', 'error');
     }
   };
 
@@ -181,18 +199,56 @@ export default function CrmTests() {
       const res = await api.get(`/tests/${testId}/questions`);
       setQuestions(res.data || []);
     } catch {
+      showToast('Savollarni yuklab bo\'lmadi', 'error');
       setQuestions([]);
     }
   };
 
   const saveQuestions = async (testId: string) => {
+    if (!canWrite) { showToast('Savollarni saqlash uchun ruxsat yo\'q', 'error'); return; }
+    if (!questions.length) { showToast('Kamida bitta savol bo\'lishi kerak', 'error'); return; }
+
+    for (let idx = 0; idx < questions.length; idx++) {
+      const q = questions[idx];
+      if (!q.text?.trim()) {
+        showToast(`${idx + 1}-savol matni kiritilishi shart`, 'error');
+        return;
+      }
+      if (!q.score || q.score < 1) {
+        showToast(`${idx + 1}-savol bali kamida 1 bo'lishi kerak`, 'error');
+        return;
+      }
+
+      if (q.type === 'single_choice' || q.type === 'multi_choice' || q.type === 'true_false') {
+        let opts: any[] = [];
+        try { opts = JSON.parse(q.options); } catch { opts = []; }
+        if (opts.length < 2) {
+          showToast(`${idx + 1}-savolda kamida 2 ta variant bo'lishi kerak`, 'error');
+          return;
+        }
+        if (opts.some((o: any) => !o.text?.trim())) {
+          showToast(`${idx + 1}-savoldagi barcha variant matnlarini to'ldiring`, 'error');
+          return;
+        }
+        if (!opts.some((o: any) => o.isCorrect)) {
+          showToast(`${idx + 1}-savol uchun kamida bitta to'g'ri javobni belgilang`, 'error');
+          return;
+        }
+      } else if (q.type === 'short_answer' || q.type === 'fill_blank') {
+        if (!q.correctAnswer?.trim()) {
+          showToast(`${idx + 1}-savol uchun to'g'ri javob kiritilishi shart`, 'error');
+          return;
+        }
+      }
+    }
+
     try {
       await api.post(`/tests/${testId}/questions/bulk`, { questions });
       showToast('Savollar saqlandi');
       setQuestionEditorOpen(false);
       load();
     } catch {
-      showToast('Xatolik', 'error');
+      showToast('Savollarni saqlashda xatolik', 'error');
     }
   };
 
@@ -219,6 +275,8 @@ export default function CrmTests() {
       setResultsOpen(true);
     } catch {
       showToast('Natijalarni yuklab bo\'lmadi', 'error');
+      setResults(null);
+      setResultsOpen(false);
     }
   };
 
@@ -230,10 +288,19 @@ export default function CrmTests() {
         message="Test va u bilan bog'liq savollar/javoblar o'chiriladi. Davom etasizmi?"
         confirmText="O'chirish"
         onConfirm={async () => {
-          await api.delete(`/tests/${deleteConfirm.id}`);
-          setDeleteConfirm({ open: false, id: '' });
-          load();
-          showToast('O\'chirildi');
+          if (!canWrite) {
+            showToast('O\'chirish uchun ruxsat yo\'q', 'error');
+            setDeleteConfirm({ open: false, id: '' });
+            return;
+          }
+          try {
+            await api.delete(`/tests/${deleteConfirm.id}`);
+            setDeleteConfirm({ open: false, id: '' });
+            load();
+            showToast('O\'chirildi');
+          } catch {
+            showToast('O\'chirishda xatolik', 'error');
+          }
         }}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
       />
@@ -243,13 +310,15 @@ export default function CrmTests() {
         subtitle="O'quvchilar uchun onlayn testlar va imtihonlar"
         badge={{ label: 'Yangi', color: 'violet' }}
         actions={
-          <Button leftIcon={<Plus size={16} />} onClick={() => {
-            setEditingTest(null);
-            setForm({ title: '', description: '', courseId: '', groupId: '', duration: 60, totalScore: 100, passingScore: 60, status: 'draft' });
-            setCreateOpen(true);
-          }}>
-            Yangi test
-          </Button>
+          canWrite ? (
+            <Button leftIcon={<Plus size={16} />} onClick={() => {
+              setEditingTest(null);
+              setForm({ title: '', description: '', courseId: '', groupId: '', duration: 60, totalScore: 100, passingScore: 60, status: 'draft' });
+              setCreateOpen(true);
+            }}>
+              Yangi test
+            </Button>
+          ) : undefined
         }
       />
 
@@ -260,56 +329,67 @@ export default function CrmTests() {
         <StatCard label="Topshirilgan" value={stats.submissions} icon={<Users size={20} />} color="blue" variant="minimal" />
       </div>
 
-      <DataTable
-        data={tests}
-        columns={columns}
-        loading={loading}
-        emptyMessage="Hali test yaratilmagan"
-        rowActions={(t) => (
-          <div className="flex items-center gap-1 justify-end">
-            {t.status === 'draft' && (
+      {error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : (
+        <DataTable
+          data={tests}
+          columns={columns}
+          loading={loading}
+          emptyMessage="Hali test yaratilmagan"
+          rowActions={(t) => (
+            <div className="flex items-center gap-1 justify-end">
+              {canWrite && t.status === 'draft' && (
+                <button
+                  onClick={() => publishTest(t.id)}
+                  className="p-1.5 rounded-md text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
+                  title="E'lon qilish"
+                >
+                  <Send size={14} />
+                </button>
+              )}
+              {canWrite && (
+                <button
+                  onClick={() => { setEditingTest(t); loadQuestions(t.id); setQuestionEditorOpen(true); }}
+                  className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/15"
+                  title="Savollar"
+                >
+                  <Edit3 size={14} />
+                </button>
+              )}
               <button
-                onClick={() => publishTest(t.id)}
-                className="p-1.5 rounded-md text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
-                title="E'lon qilish"
+                onClick={() => loadResults(t.id)}
+                className="p-1.5 rounded-md text-zinc-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/15"
+                title="Natijalar"
               >
-                <Send size={14} />
+                <BarChart3 size={14} />
               </button>
-            )}
-            <button
-              onClick={() => { setEditingTest(t); loadQuestions(t.id); setQuestionEditorOpen(true); }}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/15"
-              title="Savollar"
-            >
-              <Edit3 size={14} />
-            </button>
-            <button
-              onClick={() => loadResults(t.id)}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/15"
-              title="Natijalar"
-            >
-              <BarChart3 size={14} />
-            </button>
-            <button
-              onClick={() => {
-                setEditingTest(t);
-                setForm(t);
-                setCreateOpen(true);
-              }}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/15"
-              title="Tahrirlash"
-            >
-              <Eye size={14} />
-            </button>
-            <button
-              onClick={() => setDeleteConfirm({ open: true, id: t.id })}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        )}
-      />
+              {canWrite && (
+                <>
+                  <button
+                    onClick={() => {
+                      setEditingTest(t);
+                      setForm(t);
+                      setCreateOpen(true);
+                    }}
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/15"
+                    title="Tahrirlash"
+                  >
+                    <Eye size={14} />
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm({ open: true, id: t.id })}
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15"
+                    title="O'chirish"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        />
+      )}
 
       {/* Create/Edit Test Modal */}
       <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title={editingTest ? 'Testni tahrirlash' : 'Yangi test'}>
@@ -541,8 +621,8 @@ function TestResultsView({ results }: { results: any }) {
       )}
 
       {/* Submissions Table */}
-      <div className="max-h-96 overflow-y-auto rounded-2xl border border-zinc-100 dark:border-zinc-800">
-        <table className="w-full text-sm">
+      <div className="max-h-96 overflow-x-auto overflow-y-auto rounded-2xl border border-zinc-100 dark:border-zinc-800">
+        <table className="w-full text-sm min-w-[500px]">
           <thead className="bg-zinc-50 dark:bg-zinc-800/50 sticky top-0 z-10">
             <tr>
               <th className="px-4 py-2.5 text-left text-xs font-black text-zinc-400 uppercase tracking-widest">O'quvchi</th>
