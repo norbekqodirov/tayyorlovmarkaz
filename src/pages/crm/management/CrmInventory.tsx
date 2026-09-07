@@ -12,8 +12,10 @@ import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
+import { ErrorState } from '../../../components/States';
 import { exportToExcel } from '../../../utils/export';
 import { formatNumber } from '../../../utils/formatters';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface InventoryItem {
   id: string;
@@ -31,13 +33,17 @@ const CATEGORIES = ['Mebel', 'Texnika', 'O\'quv qurollari', 'Xo\'jalik mollari',
 const LOCATIONS = ['Reception', '1-xona', '2-xona', '3-xona', '4-xona', 'Oshxona', 'Ombor'];
 
 export default function CrmInventory() {
-  const { data: items = [], addDocument, updateDocument, deleteDocument } = useFirestore<InventoryItem>('inventory');
+  const { data: items = [], loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<InventoryItem>('inventory');
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('Barchasi');
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+
+  const userRoleLevel = getCurrentRoleLevel();
+  // server/middleware/auth.ts COLLECTION_WRITE_LEVEL.inventory = 3 (ADMIN+)
+  const canManageInventory = userRoleLevel >= ROLE_LEVEL.ADMIN;
 
   const [formData, setFormData] = useState<Partial<InventoryItem>>({
     name: '',
@@ -51,28 +57,68 @@ export default function CrmInventory() {
   });
 
   const handleSave = async () => {
-    if (!formData.name) {
+    if (!canManageInventory) {
+      showToast("Sizda inventarni boshqarish uchun ruxsat yo'q", 'error');
+      return;
+    }
+
+    if (!formData.name || !formData.name.trim()) {
       showToast('Iltimos, jihoz nomini kiriting!', 'error');
       return;
     }
 
-    if (editingItem) {
-      await updateDocument(editingItem.id, formData);
-    } else {
-      await addDocument(formData as Omit<InventoryItem, 'id'>);
+    if (formData.quantity === undefined || formData.quantity === null || isNaN(formData.quantity) || formData.quantity < 1) {
+      showToast("Jihoz soni kamida 1 ta bo'lishi kerak!", 'error');
+      return;
     }
-    showToast(editingItem ? 'Jihoz yangilandi' : 'Jihoz qo\'shildi', 'success');
-    closeModal();
+
+    if (formData.price === undefined || formData.price === null || isNaN(formData.price) || formData.price < 0) {
+      showToast("Jihoz narxi manfiy bo'lishi mumkin emas!", 'error');
+      return;
+    }
+
+    try {
+      const payload = {
+        ...formData,
+        name: formData.name.trim(),
+        quantity: Number(formData.quantity),
+        price: Number(formData.price)
+      };
+
+      if (editingItem) {
+        await updateDocument(editingItem.id, payload);
+      } else {
+        await addDocument(payload as Omit<InventoryItem, 'id'>);
+      }
+      showToast(editingItem ? 'Jihoz yangilandi' : 'Jihoz qo\'shildi', 'success');
+      closeModal();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || err?.message || 'Jihozni saqlashda xatolik yuz berdi', 'error');
+    }
   };
 
   const handleDelete = (id: string) => {
+    if (!canManageInventory) {
+      showToast("Sizda o'chirish uchun ruxsat yo'q", 'error');
+      return;
+    }
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmDelete = async () => {
-    await deleteDocument(deleteConfirm.id);
-    showToast('Jihoz o\'chirildi', 'success');
-    setDeleteConfirm({ open: false, id: '' });
+    if (!canManageInventory) {
+      showToast("Sizda o'chirish uchun ruxsat yo'q", 'error');
+      setDeleteConfirm({ open: false, id: '' });
+      return;
+    }
+    try {
+      await deleteDocument(deleteConfirm.id);
+      showToast('Jihoz o\'chirildi', 'success');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || err?.message || 'Jihozni o\'chirishda xatolik yuz berdi', 'error');
+    } finally {
+      setDeleteConfirm({ open: false, id: '' });
+    }
   };
 
   const openModal = (item: InventoryItem | null = null) => {
@@ -149,9 +195,11 @@ export default function CrmInventory() {
           >
             <Download size={16} />
           </button>
-          <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
-            Yangi Jihoz
-          </Button>
+          {canManageInventory && (
+            <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
+              Yangi Jihoz
+            </Button>
+          )}
         </div>
       </div>
 
@@ -163,104 +211,128 @@ export default function CrmInventory() {
         <StatCard variant="gradient" color="amber" label="Ta'mirda" value={safeItems.filter(i => i.condition === 'Ta\'mirda' || i.condition === 'Eskirgan').length} sub="Diqqat kerak" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="md:col-span-3 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-          <input
-            type="text"
-            placeholder="Jihozlarni qidirish..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm dark:text-white"
-          />
-        </div>
-        <div className="md:col-span-1">
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="w-full px-4 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm dark:text-white"
-          >
-            <option value="Barchasi">Barcha kategoriyalar</option>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-      </div>
+      {error ? (
+        <ErrorState message={error.message || "Inventar ma'lumotlarini yuklashda xatolik yuz berdi"} onRetry={refetch} />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="md:col-span-3 relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+              <input
+                type="text"
+                placeholder="Jihozlarni qidirish..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm dark:text-white"
+              />
+            </div>
+            <div className="md:col-span-1">
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="w-full px-4 py-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm dark:text-white"
+              >
+                <option value="Barchasi">Barcha kategoriyalar</option>
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800">
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jihoz</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Joylashuv</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Soni</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Narxi</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</th>
-                <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {(filteredItems || []).map(item => (
-                <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors group">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600">
-                        <Package size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</p>
-                        <p className="text-[10px] text-zinc-500 font-medium">{item.purchaseDate}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
-                      {item.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-400">
-                      <MapPin size={14} className="text-zinc-400" />
-                      {item.location}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-black text-slate-900 dark:text-white">{item.quantity}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-black text-blue-600">{formatMoney(item.price)}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${
-                      item.condition === 'Yaxshi' ? 'text-emerald-600' :
-                      item.condition === 'Ta\'mirda' ? 'text-amber-600' :
-                      'text-rose-600'
-                    }`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${
-                        item.condition === 'Yaxshi' ? 'bg-emerald-600' :
-                        item.condition === 'Ta\'mirda' ? 'bg-amber-600' :
-                        'bg-rose-600'
-                      }`} />
-                      {item.condition}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => openModal(item)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-zinc-500 transition-colors">
-                        <Edit2 size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-xl transition-colors">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800">
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Jihoz</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Joylashuv</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Soni</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Narxi</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Status</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {loading && safeItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
+                        Yuklanmoqda...
+                      </td>
+                    </tr>
+                  ) : filteredItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
+                        Jihozlar topilmadi
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredItems.map(item => (
+                      <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors group">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600">
+                              <Package size={20} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900 dark:text-white">{item.name}</p>
+                              <p className="text-[10px] text-zinc-500 font-medium">{item.purchaseDate}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
+                            {item.category}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                            <MapPin size={14} className="text-zinc-400" />
+                            {item.location}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-sm font-black text-slate-900 dark:text-white">{item.quantity}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-sm font-black text-blue-600">{formatMoney(item.price)}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${
+                            item.condition === 'Yaxshi' ? 'text-emerald-600' :
+                            item.condition === 'Ta\'mirda' ? 'text-amber-600' :
+                            'text-rose-600'
+                          }`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${
+                              item.condition === 'Yaxshi' ? 'bg-emerald-600' :
+                              item.condition === 'Ta\'mirda' ? 'bg-amber-600' :
+                              'bg-rose-600'
+                            }`} />
+                            {item.condition}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {canManageInventory ? (
+                            <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => openModal(item)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-zinc-500 transition-colors" title="Tahrirlash">
+                                <Edit2 size={16} />
+                              </button>
+                              <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-xl transition-colors" title="O'chirish">
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-zinc-400 font-medium">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Modal */}
       <Modal
