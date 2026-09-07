@@ -9,6 +9,9 @@ import ConfirmDialog from '../../../components/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
+import { useToast } from '../../../components/Toast';
+import { ErrorState } from '../../../components/States';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface WorkLocation {
   id: string;
@@ -49,8 +52,10 @@ function LocBadge({ active }: { active: boolean }) {
 }
 
 export default function CrmWorkLocations() {
+  const { showToast } = useToast();
   const [locations, setLocations] = useState<WorkLocation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<WorkLocation | null>(null);
   const [form, setForm] = useState({ ...DEFAULT_FORM });
@@ -62,14 +67,22 @@ export default function CrmWorkLocations() {
   const [deletingProfile, setDeletingProfile] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
 
+  const userRoleLevel = getCurrentRoleLevel();
+  // server/routes/workLocations.ts va staffAttendance.ts write routes talab qiladi: ADMIN (level 3)
+  const canManageWorkLocations = userRoleLevel >= ROLE_LEVEL.ADMIN;
+
   useEffect(() => { load(); loadFaceProfiles(); }, []);
 
   const load = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await api.get('/work-locations/all');
       setLocations(Array.isArray(res.data) ? res.data : []);
-    } catch { setLocations([]); }
+    } catch (err: any) {
+      setLocations([]);
+      setFetchError(err?.response?.data?.message || "Ish joylarini yuklashda xatolik yuz berdi");
+    }
     setLoading(false);
   };
 
@@ -81,6 +94,10 @@ export default function CrmWorkLocations() {
   };
 
   const openCreate = () => {
+    if (!canManageWorkLocations) {
+      showToast("Sizda yangi ish joyi yaratish uchun ruxsat yo'q", 'error');
+      return;
+    }
     setEditing(null);
     setForm({ ...DEFAULT_FORM });
     setError('');
@@ -88,6 +105,10 @@ export default function CrmWorkLocations() {
   };
 
   const openEdit = (loc: WorkLocation) => {
+    if (!canManageWorkLocations) {
+      showToast("Sizda ish joyini tahrirlash uchun ruxsat yo'q", 'error');
+      return;
+    }
     setEditing(loc);
     setForm({
       name: loc.name,
@@ -121,55 +142,126 @@ export default function CrmWorkLocations() {
   };
 
   const save = async () => {
-    if (!form.name.trim()) return setError('Nom kiritilishi shart');
-    if (!form.latitude || !form.longitude) return setError('Koordinatalar kiritilishi shart');
+    if (!canManageWorkLocations) {
+      showToast("Sizda ish joyini saqlash uchun ruxsat yo'q", 'error');
+      return;
+    }
+
+    const trimmedName = form.name.trim();
+    if (!trimmedName || trimmedName.length < 2) {
+      setError("Ish joyi nomi kamida 2 ta belgidan iborat bo'lishi kerak");
+      return;
+    }
+    if (!form.latitude.toString().trim() || !form.longitude.toString().trim()) {
+      setError('Koordinatalar kiritilishi shart');
+      return;
+    }
+    const lat = parseFloat(form.latitude);
+    const lng = parseFloat(form.longitude);
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      setError("Kenglik (lat) -90 va 90 orasidagi to'g'ri son bo'lishi kerak");
+      return;
+    }
+    if (isNaN(lng) || lng < -180 || lng > 180) {
+      setError("Uzunlik (lng) -180 va 180 orasidagi to'g'ri son bo'lishi kerak");
+      return;
+    }
+    const rad = parseInt(form.radius);
+    if (isNaN(rad) || rad < 10 || rad > 5000) {
+      setError("Radius 10 va 5000 metr orasida bo'lishi kerak");
+      return;
+    }
+    const late = parseInt(form.lateAfterMin);
+    if (isNaN(late) || late < 0 || late > 300) {
+      setError("Kechikish daqiqasi 0 va 300 orasida bo'lishi kerak");
+      return;
+    }
+    if (!form.workStartTime.trim()) {
+      setError("Ish boshlanish vaqti kiritilishi shart");
+      return;
+    }
+
     setSaving(true);
     setError('');
     try {
       const body = {
-        name: form.name.trim(),
-        address: form.address || null,
-        latitude: parseFloat(form.latitude),
-        longitude: parseFloat(form.longitude),
-        radius: parseInt(form.radius) || 200,
+        name: trimmedName,
+        address: form.address.trim() || null,
+        latitude: lat,
+        longitude: lng,
+        radius: rad,
         workStartTime: form.workStartTime,
-        lateAfterMin: parseInt(form.lateAfterMin) || 15,
+        lateAfterMin: late,
         branchId: form.branchId || null,
       };
 
       if (editing) {
         await api.put(`/work-locations/${editing.id}`, body);
+        showToast("Ish joyi yangilandi", 'success');
       } else {
         await api.post('/work-locations', body);
+        showToast("Yangi ish joyi qo'shildi", 'success');
       }
       setShowModal(false);
       load();
     } catch (e: any) {
-      setError(e.response?.data?.message || 'Xatolik yuz berdi');
+      const msg = e.response?.data?.message || 'Xatolik yuz berdi';
+      setError(msg);
+      showToast(msg, 'error');
     }
     setSaving(false);
   };
 
   const toggleActive = async (loc: WorkLocation) => {
+    if (!canManageWorkLocations) {
+      showToast("Sizda ish joyi holatini o'zgartirish ruxsati yo'q", 'error');
+      return;
+    }
     try {
       await api.put(`/work-locations/${loc.id}`, { isActive: !loc.isActive });
+      showToast(loc.isActive ? "Ish joyi nofaol qilindi" : "Ish joyi faollashtirildi", 'success');
       load();
-    } catch { /* ignore */ }
+    } catch (e: any) {
+      showToast(e.response?.data?.message || "Xatolik yuz berdi", 'error');
+    }
   };
 
-  const remove = (id: string) => setDeleteConfirm({ open: true, id });
+  const remove = (id: string) => {
+    if (!canManageWorkLocations) {
+      showToast("Sizda ish joyini o'chirish ruxsati yo'q", 'error');
+      return;
+    }
+    setDeleteConfirm({ open: true, id });
+  };
 
   const confirmRemove = async () => {
-    await api.delete(`/work-locations/${deleteConfirm.id}`);
-    setDeleteConfirm({ open: false, id: '' });
-    load();
+    if (!canManageWorkLocations) {
+      showToast("Sizda ish joyini o'chirish ruxsati yo'q", 'error');
+      return;
+    }
+    try {
+      await api.delete(`/work-locations/${deleteConfirm.id}`);
+      showToast("Ish joyi o'chirildi", 'success');
+      load();
+    } catch (e: any) {
+      showToast(e.response?.data?.message || "O'chirishda xatolik yuz berdi", 'error');
+    } finally {
+      setDeleteConfirm({ open: false, id: '' });
+    }
   };
 
   const deleteProfile = async (staffId: string) => {
+    if (!canManageWorkLocations) {
+      showToast("Sizda Yuz ID profilini o'chirish ruxsati yo'q", 'error');
+      return;
+    }
     setDeletingProfile(staffId);
     try {
       await api.delete(`/staff-attendance/face-profiles/${staffId}`);
+      showToast("Yuz ID profili o'chirildi", 'success');
       loadFaceProfiles();
+    } catch (e: any) {
+      showToast(e.response?.data?.message || "Profilni o'chirishda xatolik yuz berdi", 'error');
     } finally {
       setDeletingProfile(null);
     }
@@ -196,9 +288,11 @@ export default function CrmWorkLocations() {
             {locations.filter(l => l.isActive).length} ta faol joylashuv
           </p>
         </div>
-        <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
-          Yangi Joy
-        </Button>
+        {canManageWorkLocations && (
+          <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
+            Yangi Joy
+          </Button>
+        )}
       </div>
 
       {/* Locations grid */}
@@ -208,14 +302,18 @@ export default function CrmWorkLocations() {
             <div key={i} className="h-52 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
           ))}
         </div>
+      ) : fetchError ? (
+        <ErrorState message={fetchError} onRetry={load} />
       ) : locations.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <MapPin size={48} className="text-zinc-300 dark:text-zinc-600 mb-4" />
           <p className="text-zinc-500 font-medium">Hali ish joylari qo'shilmagan</p>
           <p className="text-zinc-400 text-sm mt-1">Yangi joy qo'shib, davomat tizimini ishga tushiring</p>
-          <button onClick={openCreate} className="mt-4 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold">
-            + Birinchi joy qo'shish
-          </button>
+          {canManageWorkLocations && (
+            <button onClick={openCreate} className="mt-4 px-5 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold">
+              + Birinchi joy qo'shish
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -269,31 +367,34 @@ export default function CrmWorkLocations() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800">
-                <button
-                  onClick={() => openEdit(loc)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <Edit2 size={12} /> Tahrirlash
-                </button>
-                <button
-                  onClick={() => toggleActive(loc)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                    loc.isActive
-                      ? 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                      : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
-                  }`}
-                >
-                  {loc.isActive ? <EyeOff size={12} /> : <Eye size={12} />}
-                  {loc.isActive ? 'O\'chirish' : 'Yoqish'}
-                </button>
-                <button
-                  onClick={() => remove(loc.id)}
-                  className="p-1.5 rounded-xl text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
+              {canManageWorkLocations && (
+                <div className="flex items-center gap-2 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                  <button
+                    onClick={() => openEdit(loc)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <Edit2 size={12} /> Tahrirlash
+                  </button>
+                  <button
+                    onClick={() => toggleActive(loc)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold transition-colors ${
+                      loc.isActive
+                        ? 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                        : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    {loc.isActive ? <EyeOff size={12} /> : <Eye size={12} />}
+                    {loc.isActive ? 'O\'chirish' : 'Yoqish'}
+                  </button>
+                  <button
+                    onClick={() => remove(loc.id)}
+                    className="p-2 rounded-xl text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                    title="O'chirish"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
             </motion.div>
           ))}
         </div>
@@ -358,13 +459,16 @@ export default function CrmWorkLocations() {
                           <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
                             <CheckCircle2 size={12} /> Ro'yxatdan o'tgan
                           </span>
-                          <button
-                            onClick={() => deleteProfile(staff.id)}
-                            disabled={deletingProfile === staff.id}
-                            className="p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {canManageWorkLocations && (
+                            <button
+                              onClick={() => deleteProfile(staff.id)}
+                              disabled={deletingProfile === staff.id}
+                              className="p-2 text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
+                              title="Profilni o'chirish"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="flex items-center gap-1 text-xs text-zinc-400">
