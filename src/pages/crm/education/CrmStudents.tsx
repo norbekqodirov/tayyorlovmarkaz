@@ -1,3 +1,4 @@
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -43,6 +44,7 @@ interface Student {
 }
 
 export default function CrmStudents() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const navigate = useNavigate();
   const { data: students = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
   const { data: groups = [] } = useFirestore<any>('groups');
@@ -82,6 +84,7 @@ export default function CrmStudents() {
   });
 
   const handleSave = async () => {
+    if (!canManage) return;
     if (!formData.name?.trim()) {
       showToast("O'quvchi ismi kiritilishi shart!", 'error');
       return;
@@ -138,10 +141,12 @@ export default function CrmStudents() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) return;
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     const id = deleteConfirm.id;
     setDeleteConfirm({ open: false, id: '' });
     try {
@@ -157,6 +162,7 @@ export default function CrmStudents() {
   };
 
   const openModal = (student: Student | null = null) => {
+    if (!canManage) return;
     if (student) {
       setFormData({
         ...student,
@@ -220,7 +226,7 @@ export default function CrmStudents() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="O'quvchini o'chirish"
         message="Haqiqatan ham bu o'quvchini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
         confirmText="Ha, o'chirish"
@@ -270,27 +276,27 @@ export default function CrmStudents() {
               </button>
             </div>
           </div>
-          <button
+          {canManage && <button
             onClick={() => setImportOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
             title="Excel/CSV dan import qilish"
           >
             <Upload size={18} />
             Import
-          </button>
-          <button
+          </button>}
+          {canManage && <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all shadow-lg shadow-blue-600/20"
           >
             <Plus size={18} />
             Yangi O'quvchi
-          </button>
+          </button>}
         </div>
       </div>
 
       {/* Excel/CSV Import sehrgari */}
       <AnimatePresence>
-        {importOpen && (
+        {canManage && importOpen && (
           <ImportWizard
             collection="students"
             onClose={() => setImportOpen(false)}
@@ -353,9 +359,10 @@ export default function CrmStudents() {
                 <option value="Qarzdorlik">Qarzdorlik</option>
                 <option value="Kutilmoqda">Kutilmoqda</option>
               </select>
-              {selectedIds.size > 0 && (
+              {canManage && selectedIds.size > 0 && (
                 <button
                   onClick={async () => {
+                    if (!canManage) return;
                     if (!window.confirm(`${selectedIds.size} ta o'quvchini o'chirasizmi?`)) return;
                     for (const id of selectedIds) await deleteDocument(id);
                     setSelectedIds(new Set());
@@ -479,18 +486,18 @@ export default function CrmStudents() {
                   </td>
                   <td className="px-4 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
+                      {canManage && <button 
                         onClick={(e) => { e.stopPropagation(); openModal(student); }}
                         className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors"
                       >
                         <Edit2 size={16} />
-                      </button>
-                      <button 
+                      </button>}
+                      {canManage && <button 
                         onClick={(e) => { e.stopPropagation(); handleDelete(student.id); }}
                         className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
                       >
                         <Trash2 size={16} />
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>
@@ -663,20 +670,20 @@ export default function CrmStudents() {
                     </Button>
                   </div>
                   <div className="flex gap-3">
-                    <Button 
+                    {canManage && <Button 
                       variant="primary"
                       onClick={() => openModal(selectedStudent)}
                       className="flex-1 text-sm font-black"
                     >
                       Tahrirlash
-                    </Button>
-                    <Button 
+                    </Button>}
+                    {canManage && <Button 
                       variant="danger"
                       onClick={() => handleDelete(selectedStudent.id)}
                       className="flex-1 text-sm font-black"
                     >
                       O'chirish
-                    </Button>
+                    </Button>}
                   </div>
                 </div>
               </div>
@@ -687,7 +694,7 @@ export default function CrmStudents() {
 
       {/* Add/Edit Modal */}
       <Modal 
-        isOpen={isModalOpen} 
+        isOpen={canManage && isModalOpen} 
         onClose={closeModal} 
         title={formData.id ? 'O\'quvchini Tahrirlash' : 'Yangi O\'quvchi Qo\'shish'}
         width="2xl"

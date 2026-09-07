@@ -1,3 +1,4 @@
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -60,6 +61,7 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
 };
 
 export default function CrmCourses() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { data: courses = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Course>('courses');
   const { data: students = [] } = useFirestore<any>('students');
   const { data: groups = [] } = useFirestore<any>('groups');
@@ -128,6 +130,7 @@ export default function CrmCourses() {
   };
 
   const handleSave = async () => {
+    if (!canManage) return;
     if (!formData.name) {
       showToast('Kurs nomini kiriting!', 'error');
       return;
@@ -167,10 +170,12 @@ export default function CrmCourses() {
   };
 
   const handleDelete = (id: string, name: string) => {
+    if (!canManage) return;
     setDeleteConfirm({ open: true, id, name });
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     try {
       await deleteDocument(deleteConfirm.id);
       showToast('Kurs o\'chirildi', 'success');
@@ -181,6 +186,7 @@ export default function CrmCourses() {
   };
 
   const openModal = (course: Course | null = null) => {
+    if (!canManage) return;
     if (course) {
       setEditingCourse(course);
       setFormData({ ...course });
@@ -219,7 +225,7 @@ export default function CrmCourses() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Kursni o'chirish"
         message={`"${deleteConfirm.name}" kursini o'chirmoqchimisiz?`}
         confirmText="Ha, o'chirish"
@@ -252,12 +258,12 @@ export default function CrmCourses() {
           >
             <Download size={16} />
           </button>
-          <button
+          {canManage && <button
             onClick={() => openModal()}
             className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
           >
             <Plus size={18} />Yangi Kurs
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -339,12 +345,12 @@ export default function CrmCourses() {
                       </span>
                     </div>
                     <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => openModal(course)} className="p-1.5 bg-white/90 rounded-lg text-zinc-600 hover:text-blue-600 transition-colors">
+                      {canManage && <button onClick={() => openModal(course)} className="p-1.5 bg-white/90 rounded-lg text-zinc-600 hover:text-blue-600 transition-colors">
                         <Edit2 size={14} />
-                      </button>
-                      <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 bg-white/90 rounded-lg text-rose-600 transition-colors">
+                      </button>}
+                      {canManage && <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 bg-white/90 rounded-lg text-rose-600 transition-colors">
                         <Trash2 size={14} />
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 ) : (
@@ -363,8 +369,8 @@ export default function CrmCourses() {
                     </div>
                     {!course.image && (
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button onClick={() => openModal(course)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-rose-600 transition-colors"><Trash2 size={14} /></button>
+                        {canManage && <button onClick={() => openModal(course)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={14} /></button>}
+                        {canManage && <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-rose-600 transition-colors"><Trash2 size={14} /></button>}
                       </div>
                     )}
                   </div>
@@ -417,7 +423,7 @@ export default function CrmCourses() {
 
       {/* Add/Edit Modal */}
       <Modal
-        isOpen={isModalOpen}
+        isOpen={canManage && isModalOpen}
         onClose={closeModal}
         title={editingCourse ? 'Kursni Tahrirlash' : 'Yangi Kurs Yaratish'}
         width="xl"
