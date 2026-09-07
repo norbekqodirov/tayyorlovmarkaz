@@ -34,9 +34,20 @@ export function Modal({
   showCloseButton = true
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const descriptionId = useId();
+
+  // onClose ko'pincha chaqiruvchi tomonda memoized bo'lmagan inline funksiya
+  // (masalan onClose={() => setIsModalOpen(false)}) — bu holda har bir render'da
+  // yangi identifikatorga ega bo'ladi. Ref orqali saqlab, quyidagi effect'ni
+  // faqat isOpen'ga bog'liq qilamiz (onClose'ning eng so'nggi qiymati baribir
+  // ishlatiladi, lekin effect har form maydoniga harf kiritilganda qayta
+  // ishga tushib, fokusni modal ichidagi birinchi elementga (odatda "Yopish"
+  // tugmasi) qaytarib yubormaydi).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -47,7 +58,11 @@ export function Modal({
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Modal ichidagi birinchi fokuslanuvchi elementga (yoki modal konteyneriga) fokus o'tkazish
+    // Modal ichidagi birinchi fokuslanuvchi elementga (yoki modal konteyneriga) fokus o'tkazish.
+    // "Yopish" tugmasi sarlavha qatorida, forma maydonlaridan OLDIN joylashgan —
+    // shuning uchun u har doim "birinchi fokuslanuvchi element" bo'lib chiqadi,
+    // holbuki foydalanuvchi odatda formaning birinchi maydoniga yozishni kutadi.
+    // Tab orqali "Yopish"ga hali ham yetish mumkin — bu faqat DASTLABKI fokus tanlovi.
     const focusTimer = requestAnimationFrame(() => {
       if (!modalRef.current) return;
       const focusableElements = Array.from(
@@ -59,7 +74,10 @@ export function Modal({
           (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0)
       );
 
-      if (focusableElements.length > 0) {
+      const preferred = focusableElements.find((el) => el !== closeButtonRef.current);
+      if (preferred) {
+        preferred.focus();
+      } else if (focusableElements.length > 0) {
         focusableElements[0].focus();
       } else {
         modalRef.current.focus();
@@ -70,7 +88,7 @@ export function Modal({
       // Escape tugmasi bosilganda modalni yopish
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -133,7 +151,7 @@ export function Modal({
         previousActiveElement.current = null;
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   return (
     <AnimatePresence>
@@ -167,7 +185,8 @@ export function Modal({
                   {description && <p id={descriptionId} className="text-sm font-medium text-slate-500 dark:text-zinc-400 mt-1">{description}</p>}
                 </div>
                 {showCloseButton && (
-                  <button 
+                  <button
+                    ref={closeButtonRef}
                     type="button"
                     onClick={onClose}
                     aria-label="Yopish"
