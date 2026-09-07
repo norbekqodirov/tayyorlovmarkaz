@@ -214,8 +214,13 @@ router.post('/users', requireAuth, async (req, res) => {
             experience: (user as any).experience,
             bio: (user as any).bio,
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('[AUTH] Create user error:', error);
+        if (error.code === 'P2002') {
+            const field = Array.isArray(error.meta?.target) ? error.meta.target[0] : error.meta?.target;
+            const fieldNames: Record<string, string> = { email: 'Email', phone: 'Telefon raqam' };
+            return res.status(409).json({ message: `${fieldNames[field] || field} allaqachon band` });
+        }
         res.status(500).json({ message: String(error) });
     }
 });
@@ -260,7 +265,12 @@ router.put('/users/:id', requireAuth, async (req, res) => {
             avatar: (user as any).avatar, subject: (user as any).subject,
             experience: (user as any).experience, bio: (user as any).bio,
         });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.code === 'P2002') {
+            const field = Array.isArray(error.meta?.target) ? error.meta.target[0] : error.meta?.target;
+            const fieldNames: Record<string, string> = { email: 'Email', phone: 'Telefon raqam' };
+            return res.status(409).json({ message: `${fieldNames[field] || field} allaqachon band` });
+        }
         res.status(500).json({ message: String(error) });
     }
 });
