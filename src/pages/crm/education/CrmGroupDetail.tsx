@@ -124,7 +124,7 @@ export default function CrmGroupDetail() {
 
   // ─── Enrollment actions ─────────────────────────────────────────────────────
   const handleAddStudent = async (studentId: string) => {
-    if (additionBusy.current || removalBusy.current || enrollmentsLoading || enrollmentsError || studentsLoading || studentsError || !group) return;
+    if (!canManage || additionBusy.current || removalBusy.current || enrollmentsLoading || enrollmentsError || studentsLoading || studentsError || !group) return;
     if (enrolledStudents.some(s => s.id === studentId)) {
       showToast("Bu o'quvchi allaqachon guruhga qo'shilgan", 'error');
       return;
@@ -153,7 +153,7 @@ export default function CrmGroupDetail() {
   };
 
   const handleRemoveStudent = async (studentId: string) => {
-    if (removalBusy.current || additionBusy.current || enrollmentsLoading || enrollmentsError) return;
+    if (!canManage || removalBusy.current || additionBusy.current || enrollmentsLoading || enrollmentsError) return;
     removalBusy.current = true;
     const request = enrollmentRequest.current;
     setRemovingStudentId(studentId);

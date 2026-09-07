@@ -18,6 +18,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { EmptyState, ErrorState } from '../../../components/States';
 import { formatNumber } from '../../../utils/formatters';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 // Prisma `Group` modeliga mos keladigan shakl (server/routes/crud.ts RELATION_INCLUDES
 // orqali course/teacher/_count qo'shib qaytaradi). `room`/`days`/`time` Group'da YO'Q —
@@ -40,6 +41,7 @@ interface Group {
 const DAYS = ['Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan', 'Yak'];
 
 export default function CrmGroups() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const navigate = useNavigate();
   const { data: groups = [], loading: groupsLoading, error: groupsError, refetch: refetchGroups, addDocument, updateDocument, deleteDocument } = useFirestore<Group>('groups');
   const { data: schedule = [], loading: scheduleLoading, error: scheduleError, refetch: refetchSchedule, addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<any>('schedule');
@@ -160,7 +162,7 @@ export default function CrmGroups() {
   };
 
   const handleSave = async () => {
-    if (saveBusy.current || dependenciesLoading || dependenciesError || groupsLoading || groupsError) return;
+    if (!canManage || saveBusy.current || dependenciesLoading || dependenciesError || groupsLoading || groupsError) return;
     if (!validateForm()) {
       showToast("Formadagi xatolarni tuzating", 'error');
       return;
@@ -257,6 +259,7 @@ export default function CrmGroups() {
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     const id = deleteConfirm.id;
     setDeleteConfirm({ open: false, id: '' });
     await deleteDocument(id);
@@ -266,6 +269,7 @@ export default function CrmGroups() {
   };
 
   const openModal = (group: Group | null = null) => {
+    if (!canManage) return;
     if (dependenciesLoading || dependenciesError) {
       showToast('Avval forma uchun zarur ma’lumotlarni yuklang', 'error');
       return;
@@ -336,7 +340,7 @@ export default function CrmGroups() {
     <div className="space-y-6">
       {dependenciesLoading ? <p role="status">Forma ma’lumotlari yuklanmoqda...</p> : dependenciesError ? <ErrorState message="Forma uchun zarur ma’lumotlar yuklanmadi. Yaratish/tahrirlash uchun qayta urinib ko‘ring." onRetry={retryDependencies} /> : null}
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Guruhni o'chirish"
         message="Haqiqatan ham bu guruhni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
         confirmText="Ha, o'chirish"
@@ -368,12 +372,12 @@ export default function CrmGroups() {
               <ListIcon size={18} />
             </button>
           </div>
-          <Button
+          {canManage && <Button
             onClick={() => openModal()}
             leftIcon={<Plus size={18} />}
           >
             Yangi Guruh
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -466,9 +470,9 @@ export default function CrmGroups() {
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-4">
                   <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{formatNumber(group.price ?? group.course?.price ?? 0)} so'm</span>
-                  <Button variant="ghost" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => openModal(group)} aria-label={`${group.name} guruhini tahrirlash`}>
+                  {canManage && <Button variant="ghost" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => openModal(group)} aria-label={`${group.name} guruhini tahrirlash`}>
                     Tahrirlash
-                  </Button>
+                  </Button>}
                 </div>
               </article>
             ))}
@@ -557,9 +561,9 @@ export default function CrmGroups() {
                   </td>
                   <td className="px-5 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                      <button aria-label={`${group.name} guruhini tahrirlash`} onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors border border-blue-100 dark:border-blue-800">
+                      {canManage && <button aria-label={`${group.name} guruhini tahrirlash`} onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors border border-blue-100 dark:border-blue-800">
                         <MoreVertical size={16} />
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>
@@ -574,9 +578,9 @@ export default function CrmGroups() {
       {/* Group Detail modal removed since it is now handled by CrmGroupDetail route */}
 
       {/* Add/Edit Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={closeModal} 
+      <Modal
+        isOpen={canManage && isModalOpen}
+        onClose={closeModal}
         title={formData.id ? 'Guruhni Tahrirlash' : 'Yangi Guruh Qo\'shish'}
         width="2xl"
       >
