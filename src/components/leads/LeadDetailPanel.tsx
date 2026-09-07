@@ -33,6 +33,8 @@ interface Props {
   onStageChange: (id: string, stage: string, lostReason?: string) => void;
   onAssign: (id: string, userId: string | null) => void;
   onLogActivity: (leadId: string, data: { type: string; content: string; outcome?: string; direction: 'in' | 'out'; nextFollowUpAt?: string; nextAction?: string }) => Promise<void>;
+  canWrite?: boolean;
+  canHardDelete?: boolean;
 }
 
 const activityIcon = (type: LeadActivity['type']) => {
@@ -46,7 +48,7 @@ const activityIcon = (type: LeadActivity['type']) => {
 };
 
 const LeadDetailPanel: React.FC<Props> = ({
-  lead, managers, onClose, onEdit, onDelete, onConvert, onStageChange, onAssign, onLogActivity,
+  lead, managers, onClose, onEdit, onDelete, onConvert, onStageChange, onAssign, onLogActivity, canWrite = true, canHardDelete = true,
 }) => {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [pendingLostReason, setPendingLostReason] = useState<string | null>(null);
@@ -101,7 +103,7 @@ const LeadDetailPanel: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {canConvert && (
+            {canWrite && canConvert && (
               <button
                 onClick={() => onConvert(lead)}
                 className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-lg shadow-emerald-600/20"
@@ -109,9 +111,13 @@ const LeadDetailPanel: React.FC<Props> = ({
                 <GraduationCap size={16} /> O'quvchiga aylantirish
               </button>
             )}
-            <button onClick={() => onEdit(lead)} className="p-2 text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={18} /></button>
-            <button onClick={() => onDelete(lead.id)} className="p-2 text-zinc-400 hover:text-rose-600 transition-colors"><Trash2 size={18} /></button>
-            <button onClick={onClose} className="p-2 text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors ml-2"><X size={22} /></button>
+            {canWrite && (
+              <button onClick={() => onEdit(lead)} className="p-2 text-zinc-400 hover:text-blue-600 transition-colors" title="Tahrirlash"><Edit2 size={18} /></button>
+            )}
+            {canHardDelete && (
+              <button onClick={() => onDelete(lead.id)} className="p-2 text-zinc-400 hover:text-rose-600 transition-colors" title="O'chirish"><Trash2 size={18} /></button>
+            )}
+            <button onClick={onClose} className="p-2 text-zinc-400 hover:text-slate-900 dark:hover:text-white transition-colors ml-2" title="Yopish"><X size={22} /></button>
           </div>
         </div>
 
@@ -139,8 +145,9 @@ const LeadDetailPanel: React.FC<Props> = ({
               <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Bosqich</p>
               <select
                 value={lead.stage}
+                disabled={!canWrite}
                 onChange={e => handleStageSelect(e.target.value)}
-                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none dark:text-white"
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -149,8 +156,9 @@ const LeadDetailPanel: React.FC<Props> = ({
               <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Menejer</p>
               <select
                 value={lead.assignedToId || ''}
+                disabled={!canWrite}
                 onChange={e => onAssign(lead.id, e.target.value || null)}
-                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none dark:text-white"
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold outline-none dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">Egasiz</option>
                 {managers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -249,12 +257,14 @@ const LeadDetailPanel: React.FC<Props> = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">Faolliklar Tarixi</h3>
-              <button
-                onClick={() => setIsActivityModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all"
-              >
-                <Plus size={14} /> Qo'shish
-              </button>
+              {canWrite && (
+                <button
+                  onClick={() => setIsActivityModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all"
+                >
+                  <Plus size={14} /> Qo'shish
+                </button>
+              )}
             </div>
 
             <div className="space-y-4 relative before:absolute before:left-4 before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-100 dark:before:bg-zinc-800">

@@ -22,9 +22,10 @@ interface Props {
   onRowClick: (lead: Lead) => void;
   onEdit: (lead: Lead) => void;
   selection: { value: Set<string>; onChange: (s: Set<string>) => void };
+  canWrite?: boolean;
 }
 
-const LeadListView: React.FC<Props> = ({ leads, total, page, limit, loading, sort, onSortChange, onPageChange, onRowClick, onEdit, selection }) => {
+const LeadListView: React.FC<Props> = ({ leads, total, page, limit, loading, sort, onSortChange, onPageChange, onRowClick, onEdit, selection, canWrite = true }) => {
   const columns: DataTableColumn<Lead>[] = [
     {
       id: 'name', header: 'Lid', sortable: true, accessor: l => l.name,
@@ -88,14 +89,14 @@ const LeadListView: React.FC<Props> = ({ leads, total, page, limit, loading, sor
       onSortChange={(s) => { if (s.column && s.direction) onSortChange({ column: s.column as LeadSort['column'], dir: s.direction }); }}
       pagination={{ page, pageSize: limit || 25, total, onPageChange }}
       onRowClick={onRowClick}
-      rowActions={(lead) => (
+      rowActions={canWrite ? (lead) => (
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(lead); }}
           className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all"
         >
           <Edit2 size={16} />
         </button>
-      )}
+      ) : undefined}
       emptyMessage="Lidlar topilmadi"
     />
   );

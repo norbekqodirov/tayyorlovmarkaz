@@ -260,7 +260,7 @@ export function DataTable<T extends Record<string, any>>({
                     ))}
                     {rowActions && (
                       <td className={`${rowPad} text-right`} onClick={(e) => e.stopPropagation()}>
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                           {rowActions(row, idx)}
                         </div>
                       </td>

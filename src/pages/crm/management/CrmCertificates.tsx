@@ -10,6 +10,8 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Tabs, TabsList, Tab, TabPanel } from '../../../components/ui/Tabs';
+import { ErrorState } from '../../../components/States';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useSocket } from '../../../hooks/useSocket';
 
@@ -45,7 +47,9 @@ export default function CrmCertificates() {
   const [templates, setTemplates] = useState<CertTemplate[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
   const [issueModalOpen, setIssueModalOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<CertTemplate | null>(null);
@@ -53,6 +57,10 @@ export default function CrmCertificates() {
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { showToast } = useToast();
+
+  const userRoleLevel = getCurrentRoleLevel();
+  // server/routes/certificates.ts requires requireRole (defaults to ADMIN level 3) for writes
+  const canManageCertificates = userRoleLevel >= ROLE_LEVEL.ADMIN;
 
   const { data: students = [] } = useFirestore<any>('students');
   const { data: courses = [] } = useFirestore<any>('courses');
@@ -76,6 +84,7 @@ export default function CrmCertificates() {
   // Load templates + certs
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
       const [tplRes, certRes] = await Promise.all([
         api.get('/certificates/templates'),
@@ -83,8 +92,10 @@ export default function CrmCertificates() {
       ]);
       setTemplates(tplRes.data || []);
       setCertificates(certRes.data?.data || []);
-    } catch (err) {
-      console.warn('Sertifikatlarni yuklab bo\'lmadi', err);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || 'Sertifikatlarni yuklashda xatolik yuz berdi');
+      setTemplates([]);
+      setCertificates([]);
     } finally {
       setLoading(false);
     }
@@ -178,8 +189,12 @@ export default function CrmCertificates() {
   ];
 
   const handleIssue = async () => {
+    if (!canManageCertificates) {
+      showToast("Sizda sertifikat berish uchun ruxsat yo'q", 'error');
+      return;
+    }
     if (!issueForm.templateId) { showToast('Shablon tanlanmagan', 'error'); return; }
-    if (issueForm.studentIds.length === 0) { showToast('Kamida bitta o\'quvchi tanlang', 'error'); return; }
+    if (issueForm.studentIds.length === 0) { showToast("Kamida bitta o'quvchi tanlang", 'error'); return; }
 
     try {
       setProgress({ current: 0, total: issueForm.studentIds.length });
@@ -194,12 +209,17 @@ export default function CrmCertificates() {
       setIssueForm({ templateId: '', studentIds: [], courseId: '', grade: '' });
       load();
     } catch (err: any) {
-      showToast(err.response?.data?.message || 'Xatolik yuz berdi', 'error');
+      showToast(err.response?.data?.message || 'Sertifikat berishda xatolik yuz berdi', 'error');
       setProgress(null);
     }
   };
 
   const handleDelete = async () => {
+    if (!canManageCertificates) {
+      showToast("Sizda o'chirish uchun ruxsat yo'q", 'error');
+      setDeleteConfirm({ open: false, id: '', type: 'cert' });
+      return;
+    }
     try {
       if (deleteConfirm.type === 'cert') {
         await api.delete(`/certificates/${deleteConfirm.id}`);
@@ -209,8 +229,8 @@ export default function CrmCertificates() {
         showToast('Shablon o\'chirildi', 'success');
       }
       load();
-    } catch {
-      showToast('Xatolik', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'O\'chirishda xatolik yuz berdi', 'error');
     }
     setDeleteConfirm({ open: false, id: '', type: 'cert' });
   };
@@ -227,27 +247,34 @@ export default function CrmCertificates() {
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       showToast(`${ids.length} ta sertifikat ZIP'da yuklab olindi`, 'success');
-    } catch {
-      showToast('Yuklab olishda xatolik', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'ZIP yuklab olishda xatolik yuz berdi', 'error');
     }
   };
 
   const saveTemplate = async () => {
-    if (!templateForm.name?.trim()) { showToast('Shablon nomi kerak', 'error'); return; }
+    if (!canManageCertificates) {
+      showToast("Sizda shablonlarni boshqarish uchun ruxsat yo'q", 'error');
+      return;
+    }
+    if (!templateForm.name?.trim()) { showToast('Shablon nomi kiritilishi shart', 'error'); return; }
+    if (!templateForm.width || templateForm.width <= 0) { showToast("Shablon eni (width) 0 dan katta bo'lishi kerak", 'error'); return; }
+    if (!templateForm.height || templateForm.height <= 0) { showToast("Shablon bo'yi (height) 0 dan katta bo'lishi kerak", 'error'); return; }
+
     try {
       if (editingTemplate) {
         await api.put(`/certificates/templates/${editingTemplate.id}`, templateForm);
-        showToast('Shablon yangilandi');
+        showToast('Shablon yangilandi', 'success');
       } else {
         await api.post('/certificates/templates', templateForm);
-        showToast('Shablon yaratildi');
+        showToast('Shablon yaratildi', 'success');
       }
       setTemplateModalOpen(false);
       setEditingTemplate(null);
       setTemplateForm({ name: '', type: 'certificate', width: 842, height: 595, isActive: true, config: { elements: [] } });
       load();
-    } catch {
-      showToast('Xatolik', 'error');
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Shablonni saqlashda xatolik yuz berdi', 'error');
     }
   };
 
@@ -267,9 +294,11 @@ export default function CrmCertificates() {
         subtitle="O'quvchilarga sertifikat va diplom berish"
         badge={{ label: 'Yangi', color: 'amber' }}
         actions={
-          <Button leftIcon={<Plus size={16} />} onClick={() => setIssueModalOpen(true)}>
-            Sertifikat berish
-          </Button>
+          canManageCertificates ? (
+            <Button leftIcon={<Plus size={16} />} onClick={() => setIssueModalOpen(true)}>
+              Sertifikat berish
+            </Button>
+          ) : undefined
         }
         tabs={[
           { id: 'issued', label: 'Berilgan', count: certificates.length },
@@ -301,7 +330,9 @@ export default function CrmCertificates() {
         </div>
       )}
 
-      {activeTab === 'issued' && (
+      {error ? (
+        <ErrorState message={error} onRetry={load} />
+      ) : activeTab === 'issued' ? (
         <div>
           <div className="flex items-center justify-between mb-4 gap-3">
             <div className="relative flex-1 max-w-md">
@@ -346,29 +377,32 @@ export default function CrmCertificates() {
                 >
                   <QrCode size={14} />
                 </a>
-                <button
-                  onClick={() => setDeleteConfirm({ open: true, id: c.id, type: 'cert' })}
-                  className="p-1.5 rounded-md text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {canManageCertificates && (
+                  <button
+                    onClick={() => setDeleteConfirm({ open: true, id: c.id, type: 'cert' })}
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15"
+                    title="O'chirish"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             )}
           />
         </div>
-      )}
-
-      {activeTab === 'templates' && (
+      ) : (
         <div>
-          <div className="flex justify-end mb-4">
-            <Button leftIcon={<Plus size={16} />} onClick={() => {
-              setEditingTemplate(null);
-              setTemplateForm({ name: '', type: 'certificate', width: 842, height: 595, isActive: true, config: { elements: [] } });
-              setTemplateModalOpen(true);
-            }}>
-              Yangi shablon
-            </Button>
-          </div>
+          {canManageCertificates && (
+            <div className="flex justify-end mb-4">
+              <Button leftIcon={<Plus size={16} />} onClick={() => {
+                setEditingTemplate(null);
+                setTemplateForm({ name: '', type: 'certificate', width: 842, height: 595, isActive: true, config: { elements: [] } });
+                setTemplateModalOpen(true);
+              }}>
+                Yangi shablon
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {templates.map(t => (
               <div key={t.id} className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 hover:shadow-md transition-shadow">
@@ -383,21 +417,24 @@ export default function CrmCertificates() {
                 <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
                   {t.type} · {t.width}×{t.height}px
                 </p>
-                <div className="flex gap-2 mt-3">
-                  <Button variant="secondary" size="sm" className="flex-1" onClick={() => {
-                    setEditingTemplate(t);
-                    setTemplateForm({ ...t });
-                    setTemplateModalOpen(true);
-                  }}>
-                    Tahrirlash
-                  </Button>
-                  <button
-                    onClick={() => setDeleteConfirm({ open: true, id: t.id, type: 'template' })}
-                    className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+                {canManageCertificates && (
+                  <div className="flex gap-2 mt-3">
+                    <Button variant="secondary" size="sm" className="flex-1" onClick={() => {
+                      setEditingTemplate(t);
+                      setTemplateForm({ ...t });
+                      setTemplateModalOpen(true);
+                    }}>
+                      Tahrirlash
+                    </Button>
+                    <button
+                      onClick={() => setDeleteConfirm({ open: true, id: t.id, type: 'template' })}
+                      className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15"
+                      title="O'chirish"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
             {templates.length === 0 && (
@@ -445,27 +482,60 @@ export default function CrmCertificates() {
             onChange={(e) => setIssueForm({ ...issueForm, grade: e.target.value })}
           />
           <div>
-            <label className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-1.5 block">
-              O'quvchilar ({issueForm.studentIds.length} ta tanlangan)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-black uppercase tracking-widest text-zinc-500 block">
+                O'quvchilar ({issueForm.studentIds.length} ta tanlangan)
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filtered = students.filter((s: any) => !studentSearch.trim() || s.name?.toLowerCase().includes(studentSearch.toLowerCase()));
+                    setIssueForm({ ...issueForm, studentIds: Array.from(new Set([...issueForm.studentIds, ...filtered.map((s: any) => s.id)])) });
+                  }}
+                  className="text-[11px] font-bold text-blue-600 hover:underline"
+                >
+                  Barchasini tanlash
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIssueForm({ ...issueForm, studentIds: [] })}
+                  className="text-[11px] font-bold text-zinc-400 hover:underline"
+                >
+                  Tozalash
+                </button>
+              </div>
+            </div>
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
+              <input
+                type="text"
+                value={studentSearch}
+                onChange={e => setStudentSearch(e.target.value)}
+                placeholder="O'quvchini qidirish..."
+                className="w-full pl-9 pr-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
             <div className="max-h-60 overflow-y-auto bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl divide-y divide-zinc-200 dark:divide-zinc-700">
-              {students.map((s: any) => (
-                <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={issueForm.studentIds.includes(s.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setIssueForm({ ...issueForm, studentIds: [...issueForm.studentIds, s.id] });
-                      } else {
-                        setIssueForm({ ...issueForm, studentIds: issueForm.studentIds.filter(id => id !== s.id) });
-                      }
-                    }}
-                    className="w-4 h-4 rounded text-blue-600"
-                  />
-                  <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{s.name}</span>
-                </label>
-              ))}
+              {students
+                .filter((s: any) => !studentSearch.trim() || s.name?.toLowerCase().includes(studentSearch.toLowerCase()))
+                .map((s: any) => (
+                  <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={issueForm.studentIds.includes(s.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setIssueForm({ ...issueForm, studentIds: [...issueForm.studentIds, s.id] });
+                        } else {
+                          setIssueForm({ ...issueForm, studentIds: issueForm.studentIds.filter(id => id !== s.id) });
+                        }
+                      }}
+                      className="w-4 h-4 rounded text-blue-600"
+                    />
+                    <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{s.name}</span>
+                  </label>
+                ))}
             </div>
           </div>
           <div className="flex gap-3 pt-2">
