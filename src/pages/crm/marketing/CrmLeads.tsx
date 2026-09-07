@@ -53,7 +53,9 @@ export default function CrmLeads() {
 
   const userRoleLevel = getCurrentRoleLevel();
   const canWriteLeads = userRoleLevel >= ROLE_LEVEL.MANAGER;
-  const canHardDelete = userRoleLevel >= ROLE_LEVEL.ADMIN;
+  // server/routes/leads.ts: router.use(requireAuth, requireMinRole('MANAGER'))
+  // butun router uchun bitta bosqichda — DELETE uchun alohida ADMIN+ cheklov yo'q.
+  const canHardDelete = userRoleLevel >= ROLE_LEVEL.MANAGER;
 
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
@@ -145,7 +147,7 @@ export default function CrmLeads() {
 
   const confirmDelete = async () => {
     if (!canHardDelete) {
-      showToast("Faqat administrator lidlarni o'chira oladi", 'error');
+      showToast("Sizda lidni o'chirish uchun ruxsat yo'q", 'error');
       setDeleteConfirm({ open: false, id: '' });
       return;
     }
