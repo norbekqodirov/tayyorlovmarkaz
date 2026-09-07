@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp, Download } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp, Download, Calendar, Percent } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { exportToExcel, exportToPDF } from '../../../utils/export';
 import ImageUpload from '../../../components/ImageUpload';
@@ -25,6 +25,9 @@ interface Teacher {
   desc: string;      // Mapped from meta
   img: string;       // Avatar
   password?: string; // Only for creation/update
+  salaryPercent?: number | null; // Oylik foiz stavkasi (%)
+  joinedDate?: string; // Ish boshlagan sana
+  isActive?: boolean;  // Ustoz holati (Faol / Nofaol)
 }
 
 export default function CrmTeachers() {
@@ -44,7 +47,7 @@ export default function CrmTeachers() {
   const { courses: courseList } = useCrmData();
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
-    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: ''
+    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40, joinedDate: new Date().toISOString().split('T')[0], isActive: true
   });
 
   // O'qituvchining haqiqiy (davomat chegirmasidan keyingi) daromadi va oyligi —
@@ -74,12 +77,15 @@ export default function CrmTeachers() {
       const mapped = tUsers.map((u: any) => ({
         id: u.id,
         name: u.name,
-        email: u.email,
+        email: u.email || '',
         phone: u.phone || '',
         role: u.subject || '',
         exp: u.experience || '',
         desc: u.bio || '',
-        img: u.avatar || ''
+        img: u.avatar || '',
+        salaryPercent: u.salaryPercent ?? 40,
+        joinedDate: u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : '',
+        isActive: u.isActive !== undefined ? u.isActive : true
       }));
       setTeachers(mapped);
     } catch (e) {
@@ -90,22 +96,39 @@ export default function CrmTeachers() {
   useEffect(() => { loadTeachers(); }, []);
 
   const handleSave = async () => {
-    if (!formData.name || !formData.phone) {
-      showToast("Ism va telefon raqam kiritilishi shart!", 'error');
+    if (!formData.name || !formData.name.trim()) {
+      showToast("Ism kiritilishi shart!", 'error');
       return;
+    }
+    if (!formData.phone || !formData.phone.trim()) {
+      showToast("Telefon raqam kiritilishi shart!", 'error');
+      return;
+    }
+
+    // Email ixtiyoriy — kiritilgan bo'lsa formati tekshiriladi
+    if (formData.email && formData.email.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        showToast("Email formati noto'g'ri (masalan: ustoz@markaz.uz)!", 'error');
+        return;
+      }
     }
     
     try {
-      const dbPayload = {
-        name: formData.name,
-        email: formData.email,
+      const dbPayload: any = {
+        name: formData.name.trim(),
+        email: formData.email && formData.email.trim() ? formData.email.trim() : null,
         phone: formData.phone,
         password: formData.password,
         role: 'TEACHER', // Enforce teacher role
-        avatar: formData.img,
-        subject: formData.role,
-        experience: formData.exp,
-        bio: formData.desc,
+        avatar: formData.img || null,
+        subject: formData.role || null,
+        experience: formData.exp || null,
+        bio: formData.desc || null,
+        salaryPercent: formData.salaryPercent !== undefined && formData.salaryPercent !== null && (formData.salaryPercent as any) !== ''
+          ? Number(formData.salaryPercent)
+          : null,
+        isActive: formData.isActive !== undefined ? formData.isActive : true,
       };
 
       if (formData.id) {
@@ -141,9 +164,27 @@ export default function CrmTeachers() {
 
   const openModal = (teacher: Teacher | null = null) => {
     if (teacher) {
-      setFormData({ ...teacher, password: '' });
+      setFormData({
+        ...teacher,
+        password: '',
+        salaryPercent: teacher.salaryPercent ?? 40,
+        joinedDate: teacher.joinedDate || new Date().toISOString().split('T')[0],
+        isActive: teacher.isActive !== undefined ? teacher.isActive : true
+      });
     } else {
-      setFormData({ name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '' });
+      setFormData({
+        name: '',
+        email: '',
+        phone: '',
+        password: '',
+        role: '',
+        exp: '',
+        desc: '',
+        img: '',
+        salaryPercent: 40,
+        joinedDate: new Date().toISOString().split('T')[0],
+        isActive: true
+      });
     }
     setIsModalOpen(true);
   };
@@ -203,6 +244,7 @@ export default function CrmTeachers() {
               { header: 'Telefon', key: 'phone', width: 15 },
               { header: "Fan/Yo'nalish", key: 'role', width: 20 },
               { header: 'Tajriba', key: 'exp', width: 12 },
+              { header: 'Foiz Stavkasi (%)', key: 'salaryPercent', width: 15 },
             ], 'Oqituvchilar')}
               className="p-2 rounded-xl bg-green-50 dark:bg-green-500/10 text-green-600 hover:bg-green-100 dark:hover:bg-green-500/20 transition-all" title="Excel">
               <Download size={16} />
@@ -213,6 +255,7 @@ export default function CrmTeachers() {
               { header: 'Telefon', key: 'phone', width: 15 },
               { header: "Fan/Yo'nalish", key: 'role', width: 20 },
               { header: 'Tajriba', key: 'exp', width: 12 },
+              { header: 'Foiz Stavkasi (%)', key: 'salaryPercent', width: 15 },
             ], "O'qituvchilar Ro'yxati", 'Oqituvchilar')}
               className="p-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 hover:bg-red-100 dark:hover:bg-red-500/20 transition-all" title="PDF">
               <Download size={16} />
@@ -228,6 +271,7 @@ export default function CrmTeachers() {
                 <th className="px-6 py-4">F.I.O</th>
                 <th className="px-6 py-4">Fan / Mutaxassislik</th>
                 <th className="px-6 py-4">Tajriba</th>
+                <th className="px-6 py-4">Foiz Stavkasi</th>
                 <th className="px-6 py-4 text-right">Amallar</th>
               </tr>
             </thead>
@@ -264,6 +308,11 @@ export default function CrmTeachers() {
                   <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400">
                     {teacher.exp || '0'}
                   </td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                      {teacher.salaryPercent ?? 40}%
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
@@ -284,7 +333,7 @@ export default function CrmTeachers() {
               ))}
               {filteredTeachers.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-zinc-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-zinc-500">
                     Ustozlar topilmadi
                   </td>
                 </tr>
@@ -390,13 +439,26 @@ export default function CrmTeachers() {
                           <Star size={16} className="text-zinc-400" />
                           Tajriba: {selectedTeacher.exp || 'Noma\'lum'}
                         </div>
+                        <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
+                          <Percent size={16} className="text-zinc-400" />
+                          Oylik foiz stavkasi: {selectedTeacher.salaryPercent ?? 40}%
+                        </div>
+                        {selectedTeacher.joinedDate && (
+                          <div className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-zinc-300">
+                            <Calendar size={16} className="text-zinc-400" />
+                            Ish boshlagan sana: {selectedTeacher.joinedDate}
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="flex gap-3 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                       <Button 
                         variant="secondary"
-                        onClick={() => { setIsPayrollOpen(true); }}
+                        onClick={() => {
+                          setPayrollRate(selectedTeacher.salaryPercent ?? 40);
+                          setIsPayrollOpen(true);
+                        }}
                         className="flex-1 text-sm font-black bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20"
                       >
                         Oylik Hisoblash
@@ -525,10 +587,39 @@ export default function CrmTeachers() {
             />
             <Input
               label="Tajriba"
-              value={formData.exp}
+              value={formData.exp || ''}
               onChange={(e) => setFormData({ ...formData, exp: e.target.value })}
               placeholder="3 yillik tajriba"
             />
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              type="number"
+              label="Oylik foiz stavkasi (%)"
+              value={formData.salaryPercent !== undefined && formData.salaryPercent !== null ? formData.salaryPercent : ''}
+              onChange={(e) => setFormData({ ...formData, salaryPercent: e.target.value === '' ? '' as any : Number(e.target.value) })}
+              placeholder="40"
+              min={0}
+              max={100}
+            />
+            <Input
+              type="date"
+              label="Ish boshlagan sana"
+              value={formData.joinedDate || ''}
+              onChange={(e) => setFormData({ ...formData, joinedDate: e.target.value })}
+            />
+            <div className="space-y-1.5 flex flex-col w-full">
+              <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Ustoz holati</label>
+              <select
+                value={formData.isActive ? 'active' : 'inactive'}
+                onChange={(e) => setFormData({ ...formData, isActive: e.target.value === 'active' })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="active">Faol</option>
+                <option value="inactive">Nofaol (Bloklangan)</option>
+              </select>
+            </div>
           </div>
 
           <div className="p-5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl space-y-4">
@@ -538,16 +629,15 @@ export default function CrmTeachers() {
              <div className="grid grid-cols-2 gap-4">
                <Input
                  type="email"
-                 label="Email"
-                 disabled={!!formData.id}
-                 value={formData.email}
+                 label="Email (ixtiyoriy)"
+                 value={formData.email || ''}
                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                 placeholder="ustoz@markaz.uz"
+                 placeholder="ustoz@markaz.uz (ixtiyoriy)"
                />
                <Input
                  type="password"
                  label={formData.id ? "Yangi parol yozing" : "Parol kiriting *"}
-                 value={formData.password}
+                 value={formData.password || ''}
                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                />
              </div>
