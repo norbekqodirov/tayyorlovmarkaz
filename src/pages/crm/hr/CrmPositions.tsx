@@ -8,6 +8,7 @@ import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { ALL_PERMISSIONS, PERMISSION_GROUPS } from '../../../constants/permissions';
 import type { Position } from '../../../types/position';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 const ROLE_LABELS = { TEACHER: "O'qituvchi", MANAGER: 'Menejer', ADMIN: 'Administrator' };
 type PositionForm = Omit<Position, 'id' | 'defaultPermissions'> & { defaultPermissions: string[] };
@@ -27,6 +28,7 @@ const emptyForm = (): PositionForm => ({
 const fieldClass = 'w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white';
 
 export default function CrmPositions() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.ADMIN;
   const { data: positions, loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<Position>('positions');
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
@@ -40,6 +42,7 @@ export default function CrmPositions() {
   const cancelDelete = useCallback(() => { if (!busy.current) setDeleting(null); }, []);
 
   const openModal = (position?: Position) => {
+    if (!canManage) return;
     setEditingId(position?.id ?? null);
     setForm(position ? {
       name: position.name, description: position.description ?? '', responsibilities: position.responsibilities ?? '',
@@ -50,7 +53,7 @@ export default function CrmPositions() {
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (busy.current) return;
+    if (!canManage || busy.current) return;
     if (!form.name.trim()) {
       showToast('Lavozim nomini kiriting', 'error');
       return;
@@ -94,7 +97,7 @@ export default function CrmPositions() {
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Lavozimlar</h1>
           <p className="text-zinc-500 text-sm font-medium">Xodimlar lavozimlari, vazifalari va standart ruxsatlarini boshqarish</p>
         </div>
-        <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>Yangi lavozim</Button>
+        {canManage && <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>Yangi lavozim</Button>}
       </div>
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -114,17 +117,17 @@ export default function CrmPositions() {
                   <td className="px-6 py-4 whitespace-nowrap">{ROLE_LABELS[position.suggestedRole]}</td>
                   <td className="px-6 py-4">{parsePermissions(position.defaultPermissions).length} ta</td>
                   <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-xs font-bold ${position.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>{position.isActive ? 'Faol' : 'Nofaol'}</span></td>
-                  <td className="px-6 py-4"><div className="flex gap-2">
+                  <td className="px-6 py-4">{canManage && <div className="flex gap-2">
                     <Button variant="ghost" aria-label={`${position.name}: tahrirlash`} onClick={() => openModal(position)}><Edit2 size={16} /></Button>
                     <Button variant="ghost" aria-label={`${position.name}: o'chirish`} onClick={() => setDeleting(position)}><Trash2 size={16} className="text-rose-600" /></Button>
-                  </div></td>
+                  </div>}</td>
                 </tr>)}
               </tbody>
             </table>
           </div>
         )}
       </div>
-      <Modal isOpen={isOpen} onClose={closeModal} title={editingId ? 'Lavozimni tahrirlash' : 'Yangi lavozim'} width="2xl">
+      <Modal isOpen={canManage && isOpen} onClose={closeModal} title={editingId ? 'Lavozimni tahrirlash' : 'Yangi lavozim'} width="2xl">
         <form onSubmit={save} className="space-y-5">
           <fieldset disabled={saving} className="space-y-5">
             <Input id="position-name" label="Nom" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
@@ -155,7 +158,7 @@ export default function CrmPositions() {
           </div>
         </form>
       </Modal>
-      <ConfirmDialog isOpen={!!deleting} title="Lavozimni o'chirish" message={`“${deleting?.name ?? ''}” lavozimini o'chirmoqchimisiz?`} confirmText="Ha, o'chirish" onConfirm={confirmDelete} onCancel={cancelDelete} />
+      <ConfirmDialog isOpen={canManage && !!deleting} title="Lavozimni o'chirish" message={`“${deleting?.name ?? ''}” lavozimini o'chirmoqchimisiz?`} confirmText="Ha, o'chirish" onConfirm={confirmDelete} onCancel={cancelDelete} />
     </div>
   );
 }

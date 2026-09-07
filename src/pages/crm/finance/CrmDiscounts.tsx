@@ -7,8 +7,10 @@ import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Button } from '../../../components/ui/Button';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 export default function CrmDiscounts() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { showToast } = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,12 +35,14 @@ export default function CrmDiscounts() {
   };
 
   const openCreate = () => {
+    if (!canManage) return;
     setEditing(null);
     setForm({ code: '', name: '', type: 'percent', value: '', maxUses: '', validFrom: '', validTo: '', minAmount: '', isActive: true });
     setShowModal(true);
   };
 
   const openEdit = (item: any) => {
+    if (!canManage) return;
     setEditing(item);
     setForm({
       code: item.code, name: item.name || '', type: item.type, value: String(item.value),
@@ -50,7 +54,7 @@ export default function CrmDiscounts() {
   };
 
   const save = async () => {
-    if (!form.code || !form.value) return;
+    if (!canManage || !form.code || !form.value) return;
     setSaving(true);
     try {
       const data = {
@@ -72,9 +76,13 @@ export default function CrmDiscounts() {
     setSaving(false);
   };
 
-  const remove = (id: string) => setDeleteConfirm({ open: true, id });
+  const remove = (id: string) => {
+    if (!canManage) return;
+    setDeleteConfirm({ open: true, id });
+  };
 
   const confirmRemove = async () => {
+    if (!canManage) return;
     await api.delete(`/discounts/${deleteConfirm.id}`);
     setDeleteConfirm({ open: false, id: '' });
     load();
@@ -92,7 +100,7 @@ export default function CrmDiscounts() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Chegirmani o'chirish"
         message="Haqiqatan ham ushbu chegirmani o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
@@ -104,9 +112,11 @@ export default function CrmDiscounts() {
           <h1 className="text-xl font-black text-slate-900 dark:text-white">Chegirmalar & Promo-kodlar</h1>
           <p className="text-sm text-zinc-500 mt-0.5">{items.length} ta chegirma</p>
         </div>
-        <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
-          Yangi Chegirma
-        </Button>
+        {canManage && (
+          <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
+            Yangi Chegirma
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -170,14 +180,16 @@ export default function CrmDiscounts() {
                     {limited && !expired && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">Tugagan</span>}
                     {!item.isActive && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">Faol emas</span>}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => openEdit(item)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-blue-600">
-                      <Edit2 size={12} />
-                    </button>
-                    <button onClick={() => remove(item.id)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                  {canManage && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEdit(item)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-blue-600">
+                        <Edit2 size={12} />
+                      </button>
+                      <button onClick={() => remove(item.id)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -186,7 +198,7 @@ export default function CrmDiscounts() {
       )}
 
       <Modal
-        isOpen={showModal}
+        isOpen={canManage && showModal}
         onClose={() => setShowModal(false)}
         title={editing ? 'Chegirmani tahrirlash' : 'Yangi chegirma'}
       >
