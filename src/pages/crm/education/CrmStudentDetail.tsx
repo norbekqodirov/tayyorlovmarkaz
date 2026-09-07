@@ -24,7 +24,6 @@ import {
   toLetterGrade, toGPA, getGradeBgColor, getGradeColor,
   calculateGPA, averagePercent, gradeLabel,
 } from '../../../utils/grading';
-import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { EmptyState, ErrorState } from '../../../components/States';
 import { SkeletonStatCard } from '../../../components/Skeleton';
 
@@ -75,8 +74,6 @@ export default function CrmStudentDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
-
-  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
 
   const fetchStudentData = useCallback(async () => {
     if (!id) return;
