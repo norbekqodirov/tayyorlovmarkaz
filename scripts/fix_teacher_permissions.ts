@@ -9,11 +9,21 @@
  * Bu skript: role=TEACHER bo'lgan har bir userni tekshiradi, agar
  * permissions to'g'ri (satrlar massivi) bo'lmasa — undagi eski
  * subject/exp/desc ma'lumotini yangi User.subject/experience/bio
- * ustunlariga ko'chiradi va permissions'ni '[]'ga qaytaradi (bo'sh
- * massiv → ProtectedRoute rol asosidagi (allowedRoles) tekshiruvga
- * qaytadi, ya'ni TEACHER standart sahifalarga normal kira oladi).
+ * ustunlariga ko'chiradi va permissions'ni standart TEACHER shabloniga
+ * qaytaradi.
+ *
+ * V2 (2026-09-07): birinchi versiya permissions'ni '[]' (bo'sh massiv)ga
+ * qaytarardi — bu ProtectedRoute'dagi sahifaga kirish bloklanishini
+ * to'g'irlaydi (bo'sh massiv => allowedRoles asosidagi tekshiruvga
+ * qaytadi), LEKIN CrmLayout.tsx'ning canSeeLink() bo'sh massivda BARCHA
+ * ruxsat-cheklangan menyu bandini yashiradi — natijada o'qituvchi
+ * sahifalarga to'g'ridan-to'g'ri havola bilan kira olardi, lekin yon
+ * menyusi butunlay bo'sh ko'rinardi. Endi DEFAULT_TEACHER_PERMISSIONS
+ * (CrmUsers.tsx'dagi TEACHER shabloni bilan bir xil) ga qaytariladi —
+ * ham menyu, ham sahifalar to'g'ri ishlaydi.
  */
 import { PrismaClient } from '@prisma/client';
+import { DEFAULT_TEACHER_PERMISSIONS } from '../src/constants/permissions.js';
 
 const prisma = new PrismaClient();
 
@@ -50,7 +60,7 @@ async function run() {
 
         await prisma.user.update({
             where: { id: t.id },
-            data: { permissions: '[]', subject, experience, bio } as any,
+            data: { permissions: JSON.stringify(DEFAULT_TEACHER_PERMISSIONS), subject, experience, bio } as any,
         });
         fixed++;
         console.log(`Tuzatildi: ${t.name} (${t.id}) — fan: ${subject || '—'}, tajriba: ${experience || '—'}`);
