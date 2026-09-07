@@ -76,7 +76,12 @@ export default function CrmStudentProgress() {
     .map((a) => ({ title: a.title || 'Uy vazifasi', dueDate: a.date, submittedAt: a.date, grade: a.score }));
 
   const testResults = (data.tests?.items || []).map((t: any) => {
-    const maxScore = t.quiz?.maxScore || t.maxScore || 100;
+    // t.maxScore (QuizAttempt'ning o'zida) — server/routes/quiz.ts POST /:id/start'da
+    // savol ballari yig'indisidan hisoblanadi, t.score bilan BIR XIL shkala.
+    // t.quiz.maxScore — Quiz shablonining nominal (admin belgilagan) qiymati,
+    // savollar ballari yig'indisiga teng bo'lmasligi mumkin — faqat eski/
+    // to'ldirilmagan yozuvlar uchun zaxira sifatida ishlatiladi.
+    const maxScore = t.maxScore || t.quiz?.maxScore || 100;
     const score = maxScore > 0 ? Math.round(((t.score || 0) / maxScore) * 100) : 0;
     return {
       testName: t.quiz?.title || t.testName,
