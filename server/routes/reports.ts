@@ -28,8 +28,8 @@ router.get('/summary', requireAuth, async (req, res) => {
                 where: { date: { gte: fromDate, lte: toDate } },
                 select: { status: true },
             }),
-            prisma.lead.count({ where: { createdAt: { gte: new Date(fromDate) } } }),
-            prisma.lead.count({ where: { stage: 'won', updatedAt: { gte: new Date(fromDate) } } }),
+            prisma.lead.count({ where: { createdAt: { gte: new Date(fromDate), lte: new Date(toDate + 'T23:59:59') } } }),
+            prisma.lead.count({ where: { stage: 'won', updatedAt: { gte: new Date(fromDate), lte: new Date(toDate + 'T23:59:59') } } }),
         ]);
 
         const income = transactions.filter(t => t.type === 'income').reduce((a, t) => a + t.amount, 0);
