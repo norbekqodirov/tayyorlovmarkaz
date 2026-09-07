@@ -34,12 +34,16 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
     const { title, description, type, target, unit, period, month, year, assignedTo } = req.body;
-    if (!title || !type || !target || !year) return res.status(400).json({ error: 'title, type, target, year required' });
+    const trimmedTitle = typeof title === 'string' ? title.trim() : '';
+    const targetNum = Number(target);
+    if (!trimmedTitle || !type || !Number.isFinite(targetNum) || targetNum <= 0 || !year) {
+        return res.status(400).json({ error: 'title, type, target (musbat son), year required' });
+    }
     try {
         const goal = await prisma.goal.create({
             data: {
-                title, description, type,
-                target: Number(target), unit: unit || 'ta',
+                title: trimmedTitle, description, type,
+                target: targetNum, unit: unit || 'ta',
                 period: period || 'monthly',
                 month: month ? Number(month) : null,
                 year: Number(year),
@@ -52,19 +56,37 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
     const { title, description, target, current, unit, period, month, year, status, assignedTo } = req.body;
+    if (target !== undefined && !(Number(target) > 0)) {
+        return res.status(400).json({ error: 'target musbat son bo\'lishi kerak' });
+    }
+    if (title !== undefined && !String(title).trim()) {
+        return res.status(400).json({ error: 'title bo\'sh bo\'lishi mumkin emas' });
+    }
     try {
+        const existing = await prisma.goal.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'Maqsad topilmadi' });
+
+        // status berilmasa va target/current o'zgargan bo'lsa, yakuniy qiymatlar
+        // asosida qayta hisoblanadi — masalan bajarilgan maqsadning target'ini
+        // oshirish uni "active"ga qaytaradi. Boshqa maydon (masalan sarlavha)
+        // tahrirlanganda mavjud status (jumladan qo'lda qo'yilgan "failed") saqlanadi.
+        const finalTarget = target !== undefined ? Number(target) : existing.target;
+        const finalCurrent = current !== undefined ? Number(current) : existing.current;
+        const derivedStatus = finalCurrent >= finalTarget ? 'completed' : 'active';
+        const targetOrCurrentChanged = target !== undefined || current !== undefined;
+
         const updated = await prisma.goal.update({
             where: { id: req.params.id },
             data: {
-                ...(title && { title }),
+                ...(title !== undefined && { title: String(title).trim() }),
                 ...(description !== undefined && { description }),
-                ...(target !== undefined && { target: Number(target) }),
-                ...(current !== undefined && { current: Number(current) }),
+                ...(target !== undefined && { target: finalTarget }),
+                ...(current !== undefined && { current: finalCurrent }),
                 ...(unit && { unit }),
                 ...(period && { period }),
                 ...(month !== undefined && { month: month ? Number(month) : null }),
                 ...(year && { year: Number(year) }),
-                ...(status && { status }),
+                ...(status ? { status } : targetOrCurrentChanged ? { status: derivedStatus } : {}),
                 ...(assignedTo !== undefined && { assignedTo }),
             }
         });
@@ -106,9 +128,12 @@ router.post('/auto-sync', async (req, res) => {
             where: { createdAt: { gte: tashkentMidnightInstant(monthStart) } }
         });
 
-        // 5. Konversiya
-        const totalLeads = await prisma.lead.count();
-        const wonLeads = await prisma.lead.count({ where: { stage: 'won' } });
+        // 5. Konversiya — shu oy yaratilgan lidlarning necha foizi "won" bosqichida
+        // (avval BARCHA vaqt lidlari solishtirilardi, oylik maqsad hech qachon
+        // o'zgarmasdi, chunki bu nisbat deyarli statik qoladi).
+        const monthLeadsWhere = { createdAt: { gte: tashkentMidnightInstant(monthStart), lt: tashkentMidnightInstant(nextMonthStart) } };
+        const totalLeads = await prisma.lead.count({ where: monthLeadsWhere });
+        const wonLeads = await prisma.lead.count({ where: { ...monthLeadsWhere, stage: 'won' } });
         const conversion = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
 
         const metrics = {

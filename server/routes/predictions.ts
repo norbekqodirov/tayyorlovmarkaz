@@ -11,7 +11,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
+import { monthRangeStr, tashkentMidnightInstant, addDaysDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 // Bu yerda o'quvchi/lid ism+telefon kabi shaxsiy ma'lumotlar qaytariladi —
@@ -22,12 +22,18 @@ router.use(requireAuth, requireMinRole('MANAGER'));
 
 router.get('/dropout-risk', async (_req, res) => {
     try {
+        // Avval "so'nggi 30 ta yozuv" olinib keyin 30 kunga filtrlanardi — bir
+        // necha guruhga yozilgan o'quvchida 30 ta yozuv haqiqatda bir necha kunni
+        // qamrab olardi, davomat foizi noto'g'ri (haqiqiy oyliklikdan tor davr
+        // uchun) hisoblanardi. Endi sana chegarasi to'g'ridan-to'g'ri Prisma
+        // so'rovida (Toshkent vaqti bo'yicha) qo'llanadi.
+        const thirtyDaysAgoStr = addDaysDateStr(-30);
         const students = await prisma.student.findMany({
             where: { status: 'active' },
             include: {
                 attendanceRecords: {
+                    where: { date: { gte: thirtyDaysAgoStr } },
                     orderBy: { date: 'desc' },
-                    take: 30
                 },
                 payments: {
                     orderBy: { createdAt: 'desc' },
@@ -41,16 +47,14 @@ router.get('/dropout-risk', async (_req, res) => {
         });
 
         const now = new Date();
-        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         const risks = students.map(s => {
             let riskScore = 0;
             const factors: string[] = [];
 
             // Faktor 1: Davomat (0-40 ball)
-            const recentAttendance = s.attendanceRecords.filter(r => new Date(r.date) >= thirtyDaysAgo);
-            const attendanceRate = recentAttendance.length > 0
-                ? recentAttendance.filter(r => r.status === 'present').length / recentAttendance.length
+            const attendanceRate = s.attendanceRecords.length > 0
+                ? s.attendanceRecords.filter(r => r.status === 'present').length / s.attendanceRecords.length
                 : 0.5;
             if (attendanceRate < 0.5) { riskScore += 40; factors.push(`Davomat juda past (${Math.round(attendanceRate * 100)}%)`); }
             else if (attendanceRate < 0.7) { riskScore += 20; factors.push(`Davomat past (${Math.round(attendanceRate * 100)}%)`); }
@@ -146,10 +150,13 @@ router.get('/revenue-forecast', async (_req, res) => {
             const prev = validMonths[validMonths.length - 2].actual;
             trend = last > 0 ? ((last - prev) / prev) * 100 : 0;
 
-            // Weighted average of last 3 months
-            const weights = [0.5, 0.3, 0.2];
+            // Weighted average of last 3 months. 2 oygina mavjud bo'lsa og'irliklar
+            // 0.5+0.3=0.8 bo'lib qolib, bashorat haqiqiy o'rtachadan pastroq chiqardi —
+            // mavjud oylar soniga qarab normallashtiriladi.
             const recent = validMonths.slice(-3).reverse();
-            forecast = recent.reduce((sum, m, i) => sum + m.actual * (weights[i] || 0), 0);
+            const rawWeights = [0.5, 0.3, 0.2].slice(0, recent.length);
+            const weightSum = rawWeights.reduce((a, b) => a + b, 0);
+            forecast = recent.reduce((sum, m, i) => sum + m.actual * (rawWeights[i] / weightSum), 0);
             forecast = Math.round(forecast * (1 + trend / 100 * 0.3)); // Partial trend
         }
 
