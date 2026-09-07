@@ -11,6 +11,8 @@ import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 export default function CrmDiscounts() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
+  // server/routes/discounts.ts: POST/PATCH MANAGER+, lekin DELETE ADMIN+
+  const canDelete = getCurrentRoleLevel() >= ROLE_LEVEL.ADMIN;
   const { showToast } = useToast();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,12 +79,12 @@ export default function CrmDiscounts() {
   };
 
   const remove = (id: string) => {
-    if (!canManage) return;
+    if (!canDelete) return;
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmRemove = async () => {
-    if (!canManage) return;
+    if (!canDelete) return;
     await api.delete(`/discounts/${deleteConfirm.id}`);
     setDeleteConfirm({ open: false, id: '' });
     load();
@@ -100,7 +102,7 @@ export default function CrmDiscounts() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={canManage && deleteConfirm.open}
+        isOpen={canDelete && deleteConfirm.open}
         title="Chegirmani o'chirish"
         message="Haqiqatan ham ushbu chegirmani o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
@@ -180,14 +182,18 @@ export default function CrmDiscounts() {
                     {limited && !expired && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">Tugagan</span>}
                     {!item.isActive && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">Faol emas</span>}
                   </div>
-                  {canManage && (
+                  {(canManage || canDelete) && (
                     <div className="flex items-center gap-1">
-                      <button onClick={() => openEdit(item)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-blue-600">
-                        <Edit2 size={12} />
-                      </button>
-                      <button onClick={() => remove(item.id)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600">
-                        <Trash2 size={12} />
-                      </button>
+                      {canManage && (
+                        <button onClick={() => openEdit(item)} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-blue-600">
+                          <Edit2 size={12} />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => remove(item.id)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-zinc-400 hover:text-rose-600">
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
