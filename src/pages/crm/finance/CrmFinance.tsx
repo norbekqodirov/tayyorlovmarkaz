@@ -22,6 +22,7 @@ import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import api from '../../../api/client';
+import type { TransactionCategory } from '../../../types/transactionCategory';
 import { formatNumber } from '../../../utils/formatters';
 
 interface Invoice {
@@ -55,14 +56,11 @@ interface Transaction {
   staffName?: string;
 }
 
-const INCOME_CATEGORIES = ["Kurs to'lovi", 'Sotuv', 'Investitsiya', 'Boshqa'];
-const EXPENSE_CATEGORIES = ['Ijara', 'Marketing', 'Oylik', 'Kommunal', 'Soliq', 'Boshqa'];
 const EXPENSE_LABELS = {
   SALARY: 'Ish haqi', RENT: 'Ijara', UTILITIES: 'Kommunal xizmatlar',
   SUPPLIES: 'Sarf materiallari', MARKETING: 'Marketing', EQUIPMENT: 'Jihozlar', OTHER: 'Boshqa',
 } as const;
-type ExpenseCategory = keyof typeof EXPENSE_LABELS;
-const EXPENSE_KEYS = Object.keys(EXPENSE_LABELS) as ExpenseCategory[];
+type ExpenseCategory = string;
 interface Expense {
   id: string;
   category: ExpenseCategory;
@@ -78,7 +76,7 @@ interface BudgetEntry {
   year: number;
 }
 const tashkentToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
-const emptyExpense = () => ({ category: 'OTHER' as ExpenseCategory, amount: 0, date: tashkentToday(), description: '', receipt: '' });
+const emptyExpense = () => ({ category: '' as ExpenseCategory, amount: 0, date: tashkentToday(), description: '', receipt: '' });
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 
 const TOOLTIP_STYLE = {
@@ -106,6 +104,18 @@ export default function CrmFinance() {
   const { data: staff = [] } = useFirestore<any>('staff');
   const { data: teachers = [] } = useFirestore<any>('teachers');
   const { showToast } = useToast();
+  const { data: categories, loading: categoriesLoading, error: categoriesError, refetch: reloadCategories } = useFirestore<TransactionCategory>('transactionCategories');
+  const activeCategoryNames = (type: TransactionCategory['type']) => [...new Set(categories.filter(category => category.type === type && category.isActive).map(category => category.name))];
+  const categoryLabel = (name: string, type: TransactionCategory['type']) => {
+    const label = type === 'expense' ? (EXPENSE_LABELS[name as keyof typeof EXPENSE_LABELS] ?? name) : name;
+    return !categoriesLoading && !categoriesError && !activeCategoryNames(type).includes(name) ? label + ' (Nofaol)' : label;
+  };
+  const categoryOptions = (type: TransactionCategory['type'], selected: string) => <>
+    <option value="">{categoriesLoading ? 'Kategoriyalar yuklanmoqda...' : 'Kategoriya tanlang'}</option>
+    {selected && !activeCategoryNames(type).includes(selected) && <option value={selected}>{categoryLabel(selected, type)}</option>}
+    {activeCategoryNames(type).map(name => <option key={name} value={name}>{name}</option>)}
+  </>;
+  const categoryStatus = categoriesError ? <div role="alert" className="text-sm text-rose-600">Kategoriyalar yuklanmadi. <Button type="button" variant="secondary" onClick={reloadCategories}>Qayta urinish</Button></div> : null;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -176,6 +186,7 @@ export default function CrmFinance() {
 
   const saveExpense = async () => {
     if (expenseSaving) return;
+    if (!expenseForm.category || categoriesLoading || categoriesError) return;
     if (!Number.isFinite(expenseForm.amount) || expenseForm.amount <= 0 || !expenseForm.date) {
       showToast('Musbat summa va sanani kiriting', 'error');
       return;
@@ -214,7 +225,7 @@ export default function CrmFinance() {
     setBudgetSaving(category);
     try {
       await api.post('/finance/budget', { ...budgetPeriod, category, planned });
-      showToast(`${EXPENSE_LABELS[category]} byudjeti saqlandi`, 'success');
+      showToast(`${categoryLabel(category, 'expense')} byudjeti saqlandi`, 'success');
     } catch { showToast('Byudjetni saqlashda xatolik yuz berdi', 'error'); }
     finally { setBudgetSaving(null); }
   };
@@ -311,7 +322,7 @@ export default function CrmFinance() {
   const [form, setForm] = useState<Partial<Transaction>>({
     type: 'income',
     amount: 0,
-    category: "Kurs to'lovi",
+    category: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
     method: 'Karta',
@@ -322,7 +333,7 @@ export default function CrmFinance() {
   });
 
   const handleSave = async () => {
-    if (!form.amount || !form.category) return;
+    if (!form.amount || !form.category || categoriesLoading || categoriesError) return;
     const newTransaction = { ...form, amount: Number(form.amount) };
 
     if (newTransaction.type === 'income' && newTransaction.studentId) {
@@ -338,7 +349,7 @@ export default function CrmFinance() {
     showToast("Tranzaksiya qo'shildi", 'success');
     setIsModalOpen(false);
     setForm({
-      type: 'income', amount: 0, category: "Kurs to'lovi",
+      type: 'income', amount: 0, category: '',
       description: '', date: new Date().toISOString().split('T')[0],
       method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
     });
@@ -603,7 +614,7 @@ export default function CrmFinance() {
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   {expenses.length === 0 ? <tr><td colSpan={5} className="py-12 text-center text-sm font-bold text-zinc-400">Xarajatlar topilmadi</td></tr>
                     : expenses.map(expense => <tr key={expense.id} className="hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors">
-                      <td className="px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white">{EXPENSE_LABELS[expense.category]}</td>
+                      <td className="px-5 py-3.5 text-sm font-bold text-slate-900 dark:text-white">{categoryLabel(expense.category, 'expense')}</td>
                       <td className="px-5 py-3.5 text-sm font-black text-rose-600 whitespace-nowrap">{formatMoney(expense.amount)}</td>
                       <td className="px-5 py-3.5 text-sm text-zinc-500 whitespace-nowrap">{expense.date.slice(0, 10)}</td>
                       <td className="px-5 py-3.5 text-sm text-zinc-500 break-words max-w-xs">{expense.description || '—'}</td>
@@ -628,18 +639,19 @@ export default function CrmFinance() {
             <h2 className="text-lg font-black text-slate-900 dark:text-white">Byudjet — {MONTHS[budgetPeriod.month - 1]} {budgetPeriod.year}</h2>
             <p className="text-sm text-zinc-500 mt-1">Har bir kategoriya uchun oylik rejalashtirilgan summani kiriting va saqlang.</p>
           </div>
-          {budgetLoading ? <p role="status" className="p-8 text-center text-sm text-zinc-400">Byudjet yuklanmoqda...</p>
+          {categoryStatus}
+          {budgetLoading || categoriesLoading ? <p role="status" className="p-8 text-center text-sm text-zinc-400">Byudjet yuklanmoqda...</p>
             : budgetError ? <div role="alert" className="p-6 text-center space-y-3">
               <p className="text-sm text-rose-600">Byudjetni yuklab bo'lmadi.</p>
               <Button variant="secondary" onClick={() => setBudgetReload(value => value + 1)}>Qayta urinish</Button>
             </div> : <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {EXPENSE_KEYS.map(category => <div key={category} className="p-5 flex flex-col sm:flex-row sm:items-end gap-3">
+              {[...new Set([...activeCategoryNames('expense'), ...Object.keys(budgetAmounts)])].map(category => <div key={category} className="p-5 flex flex-col sm:flex-row sm:items-end gap-3">
                 <div className="flex-1">
-                  <MoneyInput label={EXPENSE_LABELS[category]} value={budgetAmounts[category] ?? 0} disabled={budgetSaving !== null}
+                  <MoneyInput label={categoryLabel(category, 'expense')} value={budgetAmounts[category] ?? 0} disabled={budgetSaving !== null}
                     onChange={planned => setBudgetAmounts(value => ({ ...value, [category]: planned }))} />
                 </div>
                 <Button disabled={budgetSaving !== null} isLoading={budgetSaving === category} onClick={() => saveBudget(category)}
-                  aria-label={`${EXPENSE_LABELS[category]} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
+                  aria-label={`${categoryLabel(category, 'expense')} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
               </div>)}
             </div>}
         </div>
@@ -653,11 +665,12 @@ export default function CrmFinance() {
               onChange={amount => setExpenseForm(value => ({ ...value, amount }))} />
             <div className="space-y-1.5">
               <label htmlFor="expense-category" className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
-              <select id="expense-category" value={expenseForm.category}
+              <select required disabled={categoriesLoading || !!categoriesError} id="expense-category" value={expenseForm.category}
                 onChange={e => setExpenseForm(value => ({ ...value, category: e.target.value as ExpenseCategory }))}
                 className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
-                {EXPENSE_KEYS.map(category => <option key={category} value={category}>{EXPENSE_LABELS[category]}</option>)}
+                {categoryOptions('expense', expenseForm.category)}
               </select>
+              {categoryStatus}
             </div>
             <Input id="expense-date" type="date" label="Sana" required value={expenseForm.date}
               onChange={e => setExpenseForm(value => ({ ...value, date: e.target.value }))} />
@@ -668,12 +681,12 @@ export default function CrmFinance() {
           </fieldset>
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <Button type="button" variant="ghost" disabled={expenseSaving} onClick={() => setExpenseModalOpen(false)}>Bekor qilish</Button>
-            <Button type="submit" isLoading={expenseSaving} leftIcon={<Check size={14} />}>Saqlash</Button>
+            <Button type="submit" disabled={!expenseForm.category || categoriesLoading || !!categoriesError} isLoading={expenseSaving} leftIcon={<Check size={14} />}>Saqlash</Button>
           </div>
         </form>
       </Modal>
       <ConfirmDialog isOpen={!!expenseToDelete} title="Xarajatni o'chirish"
-        message={expenseToDelete ? `${EXPENSE_LABELS[expenseToDelete.category]}: ${formatMoney(expenseToDelete.amount)} xarajatni o'chirmoqchimisiz?` : ''}
+        message={expenseToDelete ? `${categoryLabel(expenseToDelete.category, 'expense')}: ${formatMoney(expenseToDelete.amount)} xarajatni o'chirmoqchimisiz?` : ''}
         confirmText={expenseDeleting ? "O'chirilmoqda..." : "O'chirish"}
         onConfirm={() => { void deleteExpense(); }} onCancel={() => { if (!expenseDeleting) setExpenseToDelete(null); }} />
 
@@ -736,7 +749,7 @@ export default function CrmFinance() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg text-[10px] font-bold">{t.category}</span>
+                      <span className="px-2.5 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-lg text-[10px] font-bold">{categoryLabel(t.category, t.type)}</span>
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-zinc-500">
@@ -1207,7 +1220,7 @@ export default function CrmFinance() {
                   <p className={`text-2xl font-black ${selectedTransaction.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
                     {selectedTransaction.type === 'income' ? '+' : '-'}{formatMoney(selectedTransaction.amount)}
                   </p>
-                  <p className="text-sm text-zinc-500 mt-1">{selectedTransaction.category}</p>
+                  <p className="text-sm text-zinc-500 mt-1">{categoryLabel(selectedTransaction.category, selectedTransaction.type)}</p>
                 </div>
                 <div className="space-y-3">
                   {[
@@ -1244,11 +1257,11 @@ export default function CrmFinance() {
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Yangi Tranzaksiya" width="md">
         <div className="space-y-4">
           <div className="flex gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
-            <button onClick={() => setForm({ ...form, type: 'income', category: INCOME_CATEGORIES[0] })}
+            <button onClick={() => setForm({ ...form, type: 'income', category: '', studentId: '', studentName: '', staffId: '', staffName: '' })}
               className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${form.type === 'income' ? 'bg-white dark:bg-zinc-700 shadow-sm text-emerald-600' : 'text-zinc-400'}`}>
               Kirim
             </button>
-            <button onClick={() => setForm({ ...form, type: 'expense', category: EXPENSE_CATEGORIES[0] })}
+            <button onClick={() => setForm({ ...form, type: 'expense', category: '', studentId: '', studentName: '', staffId: '', staffName: '' })}
               className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${form.type === 'expense' ? 'bg-white dark:bg-zinc-700 shadow-sm text-rose-600' : 'text-zinc-400'}`}>
               Chiqim
             </button>
@@ -1258,11 +1271,13 @@ export default function CrmFinance() {
             value={form.amount} onChange={amount => setForm({ ...form, amount })} />
 
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
-            <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}
+            <label htmlFor="transaction-category" className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
+            <select id="transaction-category" disabled={categoriesLoading || !!categoriesError} value={form.category} onChange={e => setForm({ ...form, category: e.target.value, studentId: '', studentName: '', staffId: '', staffName: '' })}
               className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
-              {(form.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+              {categoryOptions(form.type, form.category)}
             </select>
+            {categoryStatus}
+            {!categoriesLoading && !categoriesError && activeCategoryNames(form.type).length === 0 && <p className="text-sm text-zinc-500">Faol kategoriya yo'q. Kirim/Chiqim kategoriyalari bo'limida kategoriya qo'shing.</p>}
           </div>
 
           {form.type === 'income' && form.category === "Kurs to'lovi" && (
@@ -1315,7 +1330,7 @@ export default function CrmFinance() {
 
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Bekor qilish</Button>
-            <Button onClick={handleSave} leftIcon={<Check size={14} />}>Saqlash</Button>
+            <Button disabled={!form.category || categoriesLoading || !!categoriesError} onClick={handleSave} leftIcon={<Check size={14} />}>Saqlash</Button>
           </div>
         </div>
       </Modal>
