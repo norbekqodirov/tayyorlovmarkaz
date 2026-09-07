@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Bell, MessageSquare, Send, Plus, Trash2, Edit2, Users,
-  AlertTriangle, CheckCircle2, Clock, ChevronDown, Copy, X,
-  Megaphone, FileText, Settings, BellRing
+  Bell, Send, Plus, Trash2, Edit2,
+  AlertTriangle, CheckCircle2, Copy,
+  Megaphone, FileText, BellRing, RefreshCw, Check
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { useToast } from '../../../components/Toast';
@@ -39,6 +38,11 @@ interface Notification {
   createdAt: string;
 }
 
+interface GroupOption {
+  id: string;
+  name: string;
+}
+
 const TEMPLATE_TYPES = [
   { value: 'PAYMENT_REMINDER', label: "To'lov eslatmasi" },
   { value: 'LESSON_REMINDER', label: 'Dars eslatmasi' },
@@ -51,15 +55,12 @@ const TEMPLATE_TYPES = [
 
 const TEMPLATE_VARS = ['{{student_name}}', '{{group_name}}', '{{amount}}', '{{due_date}}', '{{lesson_time}}', '{{teacher_name}}'];
 
-// "leads" ataylab yo'q — lidlarda Telegram chatId yo'q (botni hali boshlamagan),
-// shuning uchun bu yerga qo'shish "yuborildi" deb yolg'on aytishga olib kelardi
-// (backend hech qachon hech kimga xabar yubormasdi). Lidlar bilan bog'lanish
-// uchun Marketing > Lidlar bo'limidan foydalaning.
+// Backend `server/routes/communication.ts` faqat 'all', 'debtors' va 'group' turlarini qo'llab-quvvatlaydi.
+// "leads" ataylab yo'q — lidlarda Telegram chatId yo'q.
 const TARGET_TYPES = [
-  { value: 'all', label: 'Barcha talabalar' },
+  { value: 'all', label: 'Barcha faol talabalar' },
   { value: 'debtors', label: 'Qarzdorlar' },
   { value: 'group', label: 'Guruh bo\'yicha' },
-  { value: 'course', label: 'Kurs bo\'yicha' },
 ];
 
 function typeColor(type: string) {
@@ -79,82 +80,180 @@ export default function CrmCommunication() {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'templates' | 'bulk' | 'notifications'>('templates');
 
+  // Rol ruxsatini tekshirish (yozish amallari faqat MANAGER+ uchun)
+  const [canWrite] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
+      return ['MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(user.role);
+    } catch {
+      return false;
+    }
+  });
+
   // Templates
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState(false);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
   const [templateForm, setTemplateForm] = useState({ name: '', content: '', type: 'CUSTOM', language: 'uz' });
 
   // Bulk messages
   const [bulkMessages, setBulkMessages] = useState<BulkMessage[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkError, setBulkError] = useState(false);
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [bulkForm, setBulkForm] = useState({ content: '', targetType: 'all', targetId: '', templateId: '' });
   const [bulkSending, setBulkSending] = useState(false);
 
+  // Groups for targeting
+  const [groups, setGroups] = useState<GroupOption[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
   // Notifications
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [notifError, setNotifError] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
     setTemplatesLoading(true);
+    setTemplatesError(false);
     try {
       const res = await api.get('/communication/templates');
-      setTemplates(res.data || []);
-    } catch { setTemplates([]); } finally { setTemplatesLoading(false); }
+      const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setTemplates(data);
+    } catch {
+      setTemplatesError(true);
+      setTemplates([]);
+    } finally {
+      setTemplatesLoading(false);
+    }
   }, []);
 
   const fetchBulkMessages = useCallback(async () => {
+    setBulkLoading(true);
+    setBulkError(false);
     try {
       const res = await api.get('/communication/bulk-messages');
-      setBulkMessages(res.data || []);
-    } catch { setBulkMessages([]); }
+      const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setBulkMessages(data);
+    } catch {
+      setBulkError(true);
+      setBulkMessages([]);
+    } finally {
+      setBulkLoading(false);
+    }
   }, []);
 
   const fetchNotifications = useCallback(async () => {
     setNotifLoading(true);
+    setNotifError(false);
     try {
       const res = await api.get('/communication/notifications');
-      setNotifications(res.data || []);
-    } catch { setNotifications([]); } finally { setNotifLoading(false); }
+      const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setNotifications(data);
+    } catch {
+      setNotifError(true);
+      setNotifications([]);
+    } finally {
+      setNotifLoading(false);
+    }
   }, []);
+
+  const fetchGroups = useCallback(async () => {
+    if (groups.length > 0) return;
+    setGroupsLoading(true);
+    try {
+      const res = await api.get('/groups');
+      const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setGroups(data.map((g: any) => ({ id: g.id, name: g.name })));
+    } catch {
+      setGroups([]);
+    } finally {
+      setGroupsLoading(false);
+    }
+  }, [groups.length]);
 
   useEffect(() => {
     if (activeTab === 'templates') fetchTemplates();
-    if (activeTab === 'bulk') { fetchBulkMessages(); fetchTemplates(); }
+    if (activeTab === 'bulk') {
+      fetchBulkMessages();
+      fetchTemplates();
+    }
     if (activeTab === 'notifications') fetchNotifications();
-  }, [activeTab]);
+  }, [activeTab, fetchTemplates, fetchBulkMessages, fetchNotifications]);
 
   const handleSaveTemplate = async () => {
-    if (!templateForm.name || !templateForm.content) return;
+    if (!canWrite) {
+      showToast("Amalni bajarish uchun MANAGER+ ruxsati kerak", 'error');
+      return;
+    }
+    const name = templateForm.name.trim();
+    const content = templateForm.content.trim();
+    if (!name || !content) {
+      showToast("Shablon nomi va matni to'ldirilishi shart", 'error');
+      return;
+    }
+
+    setTemplateSaving(true);
     try {
+      const payload = { ...templateForm, name, content };
       if (editingTemplate) {
-        await api.put(`/communication/templates/${editingTemplate.id}`, templateForm);
+        await api.put(`/communication/templates/${editingTemplate.id}`, payload);
         showToast("Shablon yangilandi", 'success');
       } else {
-        await api.post('/communication/templates', templateForm);
+        await api.post('/communication/templates', payload);
         showToast("Shablon yaratildi", 'success');
       }
       setIsTemplateModalOpen(false);
       setEditingTemplate(null);
       setTemplateForm({ name: '', content: '', type: 'CUSTOM', language: 'uz' });
       fetchTemplates();
-    } catch { showToast("Xatolik yuz berdi", 'error'); }
+    } catch {
+      showToast("Xatolik yuz berdi", 'error');
+    } finally {
+      setTemplateSaving(false);
+    }
   };
 
   const handleDeleteTemplate = async (id: string) => {
+    if (!canWrite) {
+      showToast("Amalni bajarish uchun MANAGER+ ruxsati kerak", 'error');
+      return;
+    }
+    if (!window.confirm("Rostdan ham ushbu shablonni o'chirmoqchimisiz?")) return;
+
     try {
       await api.delete(`/communication/templates/${id}`);
       showToast("Shablon o'chirildi", 'success');
       fetchTemplates();
-    } catch { showToast("Xatolik yuz berdi", 'error'); }
+    } catch {
+      showToast("Xatolik yuz berdi", 'error');
+    }
   };
 
   const handleSendBulk = async () => {
-    if (!bulkForm.content) return;
+    if (!canWrite) {
+      showToast("Amalni bajarish uchun MANAGER+ ruxsati kerak", 'error');
+      return;
+    }
+    const content = bulkForm.content.trim();
+    if (!content) {
+      showToast("Xabar matnini kiriting", 'error');
+      return;
+    }
+    if (bulkForm.targetType === 'group' && !bulkForm.targetId) {
+      showToast("Iltimos, guruhni tanlang", 'error');
+      return;
+    }
+
     setBulkSending(true);
     try {
-      const res = await api.post('/communication/bulk-messages/send', bulkForm);
+      const res = await api.post('/communication/bulk-messages/send', {
+        ...bulkForm,
+        content,
+      });
       const { sentCount, failedCount, noTelegramCount, totalRecipients } = res.data || {};
       if (sentCount > 0) {
         const extra = (failedCount > 0 || noTelegramCount > 0)
@@ -169,7 +268,11 @@ export default function CrmCommunication() {
       setIsBulkModalOpen(false);
       setBulkForm({ content: '', targetType: 'all', targetId: '', templateId: '' });
       fetchBulkMessages();
-    } catch { showToast("Xabar yuborishda xatolik", 'error'); } finally { setBulkSending(false); }
+    } catch {
+      showToast("Xabar yuborishda xatolik", 'error');
+    } finally {
+      setBulkSending(false);
+    }
   };
 
   const handleMarkAllRead = async () => {
@@ -177,7 +280,19 @@ export default function CrmCommunication() {
       await api.post('/communication/notifications/mark-all-read', {});
       setNotifications(n => n.map(x => ({ ...x, isRead: true })));
       showToast("Barcha bildirishnomalar o'qilgan deb belgilandi", 'success');
-    } catch { /* ignore */ }
+    } catch {
+      showToast("Xatolik yuz berdi", 'error');
+    }
+  };
+
+  const handleMarkSingleRead = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await api.patch(`/communication/notifications/${id}/read`);
+      setNotifications(n => n.map(x => (x.id === id ? { ...x, isRead: true } : x)));
+    } catch {
+      /* ignore */
+    }
   };
 
   const insertVar = (varStr: string) => {
@@ -197,23 +312,23 @@ export default function CrmCommunication() {
           <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Aloqa Markazi</h1>
           <p className="text-xs text-zinc-400 mt-0.5">Xabar shablonlari, ommaviy yuborish va bildirishnomalar</p>
         </div>
-        {activeTab === 'templates' && (
+        {canWrite && activeTab === 'templates' && (
           <Button onClick={() => { setEditingTemplate(null); setTemplateForm({ name: '', content: '', type: 'CUSTOM', language: 'uz' }); setIsTemplateModalOpen(true); }} leftIcon={<Plus size={16} />}>
             Yangi Shablon
           </Button>
         )}
-        {activeTab === 'bulk' && (
-          <Button onClick={() => setIsBulkModalOpen(true)} leftIcon={<Send size={16} />}>
+        {canWrite && activeTab === 'bulk' && (
+          <Button onClick={() => { setIsBulkModalOpen(true); fetchGroups(); }} leftIcon={<Send size={16} />}>
             Xabar Yuborish
           </Button>
         )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Stats - Responsive grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {[
           { label: 'Shablonlar', value: templates.length, icon: FileText, color: 'from-blue-600 to-indigo-700' },
-          { label: 'Yuborilgan xabarlar', value: bulkMessages.filter(m => m.status === 'sent').length, icon: Send, color: 'from-emerald-500 to-teal-600' },
+          { label: 'Yuborilgan xabarlar', value: bulkMessages.filter(m => m.status === 'sent' || m.status === 'partial').length, icon: Send, color: 'from-emerald-500 to-teal-600' },
           { label: "O'qilmagan", value: unreadCount, icon: BellRing, color: 'from-amber-500 to-orange-600' },
         ].map((stat, i) => (
           <div key={i} className={`bg-gradient-to-br ${stat.color} rounded-2xl p-4 text-white shadow-lg`}>
@@ -226,15 +341,17 @@ export default function CrmCommunication() {
         ))}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit border border-zinc-200 dark:border-zinc-700">
+      {/* Tabs - Scrollable on mobile */}
+      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-full sm:w-fit overflow-x-auto border border-zinc-200 dark:border-zinc-700">
         {[
           { key: 'templates', label: 'Shablonlar', icon: FileText },
           { key: 'bulk', label: 'Ommaviy Yuborish', icon: Megaphone },
           { key: 'notifications', label: `Bildirishnomalar${unreadCount > 0 ? ` (${unreadCount})` : ''}`, icon: Bell },
         ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as any)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === tab.key ? 'bg-white dark:bg-zinc-700 shadow-sm text-slate-900 dark:text-white' : 'text-zinc-400 hover:text-zinc-600'
             }`}
           >
@@ -247,14 +364,27 @@ export default function CrmCommunication() {
       {activeTab === 'templates' && (
         <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
           {templatesLoading ? (
-            <div className="py-16 text-center text-zinc-400">Yuklanmoqda...</div>
+            <div className="py-16 text-center text-zinc-400 flex flex-col items-center gap-2">
+              <RefreshCw size={24} className="animate-spin text-blue-500" />
+              <span className="text-xs">Yuklanmoqda...</span>
+            </div>
+          ) : templatesError ? (
+            <div className="py-16 text-center text-rose-500 space-y-3">
+              <AlertTriangle size={32} className="mx-auto text-rose-400" />
+              <p className="text-sm font-bold">Shablonlarni yuklashda xatolik yuz berdi</p>
+              <Button variant="secondary" size="sm" onClick={fetchTemplates} leftIcon={<RefreshCw size={14} />}>
+                Qayta urinish
+              </Button>
+            </div>
           ) : templates.length === 0 ? (
             <div className="py-16 text-center">
               <FileText size={32} className="mx-auto text-zinc-200 mb-2" />
               <p className="text-sm font-bold text-zinc-400">Shablonlar mavjud emas</p>
-              <button onClick={() => setIsTemplateModalOpen(true)} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
-                + Birinchi shablonni yaratish
-              </button>
+              {canWrite && (
+                <button onClick={() => setIsTemplateModalOpen(true)} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
+                  + Birinchi shablonni yaratish
+                </button>
+              )}
             </div>
           ) : (
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -262,7 +392,7 @@ export default function CrmCommunication() {
                 <div key={tmpl.id} className="p-4 hover:bg-zinc-50 dark:hover:bg-white/[0.02] transition-colors group">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
                         <p className="text-sm font-black text-slate-900 dark:text-white">{tmpl.name}</p>
                         <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${typeColor(tmpl.type)}`}>
                           {TEMPLATE_TYPES.find(t => t.value === tmpl.type)?.label || tmpl.type}
@@ -273,25 +403,32 @@ export default function CrmCommunication() {
                       </div>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{tmpl.content}</p>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all shrink-0">
                       <button
                         onClick={() => { navigator.clipboard.writeText(tmpl.content); showToast("Nusxalandi", 'success'); }}
                         className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400"
+                        title="Nusxalash"
                       >
                         <Copy size={13} />
                       </button>
-                      <button
-                        onClick={() => { setEditingTemplate(tmpl); setTemplateForm({ name: tmpl.name, content: tmpl.content, type: tmpl.type, language: tmpl.language }); setIsTemplateModalOpen(true); }}
-                        className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg text-blue-500"
-                      >
-                        <Edit2 size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTemplate(tmpl.id)}
-                        className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg text-rose-500"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      {canWrite && (
+                        <>
+                          <button
+                            onClick={() => { setEditingTemplate(tmpl); setTemplateForm({ name: tmpl.name, content: tmpl.content, type: tmpl.type, language: tmpl.language }); setIsTemplateModalOpen(true); }}
+                            className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg text-blue-500"
+                            title="Tahrirlash"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTemplate(tmpl.id)}
+                            className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg text-rose-500"
+                            title="O'chirish"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -304,13 +441,28 @@ export default function CrmCommunication() {
       {/* ── OMMAVIY YUBORISH ──────────────────────────────────── */}
       {activeTab === 'bulk' && (
         <div className="space-y-4">
-          {bulkMessages.length === 0 ? (
+          {bulkLoading ? (
+            <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm py-16 text-center text-zinc-400 flex flex-col items-center gap-2">
+              <RefreshCw size={24} className="animate-spin text-blue-500" />
+              <span className="text-xs">Yuklanmoqda...</span>
+            </div>
+          ) : bulkError ? (
+            <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm py-16 text-center text-rose-500 space-y-3">
+              <AlertTriangle size={32} className="mx-auto text-rose-400" />
+              <p className="text-sm font-bold">Xabarlar tarixini yuklashda xatolik yuz berdi</p>
+              <Button variant="secondary" size="sm" onClick={fetchBulkMessages} leftIcon={<RefreshCw size={14} />}>
+                Qayta urinish
+              </Button>
+            </div>
+          ) : bulkMessages.length === 0 ? (
             <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm py-16 text-center">
               <Send size={32} className="mx-auto text-zinc-200 mb-2" />
               <p className="text-sm font-bold text-zinc-400">Hali xabar yuborilmagan</p>
-              <button onClick={() => setIsBulkModalOpen(true)} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
-                + Birinchi xabarni yuborish
-              </button>
+              {canWrite && (
+                <button onClick={() => { setIsBulkModalOpen(true); fetchGroups(); }} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
+                  + Birinchi xabarni yuborish
+                </button>
+              )}
             </div>
           ) : (
             <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
@@ -329,7 +481,7 @@ export default function CrmCommunication() {
                         </span>
                         <span className="text-[10px] text-zinc-400">
                           {TARGET_TYPES.find(t => t.value === msg.targetType)?.label || msg.targetType}
-                          {msg.sentCount > 0 && ` • ${msg.sentCount} ta`}
+                          {` • ${msg.sentCount} ta yetkazildi`}
                         </span>
                       </div>
                       <span className="text-[10px] text-zinc-400">{msg.sentAt ? new Date(msg.sentAt).toLocaleDateString('uz-UZ') : new Date(msg.createdAt).toLocaleDateString('uz-UZ')}</span>
@@ -355,7 +507,18 @@ export default function CrmCommunication() {
             )}
           </div>
           {notifLoading ? (
-            <div className="py-12 text-center text-zinc-400">Yuklanmoqda...</div>
+            <div className="py-12 text-center text-zinc-400 flex flex-col items-center gap-2">
+              <RefreshCw size={24} className="animate-spin text-blue-500" />
+              <span className="text-xs">Yuklanmoqda...</span>
+            </div>
+          ) : notifError ? (
+            <div className="py-12 text-center text-rose-500 space-y-3">
+              <AlertTriangle size={32} className="mx-auto text-rose-400" />
+              <p className="text-sm font-bold">Bildirishnomalarni yuklashda xatolik yuz berdi</p>
+              <Button variant="secondary" size="sm" onClick={fetchNotifications} leftIcon={<RefreshCw size={14} />}>
+                Qayta urinish
+              </Button>
+            </div>
           ) : notifications.length === 0 ? (
             <div className="py-12 text-center">
               <Bell size={32} className="mx-auto text-zinc-200 mb-2" />
@@ -364,7 +527,11 @@ export default function CrmCommunication() {
           ) : (
             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {notifications.map(n => (
-                <div key={n.id} className={`p-4 transition-colors ${!n.isRead ? 'bg-blue-50/50 dark:bg-blue-500/5' : 'hover:bg-zinc-50 dark:hover:bg-white/[0.02]'}`}>
+                <div
+                  key={n.id}
+                  onClick={() => !n.isRead && handleMarkSingleRead(n.id)}
+                  className={`p-4 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/50 dark:bg-blue-500/5' : 'hover:bg-zinc-50 dark:hover:bg-white/[0.02]'}`}
+                >
                   <div className="flex items-start gap-3">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                       n.type === 'alert' ? 'bg-rose-100 dark:bg-rose-500/20' :
@@ -384,7 +551,15 @@ export default function CrmCommunication() {
                       </div>
                       <p className="text-xs text-zinc-500 mt-0.5">{n.message}</p>
                     </div>
-                    {!n.isRead && <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1.5" />}
+                    {!n.isRead && (
+                      <button
+                        onClick={(e) => handleMarkSingleRead(n.id, e)}
+                        className="w-5 h-5 rounded-full bg-blue-500 hover:bg-blue-600 flex items-center justify-center text-white shrink-0 mt-1"
+                        title="O'qilgan deb belgilash"
+                      >
+                        <Check size={12} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -398,7 +573,7 @@ export default function CrmCommunication() {
         title={editingTemplate ? 'Shablonni Tahrirlash' : 'Yangi Shablon Yaratish'}>
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Shablon nomi</label>
+            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Shablon nomi *</label>
             <input
               placeholder="Masalan: Oylik to'lov eslatmasi"
               value={templateForm.name}
@@ -430,7 +605,7 @@ export default function CrmCommunication() {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Matn</label>
+            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Matn *</label>
             <textarea
               rows={5}
               placeholder="Xabar matnini kiriting..."
@@ -452,8 +627,12 @@ export default function CrmCommunication() {
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="secondary" onClick={() => { setIsTemplateModalOpen(false); setEditingTemplate(null); }} className="flex-1">Bekor</Button>
-            <Button onClick={handleSaveTemplate} className="flex-1" disabled={!templateForm.name || !templateForm.content}>
-              {editingTemplate ? 'Saqlash' : 'Yaratish'}
+            <Button
+              onClick={handleSaveTemplate}
+              className="flex-1"
+              disabled={!templateForm.name.trim() || !templateForm.content.trim() || templateSaving}
+            >
+              {templateSaving ? 'Saqlanmoqda...' : editingTemplate ? 'Saqlash' : 'Yaratish'}
             </Button>
           </div>
         </div>
@@ -466,16 +645,45 @@ export default function CrmCommunication() {
             <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Qabul qiluvchilar</label>
             <select
               value={bulkForm.targetType}
-              onChange={e => setBulkForm(f => ({ ...f, targetType: e.target.value }))}
+              onChange={e => {
+                const targetType = e.target.value;
+                setBulkForm(f => ({ ...f, targetType, targetId: '' }));
+                if (targetType === 'group') fetchGroups();
+              }}
               className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
             >
               {TARGET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
+
+          {bulkForm.targetType === 'group' && (
+            <div>
+              <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Guruhni tanlang *</label>
+              {groupsLoading ? (
+                <div className="text-xs text-zinc-400 py-2 flex items-center gap-1.5">
+                  <RefreshCw size={12} className="animate-spin text-blue-500" /> Guruhlar yuklanmoqda...
+                </div>
+              ) : groups.length === 0 ? (
+                <div className="text-xs text-amber-600 py-1 font-semibold">Guruhlar topilmadi</div>
+              ) : (
+                <select
+                  value={bulkForm.targetId}
+                  onChange={e => setBulkForm(f => ({ ...f, targetId: e.target.value }))}
+                  className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                >
+                  <option value="">-- Guruhni tanlang --</option>
+                  {groups.map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           {templates.length > 0 && (
             <div>
               <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Shablon tanlash (ixtiyoriy)</label>
-              <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto">
                 {templates.map(tmpl => (
                   <button key={tmpl.id} onClick={() => applyTemplate(tmpl)}
                     className={`p-2 text-left rounded-xl border text-xs transition-all ${
@@ -491,7 +699,7 @@ export default function CrmCommunication() {
             </div>
           )}
           <div>
-            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Xabar matni</label>
+            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Xabar matni *</label>
             <textarea
               rows={5}
               placeholder="Yuborilajak xabar matni..."
@@ -502,13 +710,18 @@ export default function CrmCommunication() {
           </div>
           <div className="p-3 bg-amber-50 dark:bg-amber-500/10 rounded-xl border border-amber-200 dark:border-amber-500/30">
             <p className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-              <AlertTriangle size={12} />
-              Faqat ota-onasi (yoki o'zi) Telegram botni ishga tushirgan o'quvchilarga yetib boradi
+              <AlertTriangle size={12} className="shrink-0" />
+              Faqat Telegram botni ishga tushirgan o'quvchi yoki ularning ota-onalariga yetib boradi
             </p>
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="secondary" onClick={() => setIsBulkModalOpen(false)} className="flex-1">Bekor</Button>
-            <Button onClick={handleSendBulk} className="flex-1" disabled={!bulkForm.content || bulkSending} leftIcon={<Send size={14} />}>
+            <Button
+              onClick={handleSendBulk}
+              className="flex-1"
+              disabled={!bulkForm.content.trim() || (bulkForm.targetType === 'group' && !bulkForm.targetId) || bulkSending}
+              leftIcon={<Send size={14} />}
+            >
               {bulkSending ? 'Yuborilmoqda...' : 'Yuborish'}
             </Button>
           </div>
