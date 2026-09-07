@@ -47,7 +47,7 @@ export default function CrmStudents() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const navigate = useNavigate();
   const { data: students = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
-  const { data: groups = [] } = useFirestore<any>('groups');
+  const { data: groups = [], loading: groupsLoading, error: groupsError, refetch: refetchGroups } = useFirestore<any>('groups');
   const { courses: liveCourses, groups: liveGroups } = useCrmData();
   const courseOptions = liveCourses.length > 0 ? liveCourses : [];
   const groupOptions = liveGroups.length > 0 ? liveGroups : (groups || []);
@@ -62,8 +62,11 @@ export default function CrmStudents() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const itemsPerPage = 20;
 
   const [formData, setFormData] = useState<Partial<Student>>({
@@ -83,30 +86,49 @@ export default function CrmStudents() {
     notes: ''
   });
 
-  const handleSave = async () => {
-    if (!canManage) return;
+  const validateForm = (): boolean => {
+    const errs: Record<string, string> = {};
     if (!formData.name?.trim()) {
-      showToast("O'quvchi ismi kiritilishi shart!", 'error');
-      return;
+      errs.name = "O'quvchi F.I.O kiritilishi shart!";
     }
+
+    const cleanPhone = (formData.phone || '').replace(/\D/g, '');
     if (!formData.phone?.trim()) {
-      showToast("Telefon raqam kiritilishi shart!", 'error');
-      return;
+      errs.phone = "Telefon raqam kiritilishi shart!";
+    } else if (cleanPhone.length < 9) {
+      errs.phone = "Telefon raqam to'liq emas (+998 90 123 45 67)";
     }
 
     if (formData.email && formData.email.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.email.trim())) {
-        showToast("Email formati noto'g'ri!", 'error');
-        return;
+        errs.email = "Email formati noto'g'ri!";
       }
+    }
+
+    if (formData.parentPhone && formData.parentPhone.trim()) {
+      const cleanParentPhone = formData.parentPhone.replace(/\D/g, '');
+      if (cleanParentPhone.length < 9) {
+        errs.parentPhone = "Ota-ona telefoni to'liq emas";
+      }
+    }
+
+    setFormErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!canManage) return;
+    if (!validateForm()) {
+      showToast("Formadagi xatolarni tuzating!", 'error');
+      return;
     }
 
     try {
       const studentData = {
         ...formData,
-        name: formData.name.trim(),
-        phone: formData.phone.trim(),
+        name: formData.name!.trim(),
+        phone: formData.phone!.trim(),
         email: formData.email ? formData.email.trim() : '',
       } as Omit<Student, 'id'>;
       if (formData.id) {
@@ -161,8 +183,35 @@ export default function CrmStudents() {
     }
   };
 
+  const confirmBulkDelete = async () => {
+    if (!canManage || selectedIds.size === 0) return;
+    setIsBulkDeleting(true);
+    let successCount = 0;
+    let failCount = 0;
+    const remainingIds = new Set(selectedIds);
+    for (const id of Array.from(selectedIds)) {
+      try {
+        await deleteDocument(id);
+        remainingIds.delete(id);
+        successCount++;
+      } catch (err) {
+        console.error(`Error deleting student ${id}:`, err);
+        failCount++;
+      }
+    }
+    setSelectedIds(remainingIds);
+    setBulkDeleteConfirm(false);
+    setIsBulkDeleting(false);
+    if (failCount > 0) {
+      showToast(`${successCount} ta o'quvchi o'chirildi, ${failCount} tasida xatolik yuz berdi`, 'error');
+    } else {
+      showToast(`${successCount} ta o'quvchi o'chirildi`, 'success');
+    }
+  };
+
   const openModal = (student: Student | null = null) => {
     if (!canManage) return;
+    setFormErrors({});
     if (student) {
       setFormData({
         ...student,
@@ -225,6 +274,14 @@ export default function CrmStudents() {
 
   return (
     <div className="space-y-6">
+      {groupsError && (
+        <div role="alert" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <p>Guruhlar ro'yxatini yuklab bo'lmadi. Qayta urinib ko'ring.</p>
+          <Button variant="secondary" isLoading={groupsLoading} onClick={() => void refetchGroups()}>
+            Qayta yuklash
+          </Button>
+        </div>
+      )}
       <ConfirmDialog
         isOpen={canManage && deleteConfirm.open}
         title="O'quvchini o'chirish"
@@ -233,13 +290,21 @@ export default function CrmStudents() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
       />
+      <ConfirmDialog
+        isOpen={canManage && bulkDeleteConfirm}
+        title="Tanlangan o'quvchilarni o'chirish"
+        message={`Haqiqatan ham tanlangan ${selectedIds.size} ta o'quvchini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi.`}
+        confirmText="Ha, o'chirish"
+        onConfirm={confirmBulkDelete}
+        onCancel={() => setBulkDeleteConfirm(false)}
+      />
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">O'quvchilar Boshqaruvi</h1>
           <p className="text-xs text-zinc-400 mt-0.5">Markaz o'quvchilari, ularning natijalari va to'lovlari</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <div className="relative group">
             <button className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors">
               <Download size={18} />
@@ -331,7 +396,7 @@ export default function CrmStudents() {
               <select
                 value={filterStatus}
                 onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
-                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+                className="w-full sm:w-auto px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 <option value="Barchasi">Barcha holatlar</option>
                 <option value="Faol">Faol</option>
@@ -342,7 +407,7 @@ export default function CrmStudents() {
               <select
                 value={filterCourse}
                 onChange={(e) => { setFilterCourse(e.target.value); setCurrentPage(1); }}
-                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+                className="w-full sm:w-auto px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 <option value="Barchasi">Barcha kurslar</option>
                 {courseOptions.map((c: any) => (
@@ -352,7 +417,7 @@ export default function CrmStudents() {
               <select
                 value={filterPayment}
                 onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1); }}
-                className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
+                className="w-full sm:w-auto px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
               >
                 <option value="Barchasi">Barcha to'lovlar</option>
                 <option value="Tolov qilingan">To'lov qilingan</option>
@@ -361,13 +426,7 @@ export default function CrmStudents() {
               </select>
               {canManage && selectedIds.size > 0 && (
                 <button
-                  onClick={async () => {
-                    if (!canManage) return;
-                    if (!window.confirm(`${selectedIds.size} ta o'quvchini o'chirasizmi?`)) return;
-                    for (const id of selectedIds) await deleteDocument(id);
-                    setSelectedIds(new Set());
-                    showToast(`${selectedIds.size} ta o'quvchi o'chirildi`, 'success');
-                  }}
+                  onClick={() => setBulkDeleteConfirm(true)}
                   className="px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-black hover:bg-rose-700 transition-colors"
                 >
                   <Trash2 size={16} className="inline mr-1.5" />
@@ -485,7 +544,7 @@ export default function CrmStudents() {
                     </span>
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       {canManage && <button 
                         onClick={(e) => { e.stopPropagation(); openModal(student); }}
                         className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors"
@@ -706,17 +765,27 @@ export default function CrmStudents() {
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Shaxsiy Ma'lumotlar</h4>
               <div className="space-y-3">
                 <Input 
-                  label="F.I.O"
+                  label="F.I.O *"
                   value={formData.name || ''}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, name: e.target.value});
+                    if (formErrors.name) setFormErrors({...formErrors, name: ''});
+                  }}
                   placeholder="Aliyev Vali"
+                  error={formErrors.name}
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <PhoneInput
-                    label="Telefon"
-                    value={formData.phone || ''}
-                    onChange={(phone) => setFormData({...formData, phone})}
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <PhoneInput
+                      label="Telefon *"
+                      value={formData.phone || ''}
+                      onChange={(phone) => {
+                        setFormData({...formData, phone});
+                        if (formErrors.phone) setFormErrors({...formErrors, phone: ''});
+                      }}
+                    />
+                    {formErrors.phone && <p className="text-xs text-rose-500 mt-1 font-bold">{formErrors.phone}</p>}
+                  </div>
                   <Input
                     type="date"
                     label="Tug'ilgan sana"
@@ -728,8 +797,12 @@ export default function CrmStudents() {
                   type="email"
                   label="Email"
                   value={formData.email || ''}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  onChange={(e) => {
+                    setFormData({...formData, email: e.target.value});
+                    if (formErrors.email) setFormErrors({...formErrors, email: ''});
+                  }}
                   placeholder="student@mail.uz"
+                  error={formErrors.email}
                 />
                 <Input
                   label="Manzil"
@@ -750,11 +823,17 @@ export default function CrmStudents() {
                   onChange={(e) => setFormData({...formData, parentName: e.target.value})}
                   placeholder="Aliyev G'ani"
                 />
-                <PhoneInput
-                  label="Ota-ona telefoni"
-                  value={formData.parentPhone || ''}
-                  onChange={(parentPhone) => setFormData({...formData, parentPhone})}
-                />
+                <div>
+                  <PhoneInput
+                    label="Ota-ona telefoni"
+                    value={formData.parentPhone || ''}
+                    onChange={(parentPhone) => {
+                      setFormData({...formData, parentPhone});
+                      if (formErrors.parentPhone) setFormErrors({...formErrors, parentPhone: ''});
+                    }}
+                  />
+                  {formErrors.parentPhone && <p className="text-xs text-rose-500 mt-1 font-bold">{formErrors.parentPhone}</p>}
+                </div>
               </div>
             </div>
 
@@ -788,7 +867,7 @@ export default function CrmStudents() {
                   </select>
                   <p className="text-[10px] text-zinc-400">Kurs guruh orqali avtomatik aniqlanadi</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5 flex flex-col gap-1.5">
                     <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>
                     <select 

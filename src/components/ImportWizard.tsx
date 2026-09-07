@@ -33,12 +33,14 @@ export default function ImportWizard({ collection, onClose, onSuccess }: Props) 
   const [loading, setLoading]       = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [imported, setImported]     = useState(0);
+  const [uploadError, setUploadError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (f: File) => {
     if (!f) return;
     setFile(f);
     setLoading(true);
+    setUploadError('');
     try {
       const formData = new FormData();
       formData.append('file', f);
@@ -54,7 +56,7 @@ export default function ImportWizard({ collection, onClose, onSuccess }: Props) 
       setCanImport(Boolean(ok));
       setStep('preview');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Faylni o\'qishda xatolik');
+      setUploadError(err.response?.data?.message || 'Faylni o\'qishda xatolik yuz berdi');
     }
     setLoading(false);
   };
@@ -62,6 +64,7 @@ export default function ImportWizard({ collection, onClose, onSuccess }: Props) 
   const confirm = async () => {
     if (!file) return;
     setConfirming(true);
+    setUploadError('');
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -72,7 +75,7 @@ export default function ImportWizard({ collection, onClose, onSuccess }: Props) 
       setImported(res.data.created ?? 0);
       setStep('done');
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Import qilishda xatolik');
+      setUploadError(err.response?.data?.message || 'Import qilishda xatolik yuz berdi');
     }
     setConfirming(false);
   };
@@ -149,6 +152,12 @@ export default function ImportWizard({ collection, onClose, onSuccess }: Props) 
                   <div className="flex items-center justify-center gap-2 mt-4 text-sm text-blue-600">
                     <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                     Faylni tahlil qilinmoqda...
+                  </div>
+                )}
+                {uploadError && (
+                  <div role="alert" className="mt-4 p-3 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-200 dark:border-rose-500/30 text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>{uploadError}</span>
                   </div>
                 )}
 

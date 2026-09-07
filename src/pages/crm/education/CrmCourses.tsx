@@ -9,6 +9,7 @@ import {
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { ErrorState } from '../../../components/States';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
@@ -62,7 +63,7 @@ const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
 
 export default function CrmCourses() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
-  const { data: courses = [], loading, addDocument, updateDocument, deleteDocument } = useFirestore<Course>('courses');
+  const { data: courses = [], loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<Course>('courses');
   const { data: students = [] } = useFirestore<any>('students');
   const { data: groups = [] } = useFirestore<any>('groups');
   const { showToast } = useToast();
@@ -109,17 +110,17 @@ export default function CrmCourses() {
 
   // Tariflarni serverdagi holat bilan solishtirib, faqat farqni yozadi
   // (yangi qatorlar yaratiladi, o'zgarganlari yangilanadi, olib tashlanganlari o'chiriladi).
-  const syncTiers = async (courseId: string) => {
+  const syncTiers = async (courseId: string, activeTiers: CourseTier[]) => {
     const existing = editingCourse?.tiers || [];
     const existingIds = new Set(existing.map(t => t.id));
-    const keptIds = new Set(tiers.filter(t => t.id).map(t => t.id));
+    const keptIds = new Set(activeTiers.filter(t => t.id).map(t => t.id));
 
     for (const old of existing) {
       if (old.id && !keptIds.has(old.id)) {
         await api.delete(`/courseTiers/${old.id}`).catch(() => {});
       }
     }
-    for (const t of tiers) {
+    for (const t of activeTiers) {
       if (!t.name.trim() || !t.price) continue;
       if (t.id && existingIds.has(t.id)) {
         await api.put(`/courseTiers/${t.id}`, { name: t.name.trim(), price: t.price });
@@ -131,18 +132,34 @@ export default function CrmCourses() {
 
   const handleSave = async () => {
     if (!canManage) return;
-    if (!formData.name) {
+    if (!formData.name?.trim()) {
       showToast('Kurs nomini kiriting!', 'error');
       return;
     }
-    if (tiers.some(t => !t.name.trim() || !t.price)) {
-      showToast("Har bir tarif uchun nom va narx to'ldirilishi shart!", 'error');
+    if (formData.price != null && formData.price < 0) {
+      showToast("Kurs narxi manfiy bo'lishi mumkin emas!", 'error');
       return;
     }
+
+    // Filter out completely blank tier rows (e.g. user clicked "+ Tarif qo'shish" but left it empty)
+    const validTiers = tiers.filter(t => t.name.trim() !== '' || (t.price && t.price > 0));
+
+    // Check for partially filled or invalid tier rows
+    for (const t of validTiers) {
+      if (!t.name.trim()) {
+        showToast("Tarif nomini kiriting!", 'error');
+        return;
+      }
+      if (!t.price || t.price <= 0) {
+        showToast(`"${t.name}" tarifi uchun narx kiriting (0 dan katta bo'lishi kerak)!`, 'error');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const payload = {
-        name: formData.name || '',
+        name: formData.name.trim(),
         category: formData.category || 'Tillar',
         duration: formData.duration || '3 oy',
         lessonDuration: formData.lessonDuration || 90,
@@ -154,11 +171,11 @@ export default function CrmCourses() {
       };
       if (editingCourse) {
         await updateDocument(editingCourse.id, payload);
-        await syncTiers(editingCourse.id);
+        await syncTiers(editingCourse.id, validTiers);
         showToast('Kurs yangilandi ✓', 'success');
       } else {
         const newId = await addDocument(payload as any);
-        if (tiers.length > 0) await syncTiers(newId);
+        if (validTiers.length > 0) await syncTiers(newId, validTiers);
         showToast('Yangi kurs qo\'shildi ✓', 'success');
       }
       closeModal();
@@ -314,6 +331,8 @@ export default function CrmCourses() {
             <div key={i} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 h-52 animate-pulse" />
           ))}
         </div>
+      ) : error ? (
+        <ErrorState message="Kurslar yuklanmadi. Qayta urinib ko'ring." onRetry={refetch} />
       ) : filteredCourses.length === 0 ? (
         <div className="text-center py-20 text-zinc-400">
           <BookOpen size={48} className="mx-auto mb-4 opacity-30" />
@@ -344,7 +363,7 @@ export default function CrmCourses() {
                         {course.category}
                       </span>
                     </div>
-                    <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute top-2 right-2 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       {canManage && <button onClick={() => openModal(course)} className="p-1.5 bg-white/90 rounded-lg text-zinc-600 hover:text-blue-600 transition-colors">
                         <Edit2 size={14} />
                       </button>}
@@ -368,7 +387,7 @@ export default function CrmCourses() {
                       <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight line-clamp-1 group-hover:text-blue-600 transition-colors">{course.name}</h3>
                     </div>
                     {!course.image && (
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                         {canManage && <button onClick={() => openModal(course)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={14} /></button>}
                         {canManage && <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-rose-600 transition-colors"><Trash2 size={14} /></button>}
                       </div>
@@ -444,7 +463,7 @@ export default function CrmCourses() {
             placeholder="Masalan: IELTS Foundation"
           />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
                     <select
@@ -483,7 +502,7 @@ export default function CrmCourses() {
                   {tiers.length > 0 && (
                     <div className="space-y-2 pt-1">
                       {tiers.map((tier, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
+                        <div key={idx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                           <div className="flex-1">
                             <Input
                               value={tier.name}
@@ -491,7 +510,7 @@ export default function CrmCourses() {
                               placeholder="Masalan: 2-sinf"
                             />
                           </div>
-                          <div className="w-40">
+                          <div className="w-full sm:w-40">
                             <MoneyInput
                               value={tier.price || undefined}
                               onChange={(price) => updateTier(idx, { price: price || 0 })}
@@ -500,7 +519,7 @@ export default function CrmCourses() {
                           </div>
                           <button
                             onClick={() => removeTier(idx)}
-                            className="p-2 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors shrink-0"
+                            className="p-2 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors shrink-0 self-end sm:self-center"
                           >
                             <X size={14} />
                           </button>
@@ -510,7 +529,7 @@ export default function CrmCourses() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Davomiyligi</label>
                     <select
