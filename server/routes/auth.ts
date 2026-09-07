@@ -154,7 +154,7 @@ router.get('/users', requireAuth, async (req, res) => {
             select: {
                 id: true, email: true, phone: true, name: true, role: true,
                 avatar: true, permissions: true, isActive: true, createdAt: true,
-                subject: true, experience: true, bio: true,
+                subject: true, experience: true, bio: true, salaryPercent: true,
             } as any,
             orderBy: { createdAt: 'desc' }
         });
