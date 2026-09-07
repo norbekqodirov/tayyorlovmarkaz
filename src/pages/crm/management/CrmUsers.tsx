@@ -248,10 +248,16 @@ export default function CrmUsers() {
             return;
         }
 
-        // Oxirgi SUPER_ADMIN rolini tushirib qo'ymaslik xavfsizlik tekshiruvi
-        const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN' || matchTemplateId(u) === 'SUPER_ADMIN').length;
+        // Oxirgi SUPER_ADMIN rolini tushirib qo'ymaslik xavfsizlik tekshiruvi.
+        // MUHIM: faqat haqiqiy user.role maydoniga qaraladi — matchTemplateId()
+        // faqat UI andozasini taxmin qiluvchi evristika, u SUPER_ADMIN va ADMIN
+        // andozalari bir xil (to'liq) permissions to'plamiga ega bo'lgani uchun
+        // to'liq ruxsatli oddiy ADMIN'ni ham SUPER_ADMIN deb noto'g'ri hisoblab
+        // qo'yishi mumkin edi — bu esa oxirgi haqiqiy SUPER_ADMIN'ni tasodifan
+        // pastga tushirish/o'chirishga yo'l qo'yib yuborardi.
+        const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN').length;
         if (editingUser) {
-            const isCurrentlySuperAdmin = editingUser.role === 'SUPER_ADMIN' || matchTemplateId(editingUser) === 'SUPER_ADMIN';
+            const isCurrentlySuperAdmin = editingUser.role === 'SUPER_ADMIN';
             const willBeSuperAdmin = form.role === 'SUPER_ADMIN';
             if (isCurrentlySuperAdmin && !willBeSuperAdmin && superAdminCount <= 1) {
                 showToast("Tizimda kamida bitta Super Admin bo'lishi shart! Oxirgi Super Admin rolini tushira olmaysiz.", 'error');
@@ -311,8 +317,8 @@ export default function CrmUsers() {
             return;
         }
 
-        const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN' || matchTemplateId(u) === 'SUPER_ADMIN').length;
-        if ((user.role === 'SUPER_ADMIN' || matchTemplateId(user) === 'SUPER_ADMIN') && superAdminCount <= 1) {
+        const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN').length;
+        if (user.role === 'SUPER_ADMIN' && superAdminCount <= 1) {
             showToast("Tizimda kamida bitta Super Admin bo'lishi shart! Oxirgi Super Adminni o'chira olmaysiz.", 'error');
             return;
         }
@@ -329,8 +335,8 @@ export default function CrmUsers() {
             return;
         }
 
-        const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN' || matchTemplateId(u) === 'SUPER_ADMIN').length;
-        if ((deleteConfirm.user.role === 'SUPER_ADMIN' || matchTemplateId(deleteConfirm.user) === 'SUPER_ADMIN') && superAdminCount <= 1) {
+        const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN').length;
+        if (deleteConfirm.user.role === 'SUPER_ADMIN' && superAdminCount <= 1) {
             showToast("Tizimda kamida bitta Super Admin bo'lishi shart! Oxirgi Super Adminni o'chira olmaysiz.", 'error');
             setDeleteConfirm({ open: false, user: null });
             return;
