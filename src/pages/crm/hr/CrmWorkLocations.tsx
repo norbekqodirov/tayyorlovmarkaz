@@ -66,6 +66,7 @@ export default function CrmWorkLocations() {
   const [showProfiles, setShowProfiles] = useState(false);
   const [deletingProfile, setDeletingProfile] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [showInactive, setShowInactive] = useState(false);
 
   const userRoleLevel = getCurrentRoleLevel();
   // server/routes/workLocations.ts va staffAttendance.ts write routes talab qiladi: ADMIN (level 3)
@@ -269,6 +270,8 @@ export default function CrmWorkLocations() {
 
   const registered = faceProfiles.filter(p => p.faceProfile);
   const unregistered = faceProfiles.filter(p => !p.faceProfile);
+  const inactiveCount = locations.filter(l => !l.isActive).length;
+  const visibleLocations = locations.filter(l => showInactive || l.isActive);
 
   return (
     <div className="space-y-6 pb-8">
@@ -284,9 +287,19 @@ export default function CrmWorkLocations() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-slate-900 dark:text-white">Ish Joylari</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
-            {locations.filter(l => l.isActive).length} ta faol joylashuv
-          </p>
+          <div className="flex items-center gap-3 mt-0.5">
+            <p className="text-sm text-zinc-500">
+              {locations.filter(l => l.isActive).length} ta faol joylashuv
+            </p>
+            {inactiveCount > 0 && (
+              <button
+                onClick={() => setShowInactive(v => !v)}
+                className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {showInactive ? 'Nofaollarni yashirish' : `${inactiveCount} ta nofaolni ko'rsatish`}
+              </button>
+            )}
+          </div>
         </div>
         {canManageWorkLocations && (
           <Button onClick={openCreate} leftIcon={<Plus size={15} strokeWidth={2.5} />}>
@@ -315,9 +328,17 @@ export default function CrmWorkLocations() {
             </button>
           )}
         </div>
+      ) : visibleLocations.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <MapPin size={40} className="text-zinc-300 dark:text-zinc-600 mb-3" />
+          <p className="text-zinc-500 font-medium">Faol ish joylari yo'q</p>
+          <button onClick={() => setShowInactive(true)} className="mt-3 text-sm text-blue-600 dark:text-blue-400 font-semibold hover:underline">
+            Nofaol joylarni ko'rsatish ({inactiveCount})
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {locations.map(loc => (
+          {visibleLocations.map(loc => (
             <motion.div
               key={loc.id}
               layout
@@ -384,15 +405,17 @@ export default function CrmWorkLocations() {
                     }`}
                   >
                     {loc.isActive ? <EyeOff size={12} /> : <Eye size={12} />}
-                    {loc.isActive ? 'O\'chirish' : 'Yoqish'}
+                    {loc.isActive ? 'Nofaol qilish' : 'Yoqish'}
                   </button>
-                  <button
-                    onClick={() => remove(loc.id)}
-                    className="p-2 rounded-xl text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                    title="O'chirish"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  {loc.isActive && (
+                    <button
+                      onClick={() => remove(loc.id)}
+                      className="p-2 rounded-xl text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                      title="O'chirish"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               )}
             </motion.div>

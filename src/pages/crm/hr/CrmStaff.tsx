@@ -61,6 +61,10 @@ export default function CrmStaff() {
 
   const handleSave = async () => {
     if (!canManage) return;
+    if (!editingMember && !formData.positionId) {
+      showToast('Iltimos, lavozimni tanlang', 'error');
+      return;
+    }
     try {
       if (editingMember) {
         await updateDocument(editingMember.id, formData);
@@ -316,8 +320,12 @@ export default function CrmStaff() {
                 ))}
               </select>
               {positionsError && <div role="alert" className="text-sm text-rose-600">Lavozimlar yuklanmadi. <Button type="button" variant="secondary" onClick={reloadPositions}>Qayta urinish</Button></div>}
+              {!positionsLoading && !positionsError && positions.filter(p => p.isActive).length === 0 && (
+                <div className="text-xs text-amber-600 dark:text-amber-400">
+                  Hali birorta lavozim yaratilmagan. Avval <a href="/crmtayyorlovmarkaz/positions" className="underline font-semibold">Lavozimlar</a> bo'limida yarating.
+                </div>
+              )}
             </div>
-            <Input label="Lavozim nomi (matn)" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} placeholder="Masalan: O'qituvchi" />
             <Input label="Passport Seriya" value={formData.passport} onChange={(e) => setFormData({ ...formData, passport: e.target.value })} placeholder="AA 1234567" />
             <Input label="Manzil" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Toshkent sh, Chilonzor..." />
           </div>
