@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../../components/Toast';
 import api from '../../../api/client';
+import { ErrorState } from '../../../components/States';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ export default function CrmTelegram() {
     const [settings, setSettings] = useState<TelegramSettings | null>(null);
     const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
     const [loading, setLoading] = useState(true);
+    const [pageError, setPageError] = useState<string | null>(null);
 
     // Settings form
     const [tokenInput, setTokenInput] = useState('');
@@ -94,6 +96,8 @@ export default function CrmTelegram() {
     const [historyPage, setHistoryPage] = useState(1);
     const [historyTotal, setHistoryTotal] = useState(0);
     const [historyFilter, setHistoryFilter] = useState('');
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState<string | null>(null);
 
     // Staff Bot
     const [staffWebhookInfo, setStaffWebhookInfo] = useState<any>(null);
@@ -108,6 +112,8 @@ export default function CrmTelegram() {
     const [staffBroadcastRole, setStaffBroadcastRole] = useState('');
     const [sendingStaffBroadcast, setSendingStaffBroadcast] = useState(false);
     const [staffBroadcastResult, setStaffBroadcastResult] = useState<{ sent: number; failed: number } | null>(null);
+    const [staffLoading, setStaffLoading] = useState(false);
+    const [staffError, setStaffError] = useState<string | null>(null);
 
     useEffect(() => { loadData(); }, []);
     useEffect(() => { if (activeTab === 'history') loadHistory(); }, [activeTab, historyPage, historyFilter]);
@@ -115,6 +121,7 @@ export default function CrmTelegram() {
 
     const loadData = async () => {
         setLoading(true);
+        setPageError(null);
         try {
             const [statsRes, settingsRes, statusRes] = await Promise.all([
                 api.get('/telegram/stats'),
@@ -129,33 +136,41 @@ export default function CrmTelegram() {
             setAutoPayment(settingsRes.data.autoPayment || false);
             setAutoLead(settingsRes.data.autoLead || false);
             setMiniAppUrl(settingsRes.data.miniAppUrl || '');
-        } catch {
-            showToast("Ma'lumot yuklanmadi", 'error');
+        } catch (err: any) {
+            const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Ma'lumot yuklanmadi";
+            setPageError(errMsg);
+            showToast(errMsg, 'error');
         } finally {
             setLoading(false);
         }
     };
 
     const loadHistory = async () => {
+        setHistoryLoading(true);
+        setHistoryError(null);
         try {
             const url = `/telegram/messages?page=${historyPage}&limit=20${historyFilter ? `&type=${historyFilter}` : ''}`;
             const res = await api.get(url);
             setHistory(res.data.data || []);
             setHistoryTotal(res.data.total || 0);
-        } catch { }
+        } catch (err: any) {
+            setHistoryError(err.response?.data?.error || err.response?.data?.message || err.message || "Xabarlar tarixini yuklashda xatolik yuz berdi");
+        } finally {
+            setHistoryLoading(false);
+        }
     };
 
     const saveSettings = async () => {
         setSavingSettings(true);
         try {
-            const payload: any = { adminChatId, autoAttendance, autoPayment, autoLead };
+            const payload: any = { adminChatId: adminChatId.trim(), autoAttendance, autoPayment, autoLead };
             if (tokenInput.trim()) payload.token = tokenInput.trim();
             await api.put('/telegram/settings', payload);
             showToast('Sozlamalar saqlandi!', 'success');
             setTokenInput('');
             loadData();
-        } catch {
-            showToast('Saqlashda xatolik', 'error');
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Saqlashda xatolik', 'error');
         } finally {
             setSavingSettings(false);
         }
@@ -169,8 +184,8 @@ export default function CrmTelegram() {
             const res = await api.post('/telegram/set-menu-button', { url: miniAppUrl.trim() });
             showToast(res.data.message || 'Saqlandi!', res.data.ok ? 'success' : 'warning');
             loadData();
-        } catch {
-            showToast('Xatolik', 'error');
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Xatolik', 'error');
         } finally {
             setSavingMiniApp(false);
         }
@@ -184,14 +199,14 @@ export default function CrmTelegram() {
     };
 
     const sendTest = async () => {
-        if (!testChatId) return showToast('Chat ID kiriting', 'error');
+        if (!testChatId.trim()) return showToast('Chat ID kiriting', 'error');
         setSendingTest(true);
         try {
-            const res = await api.post('/telegram/test', { chatId: testChatId, message: testMessage || undefined });
+            const res = await api.post('/telegram/test', { chatId: testChatId.trim(), message: testMessage || undefined });
             if (res.data.ok) showToast('Test xabar yuborildi! ✅', 'success');
             else showToast('Xabar yuborishda xatolik: ' + (res.data.message || ''), 'error');
-        } catch {
-            showToast('Server xatosi', 'error');
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Server xatosi', 'error');
         } finally {
             setSendingTest(false);
         }
@@ -201,7 +216,7 @@ export default function CrmTelegram() {
         if (!broadcastMessage.trim()) return showToast('Xabar matnini kiriting', 'error');
         setSendingBroadcast(true);
         try {
-            const res = await api.post('/telegram/broadcast', { message: broadcastMessage, targetGroup: broadcastTarget });
+            const res = await api.post('/telegram/broadcast', { message: broadcastMessage.trim(), targetGroup: broadcastTarget });
             if (res.data.ok) {
                 showToast(`${res.data.sent} kishiga xabar yuborildi!`, 'success');
                 setBroadcastMessage('');
@@ -209,25 +224,31 @@ export default function CrmTelegram() {
             } else {
                 showToast(res.data.message || 'Xabar yuborishda xatolik', 'error');
             }
-        } catch {
-            showToast('Server xatosi', 'error');
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Server xatosi', 'error');
         } finally {
             setSendingBroadcast(false);
         }
     };
 
     const loadStaffBotData = async () => {
+        setStaffLoading(true);
+        setStaffError(null);
         try {
             const [webhookRes, settingsRes] = await Promise.all([
-                api.get('/staff-telegram/webhook-info').catch(() => ({ data: null })),
-                api.get('/telegram/settings').catch(() => ({ data: {} })),
+                api.get('/staff-telegram/webhook-info'),
+                api.get('/telegram/settings'),
             ]);
             setStaffWebhookInfo(webhookRes.data?.result || webhookRes.data);
-            setStaffMiniAppUrl((settingsRes.data as any).staffMiniAppUrl || '');
+            setStaffMiniAppUrl((settingsRes.data as any)?.staffMiniAppUrl || '');
             if (!staffWebhookUrl) {
                 setStaffWebhookUrl(`${window.location.origin}/api/staff-telegram/webhook`);
             }
-        } catch {}
+        } catch (err: any) {
+            setStaffError(err.response?.data?.error || err.response?.data?.message || err.message || "Staff bot ma'lumotlarini yuklashda xatolik yuz berdi");
+        } finally {
+            setStaffLoading(false);
+        }
     };
 
     const saveStaffToken = async () => {
@@ -238,22 +259,26 @@ export default function CrmTelegram() {
             showToast('Staff bot token saqlandi!', 'success');
             setStaffTokenInput('');
             loadStaffBotData();
-        } catch { showToast('Saqlashda xatolik', 'error'); }
-        finally { setSavingStaffToken(false); }
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Saqlashda xatolik', 'error');
+        } finally { setSavingStaffToken(false); }
     };
 
     const saveStaffMiniApp = async () => {
         if (!staffMiniAppUrl.trim()) return showToast('URL kiriting', 'error');
+        if (!staffMiniAppUrl.startsWith('https://')) return showToast("URL https:// bilan boshlanishi kerak", 'error');
         setSavingStaffMiniApp(true);
         try {
             await api.put('/telegram/settings', { staffMiniAppUrl: staffMiniAppUrl.trim() });
             showToast('Staff portal URL saqlandi!', 'success');
-        } catch { showToast('Saqlashda xatolik', 'error'); }
-        finally { setSavingStaffMiniApp(false); }
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Saqlashda xatolik', 'error');
+        } finally { setSavingStaffMiniApp(false); }
     };
 
     const setStaffWebhookHandler = async () => {
         if (!staffWebhookUrl.trim()) return showToast("Webhook URL kiriting", 'error');
+        if (!staffWebhookUrl.startsWith('https://')) return showToast("Webhook URL https:// bilan boshlanishi kerak", 'error');
         setSettingStaffWebhook(true);
         try {
             const res = await api.post('/staff-telegram/set-webhook', { url: staffWebhookUrl.trim() });
@@ -263,20 +288,22 @@ export default function CrmTelegram() {
             } else {
                 showToast('Xato: ' + (res.data.description || ''), 'error');
             }
-        } catch { showToast('Server xatosi', 'error'); }
-        finally { setSettingStaffWebhook(false); }
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Server xatosi', 'error');
+        } finally { setSettingStaffWebhook(false); }
     };
 
     const sendStaffBroadcastHandler = async () => {
         if (!staffBroadcastMsg.trim()) return showToast('Xabar matnini kiriting', 'error');
         setSendingStaffBroadcast(true);
         try {
-            const res = await api.post('/staff-telegram/broadcast', { text: staffBroadcastMsg, role: staffBroadcastRole || undefined });
+            const res = await api.post('/staff-telegram/broadcast', { text: staffBroadcastMsg.trim(), role: staffBroadcastRole || undefined });
             setStaffBroadcastResult({ sent: res.data.sent, failed: res.data.failed });
             showToast(`${res.data.sent} xodimga xabar yuborildi!`, 'success');
             setStaffBroadcastMsg('');
-        } catch { showToast('Server xatosi', 'error'); }
-        finally { setSendingStaffBroadcast(false); }
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Server xatosi', 'error');
+        } finally { setSendingStaffBroadcast(false); }
     };
 
     if (loading) {
@@ -285,6 +312,10 @@ export default function CrmTelegram() {
                 <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             </div>
         );
+    }
+
+    if (pageError && !stats) {
+        return <ErrorState message={pageError} onRetry={loadData} />;
     }
 
     const tabs: { id: ActiveTab; label: string; icon: typeof Bot }[] = [
@@ -364,14 +395,14 @@ export default function CrmTelegram() {
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {[
-                            { label: 'Jami xabar', value: stats.messages.total, icon: MessageSquare, color: 'blue' },
-                            { label: 'Yuborilgan', value: stats.messages.sent, icon: CheckCircle2, color: 'emerald' },
-                            { label: 'Xato', value: stats.messages.failed, icon: XCircle, color: 'red' },
-                            { label: 'Bugun', value: stats.messages.today, icon: Radio, color: 'violet' },
+                            { label: 'Jami xabar', value: stats.messages.total, icon: MessageSquare, bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400' },
+                            { label: 'Yuborilgan', value: stats.messages.sent, icon: CheckCircle2, bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-600 dark:text-emerald-400' },
+                            { label: 'Xato', value: stats.messages.failed, icon: XCircle, bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-600 dark:text-red-400' },
+                            { label: 'Bugun', value: stats.messages.today, icon: Radio, bg: 'bg-violet-100 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-400' },
                         ].map(s => (
                             <div key={s.label} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4">
-                                <div className={`w-9 h-9 rounded-xl bg-${s.color}-100 dark:bg-${s.color}-900/30 flex items-center justify-center mb-3`}>
-                                    <s.icon size={18} className={`text-${s.color}-600 dark:text-${s.color}-400`} />
+                                <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center mb-3`}>
+                                    <s.icon size={18} className={s.text} />
                                 </div>
                                 <p className="text-2xl font-black text-slate-900 dark:text-white">{s.value.toLocaleString()}</p>
                                 <p className="text-xs text-zinc-500 mt-0.5">{s.label}</p>
@@ -710,7 +741,13 @@ export default function CrmTelegram() {
                             <p className="font-bold text-slate-900 dark:text-white">Xabarlar tarixi</p>
                             <span className="text-xs text-zinc-400">{historyTotal} ta</span>
                         </div>
-                        {history.length === 0 ? (
+                        {historyLoading ? (
+                            <div className="flex items-center justify-center h-40">
+                                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : historyError ? (
+                            <ErrorState message={historyError} onRetry={loadHistory} />
+                        ) : history.length === 0 ? (
                             <div className="p-10 text-center">
                                 <MessageSquare size={32} className="mx-auto mb-2 text-zinc-200 dark:text-zinc-700" />
                                 <p className="text-sm text-zinc-400">Xabarlar yo'q</p>
@@ -755,6 +792,14 @@ export default function CrmTelegram() {
             {/* STAFF BOT */}
             {activeTab === 'staffbot' && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+                    {staffLoading ? (
+                        <div className="flex items-center justify-center h-40">
+                            <div className="w-6 h-6 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                    ) : staffError ? (
+                        <ErrorState message={staffError} onRetry={loadStaffBotData} />
+                    ) : (
+                        <>
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
@@ -880,6 +925,8 @@ export default function CrmTelegram() {
                             <li>Webhook URL: {window.location.origin}/api/staff-telegram/webhook</li>
                         </ul>
                     </div>
+                        </>
+                    )}
                 </motion.div>
             )}
         </div>
