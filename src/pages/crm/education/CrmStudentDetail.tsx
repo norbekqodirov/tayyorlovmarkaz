@@ -4,7 +4,7 @@
  * Shows: Overview, Grades, Attendance, Statistics, Analytics, Payments,
  *        Tests, Certificates — all in one place.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -24,6 +24,7 @@ import {
   toLetterGrade, toGPA, getGradeBgColor, getGradeColor,
   calculateGPA, averagePercent, gradeLabel,
 } from '../../../utils/grading';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { EmptyState, ErrorState } from '../../../components/States';
 import { SkeletonStatCard } from '../../../components/Skeleton';
 
@@ -75,94 +76,100 @@ export default function CrmStudentDetail() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
 
-  useEffect(() => {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
+
+  const fetchStudentData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
-    (async () => {
-      try {
-        // Fetch all related data in parallel
-        const [studRes, attRes, gradesRes, paymentsRes, certsRes] = await Promise.allSettled([
-          api.get(`/students/${id}`),
-          api.get(`/students/${id}/attendance`).catch(() => ({ data: [] })),
-          api.get(`/journal?studentId=${id}`).catch(() => ({ data: [] })),
-          api.get(`/finance?studentId=${id}`).catch(() => ({ data: [] })),
-          api.get(`/certificates?studentId=${id}`).catch(() => ({ data: { data: [] } })),
-        ]);
+    try {
+      // Fetch all related data in parallel
+      const [studRes, attRes, gradesRes, paymentsRes, certsRes] = await Promise.allSettled([
+        api.get(`/students/${id}`),
+        api.get(`/students/${id}/attendance`).catch(() => ({ data: [] })),
+        api.get(`/journal?studentId=${id}`).catch(() => ({ data: [] })),
+        api.get(`/finance?studentId=${id}`).catch(() => ({ data: [] })),
+        api.get(`/certificates?studentId=${id}`).catch(() => ({ data: { data: [] } })),
+      ]);
 
-        if (studRes.status !== 'fulfilled') {
-          setError("O'quvchi topilmadi");
-          setLoading(false);
-          return;
-        }
-        const student = studRes.value.data;
-
-        // Process attendance
-        const attRecords = attRes.status === 'fulfilled' ? (attRes.value.data || []) : [];
-        const present = attRecords.filter((a: any) => a.status === 'present').length;
-        const absent  = attRecords.filter((a: any) => a.status === 'absent').length;
-        const late    = attRecords.filter((a: any) => a.status === 'late').length;
-        const total   = attRecords.length;
-        const rate    = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 0;
-
-        // Process grades
-        const gradesRaw = gradesRes.status === 'fulfilled' ? (gradesRes.value.data || []) : [];
-        const grades = gradesRaw.filter((g: any) => g.grade != null);
-
-        // Process payments
-        const paymentsRaw = paymentsRes.status === 'fulfilled' ? (paymentsRes.value.data || []) : [];
-        const payments = Array.isArray(paymentsRaw)
-          ? paymentsRaw.filter((p: any) => p.studentId === id)
-          : [];
-
-        // Process certificates
-        const certsRaw = certsRes.status === 'fulfilled'
-          ? (certsRes.value.data?.data || certsRes.value.data || [])
-          : [];
-
-        // Build trend data (last 6 months)
-        const now = new Date();
-        const trend = Array.from({ length: 6 }, (_, i) => {
-          const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-          const monthLabel = d.toLocaleDateString('uz-UZ', { month: 'short' });
-          const monthAtt = attRecords.filter((a: any) => {
-            if (!a.date) return false;
-            const ad = new Date(a.date);
-            return ad.getMonth() === d.getMonth() && ad.getFullYear() === d.getFullYear();
-          });
-          const monthPresent = monthAtt.filter((a: any) => a.status === 'present').length;
-          const monthGrades = grades.filter((g: any) => {
-            if (!g.date) return false;
-            const gd = new Date(g.date);
-            return gd.getMonth() === d.getMonth() && gd.getFullYear() === d.getFullYear();
-          });
-          const avgGrade = monthGrades.length
-            ? monthGrades.reduce((s: number, g: any) => s + Number(g.grade), 0) / monthGrades.length
-            : 0;
-          return {
-            date: monthLabel,
-            attendance: monthAtt.length ? Math.round((monthPresent / monthAtt.length) * 100) : 0,
-            grades: Math.round(avgGrade),
-          };
-        });
-
-        setData({
-          student,
-          attendance: { total, present, absent, late, rate },
-          grades,
-          payments,
-          certificates: certsRaw,
-          trend,
-          group: student.group,
-          course: student.course,
-        });
-      } catch (err: any) {
-        setError(err?.message || 'Xatolik yuz berdi');
-      } finally {
+      if (studRes.status !== 'fulfilled') {
+        setError("O'quvchi topilmadi yoki yuklashda xatolik yuz berdi");
         setLoading(false);
+        return;
       }
-    })();
+      const student = studRes.value.data;
+
+      // Process attendance
+      const attRecords = attRes.status === 'fulfilled' ? (attRes.value.data || []) : [];
+      const present = attRecords.filter((a: any) => a.status === 'present').length;
+      const absent  = attRecords.filter((a: any) => a.status === 'absent').length;
+      const late    = attRecords.filter((a: any) => a.status === 'late').length;
+      const total   = attRecords.length;
+      const rate    = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 0;
+
+      // Process grades
+      const gradesRaw = gradesRes.status === 'fulfilled' ? (gradesRes.value.data || []) : [];
+      const grades = gradesRaw.filter((g: any) => g.grade != null);
+
+      // Process payments
+      const paymentsRaw = paymentsRes.status === 'fulfilled' ? (paymentsRes.value.data || []) : [];
+      const payments = Array.isArray(paymentsRaw)
+        ? paymentsRaw.filter((p: any) => p.studentId === id)
+        : [];
+
+      // Process certificates
+      const certsRaw = certsRes.status === 'fulfilled'
+        ? (certsRes.value.data?.data || certsRes.value.data || [])
+        : [];
+
+      // Build trend data (last 6 months)
+      const now = new Date();
+      const trend = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+        const monthLabel = d.toLocaleDateString('uz-UZ', { month: 'short' });
+        const monthAtt = attRecords.filter((a: any) => {
+          if (!a.date) return false;
+          const ad = new Date(a.date);
+          if (isNaN(ad.getTime())) return false;
+          return ad.getMonth() === d.getMonth() && ad.getFullYear() === d.getFullYear();
+        });
+        const monthPresent = monthAtt.filter((a: any) => a.status === 'present').length;
+        const monthGrades = grades.filter((g: any) => {
+          if (!g.date) return false;
+          const gd = new Date(g.date);
+          if (isNaN(gd.getTime())) return false;
+          return gd.getMonth() === d.getMonth() && gd.getFullYear() === d.getFullYear();
+        });
+        const avgGrade = monthGrades.length
+          ? monthGrades.reduce((s: number, g: any) => s + Number(g.grade), 0) / monthGrades.length
+          : 0;
+        return {
+          date: monthLabel,
+          attendance: monthAtt.length ? Math.round((monthPresent / monthAtt.length) * 100) : 0,
+          grades: Math.round(avgGrade),
+        };
+      });
+
+      setData({
+        student,
+        attendance: { total, present, absent, late, rate },
+        grades,
+        payments,
+        certificates: certsRaw,
+        trend,
+        group: student.group,
+        course: student.course,
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Xatolik yuz berdi');
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchStudentData();
+  }, [fetchStudentData]);
 
   // Derived analytics
   const analytics = useMemo(() => {
@@ -178,7 +185,31 @@ export default function CrmStudentDetail() {
   }, [data]);
 
   if (loading) return <LoadingState label="Talaba ma'lumotlari yuklanmoqda..." />;
-  if (error || !data) return <ErrorState message={error || 'Talaba topilmadi'} onRetry={() => navigate(0)} />;
+  if (error || !data) {
+    return (
+      <div className="w-full flex justify-center py-12">
+        <div className="flex justify-center items-center flex-col text-center border border-rose-200 dark:border-rose-900/30 bg-rose-50 dark:bg-rose-500/5 p-8 rounded-[24px] max-w-md">
+          <AlertCircle size={48} className="text-rose-500 mb-4" strokeWidth={1.5} />
+          <h3 className="text-lg font-black text-slate-900 dark:text-white mb-2">Nosozlik</h3>
+          <p className="text-sm text-rose-600 dark:text-rose-400 font-medium mb-6">{error || 'Talaba topilmadi'}</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/crmtayyorlovmarkaz/students')}
+              className="px-4 py-2.5 bg-white dark:bg-zinc-800 text-slate-700 dark:text-white font-bold text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 transition"
+            >
+              Orqaga
+            </button>
+            <button
+              onClick={fetchStudentData}
+              className="px-4 py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-blue-700 transition"
+            >
+              Qayta urinish
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const student = data.student;
   const initial = (student.name || '?').charAt(0).toUpperCase();
@@ -463,7 +494,7 @@ function AttendanceTab({ attendance, trend }: any) {
       </div>
 
       {/* Stat Cards */}
-      <div className="lg:col-span-3 grid grid-cols-3 gap-3">
+      <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard label="Kelgan" value={attendance.present} icon={CheckCircle2} color="emerald" />
         <StatCard label="Kechikkan" value={attendance.late} icon={Clock} color="amber" />
         <StatCard label="Kelmagan" value={attendance.absent} icon={XCircle} color="rose" />
@@ -655,7 +686,7 @@ function PaymentsTab({ payments, balance, studentId }: any) {
         <EmptyState icon={<Wallet size={24} />} title="To'lovlar tarixi bo'sh" />
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard label="Jami to'langan" value={formatMoney(totalIncome)} icon={Wallet} color="emerald" />
             <StatCard label="Balans" value={formatMoney(balance || 0)} icon={Wallet} color={(balance || 0) < 0 ? 'rose' : 'green'} />
             <StatCard label="Tranzaksiyalar" value={payments.length} icon={FileText} color="blue" />
