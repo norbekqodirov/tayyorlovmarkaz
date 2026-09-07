@@ -172,8 +172,8 @@ export default function CrmSettings() {
           return;
         }
       } else if (activeTab === 'landing') {
-        if (!isSuperAdmin) {
-          showToast("Bosh sahifa sozlamalarini saqlash uchun Super Admin (daraja 4) huquqi talab qilinadi!", 'error');
+        if (!isAdmin) {
+          showToast("Bosh sahifa sozlamalarini saqlash uchun Administrator huquqi talab qilinadi!", 'error');
           return;
         }
         const landingExists = pageDocs.some(doc => doc.id === 'home');
@@ -184,8 +184,8 @@ export default function CrmSettings() {
         }
         showToast("Bosh sahifa ma'lumotlari saqlandi!", 'success');
       } else if (activeTab === 'leads') {
-        if (!isSuperAdmin) {
-          showToast("Lid sozlamalarini saqlash uchun Super Admin (daraja 4) huquqi talab qilinadi!", 'error');
+        if (!isAdmin) {
+          showToast("Lid sozlamalarini saqlash uchun Administrator huquqi talab qilinadi!", 'error');
           return;
         }
         if (leadSettings.slaMinutes === undefined || leadSettings.slaMinutes === null || isNaN(Number(leadSettings.slaMinutes)) || Number(leadSettings.slaMinutes) < 5) {
@@ -206,8 +206,8 @@ export default function CrmSettings() {
           setLeadFieldSaving(false);
         }
       } else if (activeTab === 'billing') {
-        if (!isSuperAdmin) {
-          showToast("To'lov sozlamalarini saqlash uchun Super Admin (daraja 4) huquqi talab qilinadi!", 'error');
+        if (!isAdmin) {
+          showToast("To'lov sozlamalarini saqlash uchun Administrator huquqi talab qilinadi!", 'error');
           return;
         }
         if (!billingSettings.lessonsPerMonth || isNaN(Number(billingSettings.lessonsPerMonth)) || Number(billingSettings.lessonsPerMonth) < 1) {
@@ -332,9 +332,9 @@ export default function CrmSettings() {
 
           {/* Settings Content */}
           <div className="col-span-1 md:col-span-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6">
-            {!isSuperAdmin && (activeTab === 'site' || activeTab === 'landing' || activeTab === 'leads' || activeTab === 'billing') && (
+            {!isSuperAdmin && activeTab === 'site' && (
               <div className="p-3 mb-5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-400">
-                ⚠️ Tizim sozlamalarini saqlash va o'zgartirish faqat Super Admin (daraja 4) uchun ruxsat etilgan.
+                ⚠️ Sayt ma'lumotlarini saqlash va o'zgartirish faqat Super Admin uchun ruxsat etilgan.
               </div>
             )}
 
@@ -421,10 +421,10 @@ export default function CrmSettings() {
                 <div className="space-y-6">
                   <div className="space-y-4">
                     <h3 className="font-bold text-lg text-slate-800 dark:text-slate-200">Asosiy Qism (Hero)</h3>
-                    <Input label="Asosiy Sarlavha" value={landingData.heroTitle} onChange={(e) => setLandingData({ ...landingData, heroTitle: e.target.value })} disabled={!isSuperAdmin} />
+                    <Input label="Asosiy Sarlavha" value={landingData.heroTitle} onChange={(e) => setLandingData({ ...landingData, heroTitle: e.target.value })} disabled={!isAdmin} />
                     <div>
                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Qisqa Ta'rif (Subtitle)</label>
-                      <textarea disabled={!isSuperAdmin} value={landingData.heroSubtitle} onChange={(e) => setLandingData({ ...landingData, heroSubtitle: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all min-h-[100px] disabled:opacity-60" />
+                      <textarea disabled={!isAdmin} value={landingData.heroSubtitle} onChange={(e) => setLandingData({ ...landingData, heroSubtitle: e.target.value })} className="w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all min-h-[100px] disabled:opacity-60" />
                     </div>
                   </div>
 
@@ -436,8 +436,8 @@ export default function CrmSettings() {
                         ['stat3Value', 'stat3Label', 3], ['stat4Value', 'stat4Label', 4],
                       ] as const).map(([valueKey, labelKey, n]) => (
                         <div key={n} className="p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3">
-                          <Input disabled={!isSuperAdmin} label={`Qurilma ${n} - Qiymat`} value={landingData[valueKey]} onChange={(e) => setLandingData({ ...landingData, [valueKey]: e.target.value })} />
-                          <Input disabled={!isSuperAdmin} label={`Qurilma ${n} - Matn`} value={landingData[labelKey]} onChange={(e) => setLandingData({ ...landingData, [labelKey]: e.target.value })} />
+                          <Input disabled={!isAdmin} label={`Qurilma ${n} - Qiymat`} value={landingData[valueKey]} onChange={(e) => setLandingData({ ...landingData, [valueKey]: e.target.value })} />
+                          <Input disabled={!isAdmin} label={`Qurilma ${n} - Matn`} value={landingData[labelKey]} onChange={(e) => setLandingData({ ...landingData, [labelKey]: e.target.value })} />
                         </div>
                       ))}
                     </div>
@@ -464,12 +464,12 @@ export default function CrmSettings() {
                   ].map(opt => (
                     <label
                       key={opt.value}
-                      className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all ${isSuperAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${leadExtraFieldType === opt.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                      className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${leadExtraFieldType === opt.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
                     >
                       <input
                         type="radio"
                         name="leadExtraField"
-                        disabled={!isSuperAdmin}
+                        disabled={!isAdmin}
                         value={opt.value}
                         checked={leadExtraFieldType === opt.value}
                         onChange={() => setLeadExtraFieldType(opt.value as any)}
@@ -500,7 +500,7 @@ export default function CrmSettings() {
                           <button
                             type="button"
                             key={opt.value}
-                            disabled={!isSuperAdmin}
+                            disabled={!isAdmin}
                             onClick={() => setLeadSettings({ ...leadSettings, mode: opt.value })}
                             className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold border-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${leadSettings.mode === opt.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400' : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
                           >
@@ -524,10 +524,10 @@ export default function CrmSettings() {
                           {assignableManagers.map(m => {
                             const checked = leadSettings.pool.includes(m.id);
                             return (
-                              <label key={m.id} className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm ${isSuperAdmin ? 'cursor-pointer hover:bg-white dark:hover:bg-zinc-900' : 'cursor-not-allowed opacity-70'}`}>
+                              <label key={m.id} className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-sm ${isAdmin ? 'cursor-pointer hover:bg-white dark:hover:bg-zinc-900' : 'cursor-not-allowed opacity-70'}`}>
                                 <input
                                   type="checkbox"
-                                  disabled={!isSuperAdmin}
+                                  disabled={!isAdmin}
                                   checked={checked}
                                   onChange={() => setLeadSettings({
                                     ...leadSettings,
@@ -549,7 +549,7 @@ export default function CrmSettings() {
                       type="number" min="5"
                       label="SLA — javob berish muddati (daqiqa)"
                       value={leadSettings.slaMinutes}
-                      disabled={!isSuperAdmin}
+                      disabled={!isAdmin}
                       onChange={e => setLeadSettings({ ...leadSettings, slaMinutes: Number(e.target.value) })}
                     />
                     <p className="text-xs text-zinc-400 -mt-3">Shu vaqt ichida javobsiz qolgan lid uchun menejerga eslatma yuboriladi (kamida 5 daqiqa).</p>
@@ -559,14 +559,14 @@ export default function CrmSettings() {
                         type="time"
                         label="Ish vaqti boshlanishi"
                         value={leadSettings.workStart}
-                        disabled={!isSuperAdmin}
+                        disabled={!isAdmin}
                         onChange={e => setLeadSettings({ ...leadSettings, workStart: e.target.value })}
                       />
                       <Input
                         type="time"
                         label="Ish vaqti tugashi"
                         value={leadSettings.workEnd}
-                        disabled={!isSuperAdmin}
+                        disabled={!isAdmin}
                         onChange={e => setLeadSettings({ ...leadSettings, workEnd: e.target.value })}
                       />
                     </div>
@@ -590,7 +590,7 @@ export default function CrmSettings() {
                     <Input
                       type="number" min="1"
                       label="Oyiga nechta dars (standart)"
-                      disabled={!isSuperAdmin}
+                      disabled={!isAdmin}
                       value={billingSettings.lessonsPerMonth}
                       onChange={e => setBillingSettings({ ...billingSettings, lessonsPerMonth: Number(e.target.value) })}
                     />
@@ -600,7 +600,7 @@ export default function CrmSettings() {
                     <Input
                       type="number" min="0"
                       label="Nechta darsdan ko'p qoldirilsa chegirma ishlaydi"
-                      disabled={!isSuperAdmin}
+                      disabled={!isAdmin}
                       value={billingSettings.absenceThreshold}
                       onChange={e => setBillingSettings({ ...billingSettings, absenceThreshold: Number(e.target.value) })}
                     />
@@ -613,7 +613,7 @@ export default function CrmSettings() {
                     <Input
                       type="number" min="0" max="100"
                       label="O'qituvchi stavkasi (% tushumdan)"
-                      disabled={!isSuperAdmin}
+                      disabled={!isAdmin}
                       value={billingSettings.teacherSalaryPercent}
                       onChange={e => setBillingSettings({ ...billingSettings, teacherSalaryPercent: Number(e.target.value) })}
                     />
