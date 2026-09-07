@@ -24,6 +24,7 @@ import { StatCard } from '../../../components/ui/StatCard';
 import api from '../../../api/client';
 import type { TransactionCategory } from '../../../types/transactionCategory';
 import { formatNumber } from '../../../utils/formatters';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface Invoice {
   id: string;
@@ -99,6 +100,7 @@ function formatCompact(v: number): string {
 }
 
 export default function CrmFinance() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { data: transactions = [], addDocument, deleteDocument } = useFirestore<Transaction>('finance');
   const { data: students = [], updateDocument: updateStudent } = useFirestore<any>('students');
   const { data: staff = [] } = useFirestore<any>('staff');
@@ -185,7 +187,7 @@ export default function CrmFinance() {
   }, [activeTab, budgetPeriod, budgetReload]);
 
   const saveExpense = async () => {
-    if (expenseSaving) return;
+    if (!canManage || expenseSaving) return;
     if (!expenseForm.category || categoriesLoading || categoriesError) return;
     if (!Number.isFinite(expenseForm.amount) || expenseForm.amount <= 0 || !expenseForm.date) {
       showToast('Musbat summa va sanani kiriting', 'error');
@@ -204,7 +206,7 @@ export default function CrmFinance() {
   };
 
   const deleteExpense = async () => {
-    if (!expenseToDelete || expenseDeleting) return;
+    if (!canManage || !expenseToDelete || expenseDeleting) return;
     setExpenseDeleting(true);
     try {
       await api.delete(`/finance/expenses/${expenseToDelete.id}`);
@@ -216,7 +218,7 @@ export default function CrmFinance() {
   };
 
   const saveBudget = async (category: ExpenseCategory) => {
-    if (budgetSaving) return;
+    if (!canManage || budgetSaving) return;
     const planned = budgetAmounts[category] ?? 0;
     if (!Number.isFinite(planned) || planned < 0) {
       showToast("Summa manfiy bo'lmasligi kerak", 'error');
@@ -257,7 +259,7 @@ export default function CrmFinance() {
   }, [activeTab, fetchInvoices]);
 
   const handleCreateInvoice = async () => {
-    if (!invoiceForm.studentId || !invoiceForm.amount) return;
+    if (!canManage || !invoiceForm.studentId || !invoiceForm.amount) return;
     try {
       await api.post('/finance/invoices', {
         studentId: invoiceForm.studentId,
@@ -276,6 +278,7 @@ export default function CrmFinance() {
   };
 
   const handleMarkInvoicePaid = async (invoiceId: string) => {
+    if (!canManage) return;
     try {
       await api.patch(`/finance/invoices/${invoiceId}`, { status: 'paid' });
       showToast("Invoice to'landi deb belgilandi", 'success');
@@ -333,7 +336,7 @@ export default function CrmFinance() {
   });
 
   const handleSave = async () => {
-    if (!form.amount || !form.category || categoriesLoading || categoriesError) return;
+    if (!canManage || !form.amount || !form.category || categoriesLoading || categoriesError) return;
     const newTransaction = { ...form, amount: Number(form.amount) };
 
     if (newTransaction.type === 'income' && newTransaction.studentId) {
@@ -356,6 +359,7 @@ export default function CrmFinance() {
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     await deleteDocument(deleteConfirm.id);
     if (selectedTransaction?.id === deleteConfirm.id) setIsDetailOpen(false);
     setDeleteConfirm({ open: false, id: '' });
@@ -428,7 +432,7 @@ export default function CrmFinance() {
   return (
     <div className="space-y-5">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Tranzaksiyani o'chirish"
         message="Haqiqatan ham ushbu tranzaksiyani o'chirmoqchimisiz?"
         confirmText="Ha, o'chirish"
@@ -471,9 +475,11 @@ export default function CrmFinance() {
               </button>
             </div>
           </div>
-          <Button onClick={() => setIsModalOpen(true)} leftIcon={<Plus size={16} />}>
-            Yangi Tranzaksiya
-          </Button>
+          {canManage && (
+            <Button onClick={() => setIsModalOpen(true)} leftIcon={<Plus size={16} />}>
+              Yangi Tranzaksiya
+            </Button>
+          )}
         </div>
       </div>
 
@@ -595,9 +601,11 @@ export default function CrmFinance() {
                 onChange={e => setExpenseRange(value => ({ ...value, to: e.target.value }))} />
               <Button variant="ghost" onClick={() => setExpenseRange({ from: '', to: '' })}>Filtrni tozalash</Button>
             </div>
-            <Button leftIcon={<Plus size={15} />} onClick={() => {
-              setEditingExpenseId(null); setExpenseForm(emptyExpense()); setExpenseModalOpen(true);
-            }}>Yangi xarajat</Button>
+            {canManage && (
+              <Button leftIcon={<Plus size={15} />} onClick={() => {
+                setEditingExpenseId(null); setExpenseForm(emptyExpense()); setExpenseModalOpen(true);
+              }}>Yangi xarajat</Button>
+            )}
           </div>
           {invalidExpenseRange ? <p role="alert" className="p-6 text-sm text-rose-600">Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak.</p>
             : expensesLoading ? <p role="status" className="p-8 text-center text-sm text-zinc-400">Xarajatlar yuklanmoqda...</p>
@@ -618,14 +626,14 @@ export default function CrmFinance() {
                       <td className="px-5 py-3.5 text-sm font-black text-rose-600 whitespace-nowrap">{formatMoney(expense.amount)}</td>
                       <td className="px-5 py-3.5 text-sm text-zinc-500 whitespace-nowrap">{expense.date.slice(0, 10)}</td>
                       <td className="px-5 py-3.5 text-sm text-zinc-500 break-words max-w-xs">{expense.description || '—'}</td>
-                      <td className="px-5 py-3.5"><div className="flex gap-2">
+                      <td className="px-5 py-3.5">{canManage && <div className="flex gap-2">
                         <Button size="sm" variant="secondary" onClick={() => {
                           setEditingExpenseId(expense.id);
                           setExpenseForm({ category: expense.category, amount: expense.amount, date: expense.date.slice(0, 10), description: expense.description || '', receipt: expense.receipt || '' });
                           setExpenseModalOpen(true);
                         }}>Tahrirlash</Button>
                         <Button size="sm" variant="danger" onClick={() => setExpenseToDelete(expense)} leftIcon={<Trash2 size={14} />}>O'chirish</Button>
-                      </div></td>
+                      </div>}</td>
                     </tr>)}
                 </tbody>
               </table>
@@ -647,17 +655,19 @@ export default function CrmFinance() {
             </div> : <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {[...new Set([...activeCategoryNames('expense'), ...Object.keys(budgetAmounts)])].map(category => <div key={category} className="p-5 flex flex-col sm:flex-row sm:items-end gap-3">
                 <div className="flex-1">
-                  <MoneyInput label={categoryLabel(category, 'expense')} value={budgetAmounts[category] ?? 0} disabled={budgetSaving !== null}
+                  <MoneyInput label={categoryLabel(category, 'expense')} value={budgetAmounts[category] ?? 0} disabled={!canManage || budgetSaving !== null}
                     onChange={planned => setBudgetAmounts(value => ({ ...value, [category]: planned }))} />
                 </div>
-                <Button disabled={budgetSaving !== null} isLoading={budgetSaving === category} onClick={() => saveBudget(category)}
-                  aria-label={`${categoryLabel(category, 'expense')} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
+                {canManage && (
+                  <Button disabled={budgetSaving !== null} isLoading={budgetSaving === category} onClick={() => saveBudget(category)}
+                    aria-label={`${categoryLabel(category, 'expense')} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
+                )}
               </div>)}
             </div>}
         </div>
       )}
 
-      <Modal isOpen={expenseModalOpen} onClose={() => { if (!expenseSaving) setExpenseModalOpen(false); }}
+      <Modal isOpen={canManage && expenseModalOpen} onClose={() => { if (!expenseSaving) setExpenseModalOpen(false); }}
         title={editingExpenseId ? 'Xarajatni tahrirlash' : 'Yangi xarajat'} width="md">
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); void saveExpense(); }}>
           <fieldset disabled={expenseSaving} className="space-y-4">
@@ -685,7 +695,7 @@ export default function CrmFinance() {
           </div>
         </form>
       </Modal>
-      <ConfirmDialog isOpen={!!expenseToDelete} title="Xarajatni o'chirish"
+      <ConfirmDialog isOpen={canManage && !!expenseToDelete} title="Xarajatni o'chirish"
         message={expenseToDelete ? `${categoryLabel(expenseToDelete.category, 'expense')}: ${formatMoney(expenseToDelete.amount)} xarajatni o'chirmoqchimisiz?` : ''}
         confirmText={expenseDeleting ? "O'chirilmoqda..." : "O'chirish"}
         onConfirm={() => { void deleteExpense(); }} onCancel={() => { if (!expenseDeleting) setExpenseToDelete(null); }} />
@@ -779,10 +789,12 @@ export default function CrmFinance() {
                             <Receipt size={14} />
                           </button>
                         )}
-                        <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ open: true, id: t.id }); }}
-                          className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-lg transition-all">
-                          <Trash2 size={14} />
-                        </button>
+                        {canManage && (
+                          <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ open: true, id: t.id }); }}
+                            className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-lg transition-all">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -820,9 +832,11 @@ export default function CrmFinance() {
                 <p className="text-[10px] text-zinc-400">Jami: {invoices.length} ta</p>
               </div>
             </div>
-            <Button onClick={() => setIsInvoiceModalOpen(true)} leftIcon={<Plus size={14} />} size="sm">
-              Yangi Invoice
-            </Button>
+            {canManage && (
+              <Button onClick={() => setIsInvoiceModalOpen(true)} leftIcon={<Plus size={14} />} size="sm">
+                Yangi Invoice
+              </Button>
+            )}
           </div>
 
           {invoicesLoading ? (
@@ -831,9 +845,11 @@ export default function CrmFinance() {
             <div className="py-16 text-center">
               <Receipt size={32} className="mx-auto text-zinc-200 mb-2" />
               <p className="text-sm font-bold text-zinc-400">Invoice mavjud emas</p>
-              <button onClick={() => setIsInvoiceModalOpen(true)} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
-                + Birinchi invoice yaratish
-              </button>
+              {canManage && (
+                <button onClick={() => setIsInvoiceModalOpen(true)} className="mt-3 text-xs text-blue-500 font-bold hover:underline">
+                  + Birinchi invoice yaratish
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -883,13 +899,15 @@ export default function CrmFinance() {
                           <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-all">
                             {inv.status === 'pending' && (
                               <>
-                                <button
-                                  onClick={() => handleMarkInvoicePaid(inv.id)}
-                                  className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 rounded-lg text-[10px] font-bold flex items-center gap-1"
-                                  title="To'landi deb belgilash"
-                                >
-                                  <CheckCircle2 size={13} />
-                                </button>
+                                {canManage && (
+                                  <button
+                                    onClick={() => handleMarkInvoicePaid(inv.id)}
+                                    className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                                    title="To'landi deb belgilash"
+                                  >
+                                    <CheckCircle2 size={13} />
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handleGetInvoiceLinks(inv)}
                                   className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-600 rounded-lg"
@@ -912,7 +930,7 @@ export default function CrmFinance() {
       )}
 
       {/* Invoice yaratish modali */}
-      <Modal isOpen={isInvoiceModalOpen} onClose={() => setIsInvoiceModalOpen(false)} title="Yangi Invoice Yaratish">
+      <Modal isOpen={canManage && isInvoiceModalOpen} onClose={() => setIsInvoiceModalOpen(false)} title="Yangi Invoice Yaratish">
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Talaba</label>
@@ -1243,10 +1261,12 @@ export default function CrmFinance() {
                     onClick={async () => { await exportReceiptToPDF(selectedTransaction); }}>
                     Chek (PDF)
                   </Button>
-                  <Button variant="danger" className="w-full" leftIcon={<Trash2 size={15} />}
-                    onClick={() => setDeleteConfirm({ open: true, id: selectedTransaction.id })}>
-                    O'chirish
-                  </Button>
+                  {canManage && (
+                    <Button variant="danger" className="w-full" leftIcon={<Trash2 size={15} />}
+                      onClick={() => setDeleteConfirm({ open: true, id: selectedTransaction.id })}>
+                      O'chirish
+                    </Button>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -1254,7 +1274,7 @@ export default function CrmFinance() {
         )}
       </AnimatePresence>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Yangi Tranzaksiya" width="md">
+      <Modal isOpen={canManage && isModalOpen} onClose={() => setIsModalOpen(false)} title="Yangi Tranzaksiya" width="md">
         <div className="space-y-4">
           <div className="flex gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
             <button onClick={() => setForm({ ...form, type: 'income', category: '', studentId: '', studentName: '', staffId: '', staffName: '' })}

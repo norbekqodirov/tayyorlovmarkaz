@@ -14,6 +14,7 @@ import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { formatNumber } from '../../../utils/formatters';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface Teacher {
   id: string;
@@ -31,6 +32,7 @@ interface Teacher {
 }
 
 export default function CrmTeachers() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.ADMIN;
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -96,6 +98,7 @@ export default function CrmTeachers() {
   useEffect(() => { loadTeachers(); }, []);
 
   const handleSave = async () => {
+    if (!canManage) return;
     if (!formData.name || !formData.name.trim()) {
       showToast("Ism kiritilishi shart!", 'error');
       return;
@@ -148,10 +151,12 @@ export default function CrmTeachers() {
   };
 
   const handleDelete = (id: string) => {
+    if (!canManage) return;
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     try {
       await api.delete(`/auth/users/${deleteConfirm.id}`);
       showToast("O'chirildi!", 'success');
@@ -163,6 +168,7 @@ export default function CrmTeachers() {
   };
 
   const openModal = (teacher: Teacher | null = null) => {
+    if (!canManage) return;
     if (teacher) {
       setFormData({
         ...teacher,
@@ -199,7 +205,7 @@ export default function CrmTeachers() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Ustozni o'chirish"
         message="Ustozni tizimdan va bazadan butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
         confirmText="Ha, o'chirish"
@@ -211,12 +217,14 @@ export default function CrmTeachers() {
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">Ustozlar</h1>
           <p className="text-sm text-zinc-500 mt-1">Markaz o'qituvchilarini boshqarish</p>
         </div>
-        <Button
-          onClick={() => openModal()}
-          leftIcon={<Plus size={18} />}
-        >
-          Yangi ustoz
-        </Button>
+        {canManage && (
+          <Button
+            onClick={() => openModal()}
+            leftIcon={<Plus size={18} />}
+          >
+            Yangi ustoz
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -314,20 +322,22 @@ export default function CrmTeachers() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openModal(teacher); }}
-                        className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(teacher.id); }}
-                        className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openModal(teacher); }}
+                          className="p-2 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(teacher.id); }}
+                          className="p-2 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -465,22 +475,24 @@ export default function CrmTeachers() {
                       </Button>
                     </div>
 
-                    <div className="flex gap-3 pt-3">
-                      <Button 
-                        variant="primary"
-                        onClick={() => openModal(selectedTeacher)}
-                        className="flex-1 text-sm font-black"
-                      >
-                        Tahrirlash
-                      </Button>
-                      <Button 
-                        variant="danger"
-                        onClick={() => { setIsDetailOpen(false); handleDelete(selectedTeacher.id); }}
-                        className="flex-1 text-sm font-black"
-                      >
-                        O'chirish
-                      </Button>
-                    </div>
+                    {canManage && (
+                      <div className="flex gap-3 pt-3">
+                        <Button 
+                          variant="primary"
+                          onClick={() => openModal(selectedTeacher)}
+                          className="flex-1 text-sm font-black"
+                        >
+                          Tahrirlash
+                        </Button>
+                        <Button 
+                          variant="danger"
+                          onClick={() => { setIsDetailOpen(false); handleDelete(selectedTeacher.id); }}
+                          className="flex-1 text-sm font-black"
+                        >
+                          O'chirish
+                        </Button>
+                      </div>
+                    )}
                   </div>
                  );
               })()}
@@ -551,7 +563,7 @@ export default function CrmTeachers() {
 
       {/* Modal */}
       <Modal 
-        isOpen={isModalOpen}
+        isOpen={canManage && isModalOpen}
         onClose={closeModal}
         title={formData.id ? "Ustozni Tahrirlash" : "Yangi Ustoz Qo'shish"}
       >

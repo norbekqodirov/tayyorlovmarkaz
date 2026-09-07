@@ -12,6 +12,7 @@ import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { formatNumber } from '../../../utils/formatters';
 import type { Position } from '../../../types/position';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 interface StaffMember {
   id: string;
@@ -31,6 +32,7 @@ interface StaffMember {
 }
 
 export default function CrmStaff() {
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { data: staff = [], loading, error, addDocument, updateDocument, deleteDocument } = useFirestore<StaffMember>('staff');
   const { showToast } = useToast();
   const { data: positions, loading: positionsLoading, error: positionsError, refetch: reloadPositions } = useFirestore<Position>('positions');
@@ -58,6 +60,7 @@ export default function CrmStaff() {
   });
 
   const handleSave = async () => {
+    if (!canManage) return;
     try {
       if (editingMember) {
         await updateDocument(editingMember.id, formData);
@@ -88,10 +91,12 @@ export default function CrmStaff() {
   };
 
   const handleDelete = (id: string) => {
+    if (!canManage) return;
     setDeleteConfirm({ open: true, id });
   };
 
   const confirmDelete = async () => {
+    if (!canManage) return;
     try {
       await deleteDocument(deleteConfirm.id);
       showToast('Xodim o\'chirildi', 'success');
@@ -103,6 +108,7 @@ export default function CrmStaff() {
   };
 
   const openModal = (member: StaffMember | null = null) => {
+    if (!canManage) return;
     setLoginPassword('');
     if (member) {
       setEditingMember(member);
@@ -155,7 +161,7 @@ export default function CrmStaff() {
   return (
     <div className="space-y-6">
       <ConfirmDialog
-        isOpen={deleteConfirm.open}
+        isOpen={canManage && deleteConfirm.open}
         title="Xodimni o'chirish"
         message="Haqiqatan ham ushbu xodimni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
         confirmText="Ha, o'chirish"
@@ -167,9 +173,11 @@ export default function CrmStaff() {
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Xodimlar Boshqaruvi (HR)</h1>
           <p className="text-zinc-500 text-sm font-medium">O'quv markazi jamoasini boshqarish va nazorat qilish</p>
         </div>
-        <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
-          Yangi Xodim
-        </Button>
+        {canManage && (
+          <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
+            Yangi Xodim
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -251,20 +259,22 @@ export default function CrmStaff() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => openModal(member)}
-                        className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(member.id)}
-                        className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => openModal(member)}
+                          className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(member.id)}
+                          className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -275,7 +285,7 @@ export default function CrmStaff() {
 
       {/* Edit/Add Modal */}
       <Modal
-        isOpen={isModalOpen}
+        isOpen={canManage && isModalOpen}
         onClose={closeModal}
         title={editingMember ? 'Xodimni Tahrirlash' : "Yangi Xodim Qo'shish"}
         width="2xl"
