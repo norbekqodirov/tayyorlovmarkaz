@@ -9,7 +9,7 @@ import {
     Calendar, Users, CheckSquare, BarChart2, User,
     ChevronRight, RefreshCw, Clock, CheckCircle2, XCircle,
     AlertCircle, UserCheck, Search, Building2, BookOpen,
-    TrendingUp, CreditCard, GraduationCap, Save, ArrowLeft,
+    TrendingUp, GraduationCap, Save, ArrowLeft,
     Fingerprint, MessageCircle, Send,
 } from 'lucide-react';
 import FaceIdCheckin from '../../components/portal/FaceIdCheckin';
@@ -37,8 +37,6 @@ interface Group {
 }
 
 interface Student { id: string; name: string; photo?: string; phone?: string; status: string; groups: string[]; }
-
-interface AttendanceRow { studentId: string; studentName: string; studentPhoto?: string; status: string; note?: string; }
 
 type AttStatus = 'present' | 'absent' | 'late' | 'excused';
 const ATT_CYCLE: AttStatus[] = ['present', 'absent', 'late', 'excused'];
@@ -110,7 +108,21 @@ async function staffFetch(endpoint: string, initData: string, opts?: RequestInit
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(n: number) { return n.toLocaleString('uz-UZ') + ' so\'m'; }
+function fmt(n?: number | null): string {
+    if (n === undefined || n === null || isNaN(Number(n))) return "0 so'm";
+    return Number(n).toLocaleString('uz-UZ') + " so'm";
+}
+
+function fmtTime(dateStr?: string | null): string {
+    if (!dateStr) return '';
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return '';
+    }
+}
 
 function RoleLabel({ role }: { role: string }) {
     const map: Record<string, { label: string; cls: string }> = {
@@ -120,8 +132,86 @@ function RoleLabel({ role }: { role: string }) {
         TEACHER: { label: "O'qituvchi", cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
         HR: { label: 'HR', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
     };
-    const r = map[role] || { label: role, cls: 'bg-zinc-100 text-zinc-700' };
+    const r = map[role] || { label: role, cls: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' };
     return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.cls}`}>{r.label}</span>;
+}
+
+// ─── Reusable UI States ────────────────────────────────────────────────────────
+
+function Skeleton({ className = '' }: { className?: string }) {
+    return <div className={`animate-pulse bg-zinc-200 dark:bg-zinc-700 rounded-xl ${className}`} />;
+}
+
+function ErrorState({ msg = "Xatolik yuz berdi", onRetry }: { msg?: string; onRetry?: () => void }) {
+    return (
+        <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center mb-3 text-red-500">
+                <AlertCircle size={24} />
+            </div>
+            <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-1">{msg}</p>
+            <p className="text-xs text-zinc-400 mb-4 max-w-xs">Internet aloqasini tekshiring yoki qayta urinib ko'ring</p>
+            {onRetry && (
+                <button
+                    onClick={onRetry}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs min-h-[44px] active:scale-95 transition-all shadow-sm"
+                >
+                    <RefreshCw size={14} /> Qayta urinish
+                </button>
+            )}
+        </div>
+    );
+}
+
+function EmptyState({
+    icon: Icon = Calendar,
+    title = "Ma'lumot topilmadi",
+    description,
+    actionLabel,
+    onAction,
+}: {
+    icon?: any;
+    title: string;
+    description?: string;
+    actionLabel?: string;
+    onAction?: () => void;
+}) {
+    return (
+        <div className="flex flex-col items-center justify-center py-14 px-4 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-3 text-zinc-400 dark:text-zinc-500">
+                <Icon size={28} className="opacity-70" />
+            </div>
+            <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{title}</p>
+            {description && <p className="text-xs text-zinc-400 mt-1 max-w-xs leading-relaxed">{description}</p>}
+            {actionLabel && onAction && (
+                <button
+                    onClick={onAction}
+                    className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-medium text-xs min-h-[44px] active:scale-95 transition-transform"
+                >
+                    {actionLabel}
+                </button>
+            )}
+        </div>
+    );
+}
+
+function StatCard({ label, value, icon: Icon, color = 'blue' }: {
+    label: string; value: string | number; icon: any; color?: string;
+}) {
+    const colors: Record<string, string> = {
+        blue: 'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-900/40 text-blue-600 dark:text-blue-400',
+        green: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400',
+        amber: 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-900/40 text-amber-600 dark:text-amber-400',
+        red: 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-900/40 text-red-600 dark:text-red-400',
+    };
+    return (
+        <div className={`rounded-xl border p-3.5 ${colors[color] || colors.blue}`}>
+            <div className="flex items-center gap-2 mb-1">
+                <Icon size={14} className="opacity-70" />
+                <span className="text-xs opacity-70 font-medium">{label}</span>
+            </div>
+            <div className="text-xl font-bold">{value}</div>
+        </div>
+    );
 }
 
 // ─── Tab configs ──────────────────────────────────────────────────────────────
@@ -163,73 +253,67 @@ function getTabsForRole(role: string): { id: TabId; label: string; icon: any }[]
     ];
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
-
-function Skeleton({ className = '' }: { className?: string }) {
-    return <div className={`animate-pulse bg-zinc-200 dark:bg-zinc-700 rounded ${className}`} />;
-}
-
-function StatCard({ label, value, icon: Icon, color = 'blue' }: {
-    label: string; value: string | number; icon: any; color?: string;
-}) {
-    const colors: Record<string, string> = {
-        blue: 'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-900/40 text-blue-600 dark:text-blue-400',
-        green: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900/40 text-emerald-600 dark:text-emerald-400',
-        amber: 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-900/40 text-amber-600 dark:text-amber-400',
-        red: 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-900/40 text-red-600 dark:text-red-400',
-    };
-    return (
-        <div className={`rounded-xl border p-3 ${colors[color] || colors.blue}`}>
-            <div className="flex items-center gap-2 mb-1">
-                <Icon size={14} className="opacity-70" />
-                <span className="text-xs opacity-70 font-medium">{label}</span>
-            </div>
-            <div className="text-xl font-bold">{value}</div>
-        </div>
-    );
-}
-
 // ─── Tab: Today ───────────────────────────────────────────────────────────────
 
 function TodayTab({ initData, role }: { initData: string; role: string }) {
     const [data, setData] = useState<TodayData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    const loadData = useCallback(() => {
+        setLoading(true);
+        setError(null);
         staffFetch('/today', initData)
             .then(setData)
-            .catch(console.error)
+            .catch((err: any) => setError(err.debug || err.message || 'Bugungi darslarni yuklab bo\'lmadi'))
             .finally(() => setLoading(false));
     }, [initData]);
 
+    useEffect(() => { loadData(); }, [loadData]);
+
     if (loading) return (
         <div className="space-y-3 p-4">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}
+            {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
         </div>
     );
 
-    if (!data || data.lessons.length === 0) {
+    if (error) {
+        return <ErrorState msg={error} onRetry={loadData} />;
+    }
+
+    if (!data || !data.lessons || data.lessons.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
-                <Calendar size={40} className="mb-3 opacity-40" />
-                <p className="text-sm font-medium">Bugun darslar yo'q</p>
-                <p className="text-xs mt-1 opacity-60">{data?.dayName || ''}</p>
-            </div>
+            <EmptyState
+                icon={Calendar}
+                title="Bugun darslar yo'q"
+                description={data?.dayName ? `${data.dayName} kuni uchun darslar rejalashtirilmagan` : "Dars jadvali bo'sh"}
+                actionLabel="Yangilash"
+                onAction={loadData}
+            />
         );
     }
 
     return (
         <div className="p-4 space-y-3">
-            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                {data.dayName} · {data.lessons.length} dars
-            </p>
+            <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    {data.dayName} · {data.lessons.length} dars
+                </p>
+                <button
+                    onClick={loadData}
+                    className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 min-h-[36px] px-2 py-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40"
+                >
+                    <RefreshCw size={12} />
+                    Yangilash
+                </button>
+            </div>
             {data.lessons.map((lesson, i) => (
                 <motion.div
                     key={lesson.scheduleId}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05 }}
-                    className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm"
+                    className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-4 shadow-sm"
                 >
                     <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
@@ -239,36 +323,36 @@ function TodayTab({ initData, role }: { initData: string; role: string }) {
                             {lesson.course && (
                                 <div className="text-xs text-zinc-400 mt-0.5">{lesson.course}</div>
                             )}
-                            <div className="flex items-center gap-3 mt-2 text-xs text-zinc-500">
+                            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-zinc-500">
                                 <span className="flex items-center gap-1">
-                                    <Clock size={11} />
+                                    <Clock size={12} />
                                     {lesson.startTime}–{lesson.endTime}
                                 </span>
                                 {lesson.room && (
                                     <span className="flex items-center gap-1">
-                                        <Building2 size={11} />
+                                        <Building2 size={12} />
                                         {lesson.room}
                                     </span>
                                 )}
                                 <span className="flex items-center gap-1">
-                                    <Users size={11} />
+                                    <Users size={12} />
                                     {lesson.studentCount}
                                 </span>
                             </div>
                             {role !== 'TEACHER' && lesson.teacher && (
                                 <div className="text-xs text-zinc-400 mt-1 flex items-center gap-1">
-                                    <User size={11} />
+                                    <User size={12} />
                                     {lesson.teacher}
                                 </div>
                             )}
                         </div>
                         <div className="ml-2 shrink-0">
                             {lesson.attendanceMarked ? (
-                                <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">
+                                <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 px-2.5 py-1 rounded-full font-medium">
                                     ✓ Belgilangan
                                 </span>
                             ) : (
-                                <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5 rounded-full font-medium">
+                                <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2.5 py-1 rounded-full font-medium">
                                     Belgilanmagan
                                 </span>
                             )}
@@ -287,13 +371,18 @@ function GroupsTab({ initData, role, onSelectGroup }: {
 }) {
     const [groups, setGroups] = useState<Group[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    const loadGroups = useCallback(() => {
+        setLoading(true);
+        setError(null);
         staffFetch('/groups', initData)
             .then(d => setGroups(d.groups || []))
-            .catch(console.error)
+            .catch((err: any) => setError(err.debug || err.message || 'Guruhlarni yuklab bo\'lmadi'))
             .finally(() => setLoading(false));
     }, [initData]);
+
+    useEffect(() => { loadGroups(); }, [loadGroups]);
 
     if (loading) return (
         <div className="space-y-3 p-4">
@@ -301,12 +390,19 @@ function GroupsTab({ initData, role, onSelectGroup }: {
         </div>
     );
 
+    if (error) {
+        return <ErrorState msg={error} onRetry={loadGroups} />;
+    }
+
     if (groups.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
-                <Users size={40} className="mb-3 opacity-40" />
-                <p className="text-sm font-medium">Guruhlar topilmadi</p>
-            </div>
+            <EmptyState
+                icon={Users}
+                title="Guruhlar topilmadi"
+                description="Sizga biriktirilgan faol guruhlar mavjud emas"
+                actionLabel="Yangilash"
+                onAction={loadGroups}
+            />
         );
     }
 
@@ -322,9 +418,9 @@ function GroupsTab({ initData, role, onSelectGroup }: {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.04 }}
                     onClick={() => onSelectGroup?.(g)}
-                    className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3 active:scale-[0.98] transition-transform"
+                    className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3 active:scale-[0.98] transition-transform min-h-[52px]"
                 >
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
                         {g.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -333,7 +429,7 @@ function GroupsTab({ initData, role, onSelectGroup }: {
                             {g.course || 'Kurs'}
                             {role !== 'TEACHER' && g.teacher ? ` · ${g.teacher}` : ''}
                         </div>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400">
+                        <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400 font-medium">
                             <span>{g.studentCount} o'quvchi</span>
                             {g.attendancePercent !== null && (
                                 <span className={g.attendancePercent >= 80 ? 'text-emerald-500' : g.attendancePercent >= 60 ? 'text-amber-500' : 'text-red-500'}>
@@ -342,7 +438,7 @@ function GroupsTab({ initData, role, onSelectGroup }: {
                             )}
                         </div>
                     </div>
-                    <ChevronRight size={16} className="text-zinc-300 shrink-0" />
+                    <ChevronRight size={18} className="text-zinc-300 shrink-0" />
                 </motion.button>
             ))}
         </div>
@@ -351,7 +447,7 @@ function GroupsTab({ initData, role, onSelectGroup }: {
 
 // ─── Tab: Attendance ──────────────────────────────────────────────────────────
 
-function AttendanceTab({ initData, role }: { initData: string; role: string }) {
+function AttendanceTab({ initData }: { initData: string; role: string }) {
     const [groups, setGroups] = useState<Group[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -360,21 +456,31 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
     const [existingRecords, setExistingRecords] = useState<Record<string, AttStatus>>({});
     const [loadingStudents, setLoadingStudents] = useState(false);
     const [loadingGroups, setLoadingGroups] = useState(true);
+    const [groupsError, setGroupsError] = useState<string | null>(null);
+    const [studentsError, setStudentsError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
 
-    useEffect(() => {
+    const fetchGroups = useCallback(() => {
+        setLoadingGroups(true);
+        setGroupsError(null);
         staffFetch('/groups', initData)
             .then(d => setGroups(d.groups || []))
+            .catch((err: any) => setGroupsError(err.debug || err.message || 'Guruhlarni yuklab bo\'lmadi'))
             .finally(() => setLoadingGroups(false));
     }, [initData]);
 
+    useEffect(() => { fetchGroups(); }, [fetchGroups]);
+
     const loadStudents = useCallback(async (group: Group, d: string) => {
         setLoadingStudents(true);
+        setStudentsError(null);
         setStudents([]);
         setStatuses({});
         setExistingRecords({});
         setSaved(false);
+        setSaveError(null);
         try {
             const [studentsData, attData] = await Promise.all([
                 staffFetch(`/groups/${group.id}/students`, initData),
@@ -390,14 +496,13 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
             }
             setExistingRecords(existing);
 
-            // Default: present (or existing)
             const init: Record<string, AttStatus> = {};
             for (const s of studs) {
                 init[s.id] = existing[s.id] || 'present';
             }
             setStatuses(init);
-        } catch (err) {
-            console.error(err);
+        } catch (err: any) {
+            setStudentsError(err.debug || err.message || 'O\'quvchilarni yuklashda xatolik yuz berdi');
         } finally {
             setLoadingStudents(false);
         }
@@ -409,6 +514,7 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
     };
 
     const handleDateChange = (d: string) => {
+        if (!d) return;
         setDate(d);
         if (selectedGroup) loadStudents(selectedGroup, d);
     };
@@ -421,11 +527,13 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
             return { ...prev, [studentId]: next };
         });
         setSaved(false);
+        setSaveError(null);
     };
 
     const handleSave = async () => {
         if (!selectedGroup) return;
         setSaving(true);
+        setSaveError(null);
         try {
             const records = Object.entries(statuses).map(([studentId, status]) => ({ studentId, status }));
             await staffFetch('/attendance', initData, {
@@ -435,8 +543,8 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
             });
             setSaved(true);
             setExistingRecords({ ...statuses });
-        } catch (err) {
-            console.error(err);
+        } catch (err: any) {
+            setSaveError(err.debug || err.message || 'Saqlashda xatolik yuz berdi');
         } finally {
             setSaving(false);
         }
@@ -448,30 +556,40 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
         </div>
     );
 
-    // Group selection screen
+    if (groupsError) {
+        return <ErrorState msg={groupsError} onRetry={fetchGroups} />;
+    }
+
     if (!selectedGroup) {
         return (
             <div className="p-4 space-y-3">
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Guruh tanlang</p>
-                {groups.length === 0 && (
-                    <div className="text-center py-10 text-zinc-400 text-sm">Guruhlar yo'q</div>
+                {groups.length === 0 ? (
+                    <EmptyState
+                        icon={Users}
+                        title="Guruhlar yo'q"
+                        description="Davomat belgilash uchun faol guruhlar mavjud emas"
+                        actionLabel="Yangilash"
+                        onAction={fetchGroups}
+                    />
+                ) : (
+                    groups.map(g => (
+                        <button
+                            key={g.id}
+                            onClick={() => handleSelectGroup(g)}
+                            className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3 active:scale-[0.98] transition-transform min-h-[52px]"
+                        >
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                                {g.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-sm text-zinc-800 dark:text-zinc-100 truncate">{g.name}</div>
+                                <div className="text-xs text-zinc-400">{g.studentCount} o'quvchi</div>
+                            </div>
+                            <ChevronRight size={18} className="text-zinc-300 shrink-0" />
+                        </button>
+                    ))
                 )}
-                {groups.map(g => (
-                    <button
-                        key={g.id}
-                        onClick={() => handleSelectGroup(g)}
-                        className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3 active:scale-[0.98] transition-transform"
-                    >
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                            {g.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-sm text-zinc-800 dark:text-zinc-100 truncate">{g.name}</div>
-                            <div className="text-xs text-zinc-400">{g.studentCount} o'quvchi</div>
-                        </div>
-                        <ChevronRight size={15} className="text-zinc-300 shrink-0" />
-                    </button>
-                ))}
             </div>
         );
     }
@@ -483,9 +601,10 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setSelectedGroup(null)}
-                        className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-colors"
+                        aria-label="Orqaga"
                     >
-                        <ArrowLeft size={16} />
+                        <ArrowLeft size={18} />
                     </button>
                     <div>
                         <div className="font-semibold text-sm">{selectedGroup.name}</div>
@@ -496,7 +615,7 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
                     type="date"
                     value={date}
                     onChange={e => handleDateChange(e.target.value)}
-                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                 />
             </div>
 
@@ -504,8 +623,16 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
             <div className="flex-1 overflow-auto p-4 space-y-2">
                 {loadingStudents ? (
                     [1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-14" />)
+                ) : studentsError ? (
+                    <ErrorState msg={studentsError} onRetry={() => loadStudents(selectedGroup, date)} />
                 ) : students.length === 0 ? (
-                    <div className="text-center py-10 text-zinc-400 text-sm">O'quvchilar topilmadi</div>
+                    <EmptyState
+                        icon={Users}
+                        title="O'quvchilar topilmadi"
+                        description="Ushbu guruhda o'quvchilar ro'yxatdan o'tmagan"
+                        actionLabel="Qayta yuklash"
+                        onAction={() => loadStudents(selectedGroup, date)}
+                    />
                 ) : (
                     students.map(s => {
                         const st = statuses[s.id] || 'present';
@@ -514,7 +641,7 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
                             <button
                                 key={s.id}
                                 onClick={() => cycleStatus(s.id)}
-                                className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3 shadow-sm flex items-center gap-3 active:scale-[0.98] transition-transform"
+                                className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3 shadow-sm flex items-center gap-3 active:scale-[0.98] transition-transform min-h-[52px]"
                             >
                                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold text-xs shrink-0 overflow-hidden">
                                     {s.photo
@@ -524,7 +651,7 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
                                 <div className="flex-1 min-w-0 text-left">
                                     <div className="font-medium text-sm text-zinc-800 dark:text-zinc-100 truncate">
                                         {s.name}
-                                        {isChanged && <span className="ml-1 text-xs text-amber-500">●</span>}
+                                        {isChanged && <span className="ml-1.5 text-xs text-amber-500 font-bold">●</span>}
                                     </div>
                                 </div>
                                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${ATT_COLOR[st]}`}>
@@ -536,24 +663,32 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
                 )}
             </div>
 
+            {/* Save error banner */}
+            {saveError && (
+                <div className="px-4 py-2 bg-red-50 dark:bg-red-950/30 border-t border-red-100 dark:border-red-900/40 text-red-600 dark:text-red-400 text-xs flex items-center justify-between">
+                    <span>⚠️ {saveError}</span>
+                    <button onClick={handleSave} className="font-bold underline ml-2 py-1 px-2 min-h-[36px]">Qayta urinish</button>
+                </div>
+            )}
+
             {/* Save button */}
             {students.length > 0 && (
                 <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800">
                     <button
                         onClick={handleSave}
                         disabled={saving || saved}
-                        className={`w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
+                        className={`w-full min-h-[48px] py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
                             saved
                                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
                                 : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-[0.98]'
-                        } disabled:opacity-60`}
+                        } disabled:opacity-60 shadow-sm`}
                     >
                         {saving ? (
-                            <RefreshCw size={15} className="animate-spin" />
+                            <RefreshCw size={16} className="animate-spin" />
                         ) : saved ? (
-                            <><CheckCircle2 size={15} /> Saqlandi</>
+                            <><CheckCircle2 size={16} /> Saqlandi</>
                         ) : (
-                            <><Save size={15} /> Saqlash ({students.length} ta)</>
+                            <><Save size={16} /> Saqlash ({students.length} ta)</>
                         )}
                     </button>
                 </div>
@@ -567,12 +702,14 @@ function AttendanceTab({ initData, role }: { initData: string; role: string }) {
 function StatsTab({ initData }: { initData: string }) {
     const [stats, setStats] = useState<StatsData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     const load = useCallback(() => {
         setLoading(true);
+        setError(null);
         staffFetch('/stats', initData)
             .then(setStats)
-            .catch(console.error)
+            .catch((err: any) => setError(err.debug || err.message || 'Statistikani yuklab bo\'lmadi'))
             .finally(() => setLoading(false));
     }, [initData]);
 
@@ -584,35 +721,52 @@ function StatsTab({ initData }: { initData: string }) {
         </div>
     );
 
-    if (!stats) return <div className="text-center py-16 text-zinc-400 text-sm">Statistika yuklanmadi</div>;
+    if (error) {
+        return <ErrorState msg={error} onRetry={load} />;
+    }
+
+    if (!stats) {
+        return (
+            <EmptyState
+                icon={TrendingUp}
+                title="Statistika yuklanmadi"
+                description="Ma'lumotlarni olish imkoni bo'lmadi"
+                actionLabel="Qayta urinish"
+                onAction={load}
+            />
+        );
+    }
 
     return (
         <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Real-time statistika</p>
-                <button onClick={load} className="text-xs text-blue-500 flex items-center gap-1">
-                    <RefreshCw size={11} />
+                <button
+                    onClick={load}
+                    className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 min-h-[36px] px-2 py-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 font-medium"
+                >
+                    <RefreshCw size={12} />
                     Yangilash
                 </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-                <StatCard label="Faol o'quvchilar" value={stats.studentCount} icon={GraduationCap} color="blue" />
-                <StatCard label="Faol guruhlar" value={stats.groupCount} icon={Users} color="green" />
+                <StatCard label="Faol o'quvchilar" value={stats.studentCount ?? 0} icon={GraduationCap} color="blue" />
+                <StatCard label="Faol guruhlar" value={stats.groupCount ?? 0} icon={Users} color="green" />
                 <StatCard
                     label="Bugungi davomat"
-                    value={stats.today.percent !== null ? `${stats.today.percent}%` : '—'}
+                    value={stats.today?.percent != null ? `${stats.today.percent}%` : '—'}
                     icon={UserCheck}
-                    color={stats.today.percent !== null ? (stats.today.percent >= 80 ? 'green' : stats.today.percent >= 60 ? 'amber' : 'red') : 'blue'}
+                    color={stats.today?.percent != null ? (stats.today.percent >= 80 ? 'green' : stats.today.percent >= 60 ? 'amber' : 'red') : 'blue'}
                 />
-                <StatCard label="Bugun keldi" value={stats.today.present} icon={CheckCircle2} color="green" />
-                <StatCard label="Bugun kelmadi" value={stats.today.absent} icon={XCircle} color="red" />
-                <StatCard label="Qarzdorlar" value={stats.unpaid.count} icon={AlertCircle} color="amber" />
+                <StatCard label="Bugun keldi" value={stats.today?.present ?? 0} icon={CheckCircle2} color="green" />
+                <StatCard label="Bugun kelmadi" value={stats.today?.absent ?? 0} icon={XCircle} color="red" />
+                <StatCard label="Qarzdorlar" value={stats.unpaid?.count ?? 0} icon={AlertCircle} color="amber" />
             </div>
-            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-4 space-y-3">
+            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-4 space-y-3 shadow-sm">
                 <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Moliya</p>
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">To'lanmagan jami</span>
-                    <span className="font-bold text-red-600 dark:text-red-400 text-sm">{fmt(stats.unpaid.total)}</span>
+                    <span className="font-bold text-red-600 dark:text-red-400 text-sm">{fmt(stats.unpaid?.total)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">Bu oy tushum</span>
@@ -620,7 +774,7 @@ function StatsTab({ initData }: { initData: string }) {
                 </div>
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-zinc-600 dark:text-zinc-400">Yangi o'quvchilar (bu oy)</span>
-                    <span className="font-bold text-blue-600 dark:text-blue-400 text-sm">+{stats.newStudentsMonth}</span>
+                    <span className="font-bold text-blue-600 dark:text-blue-400 text-sm">+{stats.newStudentsMonth ?? 0}</span>
                 </div>
             </div>
         </div>
@@ -634,13 +788,15 @@ function StudentsTab({ initData }: { initData: string }) {
     const [total, setTotal] = useState(0);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     const load = useCallback((q: string) => {
         setLoading(true);
+        setError(null);
         staffFetch(`/students?search=${encodeURIComponent(q)}&limit=30`, initData)
             .then(d => { setStudents(d.students || []); setTotal(d.total || 0); })
-            .catch(console.error)
+            .catch((err: any) => setError(err.debug || err.message || 'O\'quvchilarni yuklab bo\'lmadi'))
             .finally(() => setLoading(false));
     }, [initData]);
 
@@ -656,37 +812,52 @@ function StudentsTab({ initData }: { initData: string }) {
         <div className="flex flex-col h-full">
             <div className="px-4 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
                 <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                     <input
                         value={search}
                         onChange={e => handleSearch(e.target.value)}
                         placeholder="Ism yoki telefon bo'yicha qidirish..."
-                        className="w-full pl-9 pr-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                     />
                 </div>
-                <p className="text-xs text-zinc-400 mt-2">{total} ta o'quvchi</p>
+                <p className="text-xs text-zinc-400 mt-2 font-medium">{total} ta o'quvchi</p>
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-2">
                 {loading ? (
                     [1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-14" />)
+                ) : error ? (
+                    <ErrorState msg={error} onRetry={() => load(search)} />
                 ) : students.length === 0 ? (
-                    <div className="text-center py-10 text-zinc-400 text-sm">O'quvchilar topilmadi</div>
+                    <EmptyState
+                        icon={GraduationCap}
+                        title="O'quvchilar topilmadi"
+                        description={search ? `"${search}" so'rovi bo'yicha hech qanday o'quvchi topilmadi` : "Hali ro'yxatdan o'tgan o'quvchilar mavjud emas"}
+                        actionLabel={search ? "Qidiruvni tozalash" : "Yangilash"}
+                        onAction={() => {
+                            if (search) {
+                                setSearch('');
+                                load('');
+                            } else {
+                                load('');
+                            }
+                        }}
+                    />
                 ) : (
                     students.map(s => (
-                        <div key={s.id} className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3 shadow-sm flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold text-xs shrink-0 overflow-hidden">
+                        <div key={s.id} className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3 shadow-sm flex items-center gap-3 min-h-[52px]">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold text-xs shrink-0 overflow-hidden shadow-sm">
                                 {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.name.slice(0, 1)}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <div className="font-medium text-sm text-zinc-800 dark:text-zinc-100 truncate">{s.name}</div>
                                 <div className="flex items-center gap-2 mt-0.5">
-                                    {s.phone && <span className="text-xs text-zinc-400">{s.phone}</span>}
-                                    {s.groups.length > 0 && (
+                                    {s.phone && <span className="text-xs text-zinc-400 font-mono">{s.phone}</span>}
+                                    {s.groups && s.groups.length > 0 && (
                                         <span className="text-xs text-blue-500 truncate">{s.groups.join(', ')}</span>
                                     )}
                                 </div>
                             </div>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium shrink-0 ${
                                 s.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-zinc-100 text-zinc-500'
                             }`}>
                                 {s.status === 'active' ? 'Faol' : s.status === 'graduated' ? 'Bitirdi' : "Ketdi"}
@@ -701,21 +872,22 @@ function StudentsTab({ initData }: { initData: string }) {
 
 // ─── Tab: Profile ─────────────────────────────────────────────────────────────
 
-function ProfileTab({ staffUser, initData }: { staffUser: StaffUser; initData: string }) {
+function ProfileTab({ staffUser }: { staffUser: StaffUser; initData: string }) {
     const { name, role, avatar, telegramChatId, stats } = staffUser;
+    const safeStats = stats || {};
     const isTeacher = role === 'TEACHER';
 
     return (
         <div className="p-4 space-y-4">
             {/* Avatar & info */}
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 text-white flex items-center gap-4">
+            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-5 text-white flex items-center gap-4 shadow-md">
                 <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0">
                     {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : name.slice(0, 1)}
                 </div>
-                <div>
-                    <div className="font-bold text-lg">{name}</div>
-                    <RoleLabel role={role} />
-                    <div className="text-xs text-white/70 mt-1">
+                <div className="flex-1 min-w-0">
+                    <div className="font-bold text-lg truncate">{name}</div>
+                    <div className="mt-1"><RoleLabel role={role} /></div>
+                    <div className="text-xs text-white/80 mt-1.5 flex items-center gap-1 font-medium">
                         {telegramChatId ? '🔗 Telegram ulangan' : '⚠️ Telegram ulanmagan'}
                     </div>
                 </div>
@@ -724,35 +896,35 @@ function ProfileTab({ staffUser, initData }: { staffUser: StaffUser; initData: s
             {/* Stats */}
             {isTeacher && (
                 <div className="grid grid-cols-3 gap-3">
-                    <StatCard label="Guruhlar" value={stats.groupCount || 0} icon={Users} color="blue" />
-                    <StatCard label="Bugungi dars" value={stats.todayLessons || 0} icon={Calendar} color="green" />
-                    <StatCard label="Davomat belgilandi" value={stats.attendanceMarkedToday || 0} icon={CheckSquare} color="amber" />
+                    <StatCard label="Guruhlar" value={safeStats.groupCount || 0} icon={Users} color="blue" />
+                    <StatCard label="Bugungi dars" value={safeStats.todayLessons || 0} icon={Calendar} color="green" />
+                    <StatCard label="Davomat" value={safeStats.attendanceMarkedToday || 0} icon={CheckSquare} color="amber" />
                 </div>
             )}
 
-            {/* Telegram info */}
+            {/* Telegram info warning */}
             {!telegramChatId && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-sm text-amber-700 dark:text-amber-300">
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 text-sm text-amber-700 dark:text-amber-300 shadow-sm">
                     <p className="font-semibold mb-1">⚠️ Telegram ulanmagan</p>
-                    <p className="text-xs">Admin CRM orqali Telegram ID'ingizni bog'lashi kerak. Yoki /start buyrug'ini yuboring va Admin'ga Telegram ID'ingizni bering.</p>
+                    <p className="text-xs leading-relaxed">Admin CRM orqali Telegram ID'ingizni bog'lashi kerak. Yoki /start buyrug'ini yuboring va Admin'ga Telegram ID'ingizni bering.</p>
                 </div>
             )}
 
             {/* Info cards */}
-            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 divide-y divide-zinc-100 dark:divide-zinc-700 overflow-hidden">
-                <div className="px-4 py-3 flex items-center gap-3">
-                    <User size={15} className="text-zinc-400" />
+            <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 divide-y divide-zinc-100 dark:divide-zinc-700 overflow-hidden shadow-sm">
+                <div className="px-4 py-3 flex items-center gap-3 min-h-[48px]">
+                    <User size={16} className="text-zinc-400 shrink-0" />
                     <span className="text-sm text-zinc-500">Ism</span>
-                    <span className="ml-auto text-sm font-medium">{name}</span>
+                    <span className="ml-auto text-sm font-medium text-right truncate">{name}</span>
                 </div>
-                <div className="px-4 py-3 flex items-center gap-3">
-                    <BookOpen size={15} className="text-zinc-400" />
+                <div className="px-4 py-3 flex items-center gap-3 min-h-[48px]">
+                    <BookOpen size={16} className="text-zinc-400 shrink-0" />
                     <span className="text-sm text-zinc-500">Rol</span>
                     <span className="ml-auto"><RoleLabel role={role} /></span>
                 </div>
                 {telegramChatId && (
-                    <div className="px-4 py-3 flex items-center gap-3">
-                        <UserCheck size={15} className="text-zinc-400" />
+                    <div className="px-4 py-3 flex items-center gap-3 min-h-[48px]">
+                        <UserCheck size={16} className="text-zinc-400 shrink-0" />
                         <span className="text-sm text-zinc-500">Telegram ID</span>
                         <span className="ml-auto text-sm font-mono text-zinc-400">{telegramChatId}</span>
                     </div>
@@ -762,72 +934,98 @@ function ProfileTab({ staffUser, initData }: { staffUser: StaffUser; initData: s
     );
 }
 
+// ─── Tab: Chat ────────────────────────────────────────────────────────────────
+
 function ChatTab({ initData }: { initData: string }) {
     const [threads, setThreads] = useState<ChatThread[] | null>(null);
     const [activeKey, setActiveKey] = useState<string | null>(null);
     const [messages, setMessages] = useState<ChatMessage[] | null>(null);
     const [input, setInput] = useState('');
     const [sending, setSending] = useState(false);
+    const [threadsError, setThreadsError] = useState<string | null>(null);
     const [msgLoading, setMsgLoading] = useState(false);
+    const [msgError, setMsgError] = useState<string | null>(null);
+    const [sendError, setSendError] = useState<string | null>(null);
 
-    useEffect(() => {
+    const loadThreads = useCallback(() => {
+        setThreads(null);
+        setThreadsError(null);
         staffFetch('/chat-threads', initData)
             .then(setThreads)
-            .catch(() => setThreads([]));
+            .catch((err: any) => setThreadsError(err.debug || err.message || 'Suhbatlarni yuklab bo\'lmadi'));
     }, [initData]);
+
+    useEffect(() => { loadThreads(); }, [loadThreads]);
 
     const openThread = useCallback(async (key: string) => {
         setActiveKey(key);
         setMessages(null);
+        setMsgError(null);
+        setSendError(null);
         setMsgLoading(true);
         try {
             const msgs = await staffFetch(`/chat-threads/${key}`, initData);
             setMessages(msgs);
-        } catch { setMessages([]); }
-        finally { setMsgLoading(false); }
+        } catch (err: any) {
+            setMsgError(err.debug || err.message || 'Xabarlarni yuklab bo\'lmadi');
+            setMessages([]);
+        } finally {
+            setMsgLoading(false);
+        }
     }, [initData]);
 
     const sendMessage = useCallback(async () => {
         if (!activeKey || !input.trim()) return;
         setSending(true);
+        setSendError(null);
+        const text = input.trim();
         try {
             const msg = await staffFetch(`/chat-threads/${activeKey}`, initData, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: input.trim() }),
+                body: JSON.stringify({ content: text }),
             });
             setMessages(prev => [...(prev || []), msg]);
             setInput('');
-            setThreads(null);
             staffFetch('/chat-threads', initData).then(setThreads).catch(() => {});
-        } catch { /* xabar yuborilmadi — foydalanuvchi qayta urinishi mumkin */ }
-        finally { setSending(false); }
+        } catch (err: any) {
+            setSendError(err.debug || err.message || 'Xabar yuborilmadi');
+        } finally {
+            setSending(false);
+        }
     }, [activeKey, input, initData]);
 
     if (!activeKey) {
         return (
             <div className="p-4">
-                {threads === null && (
-                    <div className="flex justify-center py-10">
+                {threads === null && !threadsError && (
+                    <div className="flex flex-col items-center justify-center py-12 gap-3">
                         <div className="w-8 h-8 rounded-full border-4 border-blue-600/20 border-t-blue-600 animate-spin" />
+                        <p className="text-xs text-zinc-400 font-medium">Suhbatlar yuklanmoqda...</p>
                     </div>
                 )}
-                {threads !== null && threads.length === 0 && (
-                    <div className="text-center py-16 text-zinc-400">
-                        <MessageCircle size={36} className="mx-auto mb-3 opacity-30" />
-                        <p className="text-sm">Hozircha suhbatlar yo'q</p>
-                    </div>
+                {threadsError && (
+                    <ErrorState msg={threadsError} onRetry={loadThreads} />
                 )}
-                {threads !== null && threads.length > 0 && (
+                {threads !== null && !threadsError && threads.length === 0 && (
+                    <EmptyState
+                        icon={MessageCircle}
+                        title="Hozircha suhbatlar yo'q"
+                        description="Yangi xabarlar va muloqotlar shu yerda ko'rinadi"
+                        actionLabel="Yangilash"
+                        onAction={loadThreads}
+                    />
+                )}
+                {threads !== null && !threadsError && threads.length > 0 && (
                     <div className="space-y-2">
                         {threads.map(th => (
                             <button
                                 key={th.key}
                                 onClick={() => openThread(th.key)}
-                                className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-left transition-colors"
+                                className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-left transition-colors min-h-[56px]"
                             >
-                                <div className="w-11 h-11 rounded-xl bg-blue-500 flex items-center justify-center shrink-0 text-white font-black">
-                                    {th.title.charAt(0)}
+                                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 text-white font-black text-base shadow-sm">
+                                    {th.title.charAt(0).toUpperCase()}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between gap-2">
@@ -839,7 +1037,7 @@ function ChatTab({ initData }: { initData: string }) {
                                     <p className="text-xs text-zinc-500 truncate">{th.subtitle}</p>
                                     {th.lastMessage && <p className="text-xs text-zinc-400 truncate mt-0.5">{th.lastMessage}</p>}
                                 </div>
-                                <ChevronRight size={16} className="text-zinc-400 shrink-0" />
+                                <ChevronRight size={18} className="text-zinc-400 shrink-0" />
                             </button>
                         ))}
                     </div>
@@ -853,32 +1051,44 @@ function ChatTab({ initData }: { initData: string }) {
     return (
         <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 180px)' }}>
             <button
-                onClick={() => { setActiveKey(null); setMessages(null); }}
-                className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 mb-3 shrink-0"
+                onClick={() => { setActiveKey(null); setMessages(null); setSendError(null); }}
+                className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 mb-3 shrink-0 py-2 px-2.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 w-fit min-h-[44px]"
             >
-                <ArrowLeft size={16} /> {activeTitle}
+                <ArrowLeft size={18} /> {activeTitle}
             </button>
 
             <div className="flex-1 overflow-y-auto space-y-2 pb-3">
                 {msgLoading && (
-                    <div className="flex justify-center py-6">
+                    <div className="flex justify-center py-8">
                         <div className="w-6 h-6 rounded-full border-4 border-blue-600/20 border-t-blue-600 animate-spin" />
                     </div>
                 )}
-                {!msgLoading && messages && messages.length === 0 && (
-                    <div className="text-center py-10 text-zinc-400 text-sm">Hali xabar yo'q. Birinchi xabarni yozing.</div>
+                {msgError && (
+                    <ErrorState msg={msgError} onRetry={() => openThread(activeKey)} />
                 )}
-                {!msgLoading && messages && messages.map(m => (
+                {!msgLoading && !msgError && messages && messages.length === 0 && (
+                    <div className="text-center py-10 text-zinc-400 text-sm font-medium">Hali xabar yo'q. Birinchi xabarni yozing.</div>
+                )}
+                {!msgLoading && !msgError && messages && messages.map(m => (
                     <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm ${m.fromMe ? 'bg-blue-500 text-white rounded-br-md' : 'bg-zinc-100 dark:bg-zinc-800 text-slate-900 dark:text-white rounded-bl-md'}`}>
-                            <p>{m.content}</p>
-                            <p className={`text-[10px] mt-1 ${m.fromMe ? 'text-blue-100' : 'text-zinc-400'}`}>
-                                {new Date(m.createdAt).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
-                            </p>
+                        <div className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-sm ${m.fromMe ? 'bg-blue-600 text-white rounded-br-md' : 'bg-zinc-100 dark:bg-zinc-800 text-slate-900 dark:text-white rounded-bl-md'}`}>
+                            <p className="leading-relaxed">{m.content}</p>
+                            {m.createdAt && (
+                                <p className={`text-[10px] mt-1 ${m.fromMe ? 'text-blue-100' : 'text-zinc-400'}`}>
+                                    {fmtTime(m.createdAt)}
+                                </p>
+                            )}
                         </div>
                     </div>
                 ))}
             </div>
+
+            {sendError && (
+                <div className="mb-2 p-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-center justify-between">
+                    <span>⚠️ {sendError}</span>
+                    <button onClick={sendMessage} className="font-bold underline ml-2 min-h-[36px] px-2 py-1">Qayta yuborish</button>
+                </div>
+            )}
 
             <div className="flex items-center gap-2 shrink-0 pt-2">
                 <input
@@ -887,14 +1097,15 @@ function ChatTab({ initData }: { initData: string }) {
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !sending) sendMessage(); }}
                     placeholder="Xabar yozing..."
-                    className="flex-1 px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm outline-none focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                 />
                 <button
                     onClick={sendMessage}
                     disabled={sending || !input.trim()}
-                    className="w-11 h-11 rounded-xl bg-blue-500 text-white flex items-center justify-center shrink-0 disabled:opacity-50"
+                    className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 disabled:opacity-50 active:scale-95 transition-transform"
+                    aria-label="Xabarni yuborish"
                 >
-                    <Send size={18} />
+                    {sending ? <RefreshCw size={16} className="animate-spin" /> : <Send size={18} />}
                 </button>
             </div>
         </div>
@@ -908,12 +1119,16 @@ function StaffTab({ initData }: { initData: string }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    useEffect(() => {
+    const loadStaff = useCallback(() => {
+        setLoading(true);
+        setError('');
         staffFetch('/staff', initData)
             .then(d => setStaffList(d.staff || []))
-            .catch((err: any) => setError(err.debug || 'Xatolik yuz berdi'))
+            .catch((err: any) => setError(err.debug || err.message || 'Xodimlar ro\'yxatini yuklab bo\'lmadi'))
             .finally(() => setLoading(false));
     }, [initData]);
+
+    useEffect(() => { loadStaff(); }, [loadStaff]);
 
     if (loading) return (
         <div className="space-y-3 p-4">
@@ -921,19 +1136,19 @@ function StaffTab({ initData }: { initData: string }) {
         </div>
     );
 
-    if (error) return (
-        <div className="flex flex-col items-center justify-center py-16 text-red-400">
-            <AlertCircle size={40} className="mb-3 opacity-40" />
-            <p className="text-sm font-medium">{error}</p>
-        </div>
-    );
+    if (error) {
+        return <ErrorState msg={error} onRetry={loadStaff} />;
+    }
 
     if (staffList.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
-                <Users size={40} className="mb-3 opacity-40" />
-                <p className="text-sm font-medium">Xodimlar topilmadi</p>
-            </div>
+            <EmptyState
+                icon={Users}
+                title="Xodimlar topilmadi"
+                description="Ro'yxatda faol xodimlar mavjud emas"
+                actionLabel="Yangilash"
+                onAction={loadStaff}
+            />
         );
     }
 
@@ -948,9 +1163,9 @@ function StaffTab({ initData }: { initData: string }) {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.04 }}
-                    className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3"
+                    className="w-full bg-white dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700 p-3.5 shadow-sm text-left flex items-center gap-3 min-h-[56px]"
                 >
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0 overflow-hidden">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0 overflow-hidden shadow-sm">
                         {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" /> : s.name?.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -959,7 +1174,7 @@ function StaffTab({ initData }: { initData: string }) {
                             <RoleLabel role={s.role} />
                         </div>
                         {s.phone && (
-                            <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400">
+                            <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400 font-mono">
                                 <span>{s.phone}</span>
                             </div>
                         )}
@@ -1017,7 +1232,7 @@ export default function StaffPortal() {
     }, [isDark]);
 
     // Fetch /me when initData ready
-    useEffect(() => {
+    const fetchMe = useCallback(() => {
         if (initData === null) return;
         const urlToken = getUrlToken();
         if (!initData && !urlToken) {
@@ -1044,12 +1259,14 @@ export default function StaffPortal() {
             .finally(() => setLoading(false));
     }, [initData]);
 
+    useEffect(() => { fetchMe(); }, [fetchMe]);
+
     const tabs = staffUser ? getTabsForRole(staffUser.role) : [];
 
     // ── Loading screen
     if (loading || initData === null) {
         return (
-            <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-zinc-950' : 'bg-zinc-50'}`}>
+            <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-zinc-950 text-white' : 'bg-zinc-50 text-zinc-900'}`}>
                 <div className="flex flex-col items-center gap-3">
                     <div className="w-10 h-10 rounded-full border-4 border-blue-600/20 border-t-blue-600 animate-spin" />
                     <p className="text-sm text-zinc-400 font-medium">Yuklanmoqda...</p>
@@ -1069,6 +1286,12 @@ export default function StaffPortal() {
                     <p className="font-bold text-lg">{error.msg}</p>
                     {error.hint && <p className="text-sm text-zinc-400 mt-2 max-w-xs">{error.hint}</p>}
                 </div>
+                <button
+                    onClick={fetchMe}
+                    className="mt-2 inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm min-h-[48px] active:scale-95 transition-all shadow-md"
+                >
+                    <RefreshCw size={16} /> Qayta urinish
+                </button>
             </div>
         );
     }
@@ -1079,7 +1302,7 @@ export default function StaffPortal() {
         <div className={`min-h-screen flex flex-col ${isDark ? 'dark bg-zinc-950 text-zinc-100' : 'bg-zinc-50 text-zinc-900'}`}>
 
             {/* Top bar */}
-            <div className="bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+            <div className="bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow-sm">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden shrink-0">
                     {staffUser.avatar
                         ? <img src={staffUser.avatar} alt="" className="w-full h-full object-cover" />
@@ -1089,11 +1312,10 @@ export default function StaffPortal() {
                     <div className="font-semibold text-sm truncate">{staffUser.name}</div>
                     <RoleLabel role={staffUser.role} />
                 </div>
-                <div className="text-xs text-zinc-400 hidden">Staff Portal</div>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-auto pb-20">
+            <div className="flex-1 overflow-auto pb-24">
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={activeTab}
@@ -1141,7 +1363,7 @@ export default function StaffPortal() {
             </div>
 
             {/* Bottom nav */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-around px-2 py-2 z-20">
+            <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-around px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-20 shadow-lg">
                 {tabs.map(tab => {
                     const Icon = tab.icon;
                     const active = activeTab === tab.id;
@@ -1149,12 +1371,12 @@ export default function StaffPortal() {
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${
-                                active ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400 dark:text-zinc-500'
+                            className={`flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-h-[48px] min-w-[48px] active:scale-95 ${
+                                active ? 'text-blue-600 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/40 font-semibold' : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300'
                             }`}
                         >
                             <Icon size={20} strokeWidth={active ? 2.5 : 1.8} />
-                            <span className={`text-[10px] font-medium ${active ? 'opacity-100' : 'opacity-60'}`}>
+                            <span className={`text-[10px] leading-none ${active ? 'opacity-100' : 'opacity-70'}`}>
                                 {tab.label}
                             </span>
                         </button>
