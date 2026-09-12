@@ -8,6 +8,8 @@ import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { getDbConfig } from '../services/dbBackup.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
+import { getEffectivePermissions } from '../middleware/authorize.js';
+import { withAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
@@ -24,6 +26,25 @@ const isAdminOrAbove = (role: string) => (ROLE_LEVEL[role] || 0) >= 3;
 // ─── Normalize phone number ───────────────────────────────────────────────────
 function normalizePhone(raw: string): string {
     return raw.replace(/\s/g, '').trim();
+}
+
+// ─── RBAC Bosqich 3: DB'dagi Role'ni User.role/permissions'ga aylantirish ────
+// CrmUsers.tsx endi (eski qo'lda tanlangan andoza o'rniga) haqiqiy Role
+// tanlashi mumkin — bu funksiya o'sha Role'ning baseRoleLevel'ini User.role
+// (ROLE_LEVEL/requireMinRole hali ham shuni o'qiydi) va uning RolePermission
+// to'plamini User.permissions (eski, frontend menyu hali shuni o'qiydi) ga
+// aylantiradi. Ikkalasi ham Role'dan HOSILA — mos kelmaslik imkonsiz.
+async function resolveRoleAssignment(roleId: string) {
+    const role = await prisma.role.findUnique({
+        where: { id: roleId },
+        include: { permissions: { include: { permission: true } } },
+    });
+    if (!role) return null;
+    return {
+        role,
+        baseRoleLevel: role.baseRoleLevel,
+        permissionKeys: role.permissions.map(rp => rp.permission.key),
+    };
 }
 
 // ─── POST /auth/login  (phone + password) ────────────────────────────────────
@@ -107,12 +128,28 @@ router.get('/me', async (req, res) => {
     try {
         const token = authHeader.split(' ')[1];
         const payload: any = jwt.verify(token, JWT_SECRET);
-        const user = await prisma.user.findUnique({ where: { id: payload.id } });
+        const user = await prisma.user.findUnique({
+            where: { id: payload.id },
+            include: { roleRef: { select: { id: true, name: true, label: true } } },
+        });
         if (!user) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+
+        // RBAC qayta qurish — Bosqich 3: haqiqiy (Role + PermissionOverride
+        // asosidagi) samarali ruxsatlar. Eski `permissions` maydoni ham
+        // saqlanadi (frontend hozircha shuni o'qiydi) — ikkalasi ham
+        // yuboriladi, o'tish davri tugagach faqat effectivePermissions qoladi.
+        let effectivePermissions: string[] = [];
+        try {
+            effectivePermissions = [...await getEffectivePermissions(user.id, user.role)];
+        } catch { /* jim — eski permissions maydoni bilan ishlashda davom etadi */ }
+
         res.json({
             id: user.id, phone: user.phone, email: user.email,
             name: user.name, role: user.role, avatar: user.avatar,
-            permissions: (user as any).permissions
+            permissions: (user as any).permissions,
+            roleId: (user as any).roleId,
+            roleRef: (user as any).roleRef,
+            effectivePermissions,
         });
     } catch {
         res.status(401).json({ message: "Token yaroqsiz" });
@@ -155,6 +192,7 @@ router.get('/users', requireAuth, async (req, res) => {
                 id: true, email: true, phone: true, name: true, role: true,
                 avatar: true, permissions: true, isActive: true, createdAt: true,
                 subject: true, experience: true, bio: true, salaryPercent: true,
+                roleId: true, roleRef: { select: { id: true, name: true, label: true } },
             } as any,
             orderBy: { createdAt: 'desc' }
         });
@@ -172,12 +210,22 @@ router.post('/users', requireAuth, async (req, res) => {
             return res.status(403).json({ message: "Foydalanuvchi yaratish uchun ruxsat yo'q" });
         }
 
-        const { phone, email, password, name, role, permissions, avatar, subject, experience, bio } = req.body;
+        const { phone, email, password, name, role, permissions, roleId, avatar, subject, experience, bio } = req.body;
 
         if (!phone) return res.status(400).json({ message: "Telefon raqam kiritilishi shart" });
         if (!name)  return res.status(400).json({ message: "Ism kiritilishi shart" });
 
-        const targetRole = role || 'MANAGER';
+        // roleId berilgan bo'lsa — Role o'zi manba: uning baseRoleLevel'i
+        // User.role bo'ladi, RolePermission to'plami esa User.permissions'ga
+        // aylanadi (body'dagi role/permissions e'tiborsiz qoldiriladi).
+        let targetRole = role || 'MANAGER';
+        let resolvedPermissions: string[] | undefined = permissions;
+        if (roleId) {
+            const resolved = await resolveRoleAssignment(roleId);
+            if (!resolved) return res.status(400).json({ message: "Tanlangan rol topilmadi" });
+            targetRole = resolved.baseRoleLevel;
+            resolvedPermissions = resolved.permissionKeys;
+        }
 
         // Only SUPER_ADMIN can create another SUPER_ADMIN
         if (targetRole === 'SUPER_ADMIN' && !isSuperAdmin(requester.role)) {
@@ -196,8 +244,9 @@ router.post('/users', requireAuth, async (req, res) => {
                 password: hashedPassword,
                 name,
                 role: targetRole,
+                roleId: roleId || null,
                 isActive: true,
-                permissions: JSON.stringify(permissions || []),
+                permissions: JSON.stringify(resolvedPermissions || []),
                 avatar: avatar || null,
                 subject: subject || null,
                 experience: experience || null,
@@ -226,15 +275,27 @@ router.post('/users', requireAuth, async (req, res) => {
 });
 
 // PUT update user
-router.put('/users/:id', requireAuth, async (req, res) => {
+router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
     try {
         const requester = (req as any).user;
         if (!isAdminOrAbove(requester.role)) {
             return res.status(403).json({ message: "Ruxsat yo'q" });
         }
 
-        const { name, role, phone, email, permissions, password, isActive, avatar, subject, experience, bio, salaryPercent } = req.body;
-        const targetRole = role;
+        const { name, role, phone, email, permissions, roleId, password, isActive, avatar, subject, experience, bio, salaryPercent } = req.body;
+        let targetRole = role;
+        let resolvedPermissions = permissions;
+        if (roleId !== undefined) {
+            if (roleId === null) {
+                // Rolni bekor qilish — eski erkin role/permissions'ga qaytadi
+                // (body'da yuborilgan qiymatlar ishlatiladi).
+            } else {
+                const resolved = await resolveRoleAssignment(roleId);
+                if (!resolved) return res.status(400).json({ message: "Tanlangan rol topilmadi" });
+                targetRole = resolved.baseRoleLevel;
+                resolvedPermissions = resolved.permissionKeys;
+            }
+        }
 
         // Only SUPER_ADMIN can assign SUPER_ADMIN role
         if (targetRole === 'SUPER_ADMIN' && !isSuperAdmin(requester.role)) {
@@ -247,10 +308,11 @@ router.put('/users/:id', requireAuth, async (req, res) => {
             email: email || null,
             isActive: isActive !== undefined ? isActive : true,
         };
+        if (roleId !== undefined) updateData.roleId = roleId;
         // permissions faqat aniq yuborilganda yangilanadi — aks holda boshqa
         // forma (masalan CrmTeachers.tsx) saqlashda CrmUsers.tsx orqali
         // qo'yilgan ruxsatlarni bo'sh massivga aylantirib qo'yadi.
-        if (permissions !== undefined) updateData.permissions = JSON.stringify(permissions);
+        if (resolvedPermissions !== undefined) updateData.permissions = JSON.stringify(resolvedPermissions);
         if (phone) updateData.phone = normalizePhone(phone);
         if (password) updateData.password = await bcrypt.hash(password, 12);
         if (avatar !== undefined) updateData.avatar = avatar || null;
@@ -300,6 +362,65 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: String(error) });
+    }
+});
+
+// ─── GET /auth/users/:id/access — Effective Access Viewer (RBAC Bosqich 3) ──
+// Admin uchun diagnostika paneli: bu foydalanuvchi haqiqatda nimaga ruxsatli
+// (Role + PermissionOverride hisobga olingan holda), qayerdan (rol yoki
+// individual istisno) kelganini ko'rsatadi.
+router.get('/users/:id/access', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: req.params.id },
+            include: {
+                roleRef: { include: { permissions: { include: { permission: true } } } },
+                permissionOverrides: true,
+            } as any,
+        });
+        if (!user) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+
+        // User <-> StaffMember o'rtasida haqiqiy FK yo'q (faqat telefon raqami
+        // orqali eslashtiriladi — ensureStaffLoginAccount()ga q., crud.ts) —
+        // Bo'lim ma'lumoti shu orqali, eng yaxshi urinish sifatida topiladi.
+        const staffMember = user.phone
+            ? await prisma.staffMember.findFirst({ where: { phone: user.phone }, include: { departmentRef: true } })
+            : null;
+
+        const effectivePermissions = [...await getEffectivePermissions(user.id, user.role)];
+        const rolePermissionKeys = new Set(
+            ((user as any).roleRef?.permissions ?? []).map((rp: any) => rp.permission.key)
+        );
+        const now = new Date();
+        const activeOverrides = ((user as any).permissionOverrides ?? []).filter(
+            (o: any) => !o.validUntil || new Date(o.validUntil) > now
+        );
+
+        res.json({
+            userId: user.id,
+            name: user.name,
+            role: user.role,
+            roleRef: (user as any).roleRef
+                ? { id: (user as any).roleRef.id, name: (user as any).roleRef.name, label: (user as any).roleRef.label }
+                : null,
+            department: staffMember?.departmentRef?.name ?? null,
+            isActive: user.isActive,
+            effectivePermissions: effectivePermissions.map(key => ({
+                key,
+                source: activeOverrides.some((o: any) => o.permissionKey === key && o.effect === 'ALLOW')
+                    ? 'override_allow'
+                    : rolePermissionKeys.has(key) ? 'role' : 'unknown',
+            })),
+            effectivePermissionCount: effectivePermissions.length,
+            overrides: activeOverrides.map((o: any) => ({
+                permissionKey: o.permissionKey,
+                effect: o.effect,
+                reason: o.reason,
+                validUntil: o.validUntil,
+            })),
+        });
+    } catch (error: any) {
+        res.status(500).json({ message: String(error) });
     }
 });
 

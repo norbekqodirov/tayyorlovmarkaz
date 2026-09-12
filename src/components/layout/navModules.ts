@@ -190,6 +190,7 @@ export const MODULES: NavModule[] = [
         title: 'Tizim',
         links: [
           { name: 'Foydalanuvchilar', path: '/crmtayyorlovmarkaz/users',    icon: Users,    permission: 'users'    },
+          { name: 'Rollar va Ruxsatlar', path: '/crmtayyorlovmarkaz/roles', icon: Shield,   permission: 'users'    },
           { name: 'Sozlamalar',       path: '/crmtayyorlovmarkaz/settings', icon: Settings, permission: 'settings' },
         ],
       },

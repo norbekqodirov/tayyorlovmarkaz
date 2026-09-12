@@ -368,6 +368,16 @@ model Role {
   name        String   @unique // "TEACHER" yoki "Katta O'qituvchi" kabi ichki kalit
   label       String   // ko'rsatiladigan nom
   description String?  @db.Text
+  // Ushbu Role tanlangan foydalanuvchining User.role (ROLE_LEVEL) qiymati
+  // qanday bo'lishi kerakligi — TEACHER/MANAGER/ADMIN/SUPER_ADMIN dan biri.
+  // Muhim: bu Role.name bilan bir xil narsa EMAS — bitta baseRoleLevel'ga
+  // ko'plab turli nomdagi Role (masalan "Matematika O'qituvchisi",
+  // "IELTS O'qituvchisi") mos kelishi mumkin, farqi ularning RolePermission
+  // to'plamida. ROLE_LEVEL/requireMinRole (server/middleware/auth.ts) hali
+  // ham shu qiymat asosida ishlaydi — granular Permission tizimi buni
+  // almashtirmaydi, ustiga qo'shiladi (arxitektura rejasiga qarang:
+  // C:\Users\user\.claude\plans\cosmic-fluttering-quill.md).
+  baseRoleLevel String @default("TEACHER")
   isSystem    Boolean  @default(false)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())

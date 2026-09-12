@@ -99,6 +99,17 @@ interface CrmUser {
     permissions?: string;
     isActive?: boolean;
     createdAt?: string;
+    roleId?: string | null;
+    roleRef?: { id: string; name: string; label: string } | null;
+}
+
+interface DbRole {
+    id: string;
+    label: string;
+    baseRoleLevel: string;
+    isActive: boolean;
+    isSystem: boolean;
+    permissionCount: number;
 }
 
 const EMPTY_FORM = {
@@ -108,6 +119,7 @@ const EMPTY_FORM = {
     password: '',
     role: 'TEACHER',
     permissions: [] as string[],
+    roleId: null as string | null,
 };
 
 export default function CrmUsers() {
@@ -124,6 +136,18 @@ export default function CrmUsers() {
     const [expandedGroups, setExpandedGroups] = useState<string[]>(PERMISSION_GROUPS);
     const { showToast } = useToast();
     const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; user: CrmUser | null }>({ open: false, user: null });
+
+    // RBAC Bosqich 3 — DB'dagi haqiqiy Role'lar (Rollar va Ruxsatlar sahifasida
+    // yaratilgan/tahrirlangan). Bular eski ROLE_TEMPLATES'ga QO'SHIMCHA
+    // tanlov — biriktirilsa, foydalanuvchining role/permissions'i shu Role'dan
+    // hosila bo'ladi (server/routes/auth.ts'dagi resolveRoleAssignment()).
+    const [dbRoles, setDbRoles] = useState<DbRole[]>([]);
+    const [accessInfo, setAccessInfo] = useState<any>(null);
+    const [loadingAccess, setLoadingAccess] = useState(false);
+
+    useEffect(() => {
+        api.get('/roles').then(res => setDbRoles(Array.isArray(res.data) ? res.data.filter((r: DbRole) => r.isActive) : [])).catch(() => {});
+    }, []);
 
     // Hozirgi kirgan foydalanuvchi ID si
     const currentUserId = (() => {
@@ -152,6 +176,7 @@ export default function CrmUsers() {
 
     const openCreate = () => {
         setEditingUser(null);
+        setAccessInfo(null);
         setForm({ ...EMPTY_FORM });
         setSelectedTemplate('TEACHER');
         applyTemplate('TEACHER');
@@ -160,6 +185,7 @@ export default function CrmUsers() {
 
     const openEdit = (user: CrmUser) => {
         setEditingUser(user);
+        setAccessInfo(null);
         let perms: string[] = [];
         try { perms = JSON.parse(user.permissions || '[]'); } catch { }
         setForm({
@@ -169,9 +195,16 @@ export default function CrmUsers() {
             password: '',
             role: user.role,
             permissions: perms,
+            roleId: user.roleId || null,
         });
-        setSelectedTemplate(matchTemplateId(user));
+        setSelectedTemplate(user.roleId ? 'CUSTOM_DB' : matchTemplateId(user));
         setIsModalOpen(true);
+
+        setLoadingAccess(true);
+        api.get(`/auth/users/${user.id}/access`)
+            .then(res => setAccessInfo(res.data))
+            .catch(() => setAccessInfo(null))
+            .finally(() => setLoadingAccess(false));
     };
 
     const applyTemplate = (templateId: string) => {
@@ -182,7 +215,28 @@ export default function CrmUsers() {
             ...prev,
             role: templateId === 'MARKETING' ? 'MANAGER' : templateId,
             permissions: template.permissions,
+            roleId: null,
         }));
+    };
+
+    const applyDbRole = async (roleId: string) => {
+        if (!roleId) {
+            setSelectedTemplate('TEACHER');
+            applyTemplate('TEACHER');
+            return;
+        }
+        try {
+            const res = await api.get(`/roles/${roleId}`);
+            setSelectedTemplate('CUSTOM_DB');
+            setForm(prev => ({
+                ...prev,
+                role: res.data.baseRoleLevel,
+                permissions: res.data.permissionKeys || [],
+                roleId,
+            }));
+        } catch {
+            showToast('Rolni yuklab bo\'lmadi', 'error');
+        }
     };
 
     const togglePermission = (permId: string) => {
@@ -192,6 +246,7 @@ export default function CrmUsers() {
             permissions: prev.permissions.includes(permId)
                 ? prev.permissions.filter(p => p !== permId)
                 : [...prev.permissions, permId],
+            roleId: null,
         }));
     };
 
@@ -204,6 +259,7 @@ export default function CrmUsers() {
             permissions: allSelected
                 ? prev.permissions.filter(p => !groupPerms.includes(p))
                 : [...new Set([...prev.permissions, ...groupPerms])],
+            roleId: null,
         }));
     };
 
@@ -212,6 +268,7 @@ export default function CrmUsers() {
         setForm(prev => ({
             ...prev,
             permissions: ALL_PERMISSIONS.map(p => p.id),
+            roleId: null,
         }));
     };
 
@@ -220,6 +277,7 @@ export default function CrmUsers() {
         setForm(prev => ({
             ...prev,
             permissions: [],
+            roleId: null,
         }));
     };
 
@@ -282,6 +340,7 @@ export default function CrmUsers() {
                 phone: form.phone,
                 role: form.role,
                 permissions: form.permissions,
+                roleId: form.roleId,
                 ...(form.password ? { password: form.password } : {}),
             };
 
@@ -657,6 +716,64 @@ export default function CrmUsers() {
                                         })}
                                     </div>
                                 </div>
+
+                                {/* RBAC Bosqich 3 — Rollar va Ruxsatlar sahifasida yaratilgan haqiqiy Role */}
+                                {dbRoles.length > 0 && (
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest">
+                                                Maxsus Rol (Rollar va Ruxsatlar sahifasidan)
+                                            </label>
+                                            <a href="/crmtayyorlovmarkaz/roles" className="text-[11px] font-bold text-blue-600 hover:underline">Rollarni boshqarish</a>
+                                        </div>
+                                        <select
+                                            value={form.roleId || ''}
+                                            onChange={e => applyDbRole(e.target.value)}
+                                            className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                                        >
+                                            <option value="">— Yo'q (yuqoridagi andozadan foydalanish) —</option>
+                                            {dbRoles.map(r => (
+                                                <option key={r.id} value={r.id}>{r.label} ({r.permissionCount} ta ruxsat)</option>
+                                            ))}
+                                        </select>
+                                        {form.roleId && (
+                                            <p className="text-[11px] text-blue-600 mt-1.5">
+                                                Ushbu foydalanuvchining ruxsatlari endi shu roldan boshqariladi — pastdagi katakchalarni qo'lda o'zgartirsangiz, rol biriktiruvi bekor bo'ladi.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Effective Access Viewer — faqat tahrirlashda, RBAC Bosqich 3 */}
+                                {editingUser && (
+                                    <div className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
+                                        <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-2">Samarali Ruxsatlar (joriy holat)</p>
+                                        {loadingAccess ? (
+                                            <p className="text-xs text-zinc-500">Yuklanmoqda...</p>
+                                        ) : accessInfo ? (
+                                            <div className="space-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                                                <p><span className="font-bold">Rol:</span> {accessInfo.roleRef?.label || accessInfo.role}</p>
+                                                {accessInfo.department && <p><span className="font-bold">Bo'lim:</span> {accessInfo.department}</p>}
+                                                <p><span className="font-bold">Samarali ruxsatlar:</span> {accessInfo.effectivePermissionCount} ta</p>
+                                                {accessInfo.overrides?.length > 0 && (
+                                                    <div>
+                                                        <span className="font-bold">Individual istisnolar:</span>
+                                                        <ul className="mt-1 space-y-0.5 pl-3.5 list-disc">
+                                                            {accessInfo.overrides.map((o: any) => (
+                                                                <li key={o.permissionKey}>
+                                                                    {o.permissionKey} — <span className={o.effect === 'ALLOW' ? 'text-emerald-600 font-bold' : 'text-red-600 font-bold'}>{o.effect === 'ALLOW' ? 'RUXSAT' : 'TAQIQ'}</span>
+                                                                    {o.reason ? ` (${o.reason})` : ''}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-zinc-500">Ma'lumot topilmadi</p>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Basic Info */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

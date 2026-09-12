@@ -47,6 +47,7 @@ const CrmBI         = React.lazy(() => import('./pages/crm/analytics/CrmBI'));
 const CrmCourses    = React.lazy(() => import('./pages/crm/education/CrmCourses'));
 const CrmInventory  = React.lazy(() => import('./pages/crm/management/CrmInventory'));
 const CrmUsers          = React.lazy(() => import('./pages/crm/management/CrmUsers'));
+const CrmRoles          = React.lazy(() => import('./pages/crm/management/CrmRoles'));
 const CrmCommunication   = React.lazy(() => import('./pages/crm/marketing/CrmCommunication'));
 const CrmStudentDetail   = React.lazy(() => import('./pages/crm/education/CrmStudentDetail'));
 const CrmTelegram        = React.lazy(() => import('./pages/crm/communication/CrmTelegram'));
@@ -181,6 +182,7 @@ export default function App() {
               <Route path="reports"      element={<ProtectedRoute requiredPermission="reports" allowedRoles={['ADMIN','MANAGER']}><CrmReports /></ProtectedRoute>} />
               <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAudit /></ProtectedRoute>} />
               <Route path="users"        element={<ProtectedRoute requiredPermission="users"    allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
+              <Route path="roles"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmRoles /></ProtectedRoute>} />
               <Route path="settings"     element={<ProtectedRoute requiredPermission="settings" allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />
             </Route>
           </Routes>

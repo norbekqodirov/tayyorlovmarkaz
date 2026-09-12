@@ -21,12 +21,16 @@ const prisma = new PrismaClient();
 
 // CrmUsers.tsx'dagi ROLE_TEMPLATES bilan bir xil (u yerda import qilib
 // bo'lmaydi — .tsx, JSX). Qo'lda sinxron saqlanadi.
-const ROLE_TEMPLATES: { name: string; label: string; isSystem: boolean; permissions: string[] }[] = [
-    { name: 'SUPER_ADMIN', label: 'Super Admin', isSystem: true, permissions: ALL_PERMISSIONS.map(p => p.id) },
-    { name: 'ADMIN', label: 'Administrator', isSystem: true, permissions: ALL_PERMISSIONS.map(p => p.id) },
-    { name: 'TEACHER', label: "Ustoz / O'qituvchi", isSystem: true, permissions: ['dashboard', 'schedule', 'journal', 'students', 'groups', 'parent_chat'] },
-    { name: 'MARKETING', label: 'Marketing Xodimi', isSystem: true, permissions: ['dashboard', 'leads', 'marketing', 'ai_content', 'communication', 'target_forms'] },
-    { name: 'MANAGER', label: 'Menejer', isSystem: true, permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'transaction_categories', 'discounts', 'bi', 'predictions', 'goals', 'reports', 'certificates', 'leads', 'teachers', 'leave_requests', 'staff_attendance', 'parent_chat'] },
+const ROLE_TEMPLATES: { name: string; label: string; isSystem: boolean; baseRoleLevel: string; permissions: string[] }[] = [
+    { name: 'SUPER_ADMIN', label: 'Super Admin', isSystem: true, baseRoleLevel: 'SUPER_ADMIN', permissions: ALL_PERMISSIONS.map(p => p.id) },
+    { name: 'ADMIN', label: 'Administrator', isSystem: true, baseRoleLevel: 'ADMIN', permissions: ALL_PERMISSIONS.map(p => p.id) },
+    { name: 'TEACHER', label: "Ustoz / O'qituvchi", isSystem: true, baseRoleLevel: 'TEACHER', permissions: ['dashboard', 'schedule', 'journal', 'students', 'groups', 'parent_chat'] },
+    // MARKETING — haqiqiy User.role qiymati emas (faqat TEACHER/MANAGER/ADMIN/
+    // SUPER_ADMIN mavjud), shuning uchun baseRoleLevel='MANAGER' (CrmUsers.tsx
+    // bilan bir xil — bu andoza tanlanganda haqiqiy rol sifatida MANAGER
+    // saqlanadi, permissions massivi cheklaydi).
+    { name: 'MARKETING', label: 'Marketing Xodimi', isSystem: true, baseRoleLevel: 'MANAGER', permissions: ['dashboard', 'leads', 'marketing', 'ai_content', 'communication', 'target_forms'] },
+    { name: 'MANAGER', label: 'Menejer', isSystem: true, baseRoleLevel: 'MANAGER', permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'transaction_categories', 'discounts', 'bi', 'predictions', 'goals', 'reports', 'certificates', 'leads', 'teachers', 'leave_requests', 'staff_attendance', 'parent_chat'] },
 ];
 
 const DEPARTMENTS = ["Ma'muriyat", "Ta'lim", 'Marketing', "Xizmat ko'rsatish"];
@@ -53,8 +57,8 @@ async function seedRoles() {
     for (const t of ROLE_TEMPLATES) {
         const role = await prisma.role.upsert({
             where: { name: t.name },
-            update: { label: t.label, isSystem: t.isSystem },
-            create: { name: t.name, label: t.label, isSystem: t.isSystem },
+            update: { label: t.label, isSystem: t.isSystem, baseRoleLevel: t.baseRoleLevel },
+            create: { name: t.name, label: t.label, isSystem: t.isSystem, baseRoleLevel: t.baseRoleLevel },
         });
         roleMap.set(t.name, role.id);
 
