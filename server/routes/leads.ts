@@ -94,6 +94,26 @@ router.get('/', async (req, res) => {
             ];
         }
 
+        // MANAGER — faqat o'ziga biriktirilgan yoki biriktirilmagan lidlarni
+        // ko'radi (ADMIN+ hammasini ko'radi). Ilgari bu yerda umuman scope
+        // yo'q edi — istalgan MANAGER istalgan boshqa menejerning lidini
+        // ?assignedTo=<id> orqali ham, hech qanday filtrsiz ham to'liq
+        // ko'ra olardi. Mijoz so'ragan `assignedTo` qiymatidan qat'i nazar
+        // (agar u boshqa birovniki bo'lsa) shu scope ustunlik qiladi —
+        // xato emas, shunchaki bo'sh/kichikroq natija qaytadi. Eslatma:
+        // Prisma'ning `in` filtri ro'yxat ichida `null`ni qabul qilmaydi
+        // (runtime xato beradi), shuning uchun OR orqali yozilgan —
+        // yuqoridagi qidiruv (`q`) uchun ishlatilgan `where.OR`ga
+        // aralashmasligi uchun alohida `where.AND` ichida.
+        const requester = (req as any).user;
+        if (requester.role === 'MANAGER') {
+            delete where.assignedToId;
+            where.AND = [
+                ...(where.AND ?? []),
+                { OR: [{ assignedToId: requester.id }, { assignedToId: null }] },
+            ];
+        }
+
         const validSort = ['createdAt', 'score', 'name', 'nextFollowUpAt', 'lastContactAt'].includes(sort) ? sort : 'createdAt';
 
         const stageWhere = { ...where };
@@ -241,6 +261,16 @@ router.get('/:id', async (req, res) => {
             },
         });
         if (!lead) return res.status(404).json({ message: 'Topilmadi' });
+
+        // MANAGER — faqat o'zining yoki hech kimga biriktirilmagan lidni
+        // ko'ra oladi (GET / dagi scope bilan bir xil qoida). ID orqali
+        // to'g'ridan-to'g'ri so'ralganda ham xuddi shu cheklov qo'llanadi —
+        // aks holda ro'yxat-scope IDOR orqali chetlab o'tilardi.
+        const requester = (req as any).user;
+        if (requester.role === 'MANAGER' && lead.assignedToId && lead.assignedToId !== requester.id) {
+            return res.status(403).json({ message: "Bu lidni ko'rish uchun ruxsatingiz yo'q" });
+        }
+
         res.json(lead);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -280,6 +310,13 @@ router.put('/:id', withAudit('lead'), async (req, res) => {
     try {
         const existing = await prisma.lead.findUnique({ where: { id: req.params.id } });
         if (!existing || existing.deletedAt) return res.status(404).json({ message: 'Topilmadi' });
+
+        // MANAGER — faqat o'ziga biriktirilgan yoki biriktirilmagan lidni
+        // tahrirlay oladi (GET /:id bilan bir xil qoida).
+        const requester = (req as any).user;
+        if (requester.role === 'MANAGER' && existing.assignedToId && existing.assignedToId !== requester.id) {
+            return res.status(403).json({ message: "Bu lidni tahrirlash uchun ruxsatingiz yo'q" });
+        }
 
         const data: any = {};
         for (const f of EDITABLE_FIELDS) {
