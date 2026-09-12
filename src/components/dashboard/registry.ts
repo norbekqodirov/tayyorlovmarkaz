@@ -35,7 +35,10 @@ const DEFAULT_WIDGETS_MARKETING = ['stat_leads', 'stat_conversion', 'chart_lead_
 export function getDefaultWidgets(role: string) {
   if (role === 'ADMIN' || role === 'SUPER_ADMIN') return DEFAULT_WIDGETS_ADMIN;
   if (role === 'TEACHER') return DEFAULT_WIDGETS_TEACHER;
-  return DEFAULT_WIDGETS_MARKETING;
+  if (role === 'MANAGER' || role === 'MARKETING') return DEFAULT_WIDGETS_MARKETING;
+  // Tanilmagan/bo'sh rol (masalan localStorage hali yuklanmagan yoki
+  // buzilgan) — hech qanday widget taxmin qilinmaydi, fail-closed.
+  return [];
 }
 
 export const CHART_TOOLTIP_STYLE = {

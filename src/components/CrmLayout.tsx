@@ -30,7 +30,11 @@ export default function CrmLayout() {
 
   const [notifications,   setNotifications]   = useState<any[]>([]);
   const [userName,        setUserName]        = useState('Admin');
-  const [userRole,        setUserRole]        = useState('ADMIN');
+  // Boshlang'ich qiymat ataylab bo'sh — 'ADMIN' bo'lsa, localStorage o'qilguncha
+  // (quyidagi useEffect) bir lahzagacha barcha foydalanuvchiga to'liq admin
+  // menyusi ko'rsatilardi (fail-open). Bo'sh satr har qanday rol tekshiruvida
+  // fail-closed ishlaydi (hech narsa ko'rsatilmaydi, to'g'ri rol yuklanguncha).
+  const [userRole,        setUserRole]        = useState('');
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
   // Clock
@@ -50,7 +54,7 @@ export default function CrmLayout() {
       if (raw) {
         const u = JSON.parse(raw);
         setUserName(u.name || 'Admin');
-        setUserRole(u.role || 'ADMIN');
+        setUserRole(u.role || '');
         // Parse permissions (stored as JSON string in DB)
         if (u.permissions) {
           const perms = Array.isArray(u.permissions)

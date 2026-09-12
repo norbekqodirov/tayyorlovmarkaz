@@ -39,8 +39,10 @@ export default function CrmDashboard() {
     refetchTransactions();
   }, [refetchStudents, refetchGroups, refetchLeads, refetchTransactions]);
 
+  // Bo'sh satr fail-closed — 'ADMIN' bo'lganda localStorage buzilgan/o'qib
+  // bo'lmagan holatda ham to'liq admin widget to'plami ko'rsatilardi.
   const [userRole] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('crm_user') || '{}').role || 'ADMIN'; } catch { return 'ADMIN'; }
+    try { return JSON.parse(localStorage.getItem('crm_user') || '{}').role || ''; } catch { return ''; }
   });
   const [userName] = useState(() => {
     try { return JSON.parse(localStorage.getItem('crm_user') || '{}').name || 'Admin'; } catch { return 'Admin'; }

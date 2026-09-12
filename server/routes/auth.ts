@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { getDbConfig } from '../services/dbBackup.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 
@@ -303,17 +303,16 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
     }
 });
 
-// ─── BACKUP (SUPER_ADMIN only) ────────────────────────────────────────────────
+// ─── BACKUP (ADMIN+) ────────────────────────────────────────────────────────
 // DATABASE_URL orqali aniqlanadi — Postgres (lokal/ba'zi serverlar) da pg_dump
 // oqimi to'g'ridan-to'g'ri javobga yuboriladi; SQLite (root'siz production) da
 // haqiqiy baza fayli (DATABASE_URL dan, "dev.db" qattiq yozilmagan) ko'chiriladi.
-router.get('/backup', requireAuth, async (req, res) => {
+// CrmSettings.tsx shu endpoint'ni ishlatadi (backup.ts'dagi alohida
+// /api/backup emas) — shuning uchun o'chirilmaydi, faqat ADMIN+ darajasi
+// aniq ko'rsatiladi (avval izoh "SUPER_ADMIN only" deb yozilgan edi, lekin
+// kodning o'zi allaqachon ADMIN'ni ham o'tkazardi — endi mos qilindi).
+router.get('/backup', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
-        const user = (req as any).user;
-        if (!isSuperAdmin(user.role) && !isAdminOrAbove(user.role)) {
-            return res.status(403).json({ message: "Faqat admin backup olishi mumkin" });
-        }
-
         const db = getDbConfig();
         if (!db) return res.status(500).json({ message: "DATABASE_URL konfiguratsiya qilinmagan" });
 
@@ -350,7 +349,10 @@ router.get('/backup', requireAuth, async (req, res) => {
 });
 
 // ─── SYSTEM STATS ─────────────────────────────────────────────────────────────
-router.get('/stats', requireAuth, async (req, res) => {
+// MUHIM: ilgari requireAuth FAQAT edi — har qanday rol tashkilot bo'yicha
+// umumiy sonlarni (o'quvchilar/foydalanuvchilar/to'lovlar) olishi mumkin
+// edi. Faqat CrmSettings.tsx (ADMIN-only sahifa) ishlatadi.
+router.get('/stats', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
         const [students, groups, leads, users, payments] = await Promise.all([
             prisma.student.count(),

@@ -170,7 +170,9 @@ router.post('/generate', requireAuth, requireMinRole('ADMIN'), async (req, res) 
 });
 
 // Download single PDF
-router.get('/:id/pdf', requireAuth, async (req, res) => {
+// MUHIM: ilgari requireAuth FAQAT edi — har qanday rol (TEACHER ham)
+// istalgan sertifikatni ID orqali yuklab olishi mumkin edi.
+router.get('/:id/pdf', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const cert = await prisma.certificate.findUnique({ where: { id: req.params.id } });
         if (!cert || !cert.pdfUrl) return res.status(404).json({ message: 'Topilmadi' });
@@ -183,7 +185,7 @@ router.get('/:id/pdf', requireAuth, async (req, res) => {
 });
 
 // Bulk ZIP download
-router.post('/zip', requireAuth, async (req, res) => {
+router.post('/zip', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { ids } = req.body;
         if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: 'ids kerak' });

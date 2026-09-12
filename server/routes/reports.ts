@@ -7,7 +7,12 @@ import { todayDateStr, monthRangeStr } from '../utils/timezone.js';
 const router = express.Router();
 
 // GET /api/reports/summary — umumiy hisobot
-router.get('/summary', requireAuth, async (req, res) => {
+// MUHIM: ilgari requireAuth FAQAT edi — har qanday rol (TEACHER ham)
+// to'liq moliyaviy/tashkilot hisobotini to'g'ridan-to'g'ri olishi mumkin
+// edi, /api/finance'ning o'zi talab qiladigan MANAGER+ darajasini
+// chetlab o'tib. Frontend (CrmReports.tsx) allaqachon MANAGER+ talab
+// qiladi (App.tsx: requiredPermission="reports", allowedRoles=['ADMIN','MANAGER']).
+router.get('/summary', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { from, to } = req.query;
         const fromDate = from ? String(from) : monthRangeStr(0).start;
@@ -82,7 +87,7 @@ router.get('/summary', requireAuth, async (req, res) => {
 });
 
 // GET /api/reports/financial — moliyaviy hisobot
-router.get('/financial', requireAuth, async (req, res) => {
+router.get('/financial', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { from, to } = req.query;
         const fromDate = from ? String(from) : `${todayDateStr().slice(0, 4)}-01-01`;
@@ -127,7 +132,7 @@ router.get('/financial', requireAuth, async (req, res) => {
 });
 
 // GET /api/reports/attendance — davomat hisoboti
-router.get('/attendance', requireAuth, async (req, res) => {
+router.get('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { groupId, from, to } = req.query;
         const fromDate = from ? String(from) : monthRangeStr(0).start;
@@ -186,7 +191,7 @@ router.get('/attendance', requireAuth, async (req, res) => {
 });
 
 // GET /api/reports/students — o'quvchilar hisoboti
-router.get('/students', requireAuth, async (req, res) => {
+router.get('/students', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const students = await prisma.student.findMany({
             include: {
@@ -240,7 +245,7 @@ router.get('/students', requireAuth, async (req, res) => {
 });
 
 // GET /api/reports/teachers — o'qituvchi KPI hisoboti
-router.get('/teachers', requireAuth, async (req, res) => {
+router.get('/teachers', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { from, to } = req.query;
         const fromDate = from ? String(from) : monthRangeStr(0).start;
@@ -293,7 +298,7 @@ router.get('/teachers', requireAuth, async (req, res) => {
 // GET /api/reports/executive — Investor/Direktor hisoboti (CrmExecutiveReport.tsx
 // shu endpointga so'rov yuborardi, lekin u hech qachon mavjud bo'lmagan — sahifa
 // 2026-09-07'gacha butunlay ishlamas edi, Codex audit paytida aniqladi).
-router.get('/executive', requireAuth, async (_req, res) => {
+router.get('/executive', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
     try {
         const now = new Date();
         const currentMonth = now.getMonth(); // 0-indeksli

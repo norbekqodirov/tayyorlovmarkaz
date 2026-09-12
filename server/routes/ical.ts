@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { todayDateStr } from '../utils/timezone.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -18,9 +19,14 @@ const DAY_NAMES: Record<number, string> = {
 };
 
 // GET /api/ical/group/:groupId.ics — guruh jadvali iCal
-router.get('/group/:groupId.ics', async (req, res) => {
+// MUHIM: bu route ilgari HECH QANDAY autentifikatsiyasiz edi — guruh ID'sini
+// bilgan/topgan har kim dars jadvalini (o'qituvchi ismi, xona, vaqt) olardi.
+// Frontendda bu URL'ga hech qanday havola yo'q (tekshirildi), shuning uchun
+// requireAuth qo'shish mavjud funksionallikni buzmaydi.
+router.get('/group/:groupId.ics', requireAuth, async (req, res) => {
     try {
         const groupId = req.params.groupId;
+        const requester = (req as any).user;
 
         const group = await prisma.group.findFirst({
             where: { id: groupId },
@@ -32,6 +38,9 @@ router.get('/group/:groupId.ics', async (req, res) => {
         });
 
         if (!group) return res.status(404).send('Guruh topilmadi');
+        if (requester.role === 'TEACHER' && group.teacherId !== requester.id) {
+            return res.status(403).send('Bu guruhga tegishli emassiz');
+        }
 
         const lines: string[] = [
             'BEGIN:VCALENDAR',
@@ -76,9 +85,14 @@ router.get('/group/:groupId.ics', async (req, res) => {
 });
 
 // GET /api/ical/teacher/:userId.ics — o'qituvchi jadvali
-router.get('/teacher/:userId.ics', async (req, res) => {
+// MUHIM: xuddi yuqoridagi kabi, ilgari autentifikatsiyasiz edi.
+router.get('/teacher/:userId.ics', requireAuth, async (req, res) => {
     try {
         const { userId } = req.params;
+        const requester = (req as any).user;
+        if (requester.role === 'TEACHER' && userId !== requester.id) {
+            return res.status(403).send('Faqat o\'z jadvalingizni ko\'rishingiz mumkin');
+        }
 
         const groups = await prisma.group.findMany({
             where: { teacherId: userId, deletedAt: null },
