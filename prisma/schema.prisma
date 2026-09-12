@@ -18,7 +18,9 @@ model User {
   phone     String?  @unique  // Used as primary login identifier
   password  String
   name      String
-  role      String   @default("ADMIN") // SUPER_ADMIN, ADMIN, MANAGER, TEACHER
+  role      String   @default("ADMIN") // SUPER_ADMIN, ADMIN, MANAGER, TEACHER — ESKI, saqlanadi
+  roleId    String?  // YANGI (2026-09-12) — Role jadvaliga FK, migratsiya to'ldiradi
+  roleRef   Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
   avatar    String?
   permissions String? @default("[]") @db.Text // JSON array of permission keys
   subject     String?  // O'qituvchi uchun: fan nomi
@@ -38,6 +40,8 @@ model User {
   auditLogs      AuditLog[]
   leadsOwned     Lead[]             @relation("LeadOwner")
   leadActivities LeadActivity[]
+  permissionOverrides        PermissionOverride[] @relation("PermissionOverrides")
+  grantedPermissionOverrides PermissionOverride[] @relation("PermissionOverridesGranted")
 }
 
 // ============================================
@@ -291,7 +295,8 @@ model StaffMember {
   joinedDate String?
   status     String   @default("Faol") // Faol, Ta'tilda, Ishdan bo'shagan
   deletedAt  DateTime?
-  department String   @default("Ma'muriyat")
+  department   String   @default("Ma'muriyat") // ESKI erkin matn, saqlanadi
+  departmentId String?  // YANGI (2026-09-12) — Department jadvaliga FK
   address    String?
   passport   String?
   education  String?
@@ -303,6 +308,7 @@ model StaffMember {
   updatedAt      DateTime @updatedAt
 
   position         Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  departmentRef    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   salaries         Salary[]
   staffAttendances StaffAttendance[]
   leaveRequests    LeaveRequest[]
@@ -329,6 +335,95 @@ model Position {
   updatedAt          DateTime @updatedAt
 
   staffMembers StaffMember[]
+}
+
+// ============================================
+// ROLLAR VA RUXSATLAR (RBAC) — 2026-09-12
+// ============================================
+// Bosqichma-bosqich migratsiya: User.role (string) va User.permissions
+// (JSON) ATAYLAB saqlanadi — eski kod ular orqali ishlashda davom etadi.
+// Role/Permission — bir xil ma'lumotning relatsion, boshqariladigan
+// versiyasi (Roles & Permissions UI shular bilan ishlaydi).
+
+// Bo'lim — xodim qaysi funksional yo'nalishda ishlashini bildiradi.
+// StaffMember.department (erkin matn) ATAYLAB saqlanadi — bu FK shunga
+// qo'shimcha, tuzilgan versiya.
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staffMembers StaffMember[]
+}
+
+// Rol — foydalanuvchi tizim ichida nima qila olishini belgilaydi
+// (User.role erkin string'ining relatsion versiyasi). isSystem=true —
+// TEACHER/MANAGER/ADMIN/SUPER_ADMIN kabi standart andozalar (o'chirib
+// bo'lmaydi, faqat deaktivatsiya); admin keyinchalik o'z custom rolini
+// ham yarata oladi (isSystem=false).
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // "TEACHER" yoki "Katta O'qituvchi" kabi ichki kalit
+  label       String   // ko'rsatiladigan nom
+  description String?  @db.Text
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       User[]
+}
+
+// Ruxsat — bitta aniq imkoniyat (masalan "finance", "journal").
+// src/constants/permissions.ts'dagi ALL_PERMISSIONS'ning DB versiyasi —
+// migratsiya paytida seed qilinadi.
+model Permission {
+  id        String   @id @default(uuid())
+  key       String   @unique // "finance", "journal", "quiz" va h.k.
+  label     String
+  group     String   // "Ta'lim", "Moliya" va h.k. — UI guruhlash uchun
+  createdAt DateTime @default(now())
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+
+  @@id([roleId, permissionId])
+}
+
+// Individual istisno — Role bergan ruxsatdan tashqari, bitta
+// foydalanuvchiga aniq ALLOW yoki DENY berish (masalan vaqtinchalik).
+// validUntil o'tgan bo'lsa, authorization service buni e'tiborsiz
+// qoldiradi.
+model PermissionOverride {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation("PermissionOverrides", fields: [userId], references: [id], onDelete: Cascade)
+  permissionKey String    // Permission.key bilan mos — ataylab FK emas,
+                          // Permission o'chirilsa ham tarix saqlanadi
+  effect        String    // "ALLOW" | "DENY"
+  reason        String?   @db.Text
+  grantedById   String?
+  grantedBy     User?     @relation("PermissionOverridesGranted", fields: [grantedById], references: [id], onDelete: SetNull)
+  validFrom     DateTime  @default(now())
+  validUntil    DateTime?
+  createdAt     DateTime  @default(now())
+
+  // Bir foydalanuvchi uchun bitta ruxsat kalitida faqat BITTA joriy
+  // override bo'lishi mumkin (qayta berilsa — yangi qator emas, shu
+  // qator yangilanadi). Bu ikki qarama-qarshi override (masalan ikkita
+  // "finance" uchun ALLOW) tasodifan paydo bo'lishining oldini oladi.
+  @@unique([userId, permissionKey])
+  @@index([userId])
 }
 
 // Moliyaviy kategoriyalar (kirim/chiqim) — admin o'zi qo'sha oladigan,
