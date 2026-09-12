@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import prisma from '../db.js';
-import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { getDbConfig } from '../services/dbBackup.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 import { getEffectivePermissions } from '../middleware/authorize.js';
@@ -13,13 +13,8 @@ import { withAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
-// ─── Role hierarchy (higher index = more powerful) ───────────────────────────
-const ROLE_LEVEL: Record<string, number> = {
-    TEACHER: 1,
-    MANAGER: 2,
-    ADMIN: 3,
-    SUPER_ADMIN: 4,
-};
+// ROLE_LEVEL — server/middleware/auth.ts'dan (yagona manba; ilgari bu yerda
+// mustaqil nusxa bor edi — RBAC Bosqich 4'da birlashtirildi).
 const isSuperAdmin = (role: string) => role === 'SUPER_ADMIN';
 const isAdminOrAbove = (role: string) => (ROLE_LEVEL[role] || 0) >= 3;
 
@@ -98,7 +93,7 @@ router.post('/login', async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user.id, role: user.role, phone: user.phone },
+            { id: user.id, role: user.role, phone: user.phone, name: user.name },
             JWT_SECRET,
             { expiresIn: '30d' }
         );

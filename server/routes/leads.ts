@@ -16,7 +16,7 @@
  */
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { withAudit } from '../middleware/audit.js';
 import { createLeadFromIntake, LeadIntakeValidationError } from '../services/leadIntake.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
@@ -344,7 +344,6 @@ router.delete('/:id', withAudit('lead'), async (req, res) => {
     try {
         if (req.query.hard === '1') {
             const requester = (req as any).user;
-            const ROLE_LEVEL: Record<string, number> = { TEACHER: 1, MANAGER: 2, ADMIN: 3, SUPER_ADMIN: 4 };
             if ((ROLE_LEVEL[requester.role] || 0) < ROLE_LEVEL.ADMIN) {
                 return res.status(403).json({ message: "Faqat administrator butunlay o'chira oladi" });
             }

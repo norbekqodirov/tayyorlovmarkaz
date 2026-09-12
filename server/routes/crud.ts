@@ -3,8 +3,21 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../db.js';
 import { requireAuth, requireRole, ROLE_LEVEL } from '../middleware/auth.js';
+import { withAudit } from '../middleware/audit.js';
 
 const router = express.Router();
+
+// Lavozim (Position) yozuvlari audit qilinadi — RBAC qayta qurish rejasi,
+// Bosqich 4 topilmasi: bu yozuvlar (rol/ruxsat andozalarini belgilaydi)
+// ilgari HECH QACHON audit qilinmasdi. Generic /:collection route'i o'nlab
+// kolleksiyaga xizmat qilgani uchun audit HAMMASIGA emas, faqat Position'ga
+// yoqiladi (boshqalar uchun ataylab yoqilmagan — kattaroq, alohida ko'rib
+// chiqiladigan qaror).
+const auditPosition = withAudit('position');
+function auditPositionsOnly(req: express.Request, res: express.Response, next: express.NextFunction) {
+    if (req.params.collection === 'positions') return auditPosition(req, res, next);
+    next();
+}
 
 // ─── Model Map: frontend collection → Prisma model name ──────────────────────
 // Collections NOT listed here will fallback to GenericDocument (JSON store)
@@ -532,7 +545,7 @@ router.get('/:collection/:id', async (req, res) => {
 });
 
 // ─── POST /:collection ────────────────────────────────────────────────────────
-router.post('/:collection', async (req, res) => {
+router.post('/:collection', auditPositionsOnly, async (req, res) => {
     const { collection } = req.params;
     try {
         if (!(req as any).useFallback) {
@@ -608,7 +621,7 @@ router.post('/:collection', async (req, res) => {
 });
 
 // ─── PUT /:collection/:id ──────────────────────────────────────────────────────
-router.put('/:collection/:id', async (req, res) => {
+router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
     try {
         if ((req as any).useFallback) {
             const existing = await prisma.genericDocument.findUnique({ where: { id: req.params.id } });
@@ -644,7 +657,7 @@ router.put('/:collection/:id', async (req, res) => {
 });
 
 // ─── DELETE /:collection/:id with Cascade Cleanup ─────────────────────────────
-router.delete('/:collection/:id', async (req, res) => {
+router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
     const { collection, id } = req.params;
     try {
         if ((req as any).useFallback) {
