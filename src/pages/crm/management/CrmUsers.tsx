@@ -86,7 +86,7 @@ const ROLE_TEMPLATES = [
         color: 'text-emerald-600',
         bg: 'bg-emerald-100 dark:bg-emerald-900/30',
         border: 'border-emerald-300 dark:border-emerald-700',
-        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'transaction_categories', 'discounts', 'bi', 'predictions', 'goals', 'reports', 'certificates', 'leads', 'leave_requests', 'staff_attendance', 'parent_chat'],
+        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'transaction_categories', 'discounts', 'bi', 'predictions', 'goals', 'reports', 'certificates', 'leads', 'teachers', 'leave_requests', 'staff_attendance', 'parent_chat'],
     },
 ];
 

@@ -24,6 +24,7 @@ export const ALL_PERMISSIONS = [
     { id: 'content', label: 'Kontent/Yangiliklar', group: "Tizim" },
     { id: 'settings', label: 'Sozlamalar', group: "Tizim" },
     { id: 'certificates', label: 'Sertifikatlar', group: "Tizim" },
+    { id: 'teachers', label: "O'qituvchilar ro'yxati", group: 'HR' },
     { id: 'leave_requests', label: "Mehnat Ta'tillari", group: 'HR' },
     { id: 'staff_attendance', label: 'Xodim Davomati', group: 'HR' },
     { id: 'users', label: 'Foydalanuvchilar', group: "Tizim" },

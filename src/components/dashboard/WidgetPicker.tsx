@@ -2,13 +2,32 @@ import { motion } from 'framer-motion';
 import { X, Check, Plus } from 'lucide-react';
 import { WIDGET_REGISTRY } from './registry';
 
-export function WidgetPicker({ activeWidgets, onAdd, onClose }: {
+function canSeeWidget(permission: string | null, role: string): boolean {
+  if (!permission) return true; // 'tasks'/'quick_links' — hammaga ochiq
+  if (role === 'ADMIN' || role === 'SUPER_ADMIN') return true;
+  try {
+    const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
+    const perms = Array.isArray(user.permissions) ? user.permissions : JSON.parse(user.permissions || '[]');
+    return Array.isArray(perms) && perms.includes(permission);
+  } catch {
+    return false;
+  }
+}
+
+export function WidgetPicker({ activeWidgets, role, onAdd, onClose }: {
   activeWidgets: string[];
   role: string;
   onAdd: (id: string) => void;
   onClose: () => void;
 }) {
-  const categories = Array.from(new Set(WIDGET_REGISTRY.map(w => w.category)));
+  // Faqat foydalanuvchining o'zi ruxsati bor widgetlar ko'rsatiladi — aks
+  // holda masalan TEACHER "Widget qo'shish"dan Moliya/Marketing widgetlarini
+  // qo'lda qo'shib, butun markazning daromad/lid ma'lumotini ko'ra olardi
+  // (bu ma'lumotlar hech qaysi ustozga tegishli emas, shuning uchun
+  // backend'da "faqat o'zinikini" cheklash ma'nosiz — ular umuman
+  // ko'rsatilmasligi kerak).
+  const visibleRegistry = WIDGET_REGISTRY.filter(w => canSeeWidget(w.permission, role));
+  const categories = Array.from(new Set(visibleRegistry.map(w => w.category)));
   return (
     <div className="fixed inset-0 z-[80] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <motion.div
@@ -29,7 +48,7 @@ export function WidgetPicker({ activeWidgets, onAdd, onClose }: {
         </div>
         <div className="p-4 max-h-[60vh] overflow-y-auto space-y-4">
           {categories.map(cat => {
-            const catWidgets = WIDGET_REGISTRY.filter(w => w.category === cat);
+            const catWidgets = visibleRegistry.filter(w => w.category === cat);
             return (
               <div key={cat}>
                 <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-2">{cat}</p>
