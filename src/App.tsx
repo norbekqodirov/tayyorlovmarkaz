@@ -135,20 +135,20 @@ export default function App() {
               <Route path="courses/:id" element={<ProtectedRoute requiredPermission="courses" allowedRoles={['ADMIN','MANAGER']}><CrmCourseDetail /></ProtectedRoute>} />
               <Route path="schedule" element={<ProtectedRoute requiredPermission="schedule" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmSchedule /></ProtectedRoute>} />
               <Route path="journal"  element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER']}><CrmJournal /></ProtectedRoute>} />
-              <Route path="quiz"     element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
-              <Route path="tests"    element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmTests /></ProtectedRoute>} />
+              <Route path="quiz"     element={<ProtectedRoute requiredPermission="quiz"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
+              <Route path="tests"    element={<ProtectedRoute requiredPermission="tests"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmTests /></ProtectedRoute>} />
 
               {/* ─── Marketing ─── */}
               <Route path="leads"        element={<ProtectedRoute requiredPermission="leads"        allowedRoles={['ADMIN','MANAGER']}><CrmLeads /></ProtectedRoute>} />
               <Route path="forms"        element={<ProtectedRoute requiredPermission="target_forms" allowedRoles={['ADMIN']}><CrmForms /></ProtectedRoute>} />
               <Route path="marketing"    element={<ProtectedRoute requiredPermission="marketing"    allowedRoles={['ADMIN','MANAGER']}><CrmMarketing /></ProtectedRoute>} />
-              <Route path="ai-content"   element={<ProtectedRoute requiredPermission="marketing"    allowedRoles={['ADMIN','MANAGER']}><CrmAIContent /></ProtectedRoute>} />
-              <Route path="communication" element={<ProtectedRoute requiredPermission="marketing"   allowedRoles={['ADMIN','MANAGER']}><CrmCommunication /></ProtectedRoute>} />
+              <Route path="ai-content"   element={<ProtectedRoute requiredPermission="ai_content"    allowedRoles={['ADMIN','MANAGER']}><CrmAIContent /></ProtectedRoute>} />
+              <Route path="communication" element={<ProtectedRoute requiredPermission="communication"   allowedRoles={['ADMIN','MANAGER']}><CrmCommunication /></ProtectedRoute>} />
 
               {/* ─── Kommunikatsiya ─── */}
-              <Route path="messages"      element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmMessages /></ProtectedRoute>} />
+              <Route path="messages"      element={<ProtectedRoute requiredPermission="communication" allowedRoles={['ADMIN','MANAGER']}><CrmMessages /></ProtectedRoute>} />
               <Route path="parent-chat"   element={<ProtectedRoute requiredPermission="parent_chat" allowedRoles={['ADMIN','MANAGER','TEACHER']}><CrmParentChat /></ProtectedRoute>} />
-              <Route path="announcements" element={<ProtectedRoute requiredPermission="marketing" allowedRoles={['ADMIN','MANAGER']}><CrmAnnouncements /></ProtectedRoute>} />
+              <Route path="announcements" element={<ProtectedRoute requiredPermission="communication" allowedRoles={['ADMIN','MANAGER']}><CrmAnnouncements /></ProtectedRoute>} />
               <Route path="telegram"      element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmTelegram /></ProtectedRoute>} />
 
               {/* ─── HR (admin uchun — maxsus ruxsatlar ro'yxatida emas) ─── */}
@@ -162,13 +162,13 @@ export default function App() {
 
               {/* ─── Moliya ─── */}
               <Route path="finance"   element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmFinance /></ProtectedRoute>} />
-              <Route path="transaction-categories" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmCategories /></ProtectedRoute>} />
-              <Route path="discounts" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmDiscounts /></ProtectedRoute>} />
+              <Route path="transaction-categories" element={<ProtectedRoute requiredPermission="transaction_categories" allowedRoles={['ADMIN','MANAGER']}><CrmCategories /></ProtectedRoute>} />
+              <Route path="discounts" element={<ProtectedRoute requiredPermission="discounts" allowedRoles={['ADMIN','MANAGER']}><CrmDiscounts /></ProtectedRoute>} />
 
               {/* ─── Analitika ─── */}
               <Route path="bi"               element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmBI /></ProtectedRoute>} />
-              <Route path="predictions"      element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmPredictions /></ProtectedRoute>} />
-              <Route path="goals"            element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmGoals /></ProtectedRoute>} />
+              <Route path="predictions"      element={<ProtectedRoute requiredPermission="predictions" allowedRoles={['ADMIN','MANAGER']}><CrmPredictions /></ProtectedRoute>} />
+              <Route path="goals"            element={<ProtectedRoute requiredPermission="goals" allowedRoles={['ADMIN','MANAGER']}><CrmGoals /></ProtectedRoute>} />
               <Route path="executive-report" element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmExecutiveReport /></ProtectedRoute>} />
 
               {/* ─── Boshqaruv ─── */}
@@ -177,8 +177,8 @@ export default function App() {
               <Route path="inventory"    element={<ProtectedRoute requiredPermission="inventory" allowedRoles={['ADMIN']}><CrmInventory /></ProtectedRoute>} />
               <Route path="content"      element={<ProtectedRoute requiredPermission="content"   allowedRoles={['ADMIN']}><CrmContent /></ProtectedRoute>} />
               <Route path="automations"  element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAutomations /></ProtectedRoute>} />
-              <Route path="certificates" element={<ProtectedRoute requiredPermission="settings" allowedRoles={['ADMIN','MANAGER']}><CrmCertificates /></ProtectedRoute>} />
-              <Route path="reports"      element={<ProtectedRoute requiredPermission="bi" allowedRoles={['ADMIN','MANAGER']}><CrmReports /></ProtectedRoute>} />
+              <Route path="certificates" element={<ProtectedRoute requiredPermission="certificates" allowedRoles={['ADMIN','MANAGER']}><CrmCertificates /></ProtectedRoute>} />
+              <Route path="reports"      element={<ProtectedRoute requiredPermission="reports" allowedRoles={['ADMIN','MANAGER']}><CrmReports /></ProtectedRoute>} />
               <Route path="audit"        element={<ProtectedRoute allowedRoles={['ADMIN']}><CrmAudit /></ProtectedRoute>} />
               <Route path="users"        element={<ProtectedRoute requiredPermission="users"    allowedRoles={['ADMIN']}><CrmUsers /></ProtectedRoute>} />
               <Route path="settings"     element={<ProtectedRoute requiredPermission="settings" allowedRoles={['ADMIN']}><CrmSettings /></ProtectedRoute>} />

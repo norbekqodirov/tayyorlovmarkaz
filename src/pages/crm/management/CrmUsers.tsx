@@ -63,7 +63,10 @@ const ROLE_TEMPLATES = [
         color: 'text-blue-600',
         bg: 'bg-blue-100 dark:bg-blue-900/30',
         border: 'border-blue-300 dark:border-blue-700',
-        permissions: ['dashboard', 'schedule', 'journal', 'attendance', 'assessments', 'students', 'groups', 'parent_chat'],
+        // Test Tizimi/Imtihonlar ataylab yo'q — hali tugallanmagan, mustaqil
+        // yoqiladi (Foydalanuvchilar sahifasida "Test Tizimi"/"Imtihonlar"
+        // katagini alohida belgilab).
+        permissions: ['dashboard', 'schedule', 'journal', 'students', 'groups', 'parent_chat'],
     },
     {
         id: 'MARKETING',
@@ -73,7 +76,7 @@ const ROLE_TEMPLATES = [
         color: 'text-rose-600',
         bg: 'bg-rose-100 dark:bg-rose-900/30',
         border: 'border-rose-300 dark:border-rose-700',
-        permissions: ['dashboard', 'leads', 'marketing', 'target_forms'],
+        permissions: ['dashboard', 'leads', 'marketing', 'ai_content', 'communication', 'target_forms'],
     },
     {
         id: 'MANAGER',
@@ -83,7 +86,7 @@ const ROLE_TEMPLATES = [
         color: 'text-emerald-600',
         bg: 'bg-emerald-100 dark:bg-emerald-900/30',
         border: 'border-emerald-300 dark:border-emerald-700',
-        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'bi', 'leads', 'leave_requests', 'staff_attendance', 'parent_chat'],
+        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'transaction_categories', 'discounts', 'bi', 'predictions', 'goals', 'reports', 'certificates', 'leads', 'leave_requests', 'staff_attendance', 'parent_chat'],
     },
 ];
 

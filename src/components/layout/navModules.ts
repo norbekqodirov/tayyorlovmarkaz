@@ -50,8 +50,8 @@ export const MODULES: NavModule[] = [
           { name: 'Kurslar',         path: '/crmtayyorlovmarkaz/courses',    icon: BookOpen,       permission: 'courses'    },
           { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',   icon: Calendar,       permission: 'schedule'   },
           { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',    icon: ClipboardCheck, permission: 'journal'    },
-          { name: 'Test Tizimi',     path: '/crmtayyorlovmarkaz/quiz',      icon: ClipboardList,  permission: 'journal'    },
-          { name: 'Imtihonlar',      path: '/crmtayyorlovmarkaz/tests',     icon: FileText,       permission: 'journal'    },
+          { name: 'Test Tizimi',     path: '/crmtayyorlovmarkaz/quiz',      icon: ClipboardList,  permission: 'quiz'    },
+          { name: 'Imtihonlar',      path: '/crmtayyorlovmarkaz/tests',     icon: FileText,       permission: 'tests'    },
         ],
       },
     ],
@@ -71,8 +71,8 @@ export const MODULES: NavModule[] = [
           { name: 'Lidlar (Voronka)', path: '/crmtayyorlovmarkaz/leads',     icon: TrendingUp, permission: 'leads'        },
           { name: 'Target Formalar',  path: '/crmtayyorlovmarkaz/forms',     icon: LinkIcon,   permission: 'target_forms' },
           { name: 'Aksiyalar / SMM',  path: '/crmtayyorlovmarkaz/marketing',     icon: Megaphone,      permission: 'marketing'    },
-          { name: 'AI Kontent',       path: '/crmtayyorlovmarkaz/ai-content',    icon: Sparkles,       permission: 'marketing'    },
-          { name: 'Aloqa Markazi',    path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'marketing'    },
+          { name: 'AI Kontent',       path: '/crmtayyorlovmarkaz/ai-content',    icon: Sparkles,       permission: 'ai_content'    },
+          { name: 'Aloqa Markazi',    path: '/crmtayyorlovmarkaz/communication', icon: MessageSquare,  permission: 'communication'    },
         ],
       },
     ],
@@ -89,9 +89,9 @@ export const MODULES: NavModule[] = [
     sections: [
       {
         links: [
-          { name: "Xabarlar",    path: '/crmtayyorlovmarkaz/messages',      icon: MessageSquare, permission: 'marketing' },
+          { name: "Xabarlar",    path: '/crmtayyorlovmarkaz/messages',      icon: MessageSquare, permission: 'communication' },
           { name: "Ota-ona xabarlari", path: '/crmtayyorlovmarkaz/parent-chat', icon: MessageSquare, permission: 'parent_chat' },
-          { name: "E'lonlar",    path: '/crmtayyorlovmarkaz/announcements', icon: Bell,          permission: 'marketing' },
+          { name: "E'lonlar",    path: '/crmtayyorlovmarkaz/announcements', icon: Bell,          permission: 'communication' },
           { name: 'Telegram Bot', path: '/crmtayyorlovmarkaz/telegram',     icon: Bot,           permission: undefined   },
         ],
       },
@@ -132,8 +132,8 @@ export const MODULES: NavModule[] = [
       {
         links: [
           { name: 'Moliya',    path: '/crmtayyorlovmarkaz/finance',    icon: Wallet,      permission: 'finance' },
-          { name: 'Kirim/Chiqim kategoriyalari', path: '/crmtayyorlovmarkaz/transaction-categories', icon: Layers, permission: 'finance' },
-          { name: 'Chegirmalar', path: '/crmtayyorlovmarkaz/discounts', icon: TrendingDown, permission: 'finance' },
+          { name: 'Kirim/Chiqim kategoriyalari', path: '/crmtayyorlovmarkaz/transaction-categories', icon: Layers, permission: 'transaction_categories' },
+          { name: 'Chegirmalar', path: '/crmtayyorlovmarkaz/discounts', icon: TrendingDown, permission: 'discounts' },
         ],
       },
     ],
@@ -151,8 +151,8 @@ export const MODULES: NavModule[] = [
       {
         links: [
           { name: 'BI Analitika',     path: '/crmtayyorlovmarkaz/bi',               icon: BarChart2,     permission: 'bi'      },
-          { name: 'AI Bashoratlar',  path: '/crmtayyorlovmarkaz/predictions',      icon: Brain,         permission: 'bi'      },
-          { name: 'KPI & Maqsadlar', path: '/crmtayyorlovmarkaz/goals',            icon: Target,        permission: 'bi'      },
+          { name: 'AI Bashoratlar',  path: '/crmtayyorlovmarkaz/predictions',      icon: Brain,         permission: 'predictions'      },
+          { name: 'KPI & Maqsadlar', path: '/crmtayyorlovmarkaz/goals',            icon: Target,        permission: 'goals'      },
           { name: 'Ijroiya Hisobot', path: '/crmtayyorlovmarkaz/executive-report', icon: FileBarChart2, permission: undefined  },
         ],
       },
@@ -181,8 +181,8 @@ export const MODULES: NavModule[] = [
         title: 'Avtomatlashtirish',
         links: [
           { name: 'Avtomatlar',    path: '/crmtayyorlovmarkaz/automations',  icon: Zap,          permission: undefined },
-          { name: 'Sertifikatlar', path: '/crmtayyorlovmarkaz/certificates', icon: Award,        permission: 'settings' },
-          { name: 'Hisobotlar',    path: '/crmtayyorlovmarkaz/reports',      icon: FileBarChart2, permission: 'bi'      },
+          { name: 'Sertifikatlar', path: '/crmtayyorlovmarkaz/certificates', icon: Award,        permission: 'certificates' },
+          { name: 'Hisobotlar',    path: '/crmtayyorlovmarkaz/reports',      icon: FileBarChart2, permission: 'reports'      },
           { name: 'Audit Jurnali', path: '/crmtayyorlovmarkaz/audit',        icon: Shield,       permission: undefined },
         ],
       },
