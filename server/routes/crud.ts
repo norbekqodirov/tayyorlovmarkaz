@@ -47,6 +47,36 @@ const MODEL_MAP: Record<string, string> = {
     'lead_activities':'leadActivity',
 };
 
+// ─── TEACHER ma'lumot ko'lami ──────────────────────────────────────────────────
+// TEACHER GET orqali BUTUN jadvalni ko'rar edi (masalan /api/students —
+// markazdagi HAR BIR o'quvchi, o'zining guruhlaridan qat'i nazar) va
+// to'g'ridan-to'g'ri URL orqali (/groups/:boshqaUstozId) boshqa ustozning
+// guruhini ochib, unga davomat/baho ham yoza olardi — hech qanday server
+// tomonidan tekshiruv yo'q edi. Bu xarita shu modellar uchun TEACHER
+// so'roviga qo'shimcha `where` filtri (yoki bitta yozuvni tekshirishda
+// egalik) qo'shadi. Naqsh server/routes/staffPortal.ts'dan olingan (u
+// yerda xuddi shunday `where.teacherId = userId` allaqachon ishlatiladi).
+const TEACHER_SCOPE_MODELS: Record<string, (userId: string) => any> = {
+    group: (userId) => ({ teacherId: userId }),
+    student: (userId) => ({ enrollments: { some: { group: { teacherId: userId } } } }),
+    attendance: (userId) => ({ group: { teacherId: userId } }),
+    assessment: (userId) => ({ group: { teacherId: userId } }),
+    exam: (userId) => ({ group: { teacherId: userId } }),
+    groupStudentNote: (userId) => ({ group: { teacherId: userId } }),
+};
+
+// Yozish (POST/PUT) tomonida ham xuddi shu himoya kerak bo'lgan modellar —
+// bularning har biri bitta guruhga tegishli (davomat/baho/imtihon/eslatma).
+// Ro'yxatga OLINMAGAN: 'group'/'student' — ularga TEACHER yozish huquqi
+// COLLECTION_WRITE_LEVEL orqali allaqachon yopiq (faqat MANAGER+).
+const TEACHER_WRITE_SCOPE_MODELS = new Set(['attendance', 'assessment', 'exam', 'groupStudentNote']);
+
+async function teacherOwnsGroup(groupId: string | undefined | null, userId: string): Promise<boolean> {
+    if (!groupId) return false;
+    const group = await prisma.group.findUnique({ where: { id: groupId }, select: { teacherId: true } });
+    return !!group && group.teacherId === userId;
+}
+
 // SCHEMA_FIELDS: whitelist for Prisma writes to avoid "Unknown field" errors
 const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Core entities ────────────────────────────────────────────────────────
@@ -386,6 +416,12 @@ router.use('/:collection', authForCollection, async (req, res, next) => {
     (req as any).useFallback = false;
     (req as any).modelName = modelName;
 
+    // TEACHER uchun ma'lumot ko'lami — pastdagi GET/POST/PUT handler'lari
+    // buni o'qib, so'rovga qo'shimcha `where` filtri sifatida qo'shadi.
+    const requester = (req as any).user;
+    (req as any).teacherScopeWhere =
+        requester?.role === 'TEACHER' ? TEACHER_SCOPE_MODELS[modelName]?.(requester.id) : undefined;
+
     // Global Sanitization + Normalization on writes
     if (req.method === 'POST' || req.method === 'PUT') {
         // Staff uchun login ma'lumotini saqlab qolamiz (sanitize uni o'chiradi)
@@ -440,25 +476,26 @@ router.get('/:collection', async (req, res) => {
 
         const modelName = (req as any).modelName;
         const include = RELATION_INCLUDES[modelName];
+        const scopeWhere = (req as any).teacherScopeWhere;
         if (page > 0 && limit > 0) {
             // @ts-ignore
             const [total, data] = await Promise.all([
                 // @ts-ignore
-                prisma[modelName].count(),
+                prisma[modelName].count({ ...(scopeWhere && { where: scopeWhere }) }),
                 // @ts-ignore
-                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(include && { include }) }),
+                prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(scopeWhere && { where: scopeWhere }), ...(include && { include }) }),
             ]);
             return res.json({ data: data.map((row: any) => parseJsonFields(modelName, row)), total, page, limit });
         }
 
         try {
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, ...(include && { include }) });
+            const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, ...(scopeWhere && { where: scopeWhere }), ...(include && { include }) });
             res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
-            const data = await prisma[modelName].findMany({ ...(include && { include }) });
+            const data = await prisma[modelName].findMany({ ...(scopeWhere && { where: scopeWhere }), ...(include && { include }) });
             res.json(data.map((row: any) => parseJsonFields(modelName, row)));
         }
     } catch (error) {
@@ -477,9 +514,17 @@ router.get('/:collection/:id', async (req, res) => {
         }
         const modelName = (req as any).modelName;
         const include = RELATION_INCLUDES[modelName];
+        const scopeWhere = (req as any).teacherScopeWhere;
+        // findUnique faqat unique maydonni qabul qiladi — TEACHER ko'lami
+        // qo'shilishi kerak bo'lganda findFirst({id, ...scopeWhere}) ishlatiladi,
+        // aks holda bitta so'rovda ID va egalik birga tekshiriladi.
         // @ts-ignore
-        const data = await prisma[modelName].findUnique({ where: { id: req.params.id }, ...(include && { include }) });
-        if (!data) return res.status(404).json({ message: 'Topilmadi' });
+        const data = scopeWhere
+            // @ts-ignore
+            ? await prisma[modelName].findFirst({ where: { id: req.params.id, ...scopeWhere }, ...(include && { include }) })
+            // @ts-ignore
+            : await prisma[modelName].findUnique({ where: { id: req.params.id }, ...(include && { include }) });
+        if (!data) return res.status(scopeWhere ? 403 : 404).json({ message: scopeWhere ? "Topilmadi yoki sizga tegishli emas" : 'Topilmadi' });
         res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -493,6 +538,13 @@ router.post('/:collection', async (req, res) => {
         if (!(req as any).useFallback) {
             const validationError = validateInput((req as any).modelName, req.body);
             if (validationError) return res.status(400).json({ message: validationError });
+        }
+
+        const requester = (req as any).user;
+        if (requester?.role === 'TEACHER' && TEACHER_WRITE_SCOPE_MODELS.has((req as any).modelName)) {
+            if (!(await teacherOwnsGroup(req.body.groupId, requester.id))) {
+                return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
+            }
         }
 
         let finalData: any;
@@ -571,6 +623,18 @@ router.put('/:collection/:id', async (req, res) => {
         }
         const modelName = (req as any).modelName;
         const include = RELATION_INCLUDES[modelName];
+
+        const requester = (req as any).user;
+        if (requester?.role === 'TEACHER' && TEACHER_WRITE_SCOPE_MODELS.has(modelName)) {
+            // @ts-ignore
+            const existing = await prisma[modelName].findUnique({ where: { id: req.params.id }, select: { groupId: true } });
+            const existingOwned = existing ? await teacherOwnsGroup((existing as any).groupId, requester.id) : false;
+            const newGroupOwned = req.body.groupId ? await teacherOwnsGroup(req.body.groupId, requester.id) : true;
+            if (!existingOwned || !newGroupOwned) {
+                return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
+            }
+        }
+
         // @ts-ignore
         const data = await prisma[modelName].update({ where: { id: req.params.id }, data: req.body, ...(include && { include }) });
         res.json(parseJsonFields(modelName, data));
