@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, AlertCircle, DoorOpen,
-  Calendar, BookOpen, User, Check, X as XIcon
+  Calendar, BookOpen, Check, X as XIcon
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
@@ -46,11 +46,14 @@ const COLOR_OPTIONS = [
   { bg: 'bg-pink-500',   hex: '#ec4899' },
 ];
 
-// Grid: 07:00 – 20:00, each hour = 1 column = CELL_W px wide
+// Grid: 07:00 – 20:00, xonalar ustun, vaqt qator (an'anaviy dars jadvali
+// ko'rinishi — 2026-09-13'da foydalanuvchi so'rovi bilan almashtirildi,
+// ilgari guruhlar qator, soatlar ustun edi).
 const GRID_START_H = 7;
 const GRID_END_H   = 20;
 const HOUR_COUNT   = GRID_END_H - GRID_START_H; // 13
-const CELL_W       = 80; // px per hour column
+const HOUR_ROW_H   = 80; // px per hour row
+const ROOM_COL_W   = 200; // px per room column
 
 const timeToFraction = (t: string): number => {
   const [h, m] = t.split(':').map(Number);
@@ -98,25 +101,23 @@ export default function CrmSchedule() {
     [schedule, selectedDay]
   );
 
-  // Rows = unique groups that appear in the full schedule (so the grid is consistent)
-  const gridGroups = useMemo(() => {
+  // Ustunlar = mavjud xonalar (Xona qo'shish tugmasi orqali boshqariladi).
+  // Jadvalda ishlatilgan, lekin `rooms` ro'yxatida hali yo'q xona nomlari
+  // ham (masalan eski, qo'lda kiritilgan yozuvlar) ustun sifatida qo'shiladi
+  // — aks holda ular jadvalda umuman ko'rinmas edi.
+  const gridRooms = useMemo(() => {
     const seen = new Set<string>();
-    const result: Array<{ name: string; teacher: string }> = [];
-    (schedule || []).forEach(s => {
-      if (!seen.has(s.groupName)) {
-        seen.add(s.groupName);
-        result.push({ name: s.groupName, teacher: s.teacher });
-      }
+    const result: string[] = [];
+    rooms.forEach((r: any) => {
+      const name = getRoomName(r);
+      if (name && !seen.has(name)) { seen.add(name); result.push(name); }
     });
-    // Also add groups from the groups collection that have no schedule yet
-    (groups || []).forEach((g: any) => {
-      if (!seen.has(g.name)) {
-        seen.add(g.name);
-        result.push({ name: g.name, teacher: g.teacher?.name || '' });
-      }
+    (schedule || []).forEach(s => {
+      const name = getRoomName(s.room);
+      if (name && !seen.has(name)) { seen.add(name); result.push(name); }
     });
     return result;
-  }, [schedule, groups]);
+  }, [rooms, schedule]);
 
   // ── Conflict helper ────────────────────────────────────────────────────────
   const checkConflicts = (item: Partial<ScheduleItem>, excludeId?: string): string[] => {
@@ -284,71 +285,64 @@ export default function CrmSchedule() {
         })}
       </div>
 
-      {/* ─ Transposed Grid: Groups (rows) × Hours (columns) ─ */}
+      {/* ─ Jadval: Vaqt (qatorlar) × Xonalar (ustunlar) ─ */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <div style={{ minWidth: CELL_W * HOUR_COUNT + 200 }}>
-
-            {/* Hour header row */}
-            <div className="flex border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/40">
-              {/* Group column header */}
-              <div className="w-48 flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 px-4 py-3 flex items-center">
-                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Guruhlar</span>
+        {gridRooms.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-center">
+            <DoorOpen size={40} className="text-zinc-200 dark:text-zinc-700 mb-3" />
+            <p className="text-sm font-black text-zinc-400">Hali xona qo'shilmagan</p>
+            <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
+              className="mt-3 text-xs font-black text-blue-500 hover:text-blue-600 transition-colors flex items-center gap-1">
+              <Plus size={14} /> Xona qo'shish
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 640 }}>
+            <div className="flex" style={{ minWidth: ROOM_COL_W * gridRooms.length + 64 }}>
+              {/* Soat gutter (chapda, doim ko'rinadi) */}
+              <div className="w-16 flex-shrink-0 sticky left-0 z-20 bg-white dark:bg-zinc-900">
+                <div className="h-[52px] sticky top-0 z-30 bg-zinc-50/95 dark:bg-zinc-800/95 border-b border-r border-zinc-100 dark:border-zinc-800" />
+                {hours.map(h => (
+                  <div key={h} style={{ height: HOUR_ROW_H }}
+                    className="border-b border-r border-zinc-100 dark:border-zinc-800 flex items-start justify-end pr-2 pt-1">
+                    <span className="text-[10px] font-black text-blue-500 tabular-nums">{h.toString().padStart(2, '0')}:00</span>
+                  </div>
+                ))}
               </div>
-              {/* Hour columns */}
-              {hours.map(h => (
-                <div key={h} style={{ width: CELL_W }} className="flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 px-2 py-3 text-center">
-                  <span className="text-[11px] font-black text-blue-500 tabular-nums">{h.toString().padStart(2, '0')}:00</span>
-                </div>
-              ))}
-            </div>
 
-            {/* Group rows */}
-            {gridGroups.length === 0 ? (
-              <div className="py-20 flex flex-col items-center justify-center text-center">
-                <Calendar size={40} className="text-zinc-200 dark:text-zinc-700 mb-3" />
-                <p className="text-sm font-black text-zinc-400">Hali darslar qo'shilmagan</p>
-                <button onClick={() => openModal()}
-                  className="mt-3 text-xs font-black text-blue-500 hover:text-blue-600 transition-colors flex items-center gap-1">
-                  <Plus size={14} /> Dars qo'shish
-                </button>
-              </div>
-            ) : (
-              gridGroups.map((grp, rowIdx) => {
-                const rowItems = daySchedule.filter(s => s.groupName === grp.name);
-                const totalGridPx = CELL_W * HOUR_COUNT;
+              {/* Xona ustunlari */}
+              {gridRooms.map(roomName => {
+                const colItems = daySchedule.filter(s => getRoomName(s.room) === roomName);
+                const totalGridPx = HOUR_ROW_H * HOUR_COUNT;
 
                 return (
-                  <div key={grp.name}
-                    className={`flex border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 ${rowIdx % 2 === 0 ? '' : 'bg-zinc-50/30 dark:bg-zinc-800/10'}`}
-                    style={{ height: 64 }}>
-
-                    {/* Group label */}
-                    <div className="w-48 flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 px-4 flex flex-col justify-center">
-                      <span className="text-xs font-black text-slate-800 dark:text-zinc-200 truncate">{grp.name}</span>
-                      {grp.teacher && (
-                        <span className="text-[10px] font-medium text-zinc-400 flex items-center gap-1 mt-0.5 truncate">
-                          <User size={9} /> {grp.teacher}
-                        </span>
-                      )}
+                  <div key={roomName} style={{ width: ROOM_COL_W }} className="flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 last:border-r-0">
+                    {/* Xona sarlavhasi */}
+                    <div className="h-[52px] sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-zinc-100 dark:border-zinc-800 px-3 flex items-center gap-1.5">
+                      <DoorOpen size={13} className="text-violet-500 shrink-0" />
+                      <span className="text-xs font-black text-slate-800 dark:text-zinc-200 truncate">{roomName}</span>
                     </div>
 
-                    {/* Time columns */}
-                    <div className="relative flex-1" style={{ height: 64 }}>
-                      {/* Vertical hour‑line ticks */}
+                    {/* Vaqt o'qi */}
+                    <div className="relative" style={{ height: totalGridPx }}>
                       {hours.map(h => (
                         <div key={h}
-                          className="absolute top-0 bottom-0 border-r border-zinc-100 dark:border-zinc-800"
-                          style={{ left: (h - GRID_START_H) * CELL_W, width: CELL_W }} />
+                          className="absolute left-0 right-0 border-b border-zinc-100 dark:border-zinc-800"
+                          style={{ top: (h - GRID_START_H) * HOUR_ROW_H, height: HOUR_ROW_H }} />
                       ))}
 
-                      {/* Lesson blocks */}
-                      {rowItems.map(item => {
+                      {colItems.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-[10px] font-medium text-zinc-300 dark:text-zinc-700">Bo'sh</span>
+                        </div>
+                      )}
+
+                      {colItems.map(item => {
                         const hexColor = COLOR_OPTIONS.find(c => c.bg === item.color)?.hex || '#3b82f6';
-                        const leftFrac = Math.max(timeToFraction(item.startTime), 0);
-                        const rightFrac = Math.min(timeToFraction(item.endTime), 1);
-                        const leftPx  = leftFrac  * totalGridPx;
-                        const widthPx = Math.max((rightFrac - leftFrac) * totalGridPx - 4, 30);
+                        const topFrac = Math.max(timeToFraction(item.startTime), 0);
+                        const bottomFrac = Math.min(timeToFraction(item.endTime), 1);
+                        const topPx = topFrac * totalGridPx;
+                        const heightPx = Math.max((bottomFrac - topFrac) * totalGridPx - 4, 36);
 
                         return (
                           <motion.div
@@ -356,31 +350,29 @@ export default function CrmSchedule() {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             onClick={() => openModal(item)}
-                            title={`${item.groupName} | ${item.startTime} – ${item.endTime} | ${getRoomName(item.room)}`}
-                            className="absolute top-2 bottom-2 rounded-xl cursor-pointer flex items-center px-3 gap-2 overflow-hidden hover:brightness-95 transition-all shadow-md"
+                            title={`${item.groupName} | ${item.startTime} – ${item.endTime} | ${roomName}`}
+                            className="absolute left-2 right-2 rounded-xl cursor-pointer flex flex-col justify-center px-2.5 py-1 overflow-hidden hover:brightness-95 transition-all shadow-md"
                             style={{
-                              left: leftPx + 2,
-                              width: widthPx,
+                              top: topPx + 2,
+                              height: heightPx,
                               background: `${hexColor}18`,
                               borderLeft: `3px solid ${hexColor}`,
                             }}
                           >
-                            <div className="flex flex-col min-w-0">
-                              <span className="text-[11px] font-black text-slate-800 dark:text-white truncate leading-tight">{item.groupName}</span>
-                              <span className="text-[9px] font-bold truncate" style={{ color: hexColor }}>
-                                {item.startTime}–{item.endTime} · {getRoomName(item.room)}
-                              </span>
-                            </div>
+                            <span className="text-[11px] font-black text-slate-800 dark:text-white truncate leading-tight">{item.groupName}</span>
+                            <span className="text-[9px] font-bold truncate" style={{ color: hexColor }}>
+                              {item.startTime}–{item.endTime}{item.teacher ? ` · ${item.teacher}` : ''}
+                            </span>
                           </motion.div>
                         );
                       })}
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ─ Add/Edit Modal ─ */}
