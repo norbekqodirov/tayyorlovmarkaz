@@ -46,14 +46,17 @@ const COLOR_OPTIONS = [
   { bg: 'bg-pink-500',   hex: '#ec4899' },
 ];
 
-// Grid: 07:00 – 20:00, xonalar ustun, vaqt qator (an'anaviy dars jadvali
+// Grid: 09:00 – 19:00, xonalar ustun, vaqt qator (an'anaviy dars jadvali
 // ko'rinishi — 2026-09-13'da foydalanuvchi so'rovi bilan almashtirildi,
-// ilgari guruhlar qator, soatlar ustun edi).
-const GRID_START_H = 7;
-const GRID_END_H   = 20;
-const HOUR_COUNT   = GRID_END_H - GRID_START_H; // 13
-const HOUR_ROW_H   = 80; // px per hour row
-const ROOM_COL_W   = 200; // px per room column
+// ilgari guruhlar qator, soatlar ustun edi). Chegaralar (09-19) va 2 soatlik
+// yorliq oralig'i ham foydalanuvchi so'roviga ko'ra — markazning haqiqiy
+// ish vaqtiga mos, ortiqcha erta/kech soatlar chizilmaydi.
+const GRID_START_H = 9;
+const GRID_END_H   = 19;
+const HOUR_COUNT   = GRID_END_H - GRID_START_H; // 10
+const LABEL_STEP_H = 2; // faqat har 2 soatda yorliq (09:00, 11:00, ...)
+const HOUR_ROW_H   = 64; // px per hour row (chiziq balandligi — yorliqlar shundan LABEL_STEP_H marta kamroq ko'rinadi)
+const ROOM_COL_MIN_W = 170; // xona ustuni eng kichik kengligi — kam xona bo'lsa, ustunlar mavjud joyni to'ldirib kengayadi
 
 const timeToFraction = (t: string): number => {
   const [h, m] = t.split(':').map(Number);
@@ -196,6 +199,10 @@ export default function CrmSchedule() {
 
   // ── Hour labels ────────────────────────────────────────────────────────────
   const hours = Array.from({ length: HOUR_COUNT }, (_, i) => GRID_START_H + i);
+  // Yorliq/chiziq faqat har LABEL_STEP_H soatda (09:00, 11:00, ...) — dars
+  // bloklarining o'zi hamon uzluksiz vaqtga qarab (soat chizig'iga
+  // "yopishmasdan") joylashadi, faqat vizual chiziqlar kamroq bo'ladi.
+  const hourLines = hours.filter(h => (h - GRID_START_H) % LABEL_STEP_H === 0);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -297,38 +304,38 @@ export default function CrmSchedule() {
             </button>
           </div>
         ) : (
-          <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 640 }}>
-            <div className="flex" style={{ minWidth: ROOM_COL_W * gridRooms.length + 64 }}>
-              {/* Soat gutter (chapda, doim ko'rinadi) */}
-              <div className="w-16 flex-shrink-0 sticky left-0 z-20 bg-white dark:bg-zinc-900">
-                <div className="h-[52px] sticky top-0 z-30 bg-zinc-50/95 dark:bg-zinc-800/95 border-b border-r border-zinc-100 dark:border-zinc-800" />
-                {hours.map(h => (
-                  <div key={h} style={{ height: HOUR_ROW_H }}
+          <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 620 }}>
+            <div className="flex" style={{ minWidth: ROOM_COL_MIN_W * gridRooms.length + 56 }}>
+              {/* Soat gutter (chapda, doim ko'rinadi) — faqat har 2 soatda yorliq */}
+              <div className="w-14 flex-shrink-0 sticky left-0 z-20 bg-white dark:bg-zinc-900">
+                <div className="h-11 sticky top-0 z-30 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-r border-zinc-100 dark:border-zinc-800" />
+                {hourLines.map(h => (
+                  <div key={h} style={{ height: LABEL_STEP_H * HOUR_ROW_H }}
                     className="border-b border-r border-zinc-100 dark:border-zinc-800 flex items-start justify-end pr-2 pt-1">
                     <span className="text-[10px] font-black text-blue-500 tabular-nums">{h.toString().padStart(2, '0')}:00</span>
                   </div>
                 ))}
               </div>
 
-              {/* Xona ustunlari */}
+              {/* Xona ustunlari — kam xona bo'lsa mavjud joyni to'ldirib kengayadi */}
               {gridRooms.map(roomName => {
                 const colItems = daySchedule.filter(s => getRoomName(s.room) === roomName);
                 const totalGridPx = HOUR_ROW_H * HOUR_COUNT;
 
                 return (
-                  <div key={roomName} style={{ width: ROOM_COL_W }} className="flex-shrink-0 border-r border-zinc-100 dark:border-zinc-800 last:border-r-0">
+                  <div key={roomName} style={{ flex: `1 1 0%`, minWidth: ROOM_COL_MIN_W }} className="border-r border-zinc-100 dark:border-zinc-800 last:border-r-0">
                     {/* Xona sarlavhasi */}
-                    <div className="h-[52px] sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-zinc-100 dark:border-zinc-800 px-3 flex items-center gap-1.5">
+                    <div className="h-11 sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-zinc-100 dark:border-zinc-800 px-3 flex items-center gap-1.5">
                       <DoorOpen size={13} className="text-violet-500 shrink-0" />
                       <span className="text-xs font-black text-slate-800 dark:text-zinc-200 truncate">{roomName}</span>
                     </div>
 
                     {/* Vaqt o'qi */}
                     <div className="relative" style={{ height: totalGridPx }}>
-                      {hours.map(h => (
+                      {hourLines.map(h => (
                         <div key={h}
                           className="absolute left-0 right-0 border-b border-zinc-100 dark:border-zinc-800"
-                          style={{ top: (h - GRID_START_H) * HOUR_ROW_H, height: HOUR_ROW_H }} />
+                          style={{ top: (h - GRID_START_H) * HOUR_ROW_H, height: LABEL_STEP_H * HOUR_ROW_H }} />
                       ))}
 
                       {colItems.length === 0 && (
@@ -351,7 +358,7 @@ export default function CrmSchedule() {
                             animate={{ opacity: 1, scale: 1 }}
                             onClick={() => openModal(item)}
                             title={`${item.groupName} | ${item.startTime} – ${item.endTime} | ${roomName}`}
-                            className="absolute left-2 right-2 rounded-xl cursor-pointer flex flex-col justify-center px-2.5 py-1 overflow-hidden hover:brightness-95 transition-all shadow-md"
+                            className="absolute left-1.5 right-1.5 rounded-xl cursor-pointer flex flex-col justify-center px-2.5 py-1 overflow-hidden hover:brightness-95 hover:scale-[1.01] transition-all shadow-md"
                             style={{
                               top: topPx + 2,
                               height: heightPx,
