@@ -46,7 +46,12 @@ export default function CrmGroups() {
   const { data: groups = [], loading: groupsLoading, error: groupsError, refetch: refetchGroups, addDocument, updateDocument, deleteDocument } = useFirestore<Group>('groups');
   const { data: schedule = [], loading: scheduleLoading, error: scheduleError, refetch: refetchSchedule, addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule } = useFirestore<any>('schedule');
   const coursesSource = useFirestore<any>('courses');
-  const teachersSource = useFirestore<any>('auth/users');
+  // auth/users (barcha maydonlar bilan) ADMIN+ uchun ochiq — TEACHER ham bu
+  // sahifani (o'qish uchun) ko'radi, shuning uchun tor, xavfsiz proyeksiya
+  // ishlatiladi (bu, ilgari TEACHER uchun butun sahifani "Nosozlik" xatosiga
+  // chiqargan edi — dependenciesError HAR BIR ko'ruvchi uchun tekshiriladi,
+  // faqat guruh yaratish/tahrirlashga ruxsati borlar uchun emas).
+  const teachersSource = useFirestore<any>('auth/users/assignable-teachers');
   const roomsSource = useFirestore<any>('rooms');
   const dependenciesLoading = scheduleLoading || coursesSource.loading || teachersSource.loading || roomsSource.loading;
   const dependenciesError = scheduleError || coursesSource.error || teachersSource.error || roomsSource.error;
@@ -59,7 +64,9 @@ export default function CrmGroups() {
   const { showToast } = useToast();
 
   // Merge live API data with legacy useFirestore data
-  const teachers = teachersSource.data.filter(t => t.role === 'TEACHER' || t.role === 'ADMIN');
+  // /auth/users/assignable-teachers allaqachon TEACHER/ADMIN/SUPER_ADMIN'ga
+  // filtrlangan holda qaytadi — bu yerda qo'shimcha filtr shart emas.
+  const teachers = teachersSource.data;
   const roomsList = roomsSource.data;
   const courseList = coursesSource.data;
 

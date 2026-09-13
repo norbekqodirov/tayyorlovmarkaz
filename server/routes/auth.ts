@@ -175,6 +175,26 @@ router.put('/change-password', requireAuth, async (req, res) => {
 
 // ─── USER MANAGEMENT ─────────────────────────────────────────────────────────
 
+// ─── GET /auth/users/assignable-teachers — guruhga ustoz biriktirish uchun ──
+// tor, xavfsiz proyeksiya (nom+rol, email/telefon/permissions/maosh YO'Q).
+// Pastdagi GET /users faqat ADMIN+ uchun ochiq — lekin TEACHER/MANAGER ham
+// Guruhlar sahifasida "O'qituvchi" dropdown'ini ko'rishi kerak (CrmGroups.tsx).
+// Bu route /users'dan OLDIN, aks holda ahamiyati yo'q (turli segment soni,
+// hech qanday :id shabloni bilan mos kelmaydi) — shunday bo'lsa ham
+// o'qish qulayligi uchun shu yerga qo'yildi.
+router.get('/users/assignable-teachers', requireAuth, async (_req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            where: { role: { in: ['TEACHER', 'ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+            select: { id: true, name: true, role: true },
+            orderBy: { name: 'asc' },
+        });
+        res.json(users);
+    } catch (error: any) {
+        res.status(500).json({ message: String(error) });
+    }
+});
+
 // GET all users (admin+)
 router.get('/users', requireAuth, async (req, res) => {
     try {

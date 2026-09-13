@@ -19,7 +19,12 @@ export function useCrmData() {
       try {
         const [coursesRes, teachersRes, roomsRes, groupsRes, studentsRes] = await Promise.allSettled([
           api.get('/courses'),
-          api.get('/auth/users'),       // teachers are users with role TEACHER
+          // /auth/users (barcha maydonlar bilan) ADMIN+ uchun ochiq — bu hook
+          // esa TEACHER/MANAGER ham ko'radigan sahifalarda ishlatiladi
+          // (Schedule/Students/BI/Leads), shuning uchun tor, xavfsiz
+          // proyeksiya ishlatiladi (ilgari ADMIN bo'lmagan har bir rol uchun
+          // bu so'rov jimgina 403 bo'lib, o'qituvchi dropdown'i bo'sh qolardi).
+          api.get('/auth/users/assignable-teachers'),
           api.get('/rooms'),
           api.get('/groups'),
           api.get('/students'),
@@ -27,9 +32,9 @@ export function useCrmData() {
 
         if (coursesRes.status === 'fulfilled') setCourses(coursesRes.value.data || []);
         if (teachersRes.status === 'fulfilled') {
-          // filter to only teachers
-          const allUsers = teachersRes.value.data || [];
-          setTeachers(allUsers.filter((u: any) => u.role === 'TEACHER' || u.role === 'ADMIN'));
+          // /auth/users/assignable-teachers allaqachon TEACHER/ADMIN/
+          // SUPER_ADMIN'ga filtrlangan holda qaytadi.
+          setTeachers(teachersRes.value.data || []);
         }
         if (roomsRes.status === 'fulfilled') setRooms(roomsRes.value.data || []);
         if (groupsRes.status === 'fulfilled') setGroups(groupsRes.value.data || []);
