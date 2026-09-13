@@ -10,29 +10,29 @@ import MonthSelector from './MonthSelector';
 interface Props {
   group: any;
   groupStudents: any[];
-  attendanceDocs: any[];
+  attendanceRecords: any[]; // AttendanceRecord[] — bitta o'quvchi+sana uchun bitta qator
   assessmentDocs: any[];
   currentDate: Date;
   onDateChange: (d: Date) => void;
 }
 
 const RatingTab: React.FC<Props> = ({
-  group, groupStudents, attendanceDocs, assessmentDocs, currentDate, onDateChange,
+  group, groupStudents, attendanceRecords, assessmentDocs, currentDate, onDateChange,
 }) => {
   const monthPrefix = format(currentDate, 'yyyy-MM');
 
   const ranked = [...groupStudents]
     .map(s => {
-      // Attendance for this month
-      const monthAtt = attendanceDocs.filter(
-        (a: any) => a.groupId === group.id && a.date.startsWith(monthPrefix),
+      // Attendance for this month — mahraj (totalAtt) butun guruh uchun
+      // belgilangan KUNLAR soni (barcha o'quvchilarga bir xil, adolatli
+      // taqqoslash uchun), hisoblagich (present) shu o'quvchining o'zi.
+      const monthRecords = attendanceRecords.filter(
+        (r: any) => r.groupId === group.id && r.date.startsWith(monthPrefix),
       );
-      let present = 0;
-      const totalAtt = monthAtt.length;
-      monthAtt.forEach((doc: any) => {
-        const r = doc.records?.find((rec: any) => rec.studentId === s.id);
-        if (r?.status === 'present' || r?.status === 'late') present++;
-      });
+      const totalAtt = new Set(monthRecords.map((r: any) => r.date)).size;
+      const present = monthRecords.filter(
+        (r: any) => r.studentId === s.id && (r.status === 'present' || r.status === 'late'),
+      ).length;
 
       // Assessments for this month
       const monthAss = assessmentDocs.filter(

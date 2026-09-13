@@ -88,7 +88,7 @@ export default function CrmAdvancedBI() {
   const { data: students = [] } = useFirestore<any>('students');
   const { data: leads = [] } = useFirestore<any>('leads');
   const { data: transactions = [] } = useFirestore<any>('finance');
-  const { data: attendance = [] } = useFirestore<any>('attendance');
+  const { data: attendanceRecords = [] } = useFirestore<any>('attendanceRecords');
   const { teachers, groups } = useCrmData();
 
   const [analyticsData, setAnalyticsData] = useState<any>(null);
@@ -233,13 +233,12 @@ export default function CrmAdvancedBI() {
     return Array.from({ length: periodNum }, (_, i) => {
       const mi = (currentMonth - periodNum + 1 + i + 12) % 12;
       const monthStr = `${new Date().getFullYear()}-${String(mi + 1).padStart(2, '0')}`;
-      const monthRecords = attendance.filter((a: any) => (a.date || '').startsWith(monthStr));
-      const allRec = monthRecords.flatMap((a: any) => a.records || []);
+      const allRec = attendanceRecords.filter((r: any) => (r.date || '').startsWith(monthStr));
       const present = allRec.filter((r: any) => r.status === 'present').length;
       const rate = allRec.length > 0 ? Math.round((present / allRec.length) * 100) : 0;
       return { name: MONTHS[mi], rate, present, absent: allRec.length - present };
     });
-  }, [attendance, currentMonth, periodNum]);
+  }, [attendanceRecords, currentMonth, periodNum]);
 
   // ── Teacher performance ───────────────────────────────────────────────
   const teacherPerformance = useMemo(() => {
@@ -251,8 +250,7 @@ export default function CrmAdvancedBI() {
         return a + count;
       }, 0);
       const groupIds = tGroups.map(g => g.id);
-      const attRecs = attendance.filter((a: any) => groupIds.includes(a.groupId));
-      const allRec = attRecs.flatMap((a: any) => a.records || []);
+      const allRec = attendanceRecords.filter((r: any) => groupIds.includes(r.groupId));
       const present = allRec.filter((r: any) => r.status === 'present').length;
       const attRate = allRec.length > 0 ? Math.round((present / allRec.length) * 100) : 0;
       return {
@@ -262,7 +260,7 @@ export default function CrmAdvancedBI() {
         davomat: attRate,
       };
     });
-  }, [teachers, groups, attendance, students, teacherPerfApi]);
+  }, [teachers, groups, attendanceRecords, students, teacherPerfApi]);
 
   // ── KPI aggregates ───────────────────────────────────────────────────
   const ad = analyticsData;

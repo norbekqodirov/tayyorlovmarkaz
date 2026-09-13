@@ -7,6 +7,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { isAxiosError } from 'axios';
+import { format } from 'date-fns';
 import { Button } from '../../../components/ui/Button';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 
@@ -49,14 +50,11 @@ export default function CrmGroupDetail() {
   }, [id, retryCount]);
   const { data: students = [], loading: studentsLoading, error: studentsError, refetch: refetchStudents } = useFirestore<any>('students');
   const { data: schedules = [], loading: schedulesLoading, error: schedulesError, refetch: refetchSchedules } = useFirestore<any>('schedule');
-  const { data: attendanceDocs = [], loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance, addDocument: addAtt, updateDocument: updateAtt } = useFirestore<any>('attendance');
   const { data: assessmentDocs = [], addDocument: addAssess, updateDocument: updateAssess } = useFirestore<any>('assessment');
   const { data: examDocs = [], addDocument: addExam, updateDocument: updateExam } = useFirestore<any>('exams');
   const { data: noteDocs = [], addDocument: addNote, updateDocument: updateNote } = useFirestore<any>('notes');
 
   // ─── UI State ───────────────────────────────────────────────────────────────
-  const attendanceBusy = useRef(false);
-  const [attendanceSave, setAttendanceSave] = useState<{ state: 'idle' | 'saving' | 'saved' | 'error'; message: string }>({ state: 'idle', message: '' });
   const [activeTab, setActiveTab] = useState('Davomat');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
@@ -183,26 +181,20 @@ export default function CrmGroupDetail() {
     );
   }, [students, enrolledStudents, addStudentSearch]);
 
-  // ─── Attendance ─────────────────────────────────────────────────────────────
-  const handleAttendanceClick = async (studentId: string, dateStr: string, nextStatus: string) => {
-    if (attendanceBusy.current || attendanceLoading || attendanceError || !group) return;
-    attendanceBusy.current = true;
-    const studentName = enrolledStudents.find(student => student.id === studentId)?.name || 'O‘quvchi';
-    const label = studentName + ' · ' + dateStr;
-    setAttendanceSave({ state: 'saving', message: label + ' — saqlanmoqda…' });
-    try {
-      const existingDoc = attendanceDocs.find((a: any) => a.groupId === group.id && a.date === dateStr);
-      const records = (existingDoc?.records || []).filter((record: any) => record.studentId !== studentId);
-      if (nextStatus) records.push({ studentId, status: nextStatus, time: new Date().toISOString() });
-      if (existingDoc) await updateAtt(existingDoc.id, { records });
-      else if (nextStatus) await addAtt({ groupId: group.id, date: dateStr, records });
-      setAttendanceSave({ state: 'saved', message: label + ' — saqlandi' });
-    } catch {
-      setAttendanceSave({ state: 'error', message: label + ' — saqlanmadi. Qayta tanlab urinib ko‘ring.' });
-    } finally {
-      attendanceBusy.current = false;
-    }
-  };
+  // ─── Attendance (Reyting tabi uchun oylik xulosa) ──────────────────────────
+  // Davomatning o'zi endi AttendanceTab ichida mustaqil boshqariladi
+  // (/api/attendance-records — haqiqiy AttendanceRecord jadvali). Reyting
+  // hisob-kitobi uchun shu yerda alohida, faqat o'qish uchun oylik olib
+  // kelinadi.
+  const [ratingAttendance, setRatingAttendance] = useState<any[]>([]);
+  useEffect(() => {
+    if (!group?.id) return;
+    let active = true;
+    api.get('/attendance-records/month', { params: { groupId: group.id, month: format(currentDate, 'yyyy-MM') } })
+      .then(res => { if (active) setRatingAttendance(res.data || []); })
+      .catch(() => { if (active) setRatingAttendance([]); });
+    return () => { active = false; };
+  }, [group?.id, currentDate]);
 
   // ─── Assessment (daily score) ───────────────────────────────────────────────
   const handleAssessmentChange = async (studentId: string, dateStr: string, score: number) => {
@@ -337,15 +329,6 @@ export default function CrmGroupDetail() {
             <AttendanceTab
               group={groupWithSchedule}
               groupStudents={enrolledStudents}
-              attendanceDocs={attendanceDocs}
-              currentDate={currentDate}
-              onDateChange={setCurrentDate}
-              onCellClick={handleAttendanceClick}
-              disabled={attendanceLoading || !!attendanceError || attendanceSave.state === 'saving'}
-              saveState={attendanceSave}
-              loading={attendanceLoading}
-              loadError={!!attendanceError}
-              onRetry={refetchAttendance}
             />
           )}
 
@@ -364,7 +347,7 @@ export default function CrmGroupDetail() {
             <RatingTab
               group={group}
               groupStudents={enrolledStudents}
-              attendanceDocs={attendanceDocs}
+              attendanceRecords={ratingAttendance}
               assessmentDocs={assessmentDocs}
               currentDate={currentDate}
               onDateChange={setCurrentDate}

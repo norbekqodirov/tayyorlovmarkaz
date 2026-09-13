@@ -42,6 +42,7 @@ import branchesRoutes from './routes/branches.js';
 import workLocationsRoutes from './routes/workLocations.js';
 import staffAttendanceRoutes from './routes/staffAttendance.js';
 import rolesRoutes from './routes/roles.js';
+import studentAttendanceRoutes from './routes/studentAttendance.js';
 import { startScheduler } from './services/scheduler.js';
 import path from 'path';
 import fs from 'fs';
@@ -160,6 +161,7 @@ app.use('/api/work-locations', workLocationsRoutes);
 app.use('/api/staff-attendance', staffAttendanceRoutes);
 app.use('/api/leads', leadsRoutes); // crud.ts'dan OLDIN — generic /api/:collection'ni "leads" uchun soyalaydi
 app.use('/api/roles', rolesRoutes);
+app.use('/api/attendance-records', studentAttendanceRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api', crudRoutes);
 

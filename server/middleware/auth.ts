@@ -80,6 +80,7 @@ const COLLECTION_WRITE_LEVEL: Record<string, number> = {
     schedule:      2,
     schedules:     2,
     attendance:    1, // TEACHER+
+    attendanceRecords: 1, // TEACHER+ (haqiqiy jadval — server/routes/studentAttendance.ts'ga q.)
     assessments:   1,
     journal:       1,
     finance:       2,
@@ -126,6 +127,7 @@ const COLLECTION_READ_LEVEL: Record<string, number> = {
     schedule:      1,
     schedules:     1,
     attendance:    1,
+    attendanceRecords: 1, // TEACHER+ (haqiqiy jadval — server/routes/studentAttendance.ts'ga q.)
     assessment:    1,
     assessments:   1,
     exams:         1,

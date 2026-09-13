@@ -30,7 +30,7 @@ export default function CrmDashboard() {
   const { data: transactions = [], loading: loadingTransactions, error: errorTransactions, refetch: refetchTransactions } = useFirestore<any>('transactions');
   const { data: teachers = [] } = useFirestore<any>('teachers');
   const { data: schedule = [] } = useFirestore<any>('schedule');
-  const { data: attendance = [] } = useFirestore<any>('attendance');
+  const { data: attendanceRecords = [] } = useFirestore<any>('attendanceRecords');
 
   const refetchAll = useCallback(() => {
     refetchStudents();
@@ -119,9 +119,10 @@ export default function CrmDashboard() {
     }).length;
     const studentsGrowth = prevMonthStudents > 0 ? Math.round(((thisMonthStudents - prevMonthStudents) / prevMonthStudents) * 100) : 0;
 
-    // Today's attendance
-    const todayAtt = attendance.find((a: any) => a.date === today);
-    const todayRecords = todayAtt?.records || [];
+    // Today's attendance — endi haqiqiy AttendanceRecord'dan, butun markaz
+    // bo'yicha (eski kod faqat BITTA guruhning yozuvini topardi, .find()
+    // birinchi mosini olgani uchun; endi barcha guruhlar to'g'ri jamlanadi).
+    const todayRecords = attendanceRecords.filter((r: any) => r.date === today);
     const todayPresent = todayRecords.filter((r: any) => r.status === 'present').length;
     const todayAbsent = todayRecords.filter((r: any) => r.status === 'absent').length;
     const todayTotal = todayRecords.length;
@@ -158,7 +159,7 @@ export default function CrmDashboard() {
       todayAbsent,
       todayAttendanceRate,
     };
-  }, [students, groups, leads, transactions, teachers, attendance, currentMonth, prevMonth, today]);
+  }, [students, groups, leads, transactions, teachers, attendanceRecords, currentMonth, prevMonth, today]);
 
   const renderWidget = (id: string) => {
     switch (id) {

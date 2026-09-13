@@ -51,7 +51,8 @@ const MODEL_MAP: Record<string, string> = {
     'forms':          'targetForm',
     // ── Academic (Faza 0.2 — migrated from GenericDocument) ─────────────────
     'schedule':       'groupSchedule',
-    'attendance':     'attendance',
+    'attendance':     'attendance', // eski JSON-blob (2026-09-13'dan yozilmaydi, faqat tarixiy o'qish) — server/routes/studentAttendance.ts'ga q.
+    'attendanceRecords': 'attendanceRecord', // haqiqiy jadval — Dashboard/BI shundan o'qiydi (yozish uchun /api/attendance-records ishlatiladi)
     'assessment':     'assessment',
     'assessments':    'assessment',
     'exams':          'exam',
@@ -74,6 +75,7 @@ const TEACHER_SCOPE_MODELS: Record<string, (userId: string) => any> = {
     group: (userId) => ({ teacherId: userId }),
     student: (userId) => ({ enrollments: { some: { group: { teacherId: userId } } } }),
     attendance: (userId) => ({ group: { teacherId: userId } }),
+    attendanceRecord: (userId) => ({ group: { teacherId: userId } }),
     assessment: (userId) => ({ group: { teacherId: userId } }),
     exam: (userId) => ({ group: { teacherId: userId } }),
     groupStudentNote: (userId) => ({ group: { teacherId: userId } }),
@@ -114,6 +116,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Academic (Faza 0.2) ──────────────────────────────────────────────────
     'groupSchedule':   ['groupId', 'groupName', 'teacher', 'room', 'startTime', 'endTime', 'days', 'color'],
     'attendance':      ['groupId', 'date', 'records'],
+    'attendanceRecord':['studentId', 'groupId', 'date', 'status', 'checkIn', 'checkOut', 'note'],
     'assessment':      ['studentId', 'groupId', 'title', 'type', 'score', 'maxScore', 'date', 'subject', 'notes'],
     'exam':            ['groupId', 'studentId', 'examName', 'score'],
     'groupStudentNote':['groupId', 'studentId', 'note'],
