@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import prisma from '../db.js';
 import { requireAuth, requireRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { withAudit } from '../middleware/audit.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
@@ -351,13 +352,51 @@ async function getPublicTeachersList() {
 // yuklanmaydi (401). Faqat GET uchun; yozish (POST/PUT/DELETE) hamon requireAuth talab qiladi.
 const PUBLIC_READ_COLLECTIONS = new Set(['pageContent', 'gallery', 'news', 'teachers']);
 
+// RBAC qayta qurish — Bosqich 4 (authorize.ts'ni router'larga ulash).
+// MUHIM — bu xarita ATAYLAB juda tor: dastlab kengroq (students/groups/
+// courses/finance/transactions/schedule/rooms/forms/campaigns) qilib
+// boshlangan edi, lekin jonli tekshiruv paytida bularning barchasi
+// KO'P SAHIFA tomonidan (turli, ba'zan farqli ruxsatli rollar orqali)
+// umumiy/ichki qidiruv yoki dashboard vidjeti sifatida o'qilishi
+// aniqlandi — masalan CrmDashboard.tsx (har bir rolga ochiq, faqat
+// 'dashboard' ruxsati bilan) 'students'/'groups'/'transactions'/
+// 'schedule'/'attendance'/'teachers'/'leads' kolleksiyalarini
+// TO'G'RIDAN-TO'G'RI o'qiydi, GlobalSearch.tsx (butun CRM'da doim
+// ko'rinadigan qidiruv) 'students'/'courses'/'leads'/'teachers'ni,
+// LeadFilters.tsx (Lidlar sahifasi, faqat 'leads' ruxsati kifoya)
+// 'forms'/'campaigns'ni. Agar bu kolleksiyalar o'z sahifasining
+// ruxsat kaliti bilan yopilsa — masalan 'schedule' ruxsati bilan —
+// bu umumiy joylardan foydalanuvchi (masalan 'leads' ruxsatli, lekin
+// 'schedule'siz MANAGER) haqiqatda ishlatayotgan funksiyasi (Dashboard,
+// qidiruv) buzilib qolardi. Shuning uchun FAQAT tasdiqlangan — boshqa
+// hech qanday sahifa tomonidan o'qilmaydigan — kolleksiyalar qoldirildi.
+// Qolganlari (students/groups/courses/finance/transactions/schedule/
+// rooms/forms/campaigns) ataylab QOLDIRILMAGAN — ular hali faqat rol
+// darajasi (COLLECTION_READ/WRITE_LEVEL) bilan himoyalanadi. Granular
+// kalit talab qilish ularga keyinroq, avval frontend'dagi umumiy
+// joylar (Dashboard/GlobalSearch/LeadFilters) har bir vidjetni
+// ruxsatsizlik xatosida oqilona (vidjetni yashirish/bo'sh ko'rsatish)
+// boshqara oladigan qilib qayta ko'rilgandan keyin qo'shiladi.
+const COLLECTION_PERMISSION_MAP: Record<string, string> = {
+    courseTiers:            'courses',   // faqat CrmCourses.tsx o'qiydi
+    inventory:               'inventory', // faqat CrmInventory.tsx (ADMIN+, allaqachon rol darajasi bilan yopiq)
+    transactionCategories:   'transaction_categories', // CrmCategories.tsx + CrmFinance.tsx — ikkalasi ham 'finance' VA 'transaction_categories'ga ega MANAGER+ talab qiladi
+    settings:                'settings',  // faqat CrmSettings.tsx (ADMIN+)
+    news:                    'content',   // GET uchun PUBLIC_READ_COLLECTIONS orqali bypass; yozish faqat CrmContent.tsx (ADMIN+)
+};
+
 function authForCollection(req: express.Request, res: express.Response, next: express.NextFunction) {
     if (req.method === 'GET' && PUBLIC_READ_COLLECTIONS.has(req.params.collection)) {
         return next();
     }
     requireAuth(req, res, (err?: any) => {
         if (err) return next(err);
-        requireRole(req, res, next);
+        requireRole(req, res, (err2?: any) => {
+            if (err2) return next(err2);
+            const permissionKey = COLLECTION_PERMISSION_MAP[req.params.collection];
+            if (!permissionKey) return next();
+            requirePermission(permissionKey)(req, res, next);
+        });
     });
 }
 

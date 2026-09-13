@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { gradeSubmission } from '../services/gradingService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
@@ -9,7 +10,7 @@ const router = express.Router();
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { courseId, groupId, status, page = '1', limit = '20' } = req.query as Record<string, string>;
         const user = (req as any).user;
@@ -49,7 +50,7 @@ router.get('/', requireAuth, async (req, res) => {
 // GET /api/tests/submissions?studentId=X — bitta talabaning barcha testlar bo'yicha
 // natijalari (CrmStudentDetail "Testlar" tabi shuni chaqiradi). /:id dan OLDIN
 // ro'yxatdan o'tishi shart — aks holda "submissions" testId sifatida talqin qilinadi.
-router.get('/submissions', requireAuth, async (req, res) => {
+router.get('/submissions', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { studentId } = req.query as Record<string, string>;
         if (!studentId) return res.status(400).json({ message: 'studentId kiritilishi shart' });
@@ -65,7 +66,7 @@ router.get('/submissions', requireAuth, async (req, res) => {
     }
 });
 
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const test = await prisma.test.findUnique({
             where: { id: req.params.id },
@@ -82,7 +83,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const user = (req as any).user;
         const test = await prisma.test.create({
@@ -101,7 +102,7 @@ router.post('/', requireAuth, async (req, res) => {
     }
 });
 
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const test = await prisma.test.update({ where: { id: req.params.id }, data: req.body });
         res.json(test);
@@ -110,7 +111,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         await prisma.test.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
         res.json({ success: true });
@@ -119,7 +120,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/:id/publish', requireAuth, async (req, res) => {
+router.post('/:id/publish', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const test = await prisma.test.update({
             where: { id: req.params.id },
@@ -134,7 +135,7 @@ router.post('/:id/publish', requireAuth, async (req, res) => {
 
 // ─── Questions ────────────────────────────────────────────────────────────────
 
-router.get('/:testId/questions', requireAuth, async (req, res) => {
+router.get('/:testId/questions', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const questions = await prisma.question.findMany({
             where: { testId: req.params.testId },
@@ -146,7 +147,7 @@ router.get('/:testId/questions', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/:testId/questions', requireAuth, async (req, res) => {
+router.post('/:testId/questions', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { type, text, options, correctAnswer, score, order, imageUrl, explanation } = req.body;
         const question = await prisma.question.create({
@@ -168,7 +169,7 @@ router.post('/:testId/questions', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/:testId/questions/bulk', requireAuth, async (req, res) => {
+router.post('/:testId/questions/bulk', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { questions } = req.body;
         if (!Array.isArray(questions)) return res.status(400).json({ message: 'questions massiv bo\'lishi kerak' });
@@ -196,7 +197,7 @@ router.post('/:testId/questions/bulk', requireAuth, async (req, res) => {
     }
 });
 
-router.put('/questions/:id', requireAuth, async (req, res) => {
+router.put('/questions/:id', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { options, ...rest } = req.body;
         const data: any = { ...rest };
@@ -210,7 +211,7 @@ router.put('/questions/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.delete('/questions/:id', requireAuth, async (req, res) => {
+router.delete('/questions/:id', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         await prisma.question.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -221,7 +222,7 @@ router.delete('/questions/:id', requireAuth, async (req, res) => {
 
 // ─── Test taking flow ─────────────────────────────────────────────────────────
 
-router.post('/:id/start', requireAuth, async (req, res) => {
+router.post('/:id/start', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { studentId } = req.body;
         if (!studentId) return res.status(400).json({ message: 'studentId kerak' });
@@ -253,7 +254,7 @@ router.post('/:id/start', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/submissions/:id/answer', requireAuth, async (req, res) => {
+router.post('/submissions/:id/answer', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { questionId, value } = req.body;
         if (!questionId) return res.status(400).json({ message: 'questionId kerak' });
@@ -275,7 +276,7 @@ router.post('/submissions/:id/answer', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/submissions/:id/submit', requireAuth, async (req, res) => {
+router.post('/submissions/:id/submit', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const submission = await prisma.testSubmission.findUnique({
             where: { id: req.params.id },
@@ -328,7 +329,7 @@ router.post('/submissions/:id/submit', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/answers/:id/grade', requireAuth, async (req, res) => {
+router.post('/answers/:id/grade', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const { score, feedback, isCorrect } = req.body;
         const answer = await prisma.answer.update({
@@ -362,7 +363,7 @@ router.post('/answers/:id/grade', requireAuth, async (req, res) => {
     }
 });
 
-router.get('/:id/results', requireAuth, async (req, res) => {
+router.get('/:id/results', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const submissions = await prisma.testSubmission.findMany({
             where: { testId: req.params.id },

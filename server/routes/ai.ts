@@ -13,9 +13,10 @@ import express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
-router.use(requireAuth, requireMinRole('MANAGER'));
+router.use(requireAuth, requireMinRole('MANAGER'), requirePermission('ai_content'));
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 
 function getAI() {

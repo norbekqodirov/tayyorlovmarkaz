@@ -1,12 +1,13 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { emitToUser } from '../services/realtime.js';
 
 const router = express.Router();
 
 // GET /api/messages — suhbatlar ro'yxati
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const userId = (req as any).user?.id;
         if (!userId) return res.status(401).json({ message: 'Autentifikatsiya kerak' });
@@ -61,7 +62,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // GET /api/messages/:partnerId — suhbat tarixi
-router.get('/:partnerId', requireAuth, async (req, res) => {
+router.get('/:partnerId', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const userId = (req as any).user?.id;
         const { partnerId } = req.params;
@@ -89,7 +90,7 @@ router.get('/:partnerId', requireAuth, async (req, res) => {
 });
 
 // POST /api/messages — xabar yuborish
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const userId = (req as any).user?.id;
         const userRole = (req as any).user?.role || 'admin';
@@ -120,7 +121,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/messages/:id/read
-router.patch('/:id/read', requireAuth, async (req, res) => {
+router.patch('/:id/read', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const msg = await prisma.message.update({
             where: { id: req.params.id },

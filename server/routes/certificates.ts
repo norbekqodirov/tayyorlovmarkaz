@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { generateCertificate, generateBatch } from '../services/certificateService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
@@ -12,7 +13,7 @@ const router = express.Router();
 
 // ─── Certificate Templates ────────────────────────────────────────────────────
 
-router.get('/templates', requireAuth, async (_req, res) => {
+router.get('/templates', requireAuth, requirePermission('certificates'), async (_req, res) => {
     try {
         const templates = await prisma.certificateTemplate.findMany({
             orderBy: { createdAt: 'desc' },
@@ -26,7 +27,7 @@ router.get('/templates', requireAuth, async (_req, res) => {
     }
 });
 
-router.get('/templates/:id', requireAuth, async (req, res) => {
+router.get('/templates/:id', requireAuth, requirePermission('certificates'), async (req, res) => {
     try {
         const t = await prisma.certificateTemplate.findUnique({ where: { id: req.params.id } });
         if (!t) return res.status(404).json({ message: 'Topilmadi' });
@@ -39,7 +40,7 @@ router.get('/templates/:id', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/templates', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.post('/templates', requireAuth, requireMinRole('ADMIN'), requirePermission('certificates'), async (req, res) => {
     try {
         const { name, type, background, config, width, height, isActive } = req.body;
         const template = await prisma.certificateTemplate.create({
@@ -59,7 +60,7 @@ router.post('/templates', requireAuth, requireMinRole('ADMIN'), async (req, res)
     }
 });
 
-router.put('/templates/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.put('/templates/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('certificates'), async (req, res) => {
     try {
         const { config, ...rest } = req.body;
         const data: any = { ...rest };
@@ -76,7 +77,7 @@ router.put('/templates/:id', requireAuth, requireMinRole('ADMIN'), async (req, r
     }
 });
 
-router.delete('/templates/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.delete('/templates/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('certificates'), async (req, res) => {
     try {
         await prisma.certificateTemplate.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -87,7 +88,7 @@ router.delete('/templates/:id', requireAuth, requireMinRole('ADMIN'), async (req
 
 // ─── Certificates (Issued) ────────────────────────────────────────────────────
 
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requirePermission('certificates'), async (req, res) => {
     try {
         const { studentId, courseId, templateId, page = '1', limit = '20' } = req.query as Record<string, string>;
         const where: any = {};
@@ -117,7 +118,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
-router.post('/generate', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.post('/generate', requireAuth, requireMinRole('ADMIN'), requirePermission('certificates'), async (req, res) => {
     try {
         const { templateId, studentIds, courseId, grade, signature, metadata } = req.body;
         if (!templateId || !Array.isArray(studentIds) || studentIds.length === 0) {
@@ -172,7 +173,7 @@ router.post('/generate', requireAuth, requireMinRole('ADMIN'), async (req, res) 
 // Download single PDF
 // MUHIM: ilgari requireAuth FAQAT edi — har qanday rol (TEACHER ham)
 // istalgan sertifikatni ID orqali yuklab olishi mumkin edi.
-router.get('/:id/pdf', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/:id/pdf', requireAuth, requireMinRole('MANAGER'), requirePermission('certificates'), async (req, res) => {
     try {
         const cert = await prisma.certificate.findUnique({ where: { id: req.params.id } });
         if (!cert || !cert.pdfUrl) return res.status(404).json({ message: 'Topilmadi' });
@@ -185,7 +186,7 @@ router.get('/:id/pdf', requireAuth, requireMinRole('MANAGER'), async (req, res) 
 });
 
 // Bulk ZIP download
-router.post('/zip', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/zip', requireAuth, requireMinRole('MANAGER'), requirePermission('certificates'), async (req, res) => {
     try {
         const { ids } = req.body;
         if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: 'ids kerak' });
@@ -222,7 +223,7 @@ router.post('/zip', requireAuth, requireMinRole('MANAGER'), async (req, res) => 
 });
 
 // Revoke certificate
-router.put('/:id/revoke', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.put('/:id/revoke', requireAuth, requireMinRole('ADMIN'), requirePermission('certificates'), async (req, res) => {
     try {
         const { reason } = req.body;
         const cert = await prisma.certificate.update({
@@ -236,7 +237,7 @@ router.put('/:id/revoke', requireAuth, requireMinRole('ADMIN'), async (req, res)
 });
 
 // Delete
-router.delete('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('certificates'), async (req, res) => {
     try {
         const cert = await prisma.certificate.findUnique({ where: { id: req.params.id } });
         if (cert?.pdfUrl) {

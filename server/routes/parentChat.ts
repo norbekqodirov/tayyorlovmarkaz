@@ -12,6 +12,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { emitToUser, emitToAdmins } from '../services/realtime.js';
 
 const router = express.Router();
@@ -26,7 +27,7 @@ function isManagerRole(role: string) {
 
 // GET /api/parent-chat/threads — joriy xodimga tegishli barcha ota-ona suhbatlari
 // (MANAGER/ADMIN uchun — barcha o'quvchilar; TEACHER uchun — faqat o'z guruhidagilar)
-router.get('/threads', requireAuth, async (req, res) => {
+router.get('/threads', requireAuth, requirePermission('parent_chat'), async (req, res) => {
     try {
         const user = (req as any).user;
         const staffKey = isManagerRole(user.role) ? MANAGER_KEY : teacherKey(user.id);
@@ -73,7 +74,7 @@ router.get('/threads', requireAuth, async (req, res) => {
 });
 
 // GET /api/parent-chat/threads/:studentId — bitta o'quvchi bilan suhbat tarixi
-router.get('/threads/:studentId', requireAuth, async (req, res) => {
+router.get('/threads/:studentId', requireAuth, requirePermission('parent_chat'), async (req, res) => {
     try {
         const user = (req as any).user;
         const staffKey = isManagerRole(user.role) ? MANAGER_KEY : teacherKey(user.id);
@@ -97,7 +98,7 @@ router.get('/threads/:studentId', requireAuth, async (req, res) => {
 });
 
 // POST /api/parent-chat/threads/:studentId — xodim ota-onaga xabar yozadi
-router.post('/threads/:studentId', requireAuth, async (req, res) => {
+router.post('/threads/:studentId', requireAuth, requirePermission('parent_chat'), async (req, res) => {
     try {
         const user = (req as any).user;
         const { content } = req.body as { content: string };

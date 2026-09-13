@@ -1,6 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
@@ -15,7 +16,7 @@ const todayStr = todayDateStr;
 
 // ─── GET /api/staff-attendance — HR dashboard: bugun yoki sana bo'yicha ───────
 
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requirePermission('staff_attendance'), async (req, res) => {
     try {
         const date = (req.query.date as string) || todayStr();
 
@@ -62,7 +63,7 @@ router.get('/', requireAuth, async (req, res) => {
 
 // GET /api/staff-attendance/report — oy bo'yicha hisobot
 
-router.get('/report', requireAuth, async (req, res) => {
+router.get('/report', requireAuth, requirePermission('staff_attendance'), async (req, res) => {
     try {
         const month = (req.query.month as string) || todayDateStr().slice(0, 7);
         const staffId = req.query.staffId as string | undefined;
@@ -104,7 +105,7 @@ router.get('/report', requireAuth, async (req, res) => {
 
 // GET /api/staff-attendance/staff/:staffId — xodim tarixi
 
-router.get('/staff/:staffId', requireAuth, async (req, res) => {
+router.get('/staff/:staffId', requireAuth, requirePermission('staff_attendance'), async (req, res) => {
     try {
         const { staffId } = req.params;
         const limit = parseInt(req.query.limit as string) || 30;
@@ -135,7 +136,7 @@ router.get('/staff/:staffId', requireAuth, async (req, res) => {
 
 // PATCH /api/staff-attendance/:id — admin manual override
 
-router.patch('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.patch('/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('staff_attendance'), async (req, res) => {
     try {
         const { status, checkIn, checkOut, notes } = req.body;
         const rec = await prisma.staffAttendance.update({
@@ -157,7 +158,7 @@ router.patch('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
 
 // POST /api/staff-attendance/manual — admin tomonidan qo'lda qo'shish
 
-router.post('/manual', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.post('/manual', requireAuth, requireMinRole('ADMIN'), requirePermission('staff_attendance'), async (req, res) => {
     try {
         const { staffId, date, status, checkIn, checkOut, notes } = req.body;
         if (!staffId || !date) return res.status(400).json({ message: 'staffId va date kerak' });
@@ -190,7 +191,7 @@ router.post('/manual', requireAuth, requireMinRole('ADMIN'), async (req, res) =>
 
 // DELETE /api/staff-attendance/:id
 
-router.delete('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('staff_attendance'), async (req, res) => {
     try {
         await prisma.staffAttendance.delete({ where: { id: req.params.id } });
         res.json({ message: 'Davomat yozuvi o\'chirildi' });
@@ -203,7 +204,7 @@ router.delete('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => 
 
 // GET /api/staff-attendance/face-profiles — barcha xodimlarning yuz profil holati
 
-router.get('/face-profiles', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
+router.get('/face-profiles', requireAuth, requireMinRole('ADMIN'), requirePermission('staff_attendance'), async (_req, res) => {
     try {
         const staff = await prisma.staffMember.findMany({
             where: { deletedAt: null },
@@ -221,7 +222,7 @@ router.get('/face-profiles', requireAuth, requireMinRole('ADMIN'), async (_req, 
 
 // DELETE /api/staff-attendance/face-profiles/:staffId — yuz profilini o'chirish
 
-router.delete('/face-profiles/:staffId', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.delete('/face-profiles/:staffId', requireAuth, requireMinRole('ADMIN'), requirePermission('staff_attendance'), async (req, res) => {
     try {
         await prisma.staffFaceProfile.deleteMany({ where: { staffId: req.params.staffId } });
         res.json({ message: 'Yuz profil o\'chirildi' });

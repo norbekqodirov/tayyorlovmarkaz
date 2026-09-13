@@ -17,6 +17,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { withAudit } from '../middleware/audit.js';
 import { createLeadFromIntake, LeadIntakeValidationError } from '../services/leadIntake.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
@@ -24,7 +25,7 @@ import { OPEN_STAGES } from '../constants/leads.js';
 
 const router = express.Router();
 
-router.use(requireAuth, requireMinRole('MANAGER'));
+router.use(requireAuth, requireMinRole('MANAGER'), requirePermission('leads'));
 
 const LEAD_SELECT = {
     id: true, name: true, phone: true, email: true, stage: true, source: true,

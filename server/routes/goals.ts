@@ -13,9 +13,10 @@ import express from 'express';
 import prisma from '../db.js';
 import { monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
-router.use(requireAuth, requireMinRole('MANAGER'));
+router.use(requireAuth, requireMinRole('MANAGER'), requirePermission('goals'));
 
 router.get('/', async (req, res) => {
     const { year, month, type } = req.query;

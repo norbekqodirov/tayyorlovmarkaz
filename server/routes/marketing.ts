@@ -10,11 +10,12 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { tashkentMidnightInstant, todayDateStr } from '../utils/timezone.js';
 import { OPEN_STAGES } from '../constants/leads.js';
 
 const router = express.Router();
-router.use(requireAuth, requireMinRole('MANAGER'));
+router.use(requireAuth, requireMinRole('MANAGER'), requirePermission('marketing'));
 
 function monthAgoStr(n: number): string {
     const d = new Date();

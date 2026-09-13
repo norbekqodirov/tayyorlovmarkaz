@@ -1,11 +1,12 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
 // GET /api/curriculum/:courseId — kurs darajalari va modullari
-router.get('/:courseId', requireAuth, async (req, res) => {
+router.get('/:courseId', requireAuth, requirePermission('courses'), async (req, res) => {
     try {
         const levels = await prisma.courseLevel.findMany({
             where: { courseId: req.params.courseId },
@@ -21,7 +22,7 @@ router.get('/:courseId', requireAuth, async (req, res) => {
 });
 
 // POST /api/curriculum/:courseId/levels — daraja yaratish
-router.post('/:courseId/levels', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/:courseId/levels', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { name, description, order } = req.body;
         if (!name) return res.status(400).json({ message: 'name kerak' });
@@ -52,7 +53,7 @@ router.post('/:courseId/levels', requireAuth, requireMinRole('MANAGER'), async (
 });
 
 // PATCH /api/curriculum/levels/:levelId
-router.patch('/levels/:levelId', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.patch('/levels/:levelId', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { name, description, order } = req.body;
         const level = await prisma.courseLevel.update({
@@ -71,7 +72,7 @@ router.patch('/levels/:levelId', requireAuth, requireMinRole('MANAGER'), async (
 });
 
 // DELETE /api/curriculum/levels/:levelId
-router.delete('/levels/:levelId', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.delete('/levels/:levelId', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         await prisma.courseLevel.delete({ where: { id: req.params.levelId } });
         res.json({ message: "O'chirildi" });
@@ -81,7 +82,7 @@ router.delete('/levels/:levelId', requireAuth, requireMinRole('MANAGER'), async 
 });
 
 // POST /api/curriculum/levels/:levelId/modules — modul yaratish
-router.post('/levels/:levelId/modules', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/levels/:levelId/modules', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { title, description, materials, duration, order } = req.body;
         if (!title) return res.status(400).json({ message: 'title kerak' });
@@ -112,7 +113,7 @@ router.post('/levels/:levelId/modules', requireAuth, requireMinRole('MANAGER'), 
 });
 
 // PATCH /api/curriculum/modules/:moduleId
-router.patch('/modules/:moduleId', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.patch('/modules/:moduleId', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { title, description, materials, duration, order } = req.body;
         const module = await prisma.courseModule.update({
@@ -132,7 +133,7 @@ router.patch('/modules/:moduleId', requireAuth, requireMinRole('MANAGER'), async
 });
 
 // DELETE /api/curriculum/modules/:moduleId
-router.delete('/modules/:moduleId', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.delete('/modules/:moduleId', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         await prisma.courseModule.delete({ where: { id: req.params.moduleId } });
         res.json({ message: "O'chirildi" });
@@ -142,7 +143,7 @@ router.delete('/modules/:moduleId', requireAuth, requireMinRole('MANAGER'), asyn
 });
 
 // POST /api/curriculum/:courseId/clone — kursni nusxalash
-router.post('/:courseId/clone', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/:courseId/clone', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { newName } = req.body;
 
@@ -206,7 +207,7 @@ router.post('/:courseId/clone', requireAuth, requireMinRole('MANAGER'), async (r
 });
 
 // POST /api/curriculum/levels/reorder — darajalar tartibini saqlash
-router.post('/levels/reorder', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/levels/reorder', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { items } = req.body; // [{id, order}]
         await Promise.all(
@@ -221,7 +222,7 @@ router.post('/levels/reorder', requireAuth, requireMinRole('MANAGER'), async (re
 });
 
 // POST /api/curriculum/modules/reorder — modullar tartibini saqlash
-router.post('/modules/reorder', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/modules/reorder', requireAuth, requireMinRole('MANAGER'), requirePermission('courses'), async (req, res) => {
     try {
         const { items } = req.body; // [{id, order}]
         await Promise.all(

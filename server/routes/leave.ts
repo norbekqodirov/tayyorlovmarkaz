@@ -1,11 +1,12 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
 // GET /api/leave — barcha ta'til so'rovlari
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requirePermission('leave_requests'), async (req, res) => {
     try {
         const { staffId, status } = req.query;
         const where: any = {};
@@ -26,7 +27,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // POST /api/leave — yangi so'rov
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requirePermission('leave_requests'), async (req, res) => {
     try {
         const { staffId, type, startDate, endDate, reason } = req.body;
         if (!staffId || !type || !startDate || !endDate) {
@@ -44,7 +45,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/leave/:id/approve — tasdiqlash
-router.patch('/:id/approve', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.patch('/:id/approve', requireAuth, requireMinRole('ADMIN'), requirePermission('leave_requests'), async (req, res) => {
     try {
         const { notes } = req.body;
         const approvedBy = (req as any).user?.name || 'Admin';
@@ -65,7 +66,7 @@ router.patch('/:id/approve', requireAuth, requireMinRole('ADMIN'), async (req, r
 });
 
 // PATCH /api/leave/:id/reject — rad etish
-router.patch('/:id/reject', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.patch('/:id/reject', requireAuth, requireMinRole('ADMIN'), requirePermission('leave_requests'), async (req, res) => {
     try {
         const { notes } = req.body;
         const approvedBy = (req as any).user?.name || 'Admin';
@@ -85,7 +86,7 @@ router.patch('/:id/reject', requireAuth, requireMinRole('ADMIN'), async (req, re
 });
 
 // DELETE /api/leave/:id
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requirePermission('leave_requests'), async (req, res) => {
     try {
         await prisma.leaveRequest.delete({ where: { id: req.params.id } });
         res.json({ message: "O'chirildi" });

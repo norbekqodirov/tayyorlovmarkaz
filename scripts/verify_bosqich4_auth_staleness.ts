@@ -26,8 +26,13 @@ function check(label: string, cond: boolean, extra?: any) {
 }
 
 async function main() {
+    // leads.ts endi requirePermission('leads') ham talab qiladi — test
+    // foydalanuvchisi haqiqiy MANAGER Role'ga (roleId) bog'lanishi shart.
+    const managerRole = await prisma.role.findUnique({ where: { name: 'MANAGER' } });
+    if (!managerRole) throw new Error('MANAGER roli topilmadi');
+
     const u1 = await prisma.user.create({
-        data: { name: 'Test Staleness User', phone: '+998900000501', password: 'x', role: 'MANAGER', isActive: true },
+        data: { name: 'Test Staleness User', phone: '+998900000501', password: 'x', role: 'MANAGER', roleId: managerRole.id, isActive: true },
     });
     // JWT payload TEACHER deb "yolg'on" ko'rsatadi (real DB'da MANAGER) —
     // requireAuth endi bazadan haqiqiy rolni olishi va MANAGER darajasiga

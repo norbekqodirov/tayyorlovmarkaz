@@ -1,12 +1,13 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
 // GET /api/discounts
-router.get('/', requireAuth, async (_req, res) => {
+router.get('/', requireAuth, requirePermission('discounts'), async (_req, res) => {
     try {
         const discounts = await prisma.discount.findMany({
             orderBy: { createdAt: 'desc' },
@@ -18,7 +19,7 @@ router.get('/', requireAuth, async (_req, res) => {
 });
 
 // GET /api/discounts/:id
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireAuth, requirePermission('discounts'), async (req, res) => {
     try {
         const d = await prisma.discount.findUnique({ where: { id: req.params.id } });
         if (!d) return res.status(404).json({ message: 'Topilmadi' });
@@ -29,7 +30,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // POST /api/discounts
-router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('discounts'), async (req, res) => {
     try {
         const { code, name, type, value, maxUses, validFrom, validTo, courseId, groupId, minAmount, isActive } = req.body;
         if (!code || !type || !value) return res.status(400).json({ message: 'code, type, value kerak' });
@@ -57,7 +58,7 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
 });
 
 // POST /api/discounts/validate — chegirmani tekshirish
-router.post('/validate', requireAuth, async (req, res) => {
+router.post('/validate', requireAuth, requirePermission('discounts'), async (req, res) => {
     try {
         const { code, amount } = req.body;
         if (!code) return res.status(400).json({ message: 'code kerak' });
@@ -102,7 +103,7 @@ router.post('/validate', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/discounts/:id
-router.patch('/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.patch('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('discounts'), async (req, res) => {
     try {
         const { name, type, value, maxUses, validFrom, validTo, isActive, minAmount } = req.body;
         const d = await prisma.discount.update({
@@ -125,7 +126,7 @@ router.patch('/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) =>
 });
 
 // DELETE /api/discounts/:id
-router.delete('/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('discounts'), async (req, res) => {
     try {
         await prisma.discount.delete({ where: { id: req.params.id } });
         res.json({ message: "O'chirildi" });

@@ -35,11 +35,19 @@ function check(label: string, cond: boolean, extra?: any) {
 }
 
 async function main() {
+    // RBAC Bosqich 4: leads.ts endi requirePermission('leads') ham talab
+    // qiladi (authorize.ts) — bu haqiqiy foydalanuvchida Role.roleId FK
+    // orqali hisoblanadi (User.role string emas). Test fixture'lari ham
+    // haqiqiy MANAGER Role'ga bog'lanishi shart, aks holda samarali
+    // ruxsatlar bo'sh chiqib, hamma narsa noto'g'ri 403 qaytaradi.
+    const managerRole = await prisma.role.findUnique({ where: { name: 'MANAGER' } });
+    if (!managerRole) throw new Error('MANAGER roli topilmadi — Bosqich 1 migratsiyasi ishga tushirilganmi?');
+
     const managerA = await prisma.user.create({
-        data: { name: 'Test Manager A', phone: '+998900000201', password: 'x', role: 'MANAGER' },
+        data: { name: 'Test Manager A', phone: '+998900000201', password: 'x', role: 'MANAGER', roleId: managerRole.id },
     });
     const managerB = await prisma.user.create({
-        data: { name: 'Test Manager B', phone: '+998900000202', password: 'x', role: 'MANAGER' },
+        data: { name: 'Test Manager B', phone: '+998900000202', password: 'x', role: 'MANAGER', roleId: managerRole.id },
     });
     const admin = await prisma.user.findFirst({ where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } } });
     if (!admin) throw new Error('ADMIN/SUPER_ADMIN topilmadi — test to\'xtatildi');

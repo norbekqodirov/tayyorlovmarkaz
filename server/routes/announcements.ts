@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/announcements/:id
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const a = await prisma.announcement.findFirst({ where: { id: req.params.id, deletedAt: null } });
         if (!a) return res.status(404).json({ message: 'Topilmadi' });
@@ -33,7 +34,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // POST /api/announcements
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { title, content, type, audience, priority, pinned, expiresAt } = req.body;
         if (!title || !content) return res.status(400).json({ message: 'title va content kerak' });
@@ -56,7 +57,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/announcements/:id
-router.patch('/:id', requireAuth, async (req, res) => {
+router.patch('/:id', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { title, content, type, audience, priority, pinned, expiresAt } = req.body;
         const a = await prisma.announcement.update({
@@ -78,7 +79,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 });
 
 // DELETE /api/announcements/:id — soft delete
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         await prisma.announcement.update({
             where: { id: req.params.id },

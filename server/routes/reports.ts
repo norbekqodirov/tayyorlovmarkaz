@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { JOBS } from '../services/scheduler.js';
 import { todayDateStr, monthRangeStr } from '../utils/timezone.js';
 
@@ -12,7 +13,7 @@ const router = express.Router();
 // edi, /api/finance'ning o'zi talab qiladigan MANAGER+ darajasini
 // chetlab o'tib. Frontend (CrmReports.tsx) allaqachon MANAGER+ talab
 // qiladi (App.tsx: requiredPermission="reports", allowedRoles=['ADMIN','MANAGER']).
-router.get('/summary', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/summary', requireAuth, requireMinRole('MANAGER'), requirePermission('reports'), async (req, res) => {
     try {
         const { from, to } = req.query;
         const fromDate = from ? String(from) : monthRangeStr(0).start;
@@ -87,7 +88,7 @@ router.get('/summary', requireAuth, requireMinRole('MANAGER'), async (req, res) 
 });
 
 // GET /api/reports/financial — moliyaviy hisobot
-router.get('/financial', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/financial', requireAuth, requireMinRole('MANAGER'), requirePermission('reports'), async (req, res) => {
     try {
         const { from, to } = req.query;
         const fromDate = from ? String(from) : `${todayDateStr().slice(0, 4)}-01-01`;
@@ -132,7 +133,7 @@ router.get('/financial', requireAuth, requireMinRole('MANAGER'), async (req, res
 });
 
 // GET /api/reports/attendance — davomat hisoboti
-router.get('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/attendance', requireAuth, requireMinRole('MANAGER'), requirePermission('reports'), async (req, res) => {
     try {
         const { groupId, from, to } = req.query;
         const fromDate = from ? String(from) : monthRangeStr(0).start;
@@ -191,7 +192,7 @@ router.get('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, re
 });
 
 // GET /api/reports/students — o'quvchilar hisoboti
-router.get('/students', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/students', requireAuth, requireMinRole('MANAGER'), requirePermission('reports'), async (req, res) => {
     try {
         const students = await prisma.student.findMany({
             include: {
@@ -245,7 +246,7 @@ router.get('/students', requireAuth, requireMinRole('MANAGER'), async (req, res)
 });
 
 // GET /api/reports/teachers — o'qituvchi KPI hisoboti
-router.get('/teachers', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/teachers', requireAuth, requireMinRole('MANAGER'), requirePermission('reports'), async (req, res) => {
     try {
         const { from, to } = req.query;
         const fromDate = from ? String(from) : monthRangeStr(0).start;
@@ -298,7 +299,7 @@ router.get('/teachers', requireAuth, requireMinRole('MANAGER'), async (req, res)
 // GET /api/reports/executive — Investor/Direktor hisoboti (CrmExecutiveReport.tsx
 // shu endpointga so'rov yuborardi, lekin u hech qachon mavjud bo'lmagan — sahifa
 // 2026-09-07'gacha butunlay ishlamas edi, Codex audit paytida aniqladi).
-router.get('/executive', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
+router.get('/executive', requireAuth, requireMinRole('ADMIN'), requirePermission('reports'), async (_req, res) => {
     try {
         const now = new Date();
         const currentMonth = now.getMonth(); // 0-indeksli
@@ -353,7 +354,7 @@ router.get('/executive', requireAuth, requireMinRole('ADMIN'), async (_req, res)
 });
 
 // GET /api/reports/workflows — workflow'lar tarixi
-router.get('/workflows', requireAuth, async (req, res) => {
+router.get('/workflows', requireAuth, requirePermission('reports'), async (req, res) => {
     try {
         const workflows = await prisma.workflow.findMany({
             include: {
@@ -372,7 +373,7 @@ router.get('/workflows', requireAuth, async (req, res) => {
 });
 
 // POST /api/reports/workflows/:trigger/run — Manual ishga tushirish
-router.post('/workflows/:trigger/run', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.post('/workflows/:trigger/run', requireAuth, requireMinRole('ADMIN'), requirePermission('reports'), async (req, res) => {
     try {
         const { trigger } = req.params;
         const job = JOBS[trigger];
@@ -388,7 +389,7 @@ router.post('/workflows/:trigger/run', requireAuth, requireMinRole('ADMIN'), asy
 });
 
 // PUT /api/reports/workflows/:id — Workflow toggle
-router.put('/workflows/:id', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
+router.put('/workflows/:id', requireAuth, requireMinRole('ADMIN'), requirePermission('reports'), async (req, res) => {
     try {
         const { isActive } = req.body;
         const workflow = await prisma.workflow.update({
