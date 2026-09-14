@@ -9,7 +9,10 @@ import { todayDateStr } from '../utils/timezone.js';
 const router = express.Router();
 
 // GET /api/salary?month=YYYY-MM
-router.get('/', requireAuth, async (req, res) => {
+// SEC-04 tuzatish: ilgari faqat requireAuth bor edi — istalgan login qilgan
+// TEACHER butun markazdagi HAMMA xodimning oyligini (asosiy/bonus/total)
+// ko'ra olardi. Maosh ma'lumoti HR-maxfiy, MANAGER+ talab qilinadi.
+router.get('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
         const salaries = await prisma.salary.findMany({
@@ -24,7 +27,8 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // GET /api/salary/staff/:staffId  — staff's full salary history
-router.get('/staff/:staffId', requireAuth, async (req, res) => {
+// SEC-04 tuzatish: xuddi shu sabab bilan MANAGER+.
+router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const salaries = await prisma.salary.findMany({
             where: { staffId: req.params.staffId },

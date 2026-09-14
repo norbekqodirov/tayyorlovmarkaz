@@ -11,8 +11,14 @@ import { withAudit } from '../middleware/audit.js';
 const router = express.Router();
 
 // GET /api/students/:id — full profile with relations
+// SEC-04 tuzatish: ilgari faqat requireAuth bor edi — HAR QANDAY login
+// qilgan TEACHER istalgan o'quvchining to'liq profilini (to'lovlar,
+// invoice'lar, davomat tarixi jumladan) ko'ra olardi, o'ziga tegishli
+// guruhdan qat'i nazar. Endi TEACHER faqat o'z guruhidagi o'quvchini
+// ko'ra oladi; MANAGER+ cheklovsiz (mavjud xatti-harakat saqlanadi).
 router.get('/:id', requireAuth, async (req, res) => {
     try {
+        const requester = (req as any).user;
         const student = await prisma.student.findUnique({
             where: { id: req.params.id },
             include: {
@@ -23,6 +29,7 @@ router.get('/:id', requireAuth, async (req, res) => {
                                 id: true,
                                 name: true,
                                 status: true,
+                                teacherId: true,
                                 course: { select: { id: true, name: true } },
                             },
                         },
@@ -36,6 +43,12 @@ router.get('/:id', requireAuth, async (req, res) => {
         });
 
         if (!student) return res.status(404).json({ error: 'Talaba topilmadi' });
+
+        if (requester.role === 'TEACHER') {
+            const owns = student.enrollments.some((e: any) => e.group?.teacherId === requester.id);
+            if (!owns) return res.status(403).json({ error: "Bu o'quvchiga tegishli emassiz" });
+        }
+
         res.json(student);
     } catch (err: any) {
         res.status(500).json({ error: err.message });

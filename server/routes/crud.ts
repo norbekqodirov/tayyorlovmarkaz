@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../db.js';
-import { requireAuth, requireRole, ROLE_LEVEL } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { withAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
 
@@ -421,7 +421,14 @@ function authForCollection(req: express.Request, res: express.Response, next: ex
 // bo'lsa, quyidagi maxsus handler'lar HECH QACHON chaqirilmaydi (2026-09-07'da
 // aniqlangan va tasdiqlangan real bug — POST /api/enrollments 200 qaytarardi,
 // lekin haqiqiy Enrollment o'rniga GenericDocument yozardi).
-router.post('/enrollments', requireAuth, async (req, res) => {
+// SEC-04 tuzatish: uchala /enrollments* route ilgari faqat `requireAuth`
+// bilan ochiq edi — generic /:collection middleware'ini chetlab o'tgani
+// uchun COLLECTION_WRITE_LEVEL.enrollments=2 (MANAGER+) HECH QACHON
+// tekshirilmasdi. Har qanday login qilgan TEACHER istalgan o'quvchini
+// istalgan guruhga qo'sha/chiqara olardi — frontend esa (CrmGroupDetail.tsx
+// canManage) bu tugmalarni allaqachon faqat MANAGER+'ga ko'rsatadi, ya'ni
+// bu faqat backend-tomon yopiq bo'lmagan ruxsat edi.
+router.post('/enrollments', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     const { studentId, groupId } = req.body;
     if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
     try {
@@ -436,8 +443,14 @@ router.post('/enrollments', requireAuth, async (req, res) => {
 });
 
 // ─── Special: Get enrollments for a group ─────────────────────────────────────
+// SEC-04 tuzatish: TEACHER endi faqat O'Z guruhining a'zolar ro'yxatini
+// ko'ra oladi — ilgari guruhga tegishlilik umuman tekshirilmasdi.
 router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
     try {
+        const requester = (req as any).user;
+        if (requester.role === 'TEACHER' && !(await teacherOwnsGroup(req.params.groupId, requester.id))) {
+            return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
+        }
         const enrollments = await prisma.enrollment.findMany({
             where: { groupId: req.params.groupId },
             include: { student: true },
@@ -449,7 +462,7 @@ router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
 });
 
 // ─── Special: Remove student from group ───────────────────────────────────────
-router.delete('/enrollments/remove', requireAuth, async (req, res) => {
+router.delete('/enrollments/remove', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     const { studentId, groupId } = req.body;
     try {
         await prisma.enrollment.delete({ where: { studentId_groupId: { studentId, groupId } } });

@@ -1,6 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { todayDateStr, monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const router = express.Router();
@@ -368,7 +368,10 @@ router.get('/reports/group-profitability', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/reports/salary-sheet?month=&year=
-router.get('/reports/salary-sheet', requireAuth, async (req, res) => {
+// SEC-04 tuzatish: ilgari faqat requireAuth bor edi — istalgan login qilgan
+// TEACHER butun xodimlar/o'qituvchilar ro'yxatidagi asosiy maoshlarni
+// ko'ra olardi. Maosh ma'lumoti HR-maxfiy, MANAGER+ talab qilinadi.
+router.get('/reports/salary-sheet', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const todayParts = todayDateStr().split('-');
         const year = Number(req.query.year) || Number(todayParts[0]);
