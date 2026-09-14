@@ -6,7 +6,6 @@
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -26,6 +25,7 @@ import {
 } from '../../../utils/grading';
 import { EmptyState, ErrorState } from '../../../components/States';
 import { SkeletonStatCard } from '../../../components/Skeleton';
+import { Tabs, TabsList, Tab, TabPanel } from '../../../components/ui/Tabs';
 
 function LoadingState({ label }: { label?: string }) {
   return (
@@ -282,43 +282,25 @@ export default function CrmStudentDetail() {
       </div>
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-1 flex overflow-x-auto scrollbar-hide gap-1 shadow-sm">
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-white/[0.04]'
-              }`}
-            >
-              <Icon size={13} strokeWidth={2.5} />
+      <Tabs value={activeTab} onChange={setActiveTab}>
+        <TabsList>
+          {TABS.map(tab => (
+            <Tab key={tab.id} value={tab.id} icon={<tab.icon size={13} strokeWidth={2.5} />}>
               {tab.label}
-            </button>
-          );
-        })}
-      </div>
+            </Tab>
+          ))}
+        </TabsList>
 
-      {/* ── Tab Content ───────────────────────────────────────────────────── */}
-      <motion.div
-        key={activeTab}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
-      >
-        {activeTab === 'overview'     && <OverviewTab student={student} attendance={data.attendance} analytics={analytics} />}
-        {activeTab === 'grades'       && <GradesTab grades={data.grades} analytics={analytics} />}
-        {activeTab === 'attendance'   && <AttendanceTab attendance={data.attendance} trend={data.trend} />}
-        {activeTab === 'statistics'   && <StatisticsTab data={data} analytics={analytics} />}
-        {activeTab === 'analytics'    && <AnalyticsTab data={data} analytics={analytics} />}
-        {activeTab === 'payments'     && <PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} />}
-        {activeTab === 'tests'        && <TestsTab studentId={id!} />}
-        {activeTab === 'certificates' && <CertificatesTab certificates={data.certificates} />}
-      </motion.div>
+        {/* ── Tab Content ─────────────────────────────────────────────────── */}
+        <TabPanel value="overview" className="mt-5"><OverviewTab student={student} attendance={data.attendance} analytics={analytics} /></TabPanel>
+        <TabPanel value="grades" className="mt-5"><GradesTab grades={data.grades} analytics={analytics} /></TabPanel>
+        <TabPanel value="attendance" className="mt-5"><AttendanceTab attendance={data.attendance} trend={data.trend} /></TabPanel>
+        <TabPanel value="statistics" className="mt-5"><StatisticsTab data={data} analytics={analytics} /></TabPanel>
+        <TabPanel value="analytics" className="mt-5"><AnalyticsTab data={data} analytics={analytics} /></TabPanel>
+        <TabPanel value="payments" className="mt-5"><PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} /></TabPanel>
+        <TabPanel value="tests" className="mt-5"><TestsTab studentId={id!} /></TabPanel>
+        <TabPanel value="certificates" className="mt-5"><CertificatesTab certificates={data.certificates} /></TabPanel>
+      </Tabs>
     </div>
   );
 }

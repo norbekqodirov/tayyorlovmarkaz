@@ -9,6 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { format } from 'date-fns';
 import { Button } from '../../../components/ui/Button';
+import { Tabs, TabsList, Tab } from '../../../components/ui/Tabs';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 
 import { useFirestore } from '../../../hooks/useFirestore';
@@ -306,21 +307,11 @@ export default function CrmGroupDetail() {
       {/* Right Content — Tabs */}
       <div className="flex-1 min-w-0 h-[75dvh] xl:h-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] flex flex-col shadow-sm overflow-hidden">
         {/* Tab bar */}
-        <div className="flex border-b border-zinc-100 dark:border-zinc-800 overflow-x-auto hide-scrollbar">
-          {TABS.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-6 py-4 text-xs font-black uppercase tracking-widest whitespace-nowrap border-b-2 transition-all ${
-                activeTab === tab
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-zinc-400 hover:text-slate-800 dark:hover:text-white'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+        <Tabs value={activeTab} onChange={setActiveTab}>
+          <TabsList>
+            {TABS.map(tab => <Tab key={tab} value={tab}>{tab}</Tab>)}
+          </TabsList>
+        </Tabs>
 
         {/* Tab content */}
         <div className="flex-1 min-h-0 p-3 sm:p-6 overflow-hidden flex flex-col">

@@ -10,6 +10,7 @@ import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { ErrorState } from '../../../components/States';
 import { Badge } from '../../../components/ui/Badge';
+import { Tabs, TabsList, Tab } from '../../../components/ui/Tabs';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { quizStatusBadge } from '../../../utils/statusBadge';
 
@@ -258,18 +259,13 @@ export default function CrmQuiz() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit overflow-x-auto">
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-              activeTab === tab.id
-                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-            }`}>
-            <tab.icon className="w-4 h-4" />{tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={activeTab} onChange={(v) => setActiveTab(v as typeof activeTab)}>
+        <TabsList>
+          {tabs.map(tab => (
+            <Tab key={tab.id} value={tab.id} icon={<tab.icon className="w-4 h-4" />}>{tab.label}</Tab>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
