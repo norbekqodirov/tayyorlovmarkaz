@@ -80,7 +80,7 @@ app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (server-to-server, mobile apps)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.some(o => origin.startsWith(o))) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
         callback(new Error('Not allowed by CORS'));
     },
     credentials: true
@@ -209,6 +209,17 @@ if (IS_PROD) {
         console.warn('[Server] WARNING: dist/ folder not found. Run `npm run build` to create it.');
     }
 }
+
+// Global Error Handler — productionda ichki xato tafsilotlarini yashirish
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('[Unhandled Server Error]:', err);
+    if (res.headersSent) return;
+    const status = err.status || err.statusCode || 500;
+    const message = IS_PROD
+        ? 'Ichki server xatoligi yuz berdi'
+        : (err.message || 'Ichki server xatosi');
+    res.status(status).json({ error: message, message });
+});
 
 app.listen(PORT, () => {
     console.log(`[Server]: Running in ${IS_PROD ? 'PRODUCTION' : 'development'} mode`);
