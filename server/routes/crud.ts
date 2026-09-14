@@ -630,6 +630,20 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
             }
         }
 
+        // EDU-01 tuzatish: generic yozish yo'lida ham (studentAttendance.ts'ning
+        // maxsus /api/attendance-records'idagi kabi) studentId aynan shu
+        // guruhga a'zo (Enrollment) ekani tekshiriladi — aks holda guruhga
+        // tegishli bo'lmagan o'quvchi uchun davomat yozuvi yaratilib,
+        // billing/hisobotlarni buzishi mumkin edi.
+        if ((req as any).modelName === 'attendanceRecord' && req.body.studentId && req.body.groupId) {
+            const enrolled = await prisma.enrollment.findUnique({
+                where: { studentId_groupId: { studentId: req.body.studentId, groupId: req.body.groupId } },
+            });
+            if (!enrolled) {
+                return res.status(400).json({ message: "Bu o'quvchi ko'rsatilgan guruhga a'zo emas" });
+            }
+        }
+
         let finalData: any;
 
         if ((req as any).useFallback) {

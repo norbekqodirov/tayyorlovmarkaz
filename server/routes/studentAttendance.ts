@@ -92,6 +92,22 @@ router.post('/', async (req, res) => {
             return res.status(403).json({ message: 'Bu guruhga ruxsatingiz yo\'q' });
         }
 
+        // EDU-01 tuzatish: guruhga ruxsat tekshirilardi, lekin har bir
+        // studentId aynan SHU guruhga a'zo (Enrollment) ekani tekshirilmasdi
+        // — noto'g'ri/eskirgan studentId yuborilsa, boshqa guruhdagi (yoki
+        // umuman guruhsiz) o'quvchi uchun davomat yozuvi yaratilishi mumkin
+        // edi, bu keyinchalik billing/hisobotlarni buzardi.
+        const enrolledIds = new Set(
+            (await prisma.enrollment.findMany({
+                where: { groupId, studentId: { in: records.map(r => r.studentId) } },
+                select: { studentId: true },
+            })).map(e => e.studentId),
+        );
+        const notEnrolled = records.filter(r => !enrolledIds.has(r.studentId));
+        if (notEnrolled.length > 0) {
+            return res.status(400).json({ message: "Quyidagi o'quvchi(lar) bu guruhga a'zo emas" });
+        }
+
         const results = await Promise.all(
             records.map(r =>
                 prisma.attendanceRecord.upsert({
