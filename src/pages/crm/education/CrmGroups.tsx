@@ -17,8 +17,10 @@ import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { EmptyState, ErrorState } from '../../../components/States';
+import { Badge } from '../../../components/ui/Badge';
 import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { groupStatusBadge } from '../../../utils/statusBadge';
 
 // Prisma `Group` modeliga mos keladigan shakl (server/routes/crud.ts RELATION_INCLUDES
 // orqali course/teacher/_count qo'shib qaytaradi). `room`/`days`/`time` Group'da YO'Q —
@@ -400,7 +402,7 @@ export default function CrmGroups() {
       </div>
 
       {/* Search and Filter */}
-      <div className="bg-white dark:bg-[#111118] p-3 rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm flex flex-col md:flex-row gap-3">
+      <div className="bg-white dark:bg-zinc-900 p-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row gap-3">
         <div className="flex-1">
           <Input
             leftIcon={<Search size={18} />}
@@ -462,13 +464,7 @@ export default function CrmGroups() {
                       {group.name}
                     </Link>
                   </h2>
-                  <span className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                    group.status === 'active' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
-                      : group.status === 'paused' ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400'
-                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                  }`}>
-                    {group.status === 'active' ? 'Faol' : group.status === 'paused' ? 'Muzlatilgan' : group.status === 'completed' ? 'Tugallangan' : 'Noma\'lum'}
-                  </span>
+                  {(() => { const b = groupStatusBadge(group.status); return <Badge color={b.color}>{b.label}</Badge>; })()}
                 </div>
                 <div className="space-y-3 text-sm text-slate-600 dark:text-zinc-400">
                   <p className="flex items-center gap-2"><BookOpen size={16} className="shrink-0" /><span className="break-words min-w-0">{group.course?.name || 'Kurs belgilanmagan'}</span></p>

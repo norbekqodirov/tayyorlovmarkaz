@@ -9,7 +9,9 @@ import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { ErrorState } from '../../../components/States';
+import { Badge } from '../../../components/ui/Badge';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { quizStatusBadge } from '../../../utils/statusBadge';
 
 interface QuizOption { id?: string; text: string; isCorrect: boolean; order?: number; }
 interface QuizQuestion {
@@ -224,13 +226,8 @@ export default function CrmQuiz() {
   };
 
   const statusBadge = (s: string) => {
-    const map: Record<string, string> = {
-      draft: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-      active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-      archived: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    };
-    const labels: Record<string, string> = { draft: 'Qoralama', active: 'Faol', archived: 'Arxiv' };
-    return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${map[s] || map.draft}`}>{labels[s] || s}</span>;
+    const b = quizStatusBadge(s);
+    return <Badge color={b.color} size="sm">{b.label}</Badge>;
   };
 
   const tabs = [

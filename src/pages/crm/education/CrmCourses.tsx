@@ -15,8 +15,10 @@ import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
+import { Badge } from '../../../components/ui/Badge';
 import ImageUpload from '../../../components/ImageUpload';
 import { exportToExcel } from '../../../utils/export';
+import { courseStatusBadge, courseCategoryBadge } from '../../../utils/statusBadge';
 import api from '../../../api/client';
 import { formatNumber } from '../../../utils/formatters';
 
@@ -51,15 +53,6 @@ const CATEGORIES = [
 
 const getCategoryStyle = (cat: string) =>
   CATEGORIES.find(c => c.label === cat) || CATEGORIES[CATEGORIES.length - 1];
-
-const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
-  'Faol': { label: 'Faol', cls: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' },
-  'Active': { label: 'Faol', cls: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' },
-  'Qoralama': { label: 'Qoralama', cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' },
-  'Draft': { label: 'Qoralama', cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' },
-  'Arxiv': { label: 'Arxiv', cls: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500' },
-  'Archived': { label: 'Arxiv', cls: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500' },
-};
 
 export default function CrmCourses() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
@@ -343,8 +336,9 @@ export default function CrmCourses() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCourses.map(course => {
             const catStyle = getCategoryStyle(course.category);
+            const catBadge = courseCategoryBadge(course.category);
             const studentCount = studentCountByCourse[course.name] || 0;
-            const statusInfo = STATUS_LABELS[course.status] || { label: course.status, cls: 'bg-zinc-100 text-zinc-500' };
+            const statusInfo = courseStatusBadge(course.status);
             return (
               <motion.div
                 key={course.id}
@@ -359,9 +353,7 @@ export default function CrmCourses() {
                     <img src={course.image} alt={course.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                     <div className="absolute bottom-3 left-3">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-sm ${catStyle.color}`}>
-                        {course.category}
-                      </span>
+                      <Badge color={catBadge.color} className="backdrop-blur-sm">{catBadge.label}</Badge>
                     </div>
                     <div className="absolute top-2 right-2 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       {canManage && <button onClick={() => openModal(course)} className="p-1.5 bg-white/90 rounded-lg text-zinc-600 hover:text-blue-600 transition-colors">
@@ -380,9 +372,7 @@ export default function CrmCourses() {
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex-1 min-w-0">
                       {!course.image && (
-                        <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-2 ${catStyle.color}`}>
-                          {course.category}
-                        </span>
+                        <div className="mb-2"><Badge color={catBadge.color}>{catBadge.label}</Badge></div>
                       )}
                       <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight line-clamp-1 group-hover:text-blue-600 transition-colors">{course.name}</h3>
                     </div>
@@ -429,9 +419,7 @@ export default function CrmCourses() {
                         <div className="text-base font-black text-blue-600">{formatMoney(course.price)}</div>
                       )}
                     </div>
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${statusInfo.cls}`}>
-                      {statusInfo.label}
-                    </span>
+                    <Badge color={statusInfo.color}>{statusInfo.label}</Badge>
                   </div>
                 </div>
               </motion.div>

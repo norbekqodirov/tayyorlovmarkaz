@@ -282,7 +282,7 @@ export default function CrmStudentDetail() {
       </div>
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-1 flex overflow-x-auto scrollbar-hide gap-1 shadow-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-1 flex overflow-x-auto scrollbar-hide gap-1 shadow-sm">
         {TABS.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -392,7 +392,7 @@ function GradesTab({ grades, analytics }: any) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* GPA Card */}
-      <div className="lg:col-span-1 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-6 shadow-sm">
+      <div className="lg:col-span-1 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 shadow-sm">
         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Umumiy Natija</p>
         <div className="flex items-end gap-4 mb-4">
           <div className={`text-6xl font-black ${analytics ? getGradeColor(analytics.letter) : ''}`}>
@@ -400,7 +400,7 @@ function GradesTab({ grades, analytics }: any) {
           </div>
           <div className="text-2xl font-black text-zinc-400 mb-2">{analytics?.avgGrade.toFixed(0)}%</div>
         </div>
-        <div className="grid grid-cols-2 gap-3 pt-4 border-t border-zinc-100 dark:border-white/[0.05]">
+        <div className="grid grid-cols-2 gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
           <div>
             <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">GPA (4.0)</p>
             <p className="text-2xl font-black text-slate-900 dark:text-white">{analytics?.gpa.toFixed(2)}</p>
@@ -413,7 +413,7 @@ function GradesTab({ grades, analytics }: any) {
       </div>
 
       {/* Distribution Chart */}
-      <div className="lg:col-span-2 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+      <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
         <p className="text-xs font-black text-slate-900 dark:text-white mb-3">Baholar Taqsimoti</p>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={distData}>
@@ -436,8 +436,8 @@ function GradesTab({ grades, analytics }: any) {
       </div>
 
       {/* Grades List */}
-      <div className="lg:col-span-3 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05]">
+      <div className="lg:col-span-3 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
           <p className="text-xs font-black text-slate-900 dark:text-white">Baholar Ro'yxati</p>
         </div>
         <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
@@ -475,7 +475,7 @@ function AttendanceTab({ attendance, trend }: any) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Big Number */}
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-6 flex flex-col items-center justify-center shadow-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-6 flex flex-col items-center justify-center shadow-sm">
         <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Davomat Foizi</p>
         <div className={`text-6xl font-black ${attendance.rate >= 80 ? 'text-emerald-500' : attendance.rate >= 60 ? 'text-amber-500' : 'text-rose-500'}`}>
           {attendance.rate}%
@@ -486,7 +486,7 @@ function AttendanceTab({ attendance, trend }: any) {
       </div>
 
       {/* Pie Chart */}
-      <div className="lg:col-span-2 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+      <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
         <p className="text-xs font-black text-slate-900 dark:text-white mb-3">Davomat Taqsimoti</p>
         <ResponsiveContainer width="100%" height={220}>
           <PieChart>
@@ -507,7 +507,7 @@ function AttendanceTab({ attendance, trend }: any) {
       </div>
 
       {/* Trend Chart */}
-      <div className="lg:col-span-3 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+      <div className="lg:col-span-3 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
         <p className="text-xs font-black text-slate-900 dark:text-white mb-3">Oxirgi 6 Oy Trendi</p>
         <ResponsiveContainer width="100%" height={240}>
           <AreaChart data={trend}>
@@ -550,7 +550,7 @@ function StatisticsTab({ data, analytics }: any) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* Radar Chart */}
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
         <p className="text-xs font-black text-slate-900 dark:text-white mb-3">Umumiy Profil</p>
         <ResponsiveContainer width="100%" height={280}>
           <RadarChart data={radarData}>
@@ -563,7 +563,7 @@ function StatisticsTab({ data, analytics }: any) {
       </div>
 
       {/* Performance Trends */}
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
         <p className="text-xs font-black text-slate-900 dark:text-white mb-3">Baho va Davomat Trendi</p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={data.trend}>
@@ -608,7 +608,7 @@ function AnalyticsTab({ data, analytics }: any) {
   return (
     <div className="space-y-4">
       {/* Performance over time */}
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
         <p className="text-xs font-black text-slate-900 dark:text-white mb-3">Davomiy O'sish Tahlili</p>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={data.trend}>
@@ -671,8 +671,8 @@ function PaymentsTab({ payments, balance, studentId }: any) {
   return (
     <div className="space-y-4">
       {monthlyDue?.byGroup?.length > 0 && (
-        <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05] flex items-center justify-between">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <p className="text-xs font-black text-slate-900 dark:text-white">Bu oy uchun hisoblangan to'lov ({monthlyDue.month}) — davomat asosida</p>
             <p className="text-sm font-black text-blue-600">{formatMoney(monthlyDue.total)}</p>
           </div>
@@ -704,8 +704,8 @@ function PaymentsTab({ payments, balance, studentId }: any) {
             <StatCard label="Balans" value={formatMoney(balance || 0)} icon={Wallet} color={(balance || 0) < 0 ? 'rose' : 'green'} />
             <StatCard label="Tranzaksiyalar" value={payments.length} icon={FileText} color="blue" />
           </div>
-          <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05]">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
               <p className="text-xs font-black text-slate-900 dark:text-white">To'lovlar Tarixi</p>
             </div>
             <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
@@ -744,8 +744,8 @@ function TestsTab({ studentId }: { studentId: string }) {
   if (!submissions.length) return <EmptyState icon={<FileText size={24} />} title="Test natijalari yo'q" />;
 
   return (
-    <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b border-zinc-100 dark:border-white/[0.05]">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
         <p className="text-xs font-black text-slate-900 dark:text-white">Test Natijalari</p>
       </div>
       <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
@@ -803,7 +803,7 @@ function CertificatesTab({ certificates }: any) {
 
 function InfoCard({ title, icon: Icon, children }: any) {
   return (
-    <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-5 shadow-sm">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-5 shadow-sm">
       <div className="flex items-center gap-2 mb-4">
         <Icon size={14} className="text-blue-500" />
         <p className="text-xs font-black text-slate-900 dark:text-white">{title}</p>
@@ -832,7 +832,7 @@ function StatCard({ label, value, icon: Icon, color }: any) {
     green:   'bg-green-50 dark:bg-green-500/10 text-green-600',
   };
   return (
-    <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-4 flex items-center gap-3 shadow-sm">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-4 flex items-center gap-3 shadow-sm">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${colors[color] || colors.blue}`}>
         <Icon size={16} strokeWidth={2.2} />
       </div>

@@ -18,6 +18,8 @@ import { SkeletonTable } from '../../../components/Skeleton';
 import { EmptyState, ErrorState } from '../../../components/States';
 import { Input } from '../../../components/ui/Input';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
+import { Badge } from '../../../components/ui/Badge';
+import { studentStatusBadge, paymentStatusBadge } from '../../../utils/statusBadge';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
@@ -379,7 +381,7 @@ export default function CrmStudents() {
       </div>
 
       {/* Filters and Table */}
-      <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col gap-3">
           <div className="flex flex-col md:flex-row gap-3">
             <div className="relative flex-1">
@@ -515,15 +517,7 @@ export default function CrmStudents() {
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      student.paymentStatus === 'Tolov qilingan' 
-                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                        : student.paymentStatus === 'Qarzdorlik'
-                        ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
-                        : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
-                    }`}>
-                      {student.paymentStatus}
-                    </span>
+                    {(() => { const b = paymentStatusBadge(student.paymentStatus); return <Badge color={b.color}>{b.label}</Badge>; })()}
                   </td>
                   <td className="px-6 py-4">
                     <span className={`text-sm font-black ${student.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
@@ -531,17 +525,7 @@ export default function CrmStudents() {
                     </span>
                   </td>
                   <td className="px-4 py-4">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      student.status === 'Faol'
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                        : student.status === 'Muzlatilgan'
-                        ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
-                        : student.status === 'Bitiruvchi'
-                        ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                    }`}>
-                      {student.status}
-                    </span>
+                    {(() => { const b = studentStatusBadge(student.status); return <Badge color={b.color}>{b.label}</Badge>; })()}
                   </td>
                   <td className="px-4 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">

@@ -6,6 +6,7 @@ import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import { ErrorState } from '../../../components/States';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { Modal } from '../../../components/ui/Modal';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 export default function CrmCourseDetail() {
@@ -42,6 +43,9 @@ export default function CrmCourseDetail() {
     type: 'level',
     id: '',
   });
+
+  // Clone confirm dialog
+  const [cloneConfirmOpen, setCloneConfirmOpen] = useState(false);
 
   useEffect(() => { if (id) load(); }, [id]);
 
@@ -244,12 +248,16 @@ export default function CrmCourseDetail() {
   };
 
   // ── Clone ─────────────────────────────────────────────────────────────────
-  const cloneCourse = async () => {
+  const handleCloneClick = () => {
     if (!canManageCurriculum) {
       showToast("Sizda kursni nusxalash uchun ruxsat yo'q", 'error');
       return;
     }
-    if (!confirm("Kursni nusxalashni xohlaysizmi?")) return;
+    setCloneConfirmOpen(true);
+  };
+
+  const cloneCourse = async () => {
+    setCloneConfirmOpen(false);
     setCloning(true);
     try {
       const res = await api.post(`/curriculum/${id}/clone`);
@@ -302,6 +310,14 @@ export default function CrmCourseDetail() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, type: 'level', id: '' })}
       />
+      <ConfirmDialog
+        isOpen={cloneConfirmOpen}
+        title="Kursni nusxalash"
+        message="Kursni nusxalashni xohlaysizmi? Barcha darajalar va modullar yangi kursga ko'chiriladi."
+        confirmText="Ha, nusxalash"
+        onConfirm={cloneCourse}
+        onCancel={() => setCloneConfirmOpen(false)}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -330,7 +346,7 @@ export default function CrmCourseDetail() {
         {canManageCurriculum && (
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
-              onClick={cloneCourse}
+              onClick={handleCloneClick}
               disabled={cloning}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 transition-all disabled:opacity-50"
             >
@@ -463,90 +479,62 @@ export default function CrmCourseDetail() {
       )}
 
       {/* Level modal */}
-      <AnimatePresence>
-        {showLevelModal && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowLevelModal(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl w-full max-w-md">
-                <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
-                  <h2 className="font-black text-slate-900 dark:text-white">{editingLevel ? 'Darajani tahrirlash' : 'Yangi daraja'}</h2>
-                </div>
-                <div className="px-6 py-5 space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Daraja nomi *</label>
-                    <input value={levelForm.name} onChange={e => setLevelForm(p => ({ ...p, name: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Boshlang'ich daraja" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Tavsif</label>
-                    <textarea value={levelForm.description} onChange={e => setLevelForm(p => ({ ...p, description: e.target.value }))}
-                      rows={3}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      placeholder="Daraja haqida qisqacha..." />
-                  </div>
-                </div>
-                <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
-                  <button onClick={() => setShowLevelModal(false)} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bekor</button>
-                  <button onClick={saveLevel} disabled={savingLevel || !levelForm.name.trim()}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold">
-                    {savingLevel ? 'Saqlanmoqda...' : (editingLevel ? 'Saqlash' : "Qo'shish")}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <Modal isOpen={showLevelModal} onClose={() => setShowLevelModal(false)} title={editingLevel ? 'Darajani tahrirlash' : 'Yangi daraja'}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Daraja nomi *</label>
+            <input value={levelForm.name} onChange={e => setLevelForm(p => ({ ...p, name: e.target.value }))}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Boshlang'ich daraja" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Tavsif</label>
+            <textarea value={levelForm.description} onChange={e => setLevelForm(p => ({ ...p, description: e.target.value }))}
+              rows={3}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="Daraja haqida qisqacha..." />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setShowLevelModal(false)} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bekor</button>
+            <button onClick={saveLevel} disabled={savingLevel || !levelForm.name.trim()}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold">
+              {savingLevel ? 'Saqlanmoqda...' : (editingLevel ? 'Saqlash' : "Qo'shish")}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Module modal */}
-      <AnimatePresence>
-        {showModuleModal && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={() => setShowModuleModal(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl w-full max-w-md">
-                <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
-                  <h2 className="font-black text-slate-900 dark:text-white">{editingModule ? 'Modulni tahrirlash' : 'Yangi modul'}</h2>
-                </div>
-                <div className="px-6 py-5 space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Modul nomi *</label>
-                    <input value={moduleForm.title} onChange={e => setModuleForm(p => ({ ...p, title: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="1-dars: Kirish" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Tavsif</label>
-                    <textarea value={moduleForm.description} onChange={e => setModuleForm(p => ({ ...p, description: e.target.value }))}
-                      rows={2}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      placeholder="Modul haqida..." />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Davomiyligi (daqiqa)</label>
-                    <input type="number" value={moduleForm.duration} onChange={e => setModuleForm(p => ({ ...p, duration: e.target.value }))}
-                      className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="60" min="0" />
-                  </div>
-                </div>
-                <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
-                  <button onClick={() => setShowModuleModal(false)} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bekor</button>
-                  <button onClick={saveModule} disabled={savingModule || !moduleForm.title.trim()}
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold">
-                    {savingModule ? 'Saqlanmoqda...' : (editingModule ? 'Saqlash' : "Qo'shish")}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <Modal isOpen={showModuleModal} onClose={() => setShowModuleModal(false)} title={editingModule ? 'Modulni tahrirlash' : 'Yangi modul'}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Modul nomi *</label>
+            <input value={moduleForm.title} onChange={e => setModuleForm(p => ({ ...p, title: e.target.value }))}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="1-dars: Kirish" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Tavsif</label>
+            <textarea value={moduleForm.description} onChange={e => setModuleForm(p => ({ ...p, description: e.target.value }))}
+              rows={2}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              placeholder="Modul haqida..." />
+          </div>
+          <div>
+            <label className="block text-xs font-bold mb-1.5 text-zinc-700 dark:text-zinc-300">Davomiyligi (daqiqa)</label>
+            <input type="number" value={moduleForm.duration} onChange={e => setModuleForm(p => ({ ...p, duration: e.target.value }))}
+              className="w-full border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="60" min="0" />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setShowModuleModal(false)} className="px-4 py-2 rounded-xl text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">Bekor</button>
+            <button onClick={saveModule} disabled={savingModule || !moduleForm.title.trim()}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold">
+              {savingModule ? 'Saqlanmoqda...' : (editingModule ? 'Saqlash' : "Qo'shish")}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

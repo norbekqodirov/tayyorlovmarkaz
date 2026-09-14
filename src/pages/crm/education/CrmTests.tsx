@@ -11,9 +11,11 @@ import DataTable, { DataTableColumn } from '../../../components/ui/DataTable';
 import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
+import { Badge } from '../../../components/ui/Badge';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { ErrorState } from '../../../components/States';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { testStatusBadge } from '../../../utils/statusBadge';
 
 interface Test {
   id: string;
@@ -137,17 +139,8 @@ export default function CrmTests() {
       id: 'status',
       header: 'Holat',
       cell: (t) => {
-        const statusStyles: Record<string, string> = {
-          published: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
-          draft: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400',
-          closed: 'bg-zinc-100 dark:bg-zinc-500/15 text-zinc-700 dark:text-zinc-400',
-        };
-        const label = t.status === 'published' ? 'Faol' : t.status === 'draft' ? 'Qoralama' : 'Yopilgan';
-        return (
-          <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${statusStyles[t.status] || statusStyles.closed}`}>
-            {label}
-          </span>
-        );
+        const b = testStatusBadge(t.status);
+        return <Badge color={b.color}>{b.label}</Badge>;
       },
     },
     {
