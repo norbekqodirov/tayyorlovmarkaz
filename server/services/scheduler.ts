@@ -678,29 +678,40 @@ async function runStaffDailyBriefing() {
             5: 'Juma', 6: 'Shanba', 7: 'Yakshanba',
         };
 
+        // Haqiqiy dars jadvali GroupSchedule modelida ("schedule" kolleksiyasi,
+        // CrmGroups.tsx/CrmSchedule.tsx to'ldiradi) — Group.schedules (alohida
+        // "Schedule" modeli, dayOfWeek) hech qayerda yozilmaydi, shuning uchun bu
+        // funksiya haqiqiy guruh yaratilgan bo'lsa ham hech qachon xabar yubormas edi.
+        const allSchedules = await prisma.groupSchedule.findMany();
+        const todaySchedules = allSchedules.filter(s => {
+            try { return (JSON.parse(s.days || '[]') as number[]).includes(todayNum); }
+            catch { return false; }
+        });
+        const groupIds = [...new Set(todaySchedules.map(s => s.groupId))];
+
         // Get teachers with today's lessons
-        const teacherGroups = await prisma.group.findMany({
+        const teacherGroups = groupIds.length ? await prisma.group.findMany({
             where: {
+                id: { in: groupIds },
                 status: 'active', deletedAt: null,
                 teacherId: { not: null },
-                schedules: { some: { dayOfWeek: todayNum } },
             },
             include: {
                 teacher: { select: { id: true, name: true, telegramChatId: true } },
-                schedules: { where: { dayOfWeek: todayNum }, select: { startTime: true, endTime: true } },
             },
-        });
+        }) : [];
+        const groupMap = new Map(teacherGroups.map(g => [g.id, g]));
 
         // Group by teacher
         const byTeacher: Record<string, { chatId: string; name: string; groups: string[] }> = {};
-        for (const g of teacherGroups) {
-            if (!g.teacher?.telegramChatId) continue;
+        for (const s of todaySchedules) {
+            const g = groupMap.get(s.groupId);
+            if (!g?.teacher?.telegramChatId) continue;
             const tid = g.teacher.id;
             if (!byTeacher[tid]) {
                 byTeacher[tid] = { chatId: g.teacher.telegramChatId, name: g.teacher.name, groups: [] };
             }
-            const times = g.schedules.map(s => `${s.startTime}–${s.endTime}`).join(', ');
-            byTeacher[tid].groups.push(`• ${g.name} (${times})`);
+            byTeacher[tid].groups.push(`• ${g.name} (${s.startTime}–${s.endTime})`);
         }
 
         let sent = 0;
@@ -725,18 +736,26 @@ async function runStaffAttendanceAlert() {
         const today = todayDateStr();
         const todayNum = tashkentDayOfWeek();
 
+        // Haqiqiy dars jadvali GroupSchedule modelida — Group.schedules (Schedule
+        // modeli) hech qayerda yozilmaydi (runStaffDailyBriefing'dagi kabi izoh).
+        const allSchedules = await prisma.groupSchedule.findMany();
+        const todayGroupIds = [...new Set(allSchedules.filter(s => {
+            try { return (JSON.parse(s.days || '[]') as number[]).includes(todayNum); }
+            catch { return false; }
+        }).map(s => s.groupId))];
+
         // Groups with today's schedule that have NO attendance records yet
-        const groups = await prisma.group.findMany({
+        const groups = todayGroupIds.length ? await prisma.group.findMany({
             where: {
+                id: { in: todayGroupIds },
                 status: 'active', deletedAt: null,
                 teacherId: { not: null },
-                schedules: { some: { dayOfWeek: todayNum } },
                 attendanceRecords: { none: { date: today } },
             },
             include: {
                 teacher: { select: { name: true, telegramChatId: true } },
             },
-        });
+        }) : [];
 
         let alerted = 0;
         for (const g of groups) {

@@ -541,6 +541,25 @@ export default function CrmTests() {
                   }}
                 />
               )}
+
+              {q.type === 'long_answer' && (
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 mb-1">
+                    Namunaviy javob / baholash mezoni (ixtiyoriy)
+                  </label>
+                  <textarea
+                    value={q.explanation || ''}
+                    onChange={(e) => {
+                      const newQs = [...questions];
+                      newQs[idx] = { ...q, explanation: e.target.value };
+                      setQuestions(newQs);
+                    }}
+                    placeholder="Bu savol avtomatik baholanmaydi — o'qituvchi qo'lda tekshiradi. Bu yerga to'g'ri javob namunasi yoki baholash mezonini yozib qo'yishingiz mumkin."
+                    rows={2}
+                    className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-medium"
+                  />
+                </div>
+              )}
             </div>
           ))}
 

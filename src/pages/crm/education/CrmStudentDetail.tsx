@@ -80,11 +80,15 @@ export default function CrmStudentDetail() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch all related data in parallel
-      const [studRes, attRes, gradesRes, paymentsRes, certsRes] = await Promise.allSettled([
+      // Fetch all related data in parallel. Attendance and grades come from
+      // /students/:id itself (attendanceRecords/assessments relations,
+      // server/routes/students.ts) — they used to be fetched separately from
+      // /students/:id/attendance (route doesn't exist, always 404) and
+      // /journal?studentId= (a dead collection nothing ever writes to), so
+      // this page's attendance rate, GPA and grade list were silently always
+      // zero/empty regardless of the student's real record.
+      const [studRes, paymentsRes, certsRes] = await Promise.allSettled([
         api.get(`/students/${id}`),
-        api.get(`/students/${id}/attendance`).catch(() => ({ data: [] })),
-        api.get(`/journal?studentId=${id}`).catch(() => ({ data: [] })),
         api.get(`/finance?studentId=${id}`).catch(() => ({ data: [] })),
         api.get(`/certificates?studentId=${id}`).catch(() => ({ data: { data: [] } })),
       ]);
@@ -97,16 +101,21 @@ export default function CrmStudentDetail() {
       const student = studRes.value.data;
 
       // Process attendance
-      const attRecords = attRes.status === 'fulfilled' ? (attRes.value.data || []) : [];
+      const attRecords = student.attendanceRecords || [];
       const present = attRecords.filter((a: any) => a.status === 'present').length;
       const absent  = attRecords.filter((a: any) => a.status === 'absent').length;
       const late    = attRecords.filter((a: any) => a.status === 'late').length;
       const total   = attRecords.length;
       const rate    = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 0;
 
-      // Process grades
-      const gradesRaw = gradesRes.status === 'fulfilled' ? (gradesRes.value.data || []) : [];
-      const grades = gradesRaw.filter((g: any) => g.grade != null);
+      // Process grades — Assessment.score/maxScore normalized to a 0-100
+      // `grade` percentage (what GradesTab/StatisticsTab render below).
+      const grades = (student.assessments || []).map((g: any) => ({
+        ...g,
+        grade: g.maxScore ? Math.round((Number(g.score) / Number(g.maxScore)) * 100) : Number(g.score) || 0,
+        topic: g.title || g.subject,
+        comment: g.notes,
+      }));
 
       // Process payments
       const paymentsRaw = paymentsRes.status === 'fulfilled' ? (paymentsRes.value.data || []) : [];
@@ -522,13 +531,20 @@ function AttendanceTab({ attendance, trend }: any) {
 
 // ── Statistics ───────────────────────────────────────────────────────────────
 function StatisticsTab({ data, analytics }: any) {
-  // Radar comparison: attendance vs grades vs participation vs homework
+  // Radar comparison: attendance vs overall grades vs test-type vs homework
+  // breakdown — each axis is computed from real Assessment records (grouped
+  // by Assessment.type) rather than shown at all when there's no data for it,
+  // instead of a fabricated placeholder value.
+  const avgOf = (items: any[]) => items.length
+    ? Math.round(items.reduce((s: number, g: any) => s + Number(g.grade), 0) / items.length)
+    : 0;
+  const testGrades = data.grades.filter((g: any) => ['test', 'quiz', 'exam'].includes(g.type));
+  const homeworkGrades = data.grades.filter((g: any) => g.type === 'homework');
   const radarData = [
-    { metric: 'Davomat',     value: data.attendance.rate },
-    { metric: 'Baholar',     value: analytics?.avgGrade || 0 },
-    { metric: 'Testlar',     value: 70 }, // placeholder
-    { metric: 'Faollik',     value: 65 }, // placeholder
-    { metric: 'Uy ishi',     value: 80 }, // placeholder
+    { metric: 'Davomat', value: data.attendance.rate },
+    { metric: 'Baholar', value: analytics?.avgGrade || 0 },
+    { metric: 'Testlar', value: avgOf(testGrades) },
+    { metric: 'Uy ishi', value: avgOf(homeworkGrades) },
   ];
 
   return (

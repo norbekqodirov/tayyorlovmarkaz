@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Plus, Search, MoreVertical, Users, Calendar, Clock,
+  Plus, Search, Users, Calendar, Clock,
   DoorOpen, BookOpen, X, Edit2, Trash2, Download,
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
@@ -477,9 +477,20 @@ export default function CrmGroups() {
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-4">
                   <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">{formatNumber(group.price ?? group.course?.price ?? 0)} so'm</span>
-                  {canManage && <Button variant="ghost" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => openModal(group)} aria-label={`${group.name} guruhini tahrirlash`}>
-                    Tahrirlash
-                  </Button>}
+                  {canManage && (
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" leftIcon={<Edit2 size={14} />} onClick={() => openModal(group)} aria-label={`${group.name} guruhini tahrirlash`}>
+                        Tahrirlash
+                      </Button>
+                      <button
+                        aria-label={`${group.name} guruhini o'chirish`}
+                        onClick={() => handleDelete(group.id)}
+                        className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </article>
             ))}
@@ -512,12 +523,18 @@ export default function CrmGroups() {
                   .map((n: number) => Object.keys(DAY_MAP).find(k => DAY_MAP[k] === n))
                   .filter(Boolean) as string[];
                 const displayPrice = group.price ?? group.course?.price ?? 0;
-                // calculate fake progress for now
+                // Vaqt bo'yicha o'tilganlik foizi (boshlanish/tugash sanasidan) — haqiqiy.
                 const _start = new Date(group.startDate).getTime();
                 const _now = Date.now();
                 const _end = group.endDate ? new Date(group.endDate).getTime() : _start + 90 * 24 * 60 * 60 * 1000;
-                const progressPct = Math.min(100, Math.max(0, Math.round(((_now - _start) / (_end - _start)) * 100)));
-                const passedLessons = Math.round((progressPct / 100) * 36);
+                const progressPct = Math.min(100, Math.max(0, Math.round(((_now - _start) / (_end - _start)) * 100))) || 0;
+                // Umumiy dars soni guruhning haqiqiy haftalik jadvalidan (dars kunlari
+                // soni × muddat) hisoblanadi — avval har bir kurs uchun 36 ta dars deb
+                // qattiq faraz qilinardi, haqiqiy chastotasidan qat'i nazar.
+                const lessonsPerWeek = dayNames.length;
+                const totalWeeks = _end > _start ? (_end - _start) / (7 * 24 * 60 * 60 * 1000) : 0;
+                const totalLessons = lessonsPerWeek > 0 ? Math.round(lessonsPerWeek * totalWeeks) : 0;
+                const passedLessons = totalLessons > 0 ? Math.round((progressPct / 100) * totalLessons) : null;
 
                 return (
                 <tr
@@ -560,7 +577,7 @@ export default function CrmGroups() {
                   <td className="px-5 py-4 min-w-[150px]">
                     <div className="w-full flex items-center justify-between border border-amber-400 p-0.5 rounded-full overflow-hidden relative h-5">
                        <div className="absolute left-0 top-0 h-full bg-amber-400 rounded-full" style={{ width: `${progressPct}%` }}></div>
-                       <span className="relative w-full text-center text-[10px] font-black text-slate-800 z-10 block">{passedLessons} - {progressPct}%</span>
+                       <span className="relative w-full text-center text-[10px] font-black text-slate-800 z-10 block">{passedLessons != null ? `${passedLessons} - ${progressPct}%` : `${progressPct}%`}</span>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm font-medium text-slate-700 dark:text-zinc-300">
@@ -569,7 +586,10 @@ export default function CrmGroups() {
                   <td className="px-5 py-4 text-right">
                     <div className="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       {canManage && <button aria-label={`${group.name} guruhini tahrirlash`} onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors border border-blue-100 dark:border-blue-800">
-                        <MoreVertical size={16} />
+                        <Edit2 size={16} />
+                      </button>}
+                      {canManage && <button aria-label={`${group.name} guruhini o'chirish`} onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors border border-rose-100 dark:border-rose-900/40">
+                        <Trash2 size={16} />
                       </button>}
                     </div>
                   </td>
