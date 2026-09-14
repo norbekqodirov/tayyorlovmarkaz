@@ -18,6 +18,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
 import { EmptyState, ErrorState } from '../../../components/States';
 import { Badge } from '../../../components/ui/Badge';
+import { FilterPanel, Filter } from '../../../components/ui/FilterPanel';
 import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { groupStatusBadge } from '../../../utils/statusBadge';
@@ -41,6 +42,17 @@ interface Group {
 }
 
 const DAYS = ['Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan', 'Yak'];
+
+const GROUP_FILTERS: Filter[] = [
+  {
+    type: 'select', key: 'status', label: 'Holat',
+    options: [
+      { value: 'active', label: 'Faol' },
+      { value: 'paused', label: 'Muzlatilgan' },
+      { value: 'completed', label: 'Tugallangan' },
+    ],
+  },
+];
 
 export default function CrmGroups() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
@@ -83,6 +95,7 @@ export default function CrmGroups() {
   };
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filters, setFilters] = useState<Record<string, any>>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const saveBusy = useRef(false);
@@ -331,12 +344,15 @@ export default function CrmGroups() {
   };
 
   const filteredGroups = useMemo(() => {
-    return (groups || []).filter(g =>
-      (g.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (g.course?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (g.teacher?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [groups, searchTerm]);
+    return (groups || []).filter(g => {
+      const matchesSearch =
+        (g.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (g.course?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (g.teacher?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = !filters.status || g.status === filters.status;
+      return matchesSearch && matchesStatus;
+    });
+  }, [groups, searchTerm, filters]);
 
   // O'quvchi qo'shish/olib tashlash — guruh ichidagi to'liq boshqaruv (davomat, baholash
   // bilan birga) uchun guruh tafsilot sahifasiga o'tiladi (/groups/:id, CrmGroupDetail.tsx),
@@ -411,6 +427,7 @@ export default function CrmGroups() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <FilterPanel filters={GROUP_FILTERS} value={filters} onChange={setFilters} onClear={() => setFilters({})} />
         <button onClick={() => {
           const exportData = filteredGroups.map(g => {
             const sched = (schedule || []).find((s: any) => s.groupId === g.id);

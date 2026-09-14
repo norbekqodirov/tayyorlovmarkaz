@@ -24,15 +24,28 @@ interface Props {
 const AssessmentTab: React.FC<Props> = ({
   group, groupStudents, assessmentDocs, currentDate, onDateChange, onScoreChange,
 }) => {
+  const hasSchedule = !!group?.days?.length;
+
   const daysInMonth = useMemo(() => {
+    if (!hasSchedule) return [];
     const start = startOfMonth(currentDate);
     const end = endOfMonth(currentDate);
-    return eachDayOfInterval({ start, end }).filter(date => {
-      const day = date.getDay();
-      if (!group?.days?.length) return day !== 0;
-      return group.days.map((d: string) => DAY_JS_MAP[d]).includes(day);
-    });
-  }, [currentDate, group]);
+    return eachDayOfInterval({ start, end }).filter(date =>
+      group.days.map((d: string) => DAY_JS_MAP[d]).includes(date.getDay())
+    );
+  }, [currentDate, group, hasSchedule]);
+
+  if (!hasSchedule) {
+    return (
+      <div className="flex flex-col h-full space-y-4">
+        <MonthSelector currentDate={currentDate} onChange={onDateChange} accentClass="bg-indigo-500" />
+        <div className="flex-1 flex flex-col items-center justify-center text-center py-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
+          <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">Bu guruh uchun dars jadvali belgilanmagan</p>
+          <p className="text-xs text-zinc-400 mt-1">Baholashni kunlar bo'yicha ko'rsatish uchun avval "Dars Jadvali" bo'limida guruhning dars kunlarini sozlang.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full space-y-4">

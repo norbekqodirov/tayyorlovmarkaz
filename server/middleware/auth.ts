@@ -83,6 +83,7 @@ const COLLECTION_WRITE_LEVEL: Record<string, number> = {
     attendanceRecords: 1, // TEACHER+ (haqiqiy jadval — server/routes/studentAttendance.ts'ga q.)
     assessments:   1,
     exams:         1, // TEACHER+, o'z guruhi doirasida — crud.ts TEACHER_WRITE_SCOPE_MODELS'ga q.
+    groupExams:    1, // TEACHER+, o'z guruhi doirasida — crud.ts TEACHER_WRITE_SCOPE_MODELS'ga q.
     notes:         1, // TEACHER+, o'z guruhi doirasida — crud.ts TEACHER_WRITE_SCOPE_MODELS'ga q.
     journal:       1,
     finance:       2,
@@ -133,6 +134,7 @@ const COLLECTION_READ_LEVEL: Record<string, number> = {
     assessment:    1,
     assessments:   1,
     exams:         1,
+    groupExams:    1,
     notes:         1,
     journal:       1,
     enrollments:   1, // guruh a'zolari ro'yxati — /enrollments/group/:id shu yerdan o'tadi

@@ -53,6 +53,7 @@ export default function CrmGroupDetail() {
   const { data: schedules = [], loading: schedulesLoading, error: schedulesError, refetch: refetchSchedules } = useFirestore<any>('schedule');
   const { data: assessmentDocs = [], addDocument: addAssess, updateDocument: updateAssess } = useFirestore<any>('assessment');
   const { data: examDocs = [], addDocument: addExam, updateDocument: updateExam } = useFirestore<any>('exams');
+  const { data: groupExamDocs = [], addDocument: addGroupExam, deleteDocument: deleteGroupExam } = useFirestore<any>('groupExams');
   const { data: noteDocs = [], addDocument: addNote, updateDocument: updateNote } = useFirestore<any>('notes');
 
   // ─── UI State ───────────────────────────────────────────────────────────────
@@ -199,26 +200,51 @@ export default function CrmGroupDetail() {
 
   // ─── Assessment (daily score) ───────────────────────────────────────────────
   const handleAssessmentChange = async (studentId: string, dateStr: string, score: number) => {
+    // Input'dagi max="100" faqat kosmetik (brauzer forma validatsiyasini
+    // majburlamaydi) — shu yerda haqiqiy tekshiruv, aks holda "cheksiz" ball
+    // (masalan 9999) jimgina saqlanib, GPA/hisobotlarni buzardi.
+    if (!Number.isFinite(score) || score < 0 || score > 100) {
+      showToast('Ball 0 dan 100 gacha bo\'lishi kerak', 'error');
+      return;
+    }
     const existingDoc = assessmentDocs.find(
       (a: any) => a.studentId === studentId && a.groupId === group?.id && a.date === dateStr,
     );
     if (existingDoc) {
-      if (score >= 0) await updateAssess(existingDoc.id, { score });
-    } else if (score >= 0) {
+      await updateAssess(existingDoc.id, { score });
+    } else {
       await addAssess({ groupId: group?.id, studentId, date: dateStr, score });
     }
   };
 
   // ─── Exam scores ────────────────────────────────────────────────────────────
-  const handleExamChange = async (studentId: string, examName: string, score: number) => {
+  const handleExamChange = async (studentId: string, examName: string, score: number, maxScore = 100) => {
+    if (!Number.isFinite(score) || score < 0 || score > maxScore) {
+      showToast(`Ball 0 dan ${maxScore} gacha bo'lishi kerak`, 'error');
+      return;
+    }
     const existingDoc = examDocs.find(
       (a: any) => a.studentId === studentId && a.groupId === group?.id && a.examName === examName,
     );
     if (existingDoc) {
-      if (score >= 0) await updateExam(existingDoc.id, { score });
-    } else if (score >= 0) {
+      await updateExam(existingDoc.id, { score });
+    } else {
       await addExam({ groupId: group?.id, studentId, examName, score });
     }
+  };
+
+  // ─── Exam definitions (GroupExam) ───────────────────────────────────────────
+  // Imtihon ustuni faqat shu yerda, aniq nom+sana bilan yaratilgandan keyingina
+  // ExamTab'da paydo bo'ladi — avval "1-Imtihon (Oraliq)"/"Yakuniy Imtihon" kabi
+  // qattiq kodlangan 3 ta ustun har doim ko'rsatilardi, guruhda haqiqatan
+  // imtihon rejalashtirilgan-rejalashtirilmaganidan qat'i nazar.
+  const handleCreateExam = async (data: { name: string; date: string; maxScore: number }) => {
+    if (!group?.id) return;
+    await addGroupExam({ groupId: group.id, name: data.name, date: data.date, maxScore: data.maxScore });
+  };
+
+  const handleDeleteExam = async (groupExamId: string) => {
+    await deleteGroupExam(groupExamId);
   };
 
   // ─── Teacher notes ──────────────────────────────────────────────────────────
@@ -349,8 +375,12 @@ export default function CrmGroupDetail() {
             <ExamTab
               group={group}
               groupStudents={enrolledStudents}
+              groupExams={groupExamDocs.filter((e: any) => e.groupId === group?.id)}
               examDocs={examDocs}
               onScoreChange={handleExamChange}
+              onCreateExam={handleCreateExam}
+              onDeleteExam={handleDeleteExam}
+              canManage={canManage}
             />
           )}
 

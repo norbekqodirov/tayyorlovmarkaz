@@ -56,6 +56,7 @@ const MODEL_MAP: Record<string, string> = {
     'assessment':     'assessment',
     'assessments':    'assessment',
     'exams':          'exam',
+    'groupExams':     'groupExam',
     'notes':          'groupStudentNote',
     'campaigns':      'campaign',
     'leadActivities': 'leadActivity',
@@ -78,6 +79,7 @@ const TEACHER_SCOPE_MODELS: Record<string, (userId: string) => any> = {
     attendanceRecord: (userId) => ({ group: { teacherId: userId } }),
     assessment: (userId) => ({ group: { teacherId: userId } }),
     exam: (userId) => ({ group: { teacherId: userId } }),
+    groupExam: (userId) => ({ group: { teacherId: userId } }),
     groupStudentNote: (userId) => ({ group: { teacherId: userId } }),
 };
 
@@ -85,7 +87,7 @@ const TEACHER_SCOPE_MODELS: Record<string, (userId: string) => any> = {
 // bularning har biri bitta guruhga tegishli (davomat/baho/imtihon/eslatma).
 // Ro'yxatga OLINMAGAN: 'group'/'student' — ularga TEACHER yozish huquqi
 // COLLECTION_WRITE_LEVEL orqali allaqachon yopiq (faqat MANAGER+).
-const TEACHER_WRITE_SCOPE_MODELS = new Set(['attendance', 'assessment', 'exam', 'groupStudentNote']);
+const TEACHER_WRITE_SCOPE_MODELS = new Set(['attendance', 'assessment', 'exam', 'groupExam', 'groupStudentNote']);
 
 async function teacherOwnsGroup(groupId: string | undefined | null, userId: string): Promise<boolean> {
     if (!groupId) return false;
@@ -119,6 +121,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'attendanceRecord':['studentId', 'groupId', 'date', 'status', 'checkIn', 'checkOut', 'note'],
     'assessment':      ['studentId', 'groupId', 'title', 'type', 'score', 'maxScore', 'date', 'subject', 'notes'],
     'exam':            ['groupId', 'studentId', 'examName', 'score'],
+    'groupExam':       ['groupId', 'name', 'date', 'maxScore'],
     'groupStudentNote':['groupId', 'studentId', 'note'],
     'campaign':        ['name', 'platform', 'budget', 'spent', 'leads', 'startDate', 'endDate', 'status', 'notes', 'impressions', 'clicks', 'utmSource', 'utmCampaign'],
     'leadActivity':    ['leadId', 'type', 'content', 'date', 'user', 'outcome', 'direction', 'durationSec'],

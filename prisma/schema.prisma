@@ -149,6 +149,7 @@ model Group {
   assessments       Assessment[]
   attendances       Attendance[]
   exams             Exam[]
+  groupExams        GroupExam[]
   notes             GroupStudentNote[]
   tests             Test[]
 }
@@ -794,6 +795,21 @@ model Attendance {
   updatedAt DateTime @updatedAt
 
   @@unique([groupId, date])
+}
+
+// Guruh uchun yaratilgan imtihon ta'rifi (nomi + sanasi) — Exam (pastda)
+// faqat BALL yozuvi, imtihonning o'zi emas; ExamTab avval shu yerdan
+// ustunlarni o'qiydi, imtihon hali yaratilmagan bo'lsa hech qanday ustun
+// (va "oraliq"/"yakuniy" kabi qattiq kodlangan standart nom) ko'rsatmaydi.
+model GroupExam {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  date      String   // "YYYY-MM-DD"
+  maxScore  Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Exam {

@@ -1,16 +1,15 @@
 /**
- * AttendanceTab.tsx — qayta qurildi (2026-09-13).
+ * AttendanceTab.tsx
  *
- * Ilgari: oylik jadval, har bir katakchada alohida <select> dropdown,
- * `Attendance` (guruh+sana uchun JSON-blob) jadvaliga yozardi — bu jadval
- * to'lov/ota-ona xabari/hisobotlar tomonidan HECH QACHON o'qilmasdi (faqat
- * Telegram Staff Mini App yozadigan `AttendanceRecord`ni o'qishardi).
+ * `AttendanceRecord` (haqiqiy jadval — Telegram Staff Mini App bilan BIR XIL
+ * manba, `Attendance` JSON-blob'i emas) ustida ishlaydi.
  *
- * Endi: bitta kunlik ro'yxat (o'quvchi bo'yicha, katta bosiladigan
- * tugmalar), "Hammasini Keldi" ommaviy tugmasi, va o'zi `/api/attendance-
- * records`ga (haqiqiy `AttendanceRecord` jadvali — Telegram bilan BIR XIL
- * manba) to'g'ridan-to'g'ri yozadi. Oylik ko'rinish alohida, faqat o'qish
- * uchun xulosa sifatida qoladi.
+ * Standart ko'rinish — oylik jadval (faqat guruhning haqiqiy dars kunlari
+ * ustun sifatida, GroupSchedule'dan). Har bir katak bosilganda Keldi/
+ * Kelmadi/Kechikdi/Sababli ikonkalari bilan popover ochiladi — to'g'ridan-
+ * to'g'ri shu yerdan belgilash mumkin, kunlik ko'rinishga o'tish shart emas.
+ * Kunlik ko'rinish — "Hammasini Keldi" kabi tezkor ommaviy amal uchun
+ * ikkinchi darajali rejim sifatida saqlanadi.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, isToday } from 'date-fns';
@@ -18,6 +17,7 @@ import { uz } from 'date-fns/locale';
 import { Check, X, Clock, FileText, ChevronLeft, ChevronRight, CalendarDays, List, Loader2 } from 'lucide-react';
 import api from '../../api/client';
 import { useToast } from '../Toast';
+import MonthSelector from './MonthSelector';
 
 const DAY_JS_MAP: Record<string, number> = {
   Dush: 1, Sesh: 2, Chor: 3, Pay: 4, Jum: 5, Shan: 6, Yak: 0,
@@ -49,14 +49,17 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<'day' | 'month'>('day');
+  const [view, setView] = useState<'day' | 'month'>('month');
   const [monthRecords, setMonthRecords] = useState<Record_[] & { date?: string }[] | any[]>([]);
   const [monthLoading, setMonthLoading] = useState(false);
+  const [cellPicker, setCellPicker] = useState<{ studentId: string; date: string; x: number; y: number } | null>(null);
+
+  const hasSchedule = !!group?.days?.length;
 
   const isLessonDay = useMemo(() => {
-    if (!group?.days?.length) return true;
+    if (!hasSchedule) return false;
     return group.days.map((d: string) => DAY_JS_MAP[d]).includes(selectedDate.getDay());
-  }, [group, selectedDate]);
+  }, [group, hasSchedule, selectedDate]);
 
   const loadDay = useCallback(async () => {
     if (!group?.id) return;
@@ -110,6 +113,24 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
     }
   };
 
+  const saveMonthCell = async (studentId: string, date: string, status: Status) => {
+    if (!group?.id) return;
+    setMonthRecords((prev: any[]) => {
+      const rest = prev.filter(r => !(r.studentId === studentId && r.date === date));
+      return [...rest, { studentId, date, status }];
+    });
+    // Bugungi kun uchun bo'lsa, kunlik ro'yxat ham darhol yangilansin
+    if (date === dateStr) {
+      setRecords(prev => [...prev.filter(r => r.studentId !== studentId), { studentId, status }]);
+    }
+    try {
+      await api.post('/attendance-records', { groupId: group.id, date, records: [{ studentId, status }] });
+    } catch {
+      showToast("Saqlanmadi — qayta urinib ko'ring", 'error');
+      void loadMonth();
+    }
+  };
+
   const markAllPresent = async () => {
     if (!group?.id) return;
     const unmarked = groupStudents.filter(s => !getStatus(s.id));
@@ -140,36 +161,42 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
   const markedCount = groupStudents.filter(s => getStatus(s.id)).length;
 
   const monthDays = useMemo(() => {
+    if (!hasSchedule) return [];
     const start = startOfMonth(selectedDate);
     const end = endOfMonth(selectedDate);
-    return eachDayOfInterval({ start, end }).filter(day => {
-      if (!group?.days?.length) return true;
-      return group.days.map((d: string) => DAY_JS_MAP[d]).includes(day.getDay());
-    });
-  }, [selectedDate, group]);
+    return eachDayOfInterval({ start, end }).filter(day =>
+      group.days.map((d: string) => DAY_JS_MAP[d]).includes(day.getDay())
+    );
+  }, [selectedDate, group, hasSchedule]);
 
   if (view === 'month') {
     return (
       <div className="flex flex-col h-full min-h-0 space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-sm font-black text-slate-900 dark:text-white">
-            {format(selectedDate, 'MMMM yyyy', { locale: uz })} — oylik xulosa
-          </h3>
+          <MonthSelector currentDate={selectedDate} onChange={setSelectedDate} accentClass="bg-emerald-500" />
           <button onClick={() => setView('day')} className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline">
-            <List size={14} /> Kunlik ko'rinishga qaytish
+            <List size={14} /> Bugungi kun uchun tezkor belgilash
           </button>
         </div>
-        {monthLoading ? (
+
+        {!hasSchedule ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
+            <CalendarDays size={32} className="text-zinc-300 dark:text-zinc-700 mb-3" />
+            <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">Bu guruh uchun dars jadvali belgilanmagan</p>
+            <p className="text-xs text-zinc-400 mt-1">Davomatni kunlar bo'yicha ko'rsatish uchun avval "Dars Jadvali" bo'limida guruhning dars kunlarini sozlang.</p>
+          </div>
+        ) : monthLoading ? (
           <div className="flex items-center justify-center h-32"><Loader2 size={24} className="animate-spin text-zinc-400" /></div>
         ) : (
           <div className="flex-1 min-h-0 overflow-auto border border-zinc-200 dark:border-zinc-800 rounded-2xl custom-scrollbar">
             <table className="w-full text-left border-collapse whitespace-nowrap min-w-max">
               <thead className="sticky top-0 bg-white dark:bg-zinc-900 z-20">
                 <tr>
-                  <th scope="col" className="px-3 py-3 sticky left-0 bg-white dark:bg-zinc-900 z-20">Talabalar</th>
+                  <th scope="col" className="px-3 py-3 sticky left-0 bg-white dark:bg-zinc-900 z-20 border-r border-zinc-100 dark:border-zinc-800">Talabalar</th>
                   {monthDays.map(day => (
-                    <th key={day.toISOString()} scope="col" className="px-1.5 py-3 text-center text-[11px]">
-                      {format(day, 'dd')}
+                    <th key={day.toISOString()} scope="col" className="px-1.5 py-3 text-center border-l border-zinc-100 dark:border-zinc-800">
+                      <div className="text-[11px] font-black">{format(day, 'dd')}</div>
+                      <div className="text-[9px] text-zinc-400 uppercase">{format(day, 'EEEEEE', { locale: uz })}</div>
                     </th>
                   ))}
                 </tr>
@@ -177,7 +204,7 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 text-sm">
                 {groupStudents.map((student, idx) => (
                   <tr key={student.id}>
-                    <th scope="row" className="px-3 py-2.5 sticky left-0 bg-white dark:bg-zinc-900 max-w-[160px] whitespace-normal break-words text-left font-medium">
+                    <th scope="row" className="px-3 py-2.5 sticky left-0 bg-white dark:bg-zinc-900 max-w-[160px] whitespace-normal break-words text-left font-medium border-r border-zinc-100 dark:border-zinc-800">
                       {idx + 1}. {student.name}
                     </th>
                     {monthDays.map(day => {
@@ -185,10 +212,17 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
                       const rec = monthRecords.find((r: any) => r.studentId === student.id && r.date === ds);
                       const meta = rec ? STATUS_META[rec.status as Status] : null;
                       return (
-                        <td key={ds} className="px-1.5 py-2.5 text-center">
+                        <td key={ds} className="px-1.5 py-2.5 text-center border-l border-zinc-100 dark:border-zinc-800">
                           <button
-                            onClick={() => { setSelectedDate(day); setView('day'); }}
-                            className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto text-[10px] font-bold ${meta ? meta.activeClass : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-600'}`}
+                            onClick={(e) => {
+                              const r = e.currentTarget.getBoundingClientRect();
+                              setCellPicker(p =>
+                                p && p.studentId === student.id && p.date === ds
+                                  ? null
+                                  : { studentId: student.id, date: ds, x: r.left, y: r.bottom + 4 }
+                              );
+                            }}
+                            className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto text-[10px] font-bold transition-transform hover:scale-110 ${meta ? meta.activeClass : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-600'}`}
                             title={meta ? `${meta.label} — bosib o'zgartirish` : "Belgilanmagan — bosib belgilash"}
                           >
                             {meta ? <meta.icon size={12} /> : '·'}
@@ -201,6 +235,31 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
               </tbody>
             </table>
           </div>
+        )}
+
+        {cellPicker && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setCellPicker(null)} />
+            <div
+              className="fixed z-50 flex items-center gap-1 p-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-2xl"
+              style={{ left: cellPicker.x, top: cellPicker.y }}
+            >
+              {STATUS_ORDER.map(status => {
+                const meta = STATUS_META[status];
+                return (
+                  <button
+                    key={status}
+                    onClick={() => { void saveMonthCell(cellPicker.studentId, cellPicker.date, status); setCellPicker(null); }}
+                    title={meta.label}
+                    aria-label={meta.label}
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition-all hover:scale-105 ${meta.activeClass}`}
+                  >
+                    <meta.icon size={14} />
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     );
@@ -223,7 +282,8 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
               {format(selectedDate, 'd MMMM, EEEE', { locale: uz })}
               {isToday(selectedDate) && <span className="ml-1.5 text-[10px] font-bold text-emerald-600">BUGUN</span>}
             </p>
-            {!isLessonDay && <p className="text-[11px] text-amber-600 font-medium">Bu kun dars jadvalida yo'q</p>}
+            {!hasSchedule && <p className="text-[11px] text-amber-600 font-medium">Guruh uchun dars jadvali belgilanmagan</p>}
+            {hasSchedule && !isLessonDay && <p className="text-[11px] text-amber-600 font-medium">Bu kun dars jadvalida yo'q</p>}
           </div>
           <button
             onClick={() => setSelectedDate(d => addDays(d, 1))}
