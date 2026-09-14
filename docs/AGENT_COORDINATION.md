@@ -104,18 +104,21 @@ agent bir xil fayl/modulni tanlab qolmasligi uchun. Format: `[Agent] soha —
 qisqa tavsif — sana`.
 
 <!-- AKTIV: -->
-- [Claude] `server/routes/auth.ts`, `server/middleware/auth.ts`, `server/routes/crud.ts`,
-  `server/routes/students.ts`, `server/routes/salary.ts`, `server/routes/analytics.ts`,
-  `server/routes/payments.ts`, `server/routes/finance.ts` — docs/CRM_FULL_AUDIT_AND_AI_PLAN_2026-09-14.md
-  SEC-03, SEC-04, SEC-06, SEC-07, FIN-01/02/03/06, EDU-01/06 — 2026-09-14
-- [Antigravity] `server/routes/telegram.ts`, `server/routes/staffTelegram.ts`, `server/bot/index.ts`,
-  `server/routes/upload.ts`, `server/routes/staffPortal.ts`, `server/middleware/audit.ts`,
-  `server/routes/import.ts`, `server/index.ts`, `vite.config.ts`, `src/api/client.ts`,
-  `server/routes/quiz.ts`, `server/routes/tests.ts`, `server/services/gradingService.ts`,
-  `src/pages/crm/finance/CrmFinance.tsx`, `src/components/ui/DataTable.tsx`,
-  `src/components/ui/Input.tsx`, `src/components/dashboard/widgets/TasksWidget.tsx` —
-  docs/CRM_FULL_AUDIT_AND_AI_PLAN_2026-09-14.md SEC-01/02/05/08/09/10/11/12, TEST-01/02,
-  FIN-05, 7.1-bo'lim — 2026-09-14
+_(hozircha bo'sh)_
+
+<!-- YAKUNLANGAN (2026-09-14, docs/CRM_FULL_AUDIT_AND_AI_PLAN_2026-09-14.md 1-partiya): -->
+- [Claude] SEC-03, SEC-04, SEC-06, SEC-07 (qisman), FIN-01, FIN-02, FIN-03 — commit
+  qilingan va production'ga deploy qilinmagan holda master'da. EDU-01 ham bajarildi.
+  EDU-06 ataylab KECHIKTIRILDI — hozirgi ma'lumot modeli (GroupSchedule) bitta
+  guruh uchun bitta vaqt oralig'ini qo'llab-quvvatlaydi, ya'ni "bir kunda ikki
+  dars" holati hozircha UI orqali umuman yaratib bo'lmaydi; to'liq tuzatish
+  audit hujjatining 10-bo'limidagi katta LessonSession qayta qurishni talab
+  qiladi — bu alohida, kelajakdagi bosqich.
+- [Antigravity] SEC-01/02/05/08/09/10/11/12, TEST-01/02 — bajarildi, Claude
+  tomonidan ko'rib chiqildi (2 ta kamchilik topildi va tuzatildi: xlsx
+  package-lock.json yangilanmagan edi, upload rad etish 500 qaytarardi) va
+  master'ga merge qilindi. FIN-05 va 7.1-bo'lim (accessibility) BAJARILMADI —
+  keyingi partiyaga qoldi.
 
 ## 6. Merge oqimi
 
