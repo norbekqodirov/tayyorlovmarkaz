@@ -104,7 +104,18 @@ agent bir xil fayl/modulni tanlab qolmasligi uchun. Format: `[Agent] soha —
 qisqa tavsif — sana`.
 
 <!-- AKTIV: -->
-_(hozircha bo'sh — birinchi vazifa shu yerga yoziladi)_
+- [Claude] `server/routes/auth.ts`, `server/middleware/auth.ts`, `server/routes/crud.ts`,
+  `server/routes/students.ts`, `server/routes/salary.ts`, `server/routes/analytics.ts`,
+  `server/routes/payments.ts`, `server/routes/finance.ts` — docs/CRM_FULL_AUDIT_AND_AI_PLAN_2026-09-14.md
+  SEC-03, SEC-04, SEC-06, SEC-07, FIN-01/02/03/06, EDU-01/06 — 2026-09-14
+- [Antigravity] `server/routes/telegram.ts`, `server/routes/staffTelegram.ts`, `server/bot/index.ts`,
+  `server/routes/upload.ts`, `server/routes/staffPortal.ts`, `server/middleware/audit.ts`,
+  `server/routes/import.ts`, `server/index.ts`, `vite.config.ts`, `src/api/client.ts`,
+  `server/routes/quiz.ts`, `server/routes/tests.ts`, `server/services/gradingService.ts`,
+  `src/pages/crm/finance/CrmFinance.tsx`, `src/components/ui/DataTable.tsx`,
+  `src/components/ui/Input.tsx`, `src/components/dashboard/widgets/TasksWidget.tsx` —
+  docs/CRM_FULL_AUDIT_AND_AI_PLAN_2026-09-14.md SEC-01/02/05/08/09/10/11/12, TEST-01/02,
+  FIN-05, 7.1-bo'lim — 2026-09-14
 
 ## 6. Merge oqimi
 
