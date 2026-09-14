@@ -21,6 +21,8 @@ import express from 'express';
 import { handleBotWebhook } from '../bot/index.js';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
+import { logAudit } from '../middleware/audit.js';
 import {
     sendMessage, sendBroadcast, getBotInfo, setMenuButton,
 } from '../services/telegramService.js';
@@ -29,11 +31,24 @@ const router = express.Router();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
 
+function isValidWebhookUrl(urlStr: string): boolean {
+    try {
+        const u = new URL(urlStr);
+        if (u.protocol !== 'https:') return false;
+        if (!u.hostname || u.hostname.length < 3) return false;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // ─── Bot webhook (grammY) ─────────────────────────────────────────────────────
 
-router.post('/webhook', (req, res) => {
+router.post('/webhook', async (req, res) => {
     const secret = req.headers['x-telegram-bot-api-secret-token'];
-    if (WEBHOOK_SECRET && secret !== WEBHOOK_SECRET) {
+    const settingSecret = await prisma.setting.findUnique({ where: { key: 'telegram_webhook_secret' } }).catch(() => null);
+    const expectedSecret = settingSecret?.value || WEBHOOK_SECRET || '';
+    if (expectedSecret && secret !== expectedSecret) {
         res.status(403).json({ message: 'Forbidden' });
         return;
     }
@@ -42,10 +57,15 @@ router.post('/webhook', (req, res) => {
 
 // ─── Webhook sozlash ──────────────────────────────────────────────────────────
 
-router.get('/set-webhook', async (req, res) => {
-    if (!BOT_TOKEN) return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN not set' });
-    const webhookUrl = req.query.url as string;
-    if (!webhookUrl) return res.status(400).json({ error: 'url query param required' });
+router.post('/set-webhook', requireAuth, requirePermission('settings'), async (req, res) => {
+    if (!BOT_TOKEN) return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN sozlanmagan' });
+    const webhookUrl = (req.body?.url || req.query.url) as string;
+    if (!webhookUrl) return res.status(400).json({ error: 'url parametri talab qilinadi' });
+
+    if (!isValidWebhookUrl(webhookUrl)) {
+        return res.status(400).json({ error: 'Faqat xavfsiz HTTPS webhook URL ruxsat etiladi' });
+    }
+
     const body = JSON.stringify({
         url: webhookUrl,
         secret_token: WEBHOOK_SECRET || undefined,
@@ -56,7 +76,18 @@ router.get('/set-webhook', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body,
     });
-    res.json(await r.json());
+    const data = await r.json();
+
+    const user = (req as any).user;
+    await logAudit({
+        userId: user?.id,
+        userName: user?.name || 'admin',
+        action: 'set_webhook',
+        resource: 'telegram',
+        metadata: { webhookUrl, ok: data.ok }
+    });
+
+    res.json(data);
 });
 
 // ─── Webhook holati ───────────────────────────────────────────────────────────
@@ -158,7 +189,7 @@ router.get('/settings', requireAuth, async (_req, res) => {
 
 // ─── Sozlamalar saqlash (FIXED: only updates provided keys, correct key names) ─
 
-router.put('/settings', requireAuth, async (req, res) => {
+router.put('/settings', requireAuth, requirePermission('settings'), async (req, res) => {
     try {
         const { token, adminChatId, autoAttendance, autoPayment, autoLead, staff_bot_token, staffMiniAppUrl } = req.body;
 
@@ -187,7 +218,7 @@ router.put('/settings', requireAuth, async (req, res) => {
 
 // ─── Test xabar ───────────────────────────────────────────────────────────────
 
-router.post('/test', requireAuth, async (req, res) => {
+router.post('/test', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { chatId, message } = req.body;
         if (!chatId) return res.status(400).json({ message: 'Chat ID kiritilishi shart' });
@@ -201,7 +232,7 @@ router.post('/test', requireAuth, async (req, res) => {
 
 // ─── Bitta kishiga xabar ──────────────────────────────────────────────────────
 
-router.post('/send', requireAuth, async (req, res) => {
+router.post('/send', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { chatId, message } = req.body;
         if (!chatId || !message) return res.status(400).json({ message: 'chatId va message kiritilishi shart' });
@@ -214,7 +245,7 @@ router.post('/send', requireAuth, async (req, res) => {
 
 // ─── Ommaviy xabar ────────────────────────────────────────────────────────────
 
-router.post('/broadcast', requireAuth, async (req, res) => {
+router.post('/broadcast', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { message, targetGroup, groupId } = req.body;
         if (!message) return res.status(400).json({ message: 'Xabar matni kiritilishi shart' });
@@ -269,7 +300,7 @@ router.post('/broadcast', requireAuth, async (req, res) => {
 
 // ─── O'quvchini to'g'ridan Telegram ga ulash ─────────────────────────────────
 
-router.post('/link-direct', requireAuth, async (req, res) => {
+router.post('/link-direct', requireAuth, requirePermission('communication'), async (req, res) => {
     const { studentId, telegramChatId } = req.body;
     if (!studentId || !telegramChatId) return res.status(400).json({ error: 'studentId and telegramChatId required' });
     try {
@@ -284,7 +315,7 @@ router.post('/link-direct', requireAuth, async (req, res) => {
 
 // ─── Mini App menu button o'rnatish ──────────────────────────────────────────
 
-router.post('/set-menu-button', requireAuth, async (req, res) => {
+router.post('/set-menu-button', requireAuth, requirePermission('settings'), async (req, res) => {
     try {
         const { url } = req.body;
         if (!url) return res.status(400).json({ message: 'URL kiritilishi shart' });

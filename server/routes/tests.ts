@@ -295,12 +295,16 @@ router.post('/submissions/:id/submit', requireAuth, requirePermission('tests'), 
         );
 
         // Update each answer with isCorrect/score
-        await Promise.all(result.perQuestion.map(pq =>
-            prisma.answer.update({
-                where: { id: submission.answers.find(a => a.questionId === pq.questionId)!.id },
+        // Talaba javob bermagan savollar uchun Answer yozuvi bo'lmasligi mumkin —
+        // bunday holda update o'tkazib yuboriladi (0 ball hisoblanadi, 500 xato chiqmaydi).
+        await Promise.all(result.perQuestion.map(pq => {
+            const existingAnswer = submission.answers.find(a => a.questionId === pq.questionId);
+            if (!existingAnswer) return Promise.resolve(null); // javob berilmagan — 0 ball
+            return prisma.answer.update({
+                where: { id: existingAnswer.id },
                 data: { isCorrect: pq.isCorrect, score: pq.score },
-            }).catch(() => null)
-        ));
+            }).catch(() => null);
+        }));
 
         const updated = await prisma.testSubmission.update({
             where: { id: req.params.id },

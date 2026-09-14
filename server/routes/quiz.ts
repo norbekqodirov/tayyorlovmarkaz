@@ -233,6 +233,42 @@ router.post('/:id/start', async (req, res) => {
         });
         if (!quiz) return res.status(404).json({ error: 'Quiz topilmadi' });
 
+        if (quiz.status !== 'active') {
+            return res.status(400).json({ error: 'Quiz hozirda faol emas' });
+        }
+
+        // TEST-01: ochiq bo'lmagan quiz uchun studentId majburiy.
+        // studentId berilgan bo'lsa — DB da mavjudligini tekshirish (ixtiyoriy studentId injection oldini olish).
+        if (!quiz.isPublic && !studentId) {
+            return res.status(403).json({ error: 'Ushbu quiz ommaviy emas' });
+        }
+        if (studentId) {
+            const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true } });
+            if (!student) return res.status(400).json({ error: 'Talaba topilmadi' });
+        }
+
+        // TEST-01: bir talaba bir quizga faqat bir marta urinish (duplicate detection).
+        // Mavjud tugallanmagan urinish bo'lsa — uni qaytarish (yangisini yaratmasdan).
+        if (studentId) {
+            const existingAttempt = await prisma.quizAttempt.findFirst({
+                where: { quizId: req.params.id, studentId }
+            });
+            if (existingAttempt?.finishedAt) {
+                return res.status(400).json({ error: 'Siz bu quizni allaqachon topshirgansiz' });
+            }
+            if (existingAttempt) {
+                // Davom etayotgan urinish — yangisini yaratmasdan qaytarish
+                const sanitized = {
+                    ...quiz,
+                    questions: quiz.questions.map(q => ({
+                        ...q,
+                        options: q.options.map(o => ({ id: o.id, text: o.text, order: o.order }))
+                    }))
+                };
+                return res.json({ data: { attempt: existingAttempt, quiz: sanitized } });
+            }
+        }
+
         const maxScore = quiz.questions.reduce((sum, q) => sum + q.points, 0);
 
         const attempt = await prisma.quizAttempt.create({
@@ -261,16 +297,28 @@ router.post('/:id/start', async (req, res) => {
     }
 });
 
+
 router.post('/attempts/:aid/answer', async (req, res) => {
     const { questionId, selectedOptions, textAnswer } = req.body;
     if (!questionId) return res.status(400).json({ error: 'questionId required' });
 
     try {
+        const attempt = await prisma.quizAttempt.findUnique({
+            where: { id: req.params.aid }
+        });
+        if (!attempt) return res.status(404).json({ error: 'Urinish topilmadi' });
+        if (attempt.finishedAt) {
+            return res.status(400).json({ error: 'Urinish allaqachon yakunlangan, javob qabul qilinmaydi' });
+        }
+
         const question = await prisma.quizQuestion.findUnique({
             where: { id: questionId },
             include: { options: true }
         });
         if (!question) return res.status(404).json({ error: 'Savol topilmadi' });
+        if (question.quizId !== attempt.quizId) {
+            return res.status(400).json({ error: 'Savol ushbu quiz urinishiga tegishli emas' });
+        }
 
         let isCorrect = false;
         let points = 0;
@@ -324,9 +372,34 @@ router.post('/attempts/:aid/finish', async (req, res) => {
     try {
         const attempt = await prisma.quizAttempt.findUnique({
             where: { id: req.params.aid },
-            include: { answers: true, quiz: true }
+            include: { answers: { include: { question: { include: { options: true } } } }, quiz: true }
         });
         if (!attempt) return res.status(404).json({ error: 'Urinish topilmadi' });
+
+        // Idempotent tekshiruv: agar allaqachon yakunlangan bo'lsa, qayta Assessment yaratmasdan mavjud natijani qaytarish
+        if (attempt.finishedAt) {
+            return res.json({ data: attempt, message: 'Allaqachon yakunlangan' });
+        }
+
+        // TEST-01: server-side vaqt chegarasini tekshirish.
+        // duration > 0 bo'lsa va boshlash vaqtidan hisoblaganda belgilangan daqiqadan 2 daqiqa
+        // tolerans bilan o'tib ketilgan bo'lsa — so'rov rad etiladi.
+        if (attempt.quiz.duration && attempt.quiz.duration > 0) {
+            const deadlineMs = attempt.startedAt.getTime() + (attempt.quiz.duration + 2) * 60 * 1000;
+            if (Date.now() > deadlineMs) {
+                // Yakunlangan deb belgilab qo'yamiz (avtomatik 0 ball bilan) va xabar qaytaramiz
+                const timedOut = await prisma.quizAttempt.update({
+                    where: { id: req.params.aid },
+                    data: {
+                        score: attempt.answers.reduce((sum, a) => sum + a.points, 0),
+                        passed: false,
+                        finishedAt: new Date(),
+                        timeSpent: Math.round((Date.now() - attempt.startedAt.getTime()) / 1000),
+                    }
+                });
+                return res.status(400).json({ error: 'Vaqt tugadi — test avtomatik yakunlandi', data: timedOut });
+            }
+        }
 
         const score = attempt.answers.reduce((sum, a) => sum + a.points, 0);
         const passed = score >= (attempt.quiz.passingScore / 100) * attempt.maxScore;

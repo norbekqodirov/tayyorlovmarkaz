@@ -5,6 +5,11 @@ import { validateStaffInitData } from '../services/telegramService.js';
 import { todayDateStr, nowTimeStr, nowMinutesOfDay, tashkentDayOfWeek, addDaysDateStr } from '../utils/timezone.js';
 import { MANAGER_KEY, teacherKey, studentKey } from './parentChat.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
+import { logAudit } from '../middleware/audit.js';
+
+function isValidDescriptor(d: any): boolean {
+    return Array.isArray(d) && d.length === 128 && d.every(n => typeof n === 'number' && Number.isFinite(n));
+}
 
 const router = express.Router();
 
@@ -663,8 +668,8 @@ router.get('/face-profile', staffPortalAuth, async (req: any, res) => {
 router.post('/face-profile', staffPortalAuth, async (req: any, res) => {
     try {
         const { descriptor, photoDataUrl } = req.body;
-        if (!Array.isArray(descriptor) || descriptor.length !== 128) {
-            return res.status(400).json({ error: 'Yuz aniqlanmadi. Yorug\'roq joyda qayta urinib ko\'ring.' });
+        if (!isValidDescriptor(descriptor)) {
+            return res.status(400).json({ error: 'Yuz aniqlanmadi yoki noto\'g\'ri deskriptor formati (128 ta chekli son bo\'lishi shart).' });
         }
         if (!photoDataUrl) {
             return res.status(400).json({ error: 'Yuz rasmi (photoDataUrl) kerak' });
@@ -700,7 +705,13 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
         if (latitude == null || longitude == null) {
             return res.status(400).json({ error: 'GPS joylashuvi kerak' });
         }
-        if (!faceBypass && (!Array.isArray(descriptor) || descriptor.length !== 128)) {
+        if (faceBypass) {
+            const userRole = req.staffUser?.role;
+            if (!['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole)) {
+                return res.status(403).json({ error: 'Yuz tekshiruvini aylanib o\'tish (faceBypass) faqat rahbar yoki menejerlar uchun ruxsat etilgan.' });
+            }
+        }
+        if (!faceBypass && !isValidDescriptor(descriptor)) {
             return res.status(400).json({ error: 'Yuz aniqlanmadi. Qayta urinib ko\'ring.' });
         }
 
@@ -803,6 +814,17 @@ router.post('/check-in', staffPortalAuth, async (req: any, res) => {
             },
         });
 
+        if (faceBypass) {
+            await logAudit({
+                userId: req.staffUser?.id,
+                userName: req.staffUser?.name || 'staff',
+                action: 'face_bypass_checkin',
+                resource: 'staff_attendance',
+                resourceId: staffId,
+                metadata: { date, time: timeStr, location: matchedLocation.name }
+            });
+        }
+
         res.json({
             ok: true,
             checkIn: timeStr,
@@ -823,6 +845,16 @@ router.post('/check-out', staffPortalAuth, async (req: any, res) => {
     try {
         const { descriptor, latitude, longitude, faceBypass = false } = req.body;
 
+        if (faceBypass) {
+            const userRole = req.staffUser?.role;
+            if (!['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(userRole)) {
+                return res.status(403).json({ error: 'Yuz tekshiruvini aylanib o\'tish (faceBypass) faqat rahbar yoki menejerlar uchun ruxsat etilgan.' });
+            }
+        }
+        if (!faceBypass && !isValidDescriptor(descriptor)) {
+            return res.status(400).json({ error: 'Yuz aniqlanmadi. Qayta urinib ko\'ring.' });
+        }
+
         const staffMember = await prisma.staffMember.findFirst({
             where: { telegramChatId: req.staffUser.telegramChatId },
             include: { faceProfile: true },
@@ -833,11 +865,8 @@ router.post('/check-out', staffPortalAuth, async (req: any, res) => {
         if (!faceProfile) return res.status(400).json({ error: 'Yuz profili yo\'q' });
 
         if (!faceBypass) {
-            if (!Array.isArray(descriptor) || descriptor.length !== 128) {
-                return res.status(400).json({ error: 'Yuz aniqlanmadi. Qayta urinib ko\'ring.' });
-            }
             const storedDescriptor: number[] = JSON.parse(faceProfile.descriptor || '[]');
-            if (!Array.isArray(storedDescriptor) || storedDescriptor.length !== 128) {
+            if (!isValidDescriptor(storedDescriptor)) {
                 return res.status(409).json({ error: 'Yuz profili eskirgan. Qaytadan ro\'yxatdan o\'ting.', needReregister: true });
             }
             const distance = faceDistance(descriptor, storedDescriptor);
@@ -868,6 +897,17 @@ router.post('/check-out', staffPortalAuth, async (req: any, res) => {
                 checkOutLng: longitude,
             },
         });
+
+        if (faceBypass) {
+            await logAudit({
+                userId: req.staffUser?.id,
+                userName: req.staffUser?.name || 'staff',
+                action: 'face_bypass_checkout',
+                resource: 'staff_attendance',
+                resourceId: staffMember.id,
+                metadata: { date, time: timeStr }
+            });
+        }
 
         res.json({ ok: true, checkOut: timeStr, record });
     } catch (err: any) {

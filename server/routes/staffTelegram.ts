@@ -8,6 +8,7 @@ import {
     extractPhoneDigits,
 } from '../services/telegramService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr, tashkentDayOfWeek } from '../utils/timezone.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 
@@ -28,6 +29,13 @@ async function getStaffMiniAppUrl(): Promise<string> {
 
 router.post('/webhook', async (req, res) => {
     try {
+        const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
+        const settingSecret = await prisma.setting.findUnique({ where: { key: 'staff_webhook_secret' } }).catch(() => null);
+        const expectedSecret = settingSecret?.value || process.env.STAFF_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || '';
+        if (expectedSecret && secretHeader !== expectedSecret) {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+
         const update = req.body;
         if (!update) return res.sendStatus(200);
 
@@ -72,6 +80,17 @@ router.post('/webhook', async (req, res) => {
 
         // ── Contact shared: telefon raqam orqali avtomatik bog'lash ──────────
         if (msg.contact) {
+            // Kontakt yuboruvchining o'ziga tegishli ekanini tekshirish
+            if (msg.contact.user_id && msg.from?.id && msg.contact.user_id !== msg.from.id) {
+                await sendStaffMessage(
+                    chatId,
+                    '❌ <b>Xatolik:</b> Faqat o\'zingizning kontaktingizni ulashingiz mumkin.',
+                    'HTML',
+                    { remove_keyboard: true }
+                );
+                return res.sendStatus(200);
+            }
+
             const tgPhone = msg.contact.phone_number || '';
             const tgDigits = extractPhoneDigits(tgPhone);
 
@@ -85,13 +104,13 @@ router.post('/webhook', async (req, res) => {
             // Qadam 1: StaffMember (HR sahifasidagi xodimlar) dan qidirish
             const allStaff = await prisma.staffMember.findMany({
                 where: { status: { not: 'Ishdan bo\'shagan' }, deletedAt: null },
-                select: { id: true, name: true, role: true, phone: true },
+                select: { id: true, name: true, role: true, phone: true, telegramChatId: true },
             });
 
-            let matchedStaff: { id: string; name: string; role: string } | null = null;
+            let matchedStaff: { id: string; name: string; role: string; telegramChatId?: string | null } | null = null;
             for (const s of allStaff) {
                 if (s.phone && extractPhoneDigits(s.phone) === tgDigits) {
-                    matchedStaff = { id: s.id, name: s.name, role: s.role };
+                    matchedStaff = s;
                     break;
                 }
             }
@@ -107,24 +126,16 @@ router.post('/webhook', async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // StaffMember ga telegramChatId saqlaymiz (HR kuzatuvi uchun)
-            try {
-                await prisma.staffMember.update({
-                    where: { id: matchedStaff.id },
-                    data: { telegramChatId: chatId },
-                });
-            } catch { /* unique constraint — boshqa kimda bog'liq bo'lsa o'tkazib yuboramiz */ }
-
             // Qadam 2: Xuddi shu telefon bo'yicha User (CRM portal akkaunt) topamiz
             const allUsers = await prisma.user.findMany({
                 where: { isActive: true },
-                select: { id: true, name: true, role: true, phone: true },
+                select: { id: true, name: true, role: true, phone: true, telegramChatId: true },
             });
 
-            let matchedUser: { id: string; name: string; role: string } | null = null;
+            let matchedUser: { id: string; name: string; role: string; telegramChatId?: string | null } | null = null;
             for (const u of allUsers) {
                 if (u.phone && extractPhoneDigits(u.phone) === tgDigits) {
-                    matchedUser = { id: u.id, name: u.name, role: u.role };
+                    matchedUser = u;
                     break;
                 }
             }
@@ -140,6 +151,34 @@ router.post('/webhook', async (req, res) => {
                 );
                 return res.sendStatus(200);
             }
+
+            // Allaqachon boshqa akkauntga bog'langanligini tekshirish
+            if (matchedStaff.telegramChatId && matchedStaff.telegramChatId !== chatId) {
+                await sendStaffMessage(
+                    chatId,
+                    `⚠️ <b>Ogohlantirish:</b> Ushbu xodim hisobi allaqachon boshqa Telegram akkauntiga bog'langan.\n\n` +
+                    `Xavfsizlik yuzasidan qayta bog'lash uchun tizim ma'muri (Admin) bilan bog'laning.`,
+                    'HTML', { remove_keyboard: true }
+                );
+                return res.sendStatus(200);
+            }
+            if (matchedUser.telegramChatId && matchedUser.telegramChatId !== chatId) {
+                await sendStaffMessage(
+                    chatId,
+                    `⚠️ <b>Ogohlantirish:</b> Ushbu foydalanuvchi hisobi allaqachon boshqa Telegram akkauntiga bog'langan.\n\n` +
+                    `Xavfsizlik yuzasidan qayta bog'lash uchun tizim ma'muri (Admin) bilan bog'laning.`,
+                    'HTML', { remove_keyboard: true }
+                );
+                return res.sendStatus(200);
+            }
+
+            // StaffMember ga telegramChatId saqlaymiz (HR kuzatuvi uchun)
+            try {
+                await prisma.staffMember.update({
+                    where: { id: matchedStaff.id },
+                    data: { telegramChatId: chatId },
+                });
+            } catch { /* unique constraint — boshqa kimda bog'liq bo'lsa o'tkazib yuboramiz */ }
 
             // Muvaffaqiyatli — User ga telegramChatId saqlaymiz (portal auth uchun)
             await prisma.user.update({
@@ -363,7 +402,7 @@ router.get('/webhook-info', requireAuth, async (_req, res) => {
 
 // ─── POST /api/staff-telegram/set-webhook ────────────────────────────────────
 
-router.post('/set-webhook', requireAuth, async (req, res) => {
+router.post('/set-webhook', requireAuth, requirePermission('settings'), async (req, res) => {
     try {
         const { url } = req.body as { url: string };
         if (!url) return res.status(400).json({ error: 'URL talab qilinadi' });
@@ -376,7 +415,7 @@ router.post('/set-webhook', requireAuth, async (req, res) => {
 
 // ─── POST /api/staff-telegram/send ───────────────────────────────────────────
 
-router.post('/send', requireAuth, async (req, res) => {
+router.post('/send', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { userId, text } = req.body as { userId: string; text: string };
         if (!userId || !text) return res.status(400).json({ error: 'userId va text talab qilinadi' });
@@ -396,7 +435,7 @@ router.post('/send', requireAuth, async (req, res) => {
 
 // ─── POST /api/staff-telegram/broadcast ──────────────────────────────────────
 
-router.post('/broadcast', requireAuth, async (req, res) => {
+router.post('/broadcast', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { role, text } = req.body as { role?: string; text: string };
         if (!text) return res.status(400).json({ error: 'text talab qilinadi' });

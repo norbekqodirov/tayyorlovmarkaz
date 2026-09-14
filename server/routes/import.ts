@@ -5,7 +5,8 @@ import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const MAX_IMPORT_ROWS = 10000;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Collection → Prisma model va minimal required fields
 const IMPORT_CONFIG: Record<string, {
@@ -79,6 +80,9 @@ router.post('/:collection/preview', requireAuth, requireMinRole('MANAGER'),
         if (rows.length === 0) {
             return res.status(400).json({ message: 'Fayl bo\'sh yoki noto\'g\'ri format' });
         }
+        if (rows.length > MAX_IMPORT_ROWS) {
+            return res.status(400).json({ message: `Fayldagi qatorlar soni (${rows.length}) ruxsat etilgan limitdan (${MAX_IMPORT_ROWS}) oshib ketdi` });
+        }
 
         // Ustun nomlari
         const columns = Object.keys(rows[0]);
@@ -149,6 +153,9 @@ router.post('/:collection/confirm', requireAuth, requireMinRole('MANAGER'),
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        if (rows.length > MAX_IMPORT_ROWS) {
+            return res.status(400).json({ message: `Fayldagi qatorlar soni (${rows.length}) ruxsat etilgan limitdan (${MAX_IMPORT_ROWS}) oshib ketdi` });
+        }
 
         let created = 0;
         let skipped = 0;

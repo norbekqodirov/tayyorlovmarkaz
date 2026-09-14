@@ -97,6 +97,16 @@ bot.command('start', async (ctx) => {
 bot.on('message:contact', async (ctx) => {
     const contact = ctx.message.contact;
     const chatId = String(ctx.chat.id);
+
+    // Kontakt yuboruvchining o'ziga tegishli ekanini tekshirish
+    if (contact.user_id && ctx.from?.id && contact.user_id !== ctx.from.id) {
+        await ctx.reply(
+            '❌ <b>Xatolik:</b> Faqat o\'zingizning kontaktingizni ulashingiz mumkin.',
+            { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
+        );
+        return;
+    }
+
     const digits = extractDigits(contact.phone_number);
 
     if (!digits) {
@@ -108,14 +118,14 @@ bot.on('message:contact', async (ctx) => {
     // O'quvchi yoki ota-ona telefoni bo'yicha qidirish
     const students = await prisma.student.findMany({
         where: { deletedAt: null },
-        select: { id: true, name: true, phone: true, parentPhone: true },
+        select: { id: true, name: true, phone: true, parentPhone: true, telegramChatId: true, parentTelegramId: true },
     });
 
-    let matched: { id: string; name: string } | null = null;
+    let matched: { id: string; name: string; telegramChatId?: string | null; parentTelegramId?: string | null } | null = null;
     let asParent = false;
     for (const s of students) {
-        if (s.phone && extractDigits(s.phone) === digits) { matched = { id: s.id, name: s.name }; asParent = false; break; }
-        if (s.parentPhone && extractDigits(s.parentPhone) === digits) { matched = { id: s.id, name: s.name }; asParent = true; break; }
+        if (s.phone && extractDigits(s.phone) === digits) { matched = s; asParent = false; break; }
+        if (s.parentPhone && extractDigits(s.parentPhone) === digits) { matched = s; asParent = true; break; }
     }
 
     if (!matched) {
@@ -123,6 +133,17 @@ bot.on('message:contact', async (ctx) => {
             `❌ <b>Raqam topilmadi</b>\n\n` +
             `<code>${contact.phone_number}</code> tizimda o'quvchi yoki ota-ona sifatida ro'yxatda yo'q.\n\n` +
             `Iltimos o'quv markazga bergan raqamingizni ulashing yoki admin bilan bog'laning.`,
+            { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
+        );
+        return;
+    }
+
+    // Allaqachon boshqa akkauntga bog'langanligini tekshirish
+    const existingChatId = asParent ? matched.parentTelegramId : matched.telegramChatId;
+    if (existingChatId && existingChatId !== chatId) {
+        await ctx.reply(
+            `⚠️ <b>Ogohlantirish:</b> Ushbu ${asParent ? 'ota-ona' : 'o\'quvchi'} hisobi allaqachon boshqa Telegram akkauntiga bog'langan.\n\n` +
+            `Xavfsizlik yuzasidan qayta bog'lash uchun admin bilan bog'laning.`,
             { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
         );
         return;

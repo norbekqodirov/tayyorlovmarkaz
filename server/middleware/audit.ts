@@ -110,11 +110,16 @@ export async function logAudit(opts: {
     }
 }
 
+const SENSITIVE_KEY_PATTERN = /(password|token|secret|descriptor|photoDataUrl|apiKey|privateKey|credential|authorization)/i;
+
 function safeStringify(obj: any): string {
     try {
-        return JSON.stringify(obj, (_k, v) => {
-            if (v instanceof Date) return v.toISOString();
-            return v;
+        return JSON.stringify(obj, (key, value) => {
+            if (value instanceof Date) return value.toISOString();
+            if (key && SENSITIVE_KEY_PATTERN.test(key)) {
+                return '***';
+            }
+            return value;
         });
     } catch {
         return '';
