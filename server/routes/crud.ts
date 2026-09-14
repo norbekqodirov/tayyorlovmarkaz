@@ -83,11 +83,18 @@ const TEACHER_SCOPE_MODELS: Record<string, (userId: string) => any> = {
     groupStudentNote: (userId) => ({ group: { teacherId: userId } }),
 };
 
-// Yozish (POST/PUT) tomonida ham xuddi shu himoya kerak bo'lgan modellar —
-// bularning har biri bitta guruhga tegishli (davomat/baho/imtihon/eslatma).
-// Ro'yxatga OLINMAGAN: 'group'/'student' — ularga TEACHER yozish huquqi
-// COLLECTION_WRITE_LEVEL orqali allaqachon yopiq (faqat MANAGER+).
-const TEACHER_WRITE_SCOPE_MODELS = new Set(['attendance', 'assessment', 'exam', 'groupExam', 'groupStudentNote']);
+// Yozish (POST/PUT/DELETE) tomonida ham xuddi shu himoya kerak bo'lgan
+// modellar — bularning har biri bitta guruhga tegishli (davomat/baho/
+// imtihon/eslatma). Ro'yxatga OLINMAGAN: 'group'/'student' — ularga
+// TEACHER yozish huquqi COLLECTION_WRITE_LEVEL orqali allaqachon yopiq
+// (faqat MANAGER+).
+// SEC-06 tuzatish: 'attendanceRecord' bu ro'yxatda YO'Q edi — generic
+// POST/PUT /api/attendanceRecords (server/routes/studentAttendance.ts'ning
+// maxsus, kuchliroq tekshiruvli /api/attendance-records'idan FARQLI, o'sha
+// bilan bir Prisma modeliga yozadigan muqobil yo'l) orqali TEACHER
+// ISTALGAN guruhga (o'ziniki bo'lmasa ham) davomat yoza olardi — hech
+// qanday egalik tekshiruvisiz. Endi shu yerga ham qo'shildi.
+const TEACHER_WRITE_SCOPE_MODELS = new Set(['attendance', 'attendanceRecord', 'assessment', 'exam', 'groupExam', 'groupStudentNote']);
 
 async function teacherOwnsGroup(groupId: string | undefined | null, userId: string): Promise<boolean> {
     if (!groupId) return false;
@@ -565,7 +572,12 @@ router.get('/:collection', async (req, res) => {
 router.get('/:collection/:id', async (req, res) => {
     try {
         if ((req as any).useFallback) {
-            const doc = await prisma.genericDocument.findUnique({ where: { id: req.params.id } });
+            // SEC-06 tuzatish: ilgari faqat `id` bo'yicha (collection'siz)
+            // qidirilardi — turli generic-fallback kolleksiyalar (masalan
+            // ADMIN ruxsatiga ega bo'lgan ikkita nomlanmagan kolleksiya)
+            // orasida ID orqali "chegaradan chiqib" boshqa kolleksiyaga
+            // tegishli hujjatni o'qish mumkin edi.
+            const doc = await prisma.genericDocument.findFirst({ where: { id: req.params.id, collection: req.params.collection } });
             if (!doc) return res.status(404).json({ message: 'Topilmadi' });
             try { return res.json({ id: doc.id, ...JSON.parse(doc.data) }); }
             catch { return res.json({ id: doc.id }); }
@@ -669,8 +681,13 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
 router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
     try {
         if ((req as any).useFallback) {
-            const existing = await prisma.genericDocument.findUnique({ where: { id: req.params.id } });
-            const existingData = existing ? (() => { try { return JSON.parse(existing.data); } catch { return {}; } })() : {};
+            // SEC-06 tuzatish: avval `id` topilmasa ham (yoki boshqa
+            // kolleksiyaga tegishli bo'lsa ham) `update()` baribir ishga
+            // tushardi — collection tekshirilmagani uchun boshqa
+            // kolleksiyadagi hujjat "yangilanardi" (aslida ustidan yozilardi).
+            const existing = await prisma.genericDocument.findFirst({ where: { id: req.params.id, collection: req.params.collection } });
+            if (!existing) return res.status(404).json({ message: 'Topilmadi' });
+            const existingData = (() => { try { return JSON.parse(existing.data); } catch { return {}; } })();
             const mergedData = { ...existingData, ...req.body };
             const doc = await prisma.genericDocument.update({
                 where: { id: req.params.id },
@@ -706,7 +723,9 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
     const { collection, id } = req.params;
     try {
         if ((req as any).useFallback) {
-            const doc = await prisma.genericDocument.findUnique({ where: { id } });
+            // SEC-06 tuzatish: collection tekshirilmasa, boshqa kolleksiyaga
+            // tegishli hujjatni ID orqali o'chirish mumkin edi.
+            const doc = await prisma.genericDocument.findFirst({ where: { id, collection } });
             if (!doc) return res.status(404).json({ message: 'Topilmadi' });
 
             if (collection === 'students') {
@@ -721,6 +740,20 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
             }
             await prisma.genericDocument.delete({ where: { id } });
             return res.json({ success: true });
+        }
+
+        // SEC-06 tuzatish: POST/PUT'da TEACHER guruh egaligi tekshirilardi,
+        // DELETE'da esa UMUMAN yo'q edi — TEACHER boshqa ustozning guruhiga
+        // tegishli davomat/baho/imtihon/eslatma yozuvini (ID'sini bilsa yoki
+        // taxmin qilsa) hech qanday tekshiruvsiz o'chira olardi.
+        const modelName = (req as any).modelName;
+        const requester = (req as any).user;
+        if (requester?.role === 'TEACHER' && TEACHER_WRITE_SCOPE_MODELS.has(modelName)) {
+            // @ts-ignore
+            const existing = await prisma[modelName].findUnique({ where: { id }, select: { groupId: true } });
+            if (!existing || !(await teacherOwnsGroup((existing as any).groupId, requester.id))) {
+                return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
+            }
         }
 
         // Native Prisma models — Faza 0.2: academic/marketing collections are now
@@ -738,7 +771,7 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
             });
         }
         // @ts-ignore
-        await prisma[(req as any).modelName].delete({ where: { id } });
+        await prisma[modelName].delete({ where: { id } });
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: String(error) });
