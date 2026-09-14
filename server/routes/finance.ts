@@ -116,31 +116,45 @@ router.post('/invoices', requireAuth, requireMinRole('MANAGER'), requirePermissi
             return res.status(400).json({ error: 'studentId, amount va dueDate majburiy' });
         }
 
-        // Generate invoice number: INV-YYYY-NNNN
-        const count = await prisma.invoice.count();
+        // FIN-03 tuzatish: raqam ilgari bitta count()dan hisoblanardi — ikki
+        // parallel so'rov bir xil count'ni o'qib, bir xil raqam (number
+        // @unique) yaratishga urinishi mumkin edi. `number` unique bo'lgani
+        // uchun ikkinchisi P2002 bilan xato berardi (ma'lumot buzilmaydi,
+        // lekin foydalanuvchi uchun tushunarsiz 500 xatosi bilan). Endi
+        // to'qnashuvda raqam qayta hisoblab qayta urinilad.
         const year = todayDateStr().slice(0, 4);
-        const number = `INV-${year}-${String(count + 1).padStart(4, '0')}`;
-
-        const invoice = await prisma.invoice.create({
-            data: {
-                number,
-                studentId,
-                amount: Number(amount),
-                discount: Number(discount || 0),
-                tax: Number(tax || 0),
-                dueDate,
-                method,
-                description,
-                items: items?.length ? {
-                    create: items.map((item: any) => ({
-                        name: item.name,
-                        quantity: item.quantity || 1,
-                        price: Number(item.price),
-                    })),
-                } : undefined,
-            },
-            include: { student: true, items: true },
-        });
+        let invoice;
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const count = await prisma.invoice.count();
+            const number = `INV-${year}-${String(count + 1 + attempt).padStart(4, '0')}`;
+            try {
+                invoice = await prisma.invoice.create({
+                    data: {
+                        number,
+                        studentId,
+                        amount: Number(amount),
+                        discount: Number(discount || 0),
+                        tax: Number(tax || 0),
+                        dueDate,
+                        method,
+                        description,
+                        items: items?.length ? {
+                            create: items.map((item: any) => ({
+                                name: item.name,
+                                quantity: item.quantity || 1,
+                                price: Number(item.price),
+                            })),
+                        } : undefined,
+                    },
+                    include: { student: true, items: true },
+                });
+                break;
+            } catch (e: any) {
+                const isDuplicateNumber = e.code === 'P2002' && e.meta?.target?.includes?.('number');
+                if (!isDuplicateNumber || attempt === 4) throw e;
+                // raqam allaqachon band — keyingi urinishda qayta hisoblanadi
+            }
+        }
         res.status(201).json(invoice);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -209,6 +223,22 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
             return res.json(result.invoice);
         }
 
+        // FIN-03 tuzatish: ilgari status'ga HECH QANDAY cheklov yo'q edi —
+        // "paid" holatidan istalgan boshqa holatga (masalan "pending") erkin
+        // qaytarish mumkin edi, keyin qayta "paid" qilinsa yuqoridagi shart
+        // (`status: {not: 'paid'}`) yana rost bo'lib, Payment/Transaction/
+        // balans IKKINCHI marta yaratilardi (paid -> pending -> paid orqali
+        // takror kredit). Endi "paid" holatidan chiqish shu umumiy yo'l
+        // orqali UMUMAN taqiqlanadi — to'langan invoice'ni bekor qilish
+        // uchun alohida (hali qo'shilmagan) reversal jarayoni kerak bo'ladi.
+        if (status !== undefined && status !== 'paid') {
+            const current = await prisma.invoice.findUnique({ where: { id: req.params.id }, select: { status: true } });
+            if (!current) return res.status(404).json({ error: 'Invoice topilmadi' });
+            if (current.status === 'paid') {
+                return res.status(400).json({ error: "To'langan invoice holatini shu yo'l orqali o'zgartirib bo'lmaydi — reversal/refund jarayoni kerak" });
+            }
+        }
+
         const data: any = {};
         if (status !== undefined) data.status = status;
         if (method !== undefined) data.method = method;
@@ -224,8 +254,17 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
 });
 
 // DELETE /api/finance/invoices/:id
+// FIN-03 tuzatish: to'langan invoice'ni o'chirishga hech qanday cheklov
+// yo'q edi — Payment/Transaction/balans o'zgarishi (haqiqiy moliyaviy
+// tarix) qolgan holda invoice yozuvining o'zi yo'qolib, hisobotlarda
+// "manba"siz to'lov qolib ketardi.
 router.delete('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
+        const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id }, select: { status: true } });
+        if (!invoice) return res.status(404).json({ error: 'Invoice topilmadi' });
+        if (invoice.status === 'paid') {
+            return res.status(400).json({ error: "To'langan invoice'ni o'chirib bo'lmaydi — moliyaviy tarix saqlanishi shart" });
+        }
         await prisma.invoice.delete({ where: { id: req.params.id } });
         res.json({ success: true });
     } catch (err: any) {
