@@ -8,6 +8,7 @@ import {
     extractPhoneDigits,
 } from '../services/telegramService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr, tashkentDayOfWeek } from '../utils/timezone.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 
@@ -401,7 +402,7 @@ router.get('/webhook-info', requireAuth, async (_req, res) => {
 
 // ─── POST /api/staff-telegram/set-webhook ────────────────────────────────────
 
-router.post('/set-webhook', requireAuth, async (req, res) => {
+router.post('/set-webhook', requireAuth, requirePermission('settings'), async (req, res) => {
     try {
         const { url } = req.body as { url: string };
         if (!url) return res.status(400).json({ error: 'URL talab qilinadi' });
@@ -414,7 +415,7 @@ router.post('/set-webhook', requireAuth, async (req, res) => {
 
 // ─── POST /api/staff-telegram/send ───────────────────────────────────────────
 
-router.post('/send', requireAuth, async (req, res) => {
+router.post('/send', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { userId, text } = req.body as { userId: string; text: string };
         if (!userId || !text) return res.status(400).json({ error: 'userId va text talab qilinadi' });
@@ -434,7 +435,7 @@ router.post('/send', requireAuth, async (req, res) => {
 
 // ─── POST /api/staff-telegram/broadcast ──────────────────────────────────────
 
-router.post('/broadcast', requireAuth, async (req, res) => {
+router.post('/broadcast', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const { role, text } = req.body as { role?: string; text: string };
         if (!text) return res.status(400).json({ error: 'text talab qilinadi' });
