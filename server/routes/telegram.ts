@@ -44,9 +44,11 @@ function isValidWebhookUrl(urlStr: string): boolean {
 
 // ─── Bot webhook (grammY) ─────────────────────────────────────────────────────
 
-router.post('/webhook', (req, res) => {
+router.post('/webhook', async (req, res) => {
     const secret = req.headers['x-telegram-bot-api-secret-token'];
-    if (WEBHOOK_SECRET && secret !== WEBHOOK_SECRET) {
+    const settingSecret = await prisma.setting.findUnique({ where: { key: 'telegram_webhook_secret' } }).catch(() => null);
+    const expectedSecret = settingSecret?.value || WEBHOOK_SECRET || '';
+    if (expectedSecret && secret !== expectedSecret) {
         res.status(403).json({ message: 'Forbidden' });
         return;
     }
