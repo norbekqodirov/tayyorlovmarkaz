@@ -6,6 +6,7 @@
 import React from 'react';
 import { format } from 'date-fns';
 import MonthSelector from './MonthSelector';
+import { gradeColorFor } from '../../utils/gradeColor';
 
 interface Props {
   group: any;
@@ -34,15 +35,19 @@ const RatingTab: React.FC<Props> = ({
         (r: any) => r.studentId === s.id && (r.status === 'present' || r.status === 'late'),
       ).length;
 
-      // Assessments for this month
+      // Assessments for this month — har bir yozuv o'z maxScore'i bilan foizga
+      // normallashtiriladi (Baholash endi 1-5 shkalada, score/maxScore=5), shu
+      // sabab eski (0-100 shkalali) yozuvlar bilan ham to'g'ri aralashadi.
       const monthAss = assessmentDocs.filter(
         (a: any) => a.groupId === group.id && a.studentId === s.id && a.date.startsWith(monthPrefix),
       );
-      const totalScore = monthAss.reduce((sum: number, doc: any) => sum + Number(doc.score || 0), 0);
-      const avgScore = monthAss.length > 0 ? (totalScore / monthAss.length).toFixed(1) : '0.0';
-      const performanceIndex = present * 10 + Number(avgScore) * 5;
+      const avgPercent = monthAss.length > 0
+        ? monthAss.reduce((sum: number, a: any) => sum + (Number(a.score || 0) / Number(a.maxScore || 5)) * 100, 0) / monthAss.length
+        : 0;
+      const avgGrade5 = monthAss.length > 0 ? Math.round((avgPercent / 100) * 5 * 10) / 10 : 0;
+      const performanceIndex = present * 10 + avgPercent * 5;
 
-      return { ...s, present, totalAtt, avgScore, performanceIndex };
+      return { ...s, present, totalAtt, avgGrade5, performanceIndex };
     })
     .sort((a, b) => b.performanceIndex - a.performanceIndex);
 
@@ -78,10 +83,8 @@ const RatingTab: React.FC<Props> = ({
             <div className="grid grid-cols-2 gap-4 relative">
               <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-3 rounded-xl">
                 <p className="text-[9px] font-black tracking-widest text-zinc-400 uppercase mb-1">O'rtacha Baho</p>
-                <p className={`text-xl font-black ${
-                  Number(s.avgScore) >= 80 ? 'text-emerald-500' : Number(s.avgScore) >= 50 ? 'text-amber-500' : 'text-rose-500'
-                }`}>
-                  {s.avgScore}
+                <p className={`text-xl font-black ${gradeColorFor(s.avgGrade5)?.text || 'text-zinc-400'}`}>
+                  {s.avgGrade5 || '—'} <span className="text-xs text-zinc-300">/ 5</span>
                 </p>
               </div>
               <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-3 rounded-xl">

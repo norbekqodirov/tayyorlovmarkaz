@@ -14,7 +14,7 @@ import { RevenueChart } from '../../../components/dashboard/widgets/RevenueChart
 import { StudentGrowthChart } from '../../../components/dashboard/widgets/StudentGrowthChart';
 import { LeadSourceChart } from '../../../components/dashboard/widgets/LeadSourceChart';
 import { LeadFunnelChart } from '../../../components/dashboard/widgets/LeadFunnelChart';
-import { UpcomingLessons } from '../../../components/dashboard/widgets/UpcomingLessons';
+import { WeeklySchedule } from '../../../components/dashboard/widgets/WeeklySchedule';
 import { DebtorsTable } from '../../../components/dashboard/widgets/DebtorsTable';
 import { RecentPayments } from '../../../components/dashboard/widgets/RecentPayments';
 import { RecentLeads } from '../../../components/dashboard/widgets/RecentLeads';
@@ -29,7 +29,6 @@ export default function CrmDashboard() {
   const { data: leads = [], loading: loadingLeads, error: errorLeads, refetch: refetchLeads } = useFirestore<any>('leads');
   const { data: transactions = [], loading: loadingTransactions, error: errorTransactions, refetch: refetchTransactions } = useFirestore<any>('transactions');
   const { data: teachers = [] } = useFirestore<any>('teachers');
-  const { data: schedule = [] } = useFirestore<any>('schedule');
   const { data: attendanceRecords = [] } = useFirestore<any>('attendanceRecords');
 
   const refetchAll = useCallback(() => {
@@ -175,8 +174,8 @@ export default function CrmDashboard() {
         return <LeadSourceChart data={leadSourceData} />;
       case 'chart_lead_funnel':
         return <LeadFunnelChart leads={leads} />;
-      case 'table_upcoming':
-        return <UpcomingLessons schedules={schedule} />;
+      case 'weekly_schedule':
+        return <WeeklySchedule />;
       case 'table_debtors':
         return <DebtorsTable students={students} />;
       case 'table_top_students':
@@ -197,6 +196,7 @@ export default function CrmDashboard() {
   const getWidgetMeta = (id: string) => WIDGET_REGISTRY.find(w => w.id === id);
   const getSizeClass = (id: string) => {
     const meta = getWidgetMeta(id);
+    if (meta?.size === 'full') return 'col-span-1 sm:col-span-2 lg:col-span-4';
     if (meta?.size === 'lg') return 'col-span-1 sm:col-span-2';
     return 'col-span-1';
   };
@@ -336,7 +336,7 @@ export default function CrmDashboard() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.15 }}
-                className={`relative ${getSizeClass(id)} ${meta.size === 'sm' ? 'min-h-[130px]' : 'min-h-[280px]'}`}
+                className={`relative ${getSizeClass(id)} ${meta.size === 'sm' ? 'min-h-[130px]' : meta.size === 'full' ? 'min-h-[560px]' : 'min-h-[280px]'}`}
               >
                 {rendered}
                 {isEditMode && (

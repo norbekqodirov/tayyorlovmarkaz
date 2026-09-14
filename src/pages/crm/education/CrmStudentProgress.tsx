@@ -241,13 +241,23 @@ export default function CrmStudentProgress() {
                       <td className="py-2.5 px-2 text-zinc-600 dark:text-zinc-400">{a.date}</td>
                       <td className="py-2.5 px-2 text-slate-900 dark:text-white">{a.group?.name || a.groupName || '—'}</td>
                       <td className="py-2.5 px-2 text-center">
-                        <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black ${
-                          a.score >= 80 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
-                          a.score >= 60 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
-                          'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
-                        }`}>
-                          {a.score}
-                        </span>
+                        {(() => {
+                          // Baholash endi 1-5 shkalada (maxScore:5), Test/Quiz'dan
+                          // kelgan yozuvlar esa hali ham 0-100 (maxScore:100) —
+                          // rang chegarasi shkaladan qat'i nazar to'g'ri bo'lishi
+                          // uchun har doim foizga normallashtiriladi.
+                          const max = Number(a.maxScore) || 100;
+                          const pct = (Number(a.score) / max) * 100;
+                          return (
+                            <span className={`inline-block px-2 py-0.5 rounded-lg text-xs font-black ${
+                              pct >= 80 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' :
+                              pct >= 60 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
+                              'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
+                            }`}>
+                              {a.score}{a.maxScore ? `/${a.maxScore}` : ''}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-2.5 px-2 text-zinc-500 text-xs">{a.notes || a.comment || '—'}</td>
                     </tr>

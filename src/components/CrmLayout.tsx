@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  LogOut, Menu, X, Settings, GraduationCap, Wallet, Calendar,
+  LogOut, Menu, X, Settings, GraduationCap, Wallet,
   Plus, Bell, Search, UserCircle, ChevronDown, ChevronRight,
   PanelLeftClose, PanelLeftOpen, Sun, Moon, Activity,
   ArrowUpRight, Target, Users2,
@@ -149,7 +149,6 @@ export default function CrmLayout() {
     { label: "Yangi O'quvchi",  icon: GraduationCap, path: '/crmtayyorlovmarkaz/students', color: 'text-blue-500',   permission: 'students' },
     { label: 'Yangi To\'lov',   icon: Wallet,        path: '/crmtayyorlovmarkaz/finance',  color: 'text-green-500',  permission: 'finance'  },
     { label: 'Yangi Guruh',     icon: Users2,        path: '/crmtayyorlovmarkaz/groups',   color: 'text-indigo-500', permission: 'groups'   },
-    { label: 'Dars Jadvali',    icon: Calendar,      path: '/crmtayyorlovmarkaz/schedule', color: 'text-amber-500',  permission: 'schedule' },
   ];
   const quickActions = allQuickActions.filter(a => canSeeLink(a.permission));
 

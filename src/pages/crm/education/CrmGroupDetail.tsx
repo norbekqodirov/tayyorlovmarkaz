@@ -198,22 +198,23 @@ export default function CrmGroupDetail() {
     return () => { active = false; };
   }, [group?.id, currentDate]);
 
-  // ─── Assessment (daily score) ───────────────────────────────────────────────
+  // ─── Assessment (daily 1-5 grade) ───────────────────────────────────────────
   const handleAssessmentChange = async (studentId: string, dateStr: string, score: number) => {
-    // Input'dagi max="100" faqat kosmetik (brauzer forma validatsiyasini
-    // majburlamaydi) — shu yerda haqiqiy tekshiruv, aks holda "cheksiz" ball
-    // (masalan 9999) jimgina saqlanib, GPA/hisobotlarni buzardi.
-    if (!Number.isFinite(score) || score < 0 || score > 100) {
-      showToast('Ball 0 dan 100 gacha bo\'lishi kerak', 'error');
+    // AssessmentTab endi faqat 1-5 tugmalar orqali chaqiradi, lekin shu yerda
+    // ham tekshiramiz — maxScore:5 har doim aniq yoziladi, aks holda eski
+    // (0-100 shkalali) yozuvni yangilaganda maxScore eskicha (100) qolib,
+    // keyinchalik GPA/o'rtacha hisob-kitoblarni buzishi mumkin edi.
+    if (!Number.isInteger(score) || score < 1 || score > 5) {
+      showToast("Baho 1 dan 5 gacha bo'lishi kerak", 'error');
       return;
     }
     const existingDoc = assessmentDocs.find(
       (a: any) => a.studentId === studentId && a.groupId === group?.id && a.date === dateStr,
     );
     if (existingDoc) {
-      await updateAssess(existingDoc.id, { score });
+      await updateAssess(existingDoc.id, { score, maxScore: 5 });
     } else {
-      await addAssess({ groupId: group?.id, studentId, date: dateStr, score });
+      await addAssess({ groupId: group?.id, studentId, date: dateStr, score, maxScore: 5 });
     }
   };
 

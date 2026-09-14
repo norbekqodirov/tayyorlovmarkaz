@@ -183,7 +183,7 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
           <div className="flex-1 flex flex-col items-center justify-center text-center py-12 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
             <CalendarDays size={32} className="text-zinc-300 dark:text-zinc-700 mb-3" />
             <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">Bu guruh uchun dars jadvali belgilanmagan</p>
-            <p className="text-xs text-zinc-400 mt-1">Davomatni kunlar bo'yicha ko'rsatish uchun avval "Dars Jadvali" bo'limida guruhning dars kunlarini sozlang.</p>
+            <p className="text-xs text-zinc-400 mt-1">Davomatni kunlar bo'yicha ko'rsatish uchun avval Bosh sahifadagi "Dars Jadvali" vidjeti orqali guruhning dars kunlarini sozlang.</p>
           </div>
         ) : monthLoading ? (
           <div className="flex items-center justify-center h-32"><Loader2 size={24} className="animate-spin text-zinc-400" /></div>

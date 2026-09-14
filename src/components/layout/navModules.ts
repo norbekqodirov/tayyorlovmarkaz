@@ -48,7 +48,6 @@ export const MODULES: NavModule[] = [
           { name: "O'quvchilar",     path: '/crmtayyorlovmarkaz/students',   icon: GraduationCap,  permission: 'students'   },
           { name: 'Guruhlar',        path: '/crmtayyorlovmarkaz/groups',     icon: Layers,         permission: 'groups'     },
           { name: 'Kurslar',         path: '/crmtayyorlovmarkaz/courses',    icon: BookOpen,       permission: 'courses'    },
-          { name: 'Dars Jadvali',    path: '/crmtayyorlovmarkaz/schedule',   icon: Calendar,       permission: 'schedule'   },
           { name: 'Elektron Jurnal', path: '/crmtayyorlovmarkaz/journal',    icon: ClipboardCheck, permission: 'journal'    },
           { name: 'Test Tizimi',     path: '/crmtayyorlovmarkaz/quiz',      icon: ClipboardList,  permission: 'quiz'    },
           { name: 'Imtihonlar',      path: '/crmtayyorlovmarkaz/tests',     icon: FileText,       permission: 'tests'    },

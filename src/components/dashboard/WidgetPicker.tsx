@@ -64,7 +64,7 @@ export function WidgetPicker({ activeWidgets, role, onAdd, onClose }: {
                       >
                         <div>
                           <p className="text-xs font-bold text-slate-900 dark:text-white">{w.title}</p>
-                          <p className="text-[9px] text-zinc-400 mt-0.5">{w.size === 'lg' ? 'Katta' : w.size === 'md' ? "O'rta" : 'Kichik'} widget</p>
+                          <p className="text-[9px] text-zinc-400 mt-0.5">{w.size === 'full' ? "To'liq kenglik" : w.size === 'lg' ? 'Katta' : w.size === 'md' ? "O'rta" : 'Kichik'} widget</p>
                         </div>
                         {isActive
                           ? <div className="w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center"><Check size={10} strokeWidth={3} className="text-zinc-500" /></div>

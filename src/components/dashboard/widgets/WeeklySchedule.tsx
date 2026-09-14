@@ -1,18 +1,21 @@
+/**
+ * WeeklySchedule.tsx
+ * Dashboard widget — haqiqiy haftalik dars jadvali (xonalar ustun, vaqt qator),
+ * to'liq CRUD (dars/xona qo'shish-tahrirlash-o'chirish) bilan. Ilgari alohida
+ * "Dars Jadvali" sahifasi (CrmSchedule.tsx) edi — foydalanuvchi so'rovi bilan
+ * (2026-09-14) sahifa olib tashlanib, jadvalning o'zi Dashboard'ga ko'chirildi.
+ */
 import { useState, useMemo, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
-  Plus, Clock, Trash2, AlertCircle, DoorOpen,
-  Calendar, BookOpen, Check, X as XIcon
+  Plus, Clock, Trash2, AlertCircle, DoorOpen, Calendar, Check,
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useCrmData } from '../../../hooks/useCrmData';
-import { useToast } from '../../../components/Toast';
-import ConfirmDialog from '../../../components/ConfirmDialog';
-import { Modal } from '../../../components/ui/Modal';
-import { PageHeader } from '../../../components/ui/PageHeader';
-import { StatCard } from '../../../components/ui/StatCard';
+import { useToast } from '../../Toast';
+import ConfirmDialog from '../../ConfirmDialog';
+import { Modal } from '../../ui/Modal';
 
-// ─── Types & Constants ────────────────────────────────────────────────────────
 interface ScheduleItem {
   id: string;
   groupId: string;
@@ -46,35 +49,27 @@ const COLOR_OPTIONS = [
   { bg: 'bg-pink-500',   hex: '#ec4899' },
 ];
 
-// Grid: 09:00 – 19:00, xonalar ustun, vaqt qator (an'anaviy dars jadvali
-// ko'rinishi — 2026-09-13'da foydalanuvchi so'rovi bilan almashtirildi,
-// ilgari guruhlar qator, soatlar ustun edi). Chegaralar (09-19) va 2 soatlik
-// yorliq oralig'i ham foydalanuvchi so'roviga ko'ra — markazning haqiqiy
-// ish vaqtiga mos, ortiqcha erta/kech soatlar chizilmaydi.
 const GRID_START_H = 9;
 const GRID_END_H   = 19;
-const HOUR_COUNT   = GRID_END_H - GRID_START_H; // 10
-const LABEL_STEP_H = 2; // faqat har 2 soatda yorliq (09:00, 11:00, ...)
-const HOUR_ROW_H   = 64; // px per hour row (chiziq balandligi — yorliqlar shundan LABEL_STEP_H marta kamroq ko'rinadi)
-const ROOM_COL_MIN_W = 170; // xona ustuni eng kichik kengligi — kam xona bo'lsa, ustunlar mavjud joyni to'ldirib kengayadi
+const HOUR_COUNT   = GRID_END_H - GRID_START_H;
+const LABEL_STEP_H = 2;
+const HOUR_ROW_H   = 56;
+const ROOM_COL_MIN_W = 150;
 
 const timeToFraction = (t: string): number => {
   const [h, m] = t.split(':').map(Number);
   return (h + m / 60 - GRID_START_H) / HOUR_COUNT;
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
-export default function CrmSchedule() {
+export function WeeklySchedule() {
   const { data: schedule = [], addDocument: addSchedule, updateDocument: updateSchedule, deleteDocument: deleteSchedule, loading: scheduleLoading, error: scheduleError } =
     useFirestore<Omit<ScheduleItem, 'id'>>('schedule');
   const { data: roomsData = [], addDocument: addRoomDoc, loading: roomsLoading } = useFirestore<any>('rooms');
   const { data: groups = [], loading: groupsLoading } = useFirestore<any>('groups');
   const isLoading = scheduleLoading || roomsLoading || groupsLoading;
-  const hasError = scheduleError;
   const { teachers: liveTeachers, getEndTime } = useCrmData();
   const { showToast } = useToast();
 
-  // ── State ──────────────────────────────────────────────────────────────────
   const todayReal = (() => { const d = new Date().getDay(); return d === 0 ? 7 : d; })();
   const [selectedDay, setSelectedDay] = useState(todayReal);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -91,23 +86,17 @@ export default function CrmSchedule() {
   });
   const [formData, setFormData] = useState<Partial<ScheduleItem>>(defaultForm());
 
-  // ── Derived ────────────────────────────────────────────────────────────────
   const rooms = useMemo(() => {
     if ((roomsData || []).length > 0) return roomsData;
     return [{ id: 'r1', name: '101-xona' }, { id: 'r2', name: '102-xona' }];
   }, [roomsData]);
   const getRoomName = (r: any) => typeof r === 'string' ? r : r?.name || '';
 
-  // All groups that have at least one lesson on the selected day
   const daySchedule = useMemo(() =>
     (schedule || []).filter(s => (s.days || []).includes(selectedDay)),
     [schedule, selectedDay]
   );
 
-  // Ustunlar = mavjud xonalar (Xona qo'shish tugmasi orqali boshqariladi).
-  // Jadvalda ishlatilgan, lekin `rooms` ro'yxatida hali yo'q xona nomlari
-  // ham (masalan eski, qo'lda kiritilgan yozuvlar) ustun sifatida qo'shiladi
-  // — aks holda ular jadvalda umuman ko'rinmas edi.
   const gridRooms = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -122,7 +111,6 @@ export default function CrmSchedule() {
     return result;
   }, [rooms, schedule]);
 
-  // ── Conflict helper ────────────────────────────────────────────────────────
   const checkConflicts = (item: Partial<ScheduleItem>, excludeId?: string): string[] => {
     const result: string[] = [];
     const tS = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -146,7 +134,6 @@ export default function CrmSchedule() {
     if (isModalOpen) setConflicts(checkConflicts(formData, editingItem?.id));
   }, [formData, isModalOpen]);
 
-  // ── CRUD ───────────────────────────────────────────────────────────────────
   const doSave = async (data: Partial<ScheduleItem>) => {
     const roomName = getRoomName(data.room);
     const group = (groups || []).find((g: any) => g.name === data.groupName);
@@ -197,17 +184,11 @@ export default function CrmSchedule() {
     setRoomModalOpen(false);
   }
 
-  // ── Hour labels ────────────────────────────────────────────────────────────
   const hours = Array.from({ length: HOUR_COUNT }, (_, i) => GRID_START_H + i);
-  // Yorliq/chiziq faqat har LABEL_STEP_H soatda (09:00, 11:00, ...) — dars
-  // bloklarining o'zi hamon uzluksiz vaqtga qarab (soat chizig'iga
-  // "yopishmasdan") joylashadi, faqat vizual chiziqlar kamroq bo'ladi.
   const hourLines = hours.filter(h => (h - GRID_START_H) % LABEL_STEP_H === 0);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-4">
-      {/* ─ Dialogs ─ */}
+    <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200/80 dark:border-white/[0.05] p-4 h-full shadow-sm flex flex-col">
       <ConfirmDialog
         isOpen={deleteConfirm.open}
         title="Darsni o'chirish"
@@ -241,96 +222,84 @@ export default function CrmSchedule() {
       </Modal>
 
       {/* ─ Header ─ */}
-      <PageHeader
-        title="Dars Jadvali"
-        subtitle="Haftalik dars dasturini boshqaring"
-        actions={
-          <>
-            {isLoading && <span className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>}
-            <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all shadow-sm">
-              <DoorOpen size={14} /> Xona Qo'shish
-            </button>
-            <button onClick={() => openModal()}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-lg shadow-blue-600/25 transition-all">
-              <Plus size={16} /> Dars Qo'shish
-            </button>
-          </>
-        }
-      />
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <p className="text-xs font-black text-slate-900 dark:text-white">Dars Jadvali</p>
+          <p className="text-[9px] text-zinc-400 mt-0.5">Haftalik dars dasturi</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {isLoading && <span className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />}
+          <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/[0.06] text-[10px] font-black text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/10 transition-all">
+            <DoorOpen size={12} /> Xona
+          </button>
+          <button onClick={() => openModal()}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black transition-all">
+            <Plus size={12} /> Dars
+          </button>
+        </div>
+      </div>
 
-      {hasError && (
-        <div className="p-4 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-2xl flex items-center gap-2 mb-4">
-          <AlertCircle size={20} />
-          <p className="text-sm font-bold">Ma'lumotlarni yuklashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.</p>
+      {scheduleError && (
+        <div className="p-2.5 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl flex items-center gap-2 mb-3">
+          <AlertCircle size={14} />
+          <p className="text-[11px] font-bold">Ma'lumotlarni yuklashda xatolik.</p>
         </div>
       )}
 
-      {/* ─ Stats ─ */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard label="Bugun" value={(schedule || []).filter(s => (s.days || []).includes(todayReal)).length} sub="dars" icon={<Calendar size={18} />} color="blue" />
-        <StatCard label="Jami darslar" value={(schedule || []).length} sub="ta" icon={<BookOpen size={18} />} color="emerald" />
-        <StatCard label="Xonalar" value={rooms.length} sub="ta" icon={<DoorOpen size={18} />} color="violet" />
-      </div>
-
       {/* ─ Day Tabs ─ */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-1 flex overflow-x-auto gap-1 shadow-sm hide-scrollbar mt-4">
+      <div className="bg-zinc-50 dark:bg-white/5 border border-zinc-100 dark:border-white/[0.06] rounded-xl p-1 flex overflow-x-auto gap-1 hide-scrollbar mb-3">
         {DAYS.map(day => {
           const isToday = todayReal === day.id;
           const isSelected = selectedDay === day.id;
           const cnt = (schedule || []).filter(s => (s.days || []).includes(day.id)).length;
           return (
             <button key={day.id} onClick={() => setSelectedDay(day.id)}
-              className={`flex-1 py-2.5 px-1 rounded-xl text-center transition-all ${isSelected ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : isToday ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
-              <span className="block text-xs font-black">{day.short}</span>
+              className={`flex-1 py-1.5 px-1 rounded-lg text-center transition-all ${isSelected ? 'bg-blue-600 text-white shadow-sm' : isToday ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'text-zinc-500 hover:bg-white dark:hover:bg-white/5'}`}>
+              <span className="block text-[10px] font-black">{day.short}</span>
               {cnt > 0 && (
-                <span className={`text-[9px] font-black px-1.5 rounded-full ${isSelected ? 'text-blue-200' : 'text-zinc-400'}`}>{cnt}</span>
+                <span className={`text-[8px] font-black ${isSelected ? 'text-blue-200' : 'text-zinc-400'}`}>{cnt}</span>
               )}
-              {isToday && !isSelected && <span className="block w-1 h-1 bg-blue-500 rounded-full mx-auto mt-0.5" />}
             </button>
           );
         })}
       </div>
 
       {/* ─ Jadval: Vaqt (qatorlar) × Xonalar (ustunlar) ─ */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] shadow-sm overflow-hidden">
+      <div className="flex-1 min-h-0 border border-zinc-100 dark:border-white/[0.06] rounded-xl overflow-hidden">
         {gridRooms.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center">
-            <DoorOpen size={40} className="text-zinc-200 dark:text-zinc-700 mb-3" />
-            <p className="text-sm font-black text-zinc-400">Hali xona qo'shilmagan</p>
+          <div className="py-10 flex flex-col items-center justify-center text-center">
+            <DoorOpen size={28} className="text-zinc-200 dark:text-zinc-700 mb-2" />
+            <p className="text-xs font-black text-zinc-400">Hali xona qo'shilmagan</p>
             <button onClick={() => { setRoomInput(''); setRoomModalOpen(true); }}
-              className="mt-3 text-xs font-black text-blue-500 hover:text-blue-600 transition-colors flex items-center gap-1">
-              <Plus size={14} /> Xona qo'shish
+              className="mt-2 text-[10px] font-black text-blue-500 hover:text-blue-600 transition-colors flex items-center gap-1">
+              <Plus size={12} /> Xona qo'shish
             </button>
           </div>
         ) : (
-          <div className="overflow-auto custom-scrollbar" style={{ maxHeight: 620 }}>
-            <div className="flex" style={{ minWidth: ROOM_COL_MIN_W * gridRooms.length + 56 }}>
-              {/* Soat gutter (chapda, doim ko'rinadi) — faqat har 2 soatda yorliq */}
-              <div className="w-14 flex-shrink-0 sticky left-0 z-20 bg-white dark:bg-zinc-900">
-                <div className="h-11 sticky top-0 z-30 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-r border-zinc-100 dark:border-zinc-800" />
+          <div className="overflow-auto custom-scrollbar h-full" style={{ maxHeight: 420 }}>
+            <div className="flex" style={{ minWidth: ROOM_COL_MIN_W * gridRooms.length + 44 }}>
+              <div className="w-11 flex-shrink-0 sticky left-0 z-20 bg-white dark:bg-[#111118]">
+                <div className="h-9 sticky top-0 z-30 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-r border-zinc-100 dark:border-zinc-800" />
                 {hourLines.map(h => (
                   <div key={h} style={{ height: LABEL_STEP_H * HOUR_ROW_H }}
-                    className="border-b border-r border-zinc-100 dark:border-zinc-800 flex items-start justify-end pr-2 pt-1">
-                    <span className="text-[10px] font-black text-blue-500 tabular-nums">{h.toString().padStart(2, '0')}:00</span>
+                    className="border-b border-r border-zinc-100 dark:border-zinc-800 flex items-start justify-end pr-1.5 pt-1">
+                    <span className="text-[9px] font-black text-blue-500 tabular-nums">{h.toString().padStart(2, '0')}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Xona ustunlari — kam xona bo'lsa mavjud joyni to'ldirib kengayadi */}
               {gridRooms.map(roomName => {
                 const colItems = daySchedule.filter(s => getRoomName(s.room) === roomName);
                 const totalGridPx = HOUR_ROW_H * HOUR_COUNT;
 
                 return (
                   <div key={roomName} style={{ flex: `1 1 0%`, minWidth: ROOM_COL_MIN_W }} className="border-r border-zinc-100 dark:border-zinc-800 last:border-r-0">
-                    {/* Xona sarlavhasi */}
-                    <div className="h-11 sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-zinc-100 dark:border-zinc-800 px-3 flex items-center gap-1.5">
-                      <DoorOpen size={13} className="text-violet-500 shrink-0" />
-                      <span className="text-xs font-black text-slate-800 dark:text-zinc-200 truncate">{roomName}</span>
+                    <div className="h-9 sticky top-0 z-10 bg-zinc-50/95 dark:bg-zinc-800/95 backdrop-blur border-b border-zinc-100 dark:border-zinc-800 px-2 flex items-center gap-1">
+                      <DoorOpen size={11} className="text-violet-500 shrink-0" />
+                      <span className="text-[10px] font-black text-slate-800 dark:text-zinc-200 truncate">{roomName}</span>
                     </div>
 
-                    {/* Vaqt o'qi */}
                     <div className="relative" style={{ height: totalGridPx }}>
                       {hourLines.map(h => (
                         <div key={h}
@@ -340,7 +309,7 @@ export default function CrmSchedule() {
 
                       {colItems.length === 0 && (
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-[10px] font-medium text-zinc-300 dark:text-zinc-700">Bo'sh</span>
+                          <span className="text-[9px] font-medium text-zinc-300 dark:text-zinc-700">Bo'sh</span>
                         </div>
                       )}
 
@@ -349,7 +318,7 @@ export default function CrmSchedule() {
                         const topFrac = Math.max(timeToFraction(item.startTime), 0);
                         const bottomFrac = Math.min(timeToFraction(item.endTime), 1);
                         const topPx = topFrac * totalGridPx;
-                        const heightPx = Math.max((bottomFrac - topFrac) * totalGridPx - 4, 36);
+                        const heightPx = Math.max((bottomFrac - topFrac) * totalGridPx - 4, 32);
 
                         return (
                           <motion.div
@@ -358,7 +327,7 @@ export default function CrmSchedule() {
                             animate={{ opacity: 1, scale: 1 }}
                             onClick={() => openModal(item)}
                             title={`${item.groupName} | ${item.startTime} – ${item.endTime} | ${roomName}`}
-                            className="absolute left-1.5 right-1.5 rounded-xl cursor-pointer flex flex-col justify-center px-2.5 py-1 overflow-hidden hover:brightness-95 hover:scale-[1.01] transition-all shadow-md"
+                            className="absolute left-1 right-1 rounded-lg cursor-pointer flex flex-col justify-center px-2 py-0.5 overflow-hidden hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm"
                             style={{
                               top: topPx + 2,
                               height: heightPx,
@@ -366,8 +335,8 @@ export default function CrmSchedule() {
                               borderLeft: `3px solid ${hexColor}`,
                             }}
                           >
-                            <span className="text-[11px] font-black text-slate-800 dark:text-white truncate leading-tight">{item.groupName}</span>
-                            <span className="text-[9px] font-bold truncate" style={{ color: hexColor }}>
+                            <span className="text-[10px] font-black text-slate-800 dark:text-white truncate leading-tight">{item.groupName}</span>
+                            <span className="text-[8px] font-bold truncate" style={{ color: hexColor }}>
                               {item.startTime}–{item.endTime}{item.teacher ? ` · ${item.teacher}` : ''}
                             </span>
                           </motion.div>
@@ -395,7 +364,6 @@ export default function CrmSchedule() {
             </div>
           )}
 
-          {/* Group */}
           <div className="space-y-1.5">
             <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
             <select value={formData.groupName}
@@ -410,7 +378,6 @@ export default function CrmSchedule() {
             </select>
           </div>
 
-          {/* Teacher + Room */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">O'qituvchi</label>
@@ -430,7 +397,6 @@ export default function CrmSchedule() {
             </div>
           </div>
 
-          {/* Time */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Boshlanish</label>
@@ -448,7 +414,6 @@ export default function CrmSchedule() {
             </div>
           </div>
 
-          {/* Days */}
           <div className="space-y-2">
             <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Dars kunlari</label>
             <div className="flex flex-wrap gap-2">
@@ -465,7 +430,6 @@ export default function CrmSchedule() {
             </div>
           </div>
 
-          {/* Color */}
           <div className="space-y-2">
             <label className="text-xs font-black text-zinc-500 uppercase tracking-widest">Rang</label>
             <div className="flex gap-2 flex-wrap">
@@ -476,7 +440,6 @@ export default function CrmSchedule() {
             </div>
           </div>
 
-          {/* Footer */}
           <div className="flex justify-between items-center pt-4 border-t border-zinc-100 dark:border-zinc-800">
             {editingItem ? (
               <button onClick={() => setDeleteConfirm({ open: true, id: editingItem.id })}

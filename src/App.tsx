@@ -37,7 +37,6 @@ const CrmFinance    = React.lazy(() => import('./pages/crm/finance/CrmFinance'))
 const CrmGroups     = React.lazy(() => import('./pages/crm/education/CrmGroups'));
 const CrmGroupDetail= React.lazy(() => import('./pages/crm/education/CrmGroupDetail'));
 const CrmJournal    = React.lazy(() => import('./pages/crm/education/CrmJournal'));
-const CrmSchedule   = React.lazy(() => import('./pages/crm/education/CrmSchedule'));
 const CrmRooms      = React.lazy(() => import('./pages/crm/management/CrmRooms'));
 const CrmMarketing  = React.lazy(() => import('./pages/crm/marketing/CrmMarketing'));
 const CrmStaff      = React.lazy(() => import('./pages/crm/hr/CrmStaff'));
@@ -134,7 +133,6 @@ export default function App() {
               <Route path="groups/:id" element={<ProtectedRoute requiredPermission="groups"   allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmGroupDetail /></ProtectedRoute>} />
               <Route path="courses"     element={<ProtectedRoute requiredPermission="courses" allowedRoles={['ADMIN','MANAGER']}><CrmCourses /></ProtectedRoute>} />
               <Route path="courses/:id" element={<ProtectedRoute requiredPermission="courses" allowedRoles={['ADMIN','MANAGER']}><CrmCourseDetail /></ProtectedRoute>} />
-              <Route path="schedule" element={<ProtectedRoute requiredPermission="schedule" allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmSchedule /></ProtectedRoute>} />
               <Route path="journal"  element={<ProtectedRoute requiredPermission="journal"  allowedRoles={['ADMIN','TEACHER']}><CrmJournal /></ProtectedRoute>} />
               <Route path="quiz"     element={<ProtectedRoute requiredPermission="quiz"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmQuiz /></ProtectedRoute>} />
               <Route path="tests"    element={<ProtectedRoute requiredPermission="tests"  allowedRoles={['ADMIN','TEACHER','MANAGER']}><CrmTests /></ProtectedRoute>} />

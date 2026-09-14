@@ -15,7 +15,7 @@ export const WIDGET_REGISTRY = [
   { id: 'chart_students', title: "O'quvchi O'sishi", category: 'Tahlil', permission: 'students', size: 'md' as const },
   { id: 'chart_leads', title: 'Lid Manbasi', category: 'Marketing', permission: 'leads', size: 'md' as const },
   { id: 'chart_lead_funnel', title: 'Lid Voronkasi', category: 'Marketing', permission: 'leads', size: 'md' as const },
-  { id: 'table_upcoming', title: "Bugungi Darslar", category: "Ta'lim", permission: 'schedule', size: 'md' as const },
+  { id: 'weekly_schedule', title: 'Dars Jadvali', category: "Ta'lim", permission: 'schedule', size: 'full' as const },
   { id: 'table_debtors', title: 'Qarzdorlar Ro\'yxati', category: 'Moliya', permission: 'finance', size: 'md' as const },
   { id: 'table_top_students', title: "Top O'quvchilar", category: "Ta'lim", permission: 'students', size: 'md' as const },
   { id: 'list_payments', title: "So'nggi To'lovlar", category: 'Moliya', permission: 'finance', size: 'md' as const },
@@ -27,9 +27,9 @@ export const WIDGET_REGISTRY = [
 const DEFAULT_WIDGETS_ADMIN = [
   'stat_students', 'stat_revenue', 'stat_leads', 'stat_debtors',
   'chart_revenue', 'chart_students',
-  'table_upcoming', 'table_debtors', 'list_payments', 'list_recent_leads',
+  'weekly_schedule', 'table_debtors', 'list_payments', 'list_recent_leads',
 ];
-const DEFAULT_WIDGETS_TEACHER = ['stat_students', 'stat_groups', 'stat_attendance', 'table_upcoming', 'chart_students'];
+const DEFAULT_WIDGETS_TEACHER = ['stat_students', 'stat_groups', 'stat_attendance', 'weekly_schedule', 'chart_students'];
 const DEFAULT_WIDGETS_MARKETING = ['stat_leads', 'stat_conversion', 'chart_lead_funnel', 'chart_leads', 'list_recent_leads'];
 
 export function getDefaultWidgets(role: string) {
