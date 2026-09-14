@@ -18,6 +18,37 @@ const router = express.Router();
 const isSuperAdmin = (role: string) => role === 'SUPER_ADMIN';
 const isAdminOrAbove = (role: string) => (ROLE_LEVEL[role] || 0) >= 3;
 
+// SEC-07 tuzatish: birinchi-ishga-tushirish SUPER_ADMIN yaratish uchun
+// qattiq kodlangan (`+998937525592`/`nn1122`, repository'da hammaga ma'lum)
+// hisob ma'lumotlari o'rniga muhit o'zgaruvchisi. O'rnatilmagan bo'lsa
+// bootstrap butunlay o'chiq (xavfsiz standart) — faqat ataylab .env'ga
+// qo'shilganda ishlaydi, va faqat baza haqiqatan bo'sh bo'lsa ishlatiladi.
+const BOOTSTRAP_ADMIN_PHONE = process.env.BOOTSTRAP_ADMIN_PHONE;
+const BOOTSTRAP_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+
+// SEC-07 tuzatish: login endpointida urinishlar soni cheklanmagan edi —
+// parolni cheksiz taxmin qilish (brute-force) mumkin edi. Yagona jarayon
+// uchun (ecosystem.config.cjs: instances:1) xotiradagi Map yetarli — lru-cache
+// kabi tashqi dependency kerak emas (cache.ts'dagi bilan bir xil naqsh).
+const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 5;
+const loginAttempts = new Map<string, { count: number; firstAttemptAt: number }>();
+
+function checkLoginRateLimit(key: string): boolean {
+    const now = Date.now();
+    const rec = loginAttempts.get(key);
+    if (!rec || now - rec.firstAttemptAt > LOGIN_ATTEMPT_WINDOW_MS) {
+        loginAttempts.set(key, { count: 1, firstAttemptAt: now });
+        return true;
+    }
+    if (rec.count >= LOGIN_MAX_ATTEMPTS) return false;
+    rec.count++;
+    return true;
+}
+function resetLoginRateLimit(key: string) {
+    loginAttempts.delete(key);
+}
+
 // ─── Normalize phone number ───────────────────────────────────────────────────
 function normalizePhone(raw: string): string {
     return raw.replace(/\s/g, '').trim();
@@ -53,13 +84,20 @@ router.post('/login', async (req, res) => {
 
         const normalizedPhone = normalizePhone(phone);
 
+        if (!checkLoginRateLimit(normalizedPhone)) {
+            return res.status(429).json({ message: "Juda ko'p urinish. Iltimos, 15 daqiqadan so'ng qayta urinib ko'ring." });
+        }
+
         // Try to find user by phone
         let user = await prisma.user.findUnique({ where: { phone: normalizedPhone } });
 
         // Fallback: first-boot auto-create super admin if DB is empty
         if (!user) {
             const count = await prisma.user.count();
-            if (count === 0 && normalizedPhone === '+998937525592' && password === 'nn1122') {
+            if (
+                count === 0 && BOOTSTRAP_ADMIN_PHONE && BOOTSTRAP_ADMIN_PASSWORD &&
+                normalizedPhone === normalizePhone(BOOTSTRAP_ADMIN_PHONE) && password === BOOTSTRAP_ADMIN_PASSWORD
+            ) {
                 const hashedPassword = await bcrypt.hash(password, 12);
                 user = await prisma.user.create({
                     data: {
@@ -78,8 +116,12 @@ router.post('/login', async (req, res) => {
             }
         }
 
+        // SEC-07 tuzatish: "telefon topilmadi" (404) va "parol noto'g'ri"
+        // (401) ilgari alohida javob berardi — bu tashqi so'rovchiga qaysi
+        // telefon raqamlari tizimda ro'yxatdan o'tganini bilib olish imkonini
+        // berardi (enumeration). Endi ikkalasi ham bir xil umumiy xabar.
         if (!user) {
-            return res.status(404).json({ message: "Bu telefon raqam tizimda ro'yxatdan o'tmagan" });
+            return res.status(401).json({ message: "Telefon raqam yoki parol noto'g'ri" });
         }
 
         // Check active status
@@ -89,8 +131,10 @@ router.post('/login', async (req, res) => {
 
         const isValid = await bcrypt.compare(password, user.password);
         if (!isValid) {
-            return res.status(401).json({ message: "Parol noto'g'ri" });
+            return res.status(401).json({ message: "Telefon raqam yoki parol noto'g'ri" });
         }
+
+        resetLoginRateLimit(normalizedPhone);
 
         const token = jwt.sign(
             { id: user.id, role: user.role, phone: user.phone, name: user.name },
@@ -297,6 +341,19 @@ router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
             return res.status(403).json({ message: "Ruxsat yo'q" });
         }
 
+        // SEC-03 tuzatish: ilgari faqat "yuborilayotgan yangi rol SUPER_ADMIN
+        // ekanini" tekshirardi — nishondagi hisobning JORIY roli umuman
+        // tekshirilmasdi. Natijada ADMIN, `role` maydonini yubormasdan, mavjud
+        // SUPER_ADMIN'ning parolini/telefonini/permissions'ini almashtira
+        // olardi (targetRole undefined qolgani uchun yuqoridagi tekshiruv
+        // hech qachon ishlamasdi). Endi nishon avval o'qiladi va ADMIN
+        // (SUPER_ADMIN emas) boshqa SUPER_ADMIN hisobiga UMUMAN tega olmaydi.
+        const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+        if (!target) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+        if (isSuperAdmin(target.role) && !isSuperAdmin(requester.role)) {
+            return res.status(403).json({ message: "Super Admin hisobini faqat Super Admin tahrirlashi mumkin" });
+        }
+
         const { name, role, phone, email, permissions, roleId, password, isActive, avatar, subject, experience, bio, salaryPercent } = req.body;
         let targetRole = role;
         let resolvedPermissions = permissions;
@@ -317,12 +374,27 @@ router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
             return res.status(403).json({ message: "Faqat Super Admin bu roʻlni berishi mumkin" });
         }
 
-        const updateData: any = {
-            name,
-            role: targetRole,
-            email: email || null,
-            isActive: isActive !== undefined ? isActive : true,
-        };
+        // Oxirgi faol Super Admin'ni himoyalash — bu hisobni pastroq rolga
+        // tushirish yoki bloklash orqali tizimda boshqaruvchi SUPER_ADMIN
+        // butunlay qolmasligi mumkin edi.
+        if (isSuperAdmin(target.role) && (
+            (targetRole !== undefined && targetRole !== 'SUPER_ADMIN') ||
+            isActive === false
+        )) {
+            const otherActiveSuperAdmins = await prisma.user.count({
+                where: { role: 'SUPER_ADMIN', isActive: true, id: { not: target.id } },
+            });
+            if (otherActiveSuperAdmins === 0) {
+                return res.status(403).json({ message: "Tizimdagi oxirgi faol Super Adminni pasaytirib yoki bloklab bo'lmaydi" });
+            }
+        }
+
+        const updateData: any = { name, role: targetRole, email: email || null };
+        // SEC-03 qo'shimcha bug: ilgari isActive yuborilmasa ham `true`
+        // o'rnatilardi — oddiy (isActive'ga tegishli bo'lmagan) tahrir
+        // bloklangan hisobni jimgina qayta faollashtirardi. Endi faqat
+        // so'rovda ANIQ kelgandagina yangilanadi (PATCH semantikasi).
+        if (isActive !== undefined) updateData.isActive = isActive;
         if (roleId !== undefined) updateData.roleId = roleId;
         // permissions faqat aniq yuborilganda yangilanadi — aks holda boshqa
         // forma (masalan CrmTeachers.tsx) saqlashda CrmUsers.tsx orqali
@@ -371,6 +443,17 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
         // Only SUPER_ADMIN can delete another SUPER_ADMIN
         if (isSuperAdmin(target.role) && !isSuperAdmin(requester.role)) {
             return res.status(403).json({ message: "Super Admin hisobini o'chirish uchun ruxsat yo'q" });
+        }
+
+        // Oxirgi faol Super Adminni o'chirishni ham bloklaymiz (PUT
+        // endpointidagi bilan bir xil himoya — SEC-03).
+        if (isSuperAdmin(target.role)) {
+            const otherActiveSuperAdmins = await prisma.user.count({
+                where: { role: 'SUPER_ADMIN', isActive: true, id: { not: target.id } },
+            });
+            if (otherActiveSuperAdmins === 0) {
+                return res.status(403).json({ message: "Tizimdagi oxirgi faol Super Adminni o'chirib bo'lmaydi" });
+            }
         }
 
         await prisma.user.delete({ where: { id: req.params.id } });
