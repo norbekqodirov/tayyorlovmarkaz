@@ -245,8 +245,8 @@ router.post('/payme', async (req, res) => {
                     const now = new Date();
                     const diffMs = now.getTime() - tx.createdAt.getTime();
                     if (diffMs > 12 * 60 * 60 * 1000) {
-                        await prisma.onlineTransaction.update({
-                            where: { id: tx.id },
+                        await prisma.onlineTransaction.updateMany({
+                            where: { id: tx.id, state: 1 },
                             data: {
                                 state: -1,
                                 cancelAt: now,
@@ -263,67 +263,70 @@ router.post('/payme', async (req, res) => {
                         });
                     }
 
-                    // Perform transaction
+                    // FIN-02 tuzatish: ilgari state'ni 2'ga o'tkazish, balansni
+                    // o'qib-yozish va Payment/Transaction yaratish 4 ta ALOHIDA
+                    // so'rov edi — Payme'ning o'zi tavsiya qiladigan retry/parallel
+                    // chaqiruvda (masalan tarmoq javobi yo'qolib, Payme qayta
+                    // yuborsa) ikkalasi ham `tx.state === 1`ni ko'rib, balansni
+                    // IKKI MARTA kreditlashi mumkin edi. Endi state o'tishi
+                    // `updateMany({state:1})` bilan sharti bilan (poyga holatisiz)
+                    // va balans+Payment+Transaction bitta $transaction ichida.
                     const performTime = new Date();
-                    const updatedTx = await prisma.onlineTransaction.update({
-                        where: { id: tx.id },
-                        data: {
-                            state: 2,
-                            performAt: performTime
+                    const result = await prisma.$transaction(async (txClient) => {
+                        const { count } = await txClient.onlineTransaction.updateMany({
+                            where: { id: tx.id, state: 1 },
+                            data: { state: 2, performAt: performTime },
+                        });
+                        const current = await txClient.onlineTransaction.findUnique({ where: { id: tx.id } });
+                        if (count === 0) return { applied: false, current };
+
+                        const student = await txClient.student.findUnique({ where: { id: tx.studentId } });
+                        if (student) {
+                            const updated = await txClient.student.update({
+                                where: { id: student.id },
+                                data: { balance: { increment: tx.amount } },
+                            });
+                            await txClient.student.update({
+                                where: { id: student.id },
+                                data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
+                            });
+
+                            const todayStr = todayDateStr();
+                            await txClient.payment.create({
+                                data: {
+                                    studentId: student.id,
+                                    amount: tx.amount,
+                                    method: 'Payme',
+                                    date: todayStr,
+                                    status: 'paid',
+                                    notes: `Payme transaction ID: ${txId}`
+                                }
+                            });
+                            await txClient.transaction.create({
+                                data: {
+                                    type: 'income',
+                                    amount: tx.amount,
+                                    category: "Kurs to'lovi",
+                                    description: `Payme orqali to'lov (ID: ${txId})`,
+                                    date: todayStr,
+                                    method: 'Bank',
+                                    studentId: student.id,
+                                    studentName: student.name
+                                }
+                            });
                         }
+                        return { applied: true, current };
                     });
 
-                    // Update Student Balance
-                    const student = await prisma.student.findUnique({
-                        where: { id: tx.studentId }
-                    });
-
-                    if (student) {
-                        const newBalance = (student.balance || 0) + tx.amount;
-                        const newPaymentStatus = newBalance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik';
-                        await prisma.student.update({
-                            where: { id: student.id },
-                            data: {
-                                balance: newBalance,
-                                paymentStatus: newPaymentStatus
-                            }
-                        });
-
-                        const todayStr = todayDateStr();
-
-                        // Create Payment
-                        await prisma.payment.create({
-                            data: {
-                                studentId: student.id,
-                                amount: tx.amount,
-                                method: 'Payme',
-                                date: todayStr,
-                                status: 'paid',
-                                notes: `Payme transaction ID: ${txId}`
-                            }
-                        });
-
-                        // Create Transaction log
-                        await prisma.transaction.create({
-                            data: {
-                                type: 'income',
-                                amount: tx.amount,
-                                category: "Kurs to'lovi",
-                                description: `Payme orqali to'lov (ID: ${txId})`,
-                                date: todayStr,
-                                method: 'Bank',
-                                studentId: student.id,
-                                studentName: student.name
-                            }
-                        });
-                    }
-
+                    // count===0 bo'lsa — parallel so'rov allaqachon bajargan;
+                    // Payme spetsifikatsiyasi bo'yicha bir xil (idempotent) natija
+                    // qaytariladi, balans qayta kreditlanmaydi.
                     return res.json({
                         jsonrpc: '2.0',
                         id,
                         result: {
-                            transaction: updatedTx.id,
-                            perform_time: performTime.getTime(),
+                            transaction: tx.id,
+                            perform_time: result.current?.performAt?.getTime() ?? performTime.getTime(),
                             state: 2
                         }
                     });
@@ -402,55 +405,52 @@ router.post('/payme', async (req, res) => {
                         }
                     });
                 } else if (tx.state === 2) {
-                    // Refund / Cancel performed transaction (state = 2 -> -2)
-                    const updatedTx = await prisma.onlineTransaction.update({
-                        where: { id: tx.id },
-                        data: {
-                            state: -2,
-                            cancelAt: cancelTime,
-                            reason
+                    // FIN-02 tuzatish: state o'tishi + balansdan yechish + xarajat
+                    // yozuvi endi bitta atomar $transaction, state o'tishi esa
+                    // updateMany({state:2}) sharti bilan — parallel Cancel
+                    // chaqiruvi balansni ikki marta kamaytira olmaydi.
+                    const result = await prisma.$transaction(async (txClient) => {
+                        const { count } = await txClient.onlineTransaction.updateMany({
+                            where: { id: tx.id, state: 2 },
+                            data: { state: -2, cancelAt: cancelTime, reason },
+                        });
+                        const current = await txClient.onlineTransaction.findUnique({ where: { id: tx.id } });
+                        if (count === 0) return { current };
+
+                        const student = await txClient.student.findUnique({ where: { id: tx.studentId } });
+                        if (student) {
+                            const updated = await txClient.student.update({
+                                where: { id: student.id },
+                                data: { balance: { decrement: tx.amount } },
+                            });
+                            await txClient.student.update({
+                                where: { id: student.id },
+                                data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
+                            });
+
+                            const todayStr = todayDateStr();
+                            await txClient.transaction.create({
+                                data: {
+                                    type: 'expense',
+                                    amount: tx.amount,
+                                    category: 'Qaytarish',
+                                    description: `Payme to'lovi bekor qilindi (ID: ${txId})`,
+                                    date: todayStr,
+                                    method: 'Bank',
+                                    studentId: student.id,
+                                    studentName: student.name
+                                }
+                            });
                         }
+                        return { current };
                     });
-
-                    // Deduct from Student Balance
-                    const student = await prisma.student.findUnique({
-                        where: { id: tx.studentId }
-                    });
-
-                    if (student) {
-                        const newBalance = (student.balance || 0) - tx.amount;
-                        const newPaymentStatus = newBalance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik';
-                        await prisma.student.update({
-                            where: { id: student.id },
-                            data: {
-                                balance: newBalance,
-                                paymentStatus: newPaymentStatus
-                            }
-                        });
-
-                        const todayStr = todayDateStr();
-
-                        // Create refund transaction log (expense)
-                        await prisma.transaction.create({
-                            data: {
-                                type: 'expense',
-                                amount: tx.amount,
-                                category: 'Qaytarish',
-                                description: `Payme to'lovi bekor qilindi (ID: ${txId})`,
-                                date: todayStr,
-                                method: 'Bank',
-                                studentId: student.id,
-                                studentName: student.name
-                            }
-                        });
-                    }
 
                     return res.json({
                         jsonrpc: '2.0',
                         id,
                         result: {
-                            transaction: updatedTx.id,
-                            cancel_time: cancelTime.getTime(),
+                            transaction: tx.id,
+                            cancel_time: result.current?.cancelAt?.getTime() ?? cancelTime.getTime(),
                             state: -2
                         }
                     });
@@ -567,6 +567,18 @@ router.post('/click', async (req, res) => {
         });
     }
 
+    // FIN-02 tuzatish: service_id konfiguratsiya bilan solishtirilmagan edi.
+    // Imzo formulasi service_id'ni ham o'z ichiga oladi, shuning uchun imzo
+    // to'g'ri bo'lishi uchun baribir CLICK_SECRET_KEY bilinishi kerak — bu
+    // aniq tekshiruv qo'shimcha himoya qatlami (masalan bir nechta xizmat
+    // bir xil secret bilan sozlangan holatlar uchun).
+    if (CLICK_SERVICE_ID && String(service_id) !== String(CLICK_SERVICE_ID)) {
+        return res.json({
+            error: -1,
+            error_note: 'Invalid service_id'
+        });
+    }
+
     // Handle Click Errors
     if (error && Number(error) < 0) {
         // If transaction has failed at Click, we log it and cancel if prepared
@@ -647,62 +659,74 @@ router.post('/click', async (req, res) => {
             if (!tx) {
                 // If Complete is sent without Prepare, some integrations support it, but Click standard is Prepare first.
                 // Let's create and complete directly.
-                const newTx = await prisma.onlineTransaction.create({
-                    data: {
-                        provider: 'click',
-                        transactionId: String(click_trans_id),
-                        amount: amountUZS,
-                        studentId,
-                        state: 1, // Completed
-                        performAt: new Date()
-                    }
-                });
-
-                // Apply balance update
-                const newBalance = (student.balance || 0) + amountUZS;
-                const newPaymentStatus = newBalance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik';
-                await prisma.student.update({
-                    where: { id: student.id },
-                    data: {
-                        balance: newBalance,
-                        paymentStatus: newPaymentStatus
-                    }
-                });
-
+                // FIN-02 tuzatish: transactionId unique bo'lgani uchun parallel
+                // ikkinchi so'rov create()da P2002 bilan xato beradi (tashqi
+                // catch orqali ushlanadi) — bu balansni ikki marta kreditlashni
+                // oldini oladi. Balans+Payment+Transaction esa bitta $transaction.
                 const todayStr = todayDateStr();
+                const created = await prisma.$transaction(async (txClient) => {
+                    const newTx = await txClient.onlineTransaction.create({
+                        data: {
+                            provider: 'click',
+                            transactionId: String(click_trans_id),
+                            amount: amountUZS,
+                            studentId,
+                            state: 1, // Completed
+                            performAt: new Date()
+                        }
+                    });
 
-                // Create Payment
-                await prisma.payment.create({
-                    data: {
-                        studentId: student.id,
-                        amount: amountUZS,
-                        method: 'Click',
-                        date: todayStr,
-                        status: 'paid',
-                        notes: `Click transaction ID: ${click_trans_id}`
-                    }
-                });
-
-                // Create Transaction log
-                await prisma.transaction.create({
-                    data: {
-                        type: 'income',
-                        amount: amountUZS,
-                        category: "Kurs to'lovi",
-                        description: `Click orqali to'lov (ID: ${click_trans_id})`,
-                        date: todayStr,
-                        method: 'Bank',
-                        studentId: student.id,
-                        studentName: student.name
-                    }
+                    const updated = await txClient.student.update({
+                        where: { id: student.id },
+                        data: { balance: { increment: amountUZS } },
+                    });
+                    await txClient.student.update({
+                        where: { id: student.id },
+                        data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
+                    });
+                    await txClient.payment.create({
+                        data: {
+                            studentId: student.id,
+                            amount: amountUZS,
+                            method: 'Click',
+                            date: todayStr,
+                            status: 'paid',
+                            notes: `Click transaction ID: ${click_trans_id}`
+                        }
+                    });
+                    await txClient.transaction.create({
+                        data: {
+                            type: 'income',
+                            amount: amountUZS,
+                            category: "Kurs to'lovi",
+                            description: `Click orqali to'lov (ID: ${click_trans_id})`,
+                            date: todayStr,
+                            method: 'Bank',
+                            studentId: student.id,
+                            studentName: student.name
+                        }
+                    });
+                    return newTx;
                 });
 
                 return res.json({
                     click_trans_id,
                     merchant_trans_id,
-                    merchant_confirm_id: newTx.id,
+                    merchant_confirm_id: created.id,
                     error: 0,
                     error_note: 'Success'
+                });
+            }
+
+            // FIN-02 tuzatish: merchant_prepare_id yuborilgan bo'lsa, aynan shu
+            // Prepare bosqichiga tegishli ekanini tekshiramiz (ilgari olinardi,
+            // lekin hech qachon solishtirilmasdi).
+            if (merchant_prepare_id && String(merchant_prepare_id) !== tx.id) {
+                return res.json({
+                    click_trans_id,
+                    merchant_trans_id,
+                    error: -6,
+                    error_note: 'Transaction does not match prepare id'
                 });
             }
 
@@ -729,54 +753,55 @@ router.post('/click', async (req, res) => {
                 });
             }
 
-            // Transition state 0 (prepared) -> 1 (completed)
-            await prisma.onlineTransaction.update({
-                where: { id: tx.id },
-                data: {
-                    state: 1,
-                    performAt: new Date()
-                }
-            });
-
-            // Update student balance
-            const newBalance = (student.balance || 0) + amountUZS;
-            const newPaymentStatus = newBalance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik';
-            await prisma.student.update({
-                where: { id: student.id },
-                data: {
-                    balance: newBalance,
-                    paymentStatus: newPaymentStatus
-                }
-            });
-
+            // FIN-02 tuzatish: state o'tishi (0->1) + balans + Payment/Transaction
+            // endi bitta atomar $transaction, state o'tishi esa
+            // updateMany({state:0}) sharti bilan — parallel Complete chaqiruvi
+            // balansni ikki marta kreditlay olmaydi.
             const todayStr = todayDateStr();
+            const result = await prisma.$transaction(async (txClient) => {
+                const { count } = await txClient.onlineTransaction.updateMany({
+                    where: { id: tx.id, state: 0 },
+                    data: { state: 1, performAt: new Date() },
+                });
+                if (count === 0) return { applied: false };
 
-            // Create Payment
-            await prisma.payment.create({
-                data: {
-                    studentId: student.id,
-                    amount: amountUZS,
-                    method: 'Click',
-                    date: todayStr,
-                    status: 'paid',
-                    notes: `Click transaction ID: ${click_trans_id}`
-                }
+                const updated = await txClient.student.update({
+                    where: { id: student.id },
+                    data: { balance: { increment: amountUZS } },
+                });
+                await txClient.student.update({
+                    where: { id: student.id },
+                    data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
+                });
+                await txClient.payment.create({
+                    data: {
+                        studentId: student.id,
+                        amount: amountUZS,
+                        method: 'Click',
+                        date: todayStr,
+                        status: 'paid',
+                        notes: `Click transaction ID: ${click_trans_id}`
+                    }
+                });
+                await txClient.transaction.create({
+                    data: {
+                        type: 'income',
+                        amount: amountUZS,
+                        category: "Kurs to'lovi",
+                        description: `Click orqali to'lov (ID: ${click_trans_id})`,
+                        date: todayStr,
+                        method: 'Bank',
+                        studentId: student.id,
+                        studentName: student.name
+                    }
+                });
+                return { applied: true };
             });
 
-            // Create Transaction log
-            await prisma.transaction.create({
-                data: {
-                    type: 'income',
-                    amount: amountUZS,
-                    category: "Kurs to'lovi",
-                    description: `Click orqali to'lov (ID: ${click_trans_id})`,
-                    date: todayStr,
-                    method: 'Bank',
-                    studentId: student.id,
-                    studentName: student.name
-                }
-            });
-
+            // count===0 bo'lsa (parallel so'rov allaqachon bajargan) ham,
+            // Click'ga baribir muvaffaqiyatli (idempotent) javob qaytariladi —
+            // faqat balans qayta kreditlanmaydi.
+            void result;
             return res.json({
                 click_trans_id,
                 merchant_trans_id,

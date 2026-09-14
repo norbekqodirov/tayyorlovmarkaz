@@ -87,6 +87,13 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '10mb' }));
+// FIN-02 tuzatish: Click to'lov tizimi webhook'ni
+// application/x-www-form-urlencoded sifatida yuboradi (rasmiy hujjat) — bu
+// parser ilgari umuman ro'yxatdan o'tmagan edi, ya'ni real Click so'rovida
+// req.body BO'SH bo'lib, imzo tekshiruvi (va butun integratsiya) jimgina
+// har doim muvaffaqiyatsiz tugardi. JSON so'rovlarga ta'sir qilmaydi —
+// Content-Type'ga qarab mos parser tanlanadi.
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // Xavfsizlik sarlavhalari — faqat hech narsani buzmaydigan, universal xavfsiz
