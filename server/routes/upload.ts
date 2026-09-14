@@ -37,17 +37,24 @@ const storage = multer.diskStorage({
     }
 });
 
+// Rad etish sababini 400 (noto'g'ri so'rov) sifatida qaytarish uchun — oddiy
+// Error status'siz bo'lgani sababli global xato handler (server/index.ts)
+// buni standart 500'ga aylantirar edi, garchi bu mijoz xatosi bo'lsa ham.
+class UploadRejectedError extends Error {
+    status = 400;
+}
+
 // File filter: strict whitelist, explicitly reject SVG
 const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     const ext = path.extname(file.originalname).toLowerCase();
 
     if (ext === '.svg' || file.mimetype === 'image/svg+xml') {
-        return cb(new Error('SVG formati xavfsizlik sababli ruxsat etilmaydi'));
+        return cb(new UploadRejectedError('SVG formati xavfsizlik sababli ruxsat etilmaydi'));
     }
 
     const allowedMimes = ALLOWED_MIME_TYPES[ext];
     if (!allowedMimes || !allowedMimes.includes(file.mimetype)) {
-        return cb(new Error('Ruxsat etilmagan fayl formati yoki MIME turi (faqat jpg, png, gif, webp, pdf, doc, docx, xls, xlsx)'));
+        return cb(new UploadRejectedError('Ruxsat etilmagan fayl formati yoki MIME turi (faqat jpg, png, gif, webp, pdf, doc, docx, xls, xlsx)'));
     }
 
     cb(null, true);
