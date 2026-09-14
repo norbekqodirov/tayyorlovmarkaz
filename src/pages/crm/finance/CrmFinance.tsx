@@ -101,8 +101,8 @@ function formatCompact(v: number): string {
 
 export default function CrmFinance() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
-  const { data: transactions = [], addDocument, deleteDocument } = useFirestore<Transaction>('finance');
-  const { data: students = [], updateDocument: updateStudent } = useFirestore<any>('students');
+  const { data: transactions = [], deleteDocument, refetch: refetchTransactions } = useFirestore<Transaction>('finance');
+  const { data: students = [], refetch: refetchStudents } = useFirestore<any>('students');
   const { data: staff = [] } = useFirestore<any>('staff');
   const { data: teachers = [] } = useFirestore<any>('teachers');
   const { showToast } = useToast();
@@ -339,16 +339,14 @@ export default function CrmFinance() {
     if (!canManage || !form.amount || !form.category || categoriesLoading || categoriesError) return;
     const newTransaction = { ...form, amount: Number(form.amount) };
 
-    if (newTransaction.type === 'income' && newTransaction.studentId) {
-      const student = students.find(s => s.id === newTransaction.studentId);
-      if (student?.id) {
-        const newBalance = (student.balance || 0) + Number(newTransaction.amount);
-        const newPaymentStatus = newBalance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik';
-        await updateStudent(student.id, { balance: newBalance, paymentStatus: newPaymentStatus });
-      }
-    }
-
-    await addDocument(newTransaction as Omit<Transaction, 'id'>);
+    // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
+    // bitta server so'rovi (POST /finance/transactions) Transaction'ni va
+    // (kirim + o'quvchi bo'lsa) balansni bitta atomar tranzaksiyada
+    // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
+    // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
+    // ustidan yozilishi mumkin edi).
+    await api.post('/finance/transactions', newTransaction);
+    await Promise.all([refetchTransactions(), refetchStudents()]);
     showToast("Tranzaksiya qo'shildi", 'success');
     setIsModalOpen(false);
     setForm({

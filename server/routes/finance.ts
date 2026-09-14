@@ -257,6 +257,60 @@ router.get('/invoices/:id/payment-links', requireAuth, requirePermission('financ
     }
 });
 
+// ─── TRANSACTION (qo'lda kirim/chiqim) ─────────────────────────────────────────
+
+// POST /api/finance/transactions — FIN-01 tuzatish.
+// Ilgari CrmFinance.tsx (frontend) balansni O'ZI hisoblab (eski balansni
+// o'qib + summa qo'shib) alohida PUT /students/:id bilan yozar, keyin
+// alohida POST bilan Transaction yaratardi — bu klassik "eski qiymatni
+// o'qib yangi qiymat yozish" poyga holati edi (ikki parallel to'lov bir-
+// birining ustidan yozilishi mumkin) va ikkalasi orasida xato bo'lsa
+// (masalan tarmoq uzilishi) balans yozuvsiz o'zgarib qolardi. Endi bitta
+// $transaction ichida: Transaction yaratiladi va (kirim + studentId bo'lsa)
+// Student.balance ATOMAR `increment` bilan yangilanadi — brauzer yakuniy
+// balansni hech qachon hisoblamaydi/yubormaydi.
+router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+    try {
+        const { type, amount, category, description, date, method, studentId, studentName, staffId, staffName } = req.body;
+        if (!type || !category || !date) {
+            return res.status(400).json({ error: 'type, category va date majburiy' });
+        }
+        const numAmount = Number(amount);
+        if (!Number.isFinite(numAmount) || numAmount <= 0) {
+            return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            const transaction = await tx.transaction.create({
+                data: {
+                    type, amount: numAmount, category, description, date, method,
+                    studentId: studentId || null, studentName: studentName || null,
+                    staffId: staffId || null, staffName: staffName || null,
+                },
+            });
+
+            // Faqat kirim + studentId bo'lsa balansga ta'sir qiladi — eski
+            // frontend mantig'i bilan bir xil shart, endi atomar.
+            if (type === 'income' && studentId) {
+                const updated = await tx.student.update({
+                    where: { id: studentId },
+                    data: { balance: { increment: numAmount } },
+                });
+                await tx.student.update({
+                    where: { id: studentId },
+                    data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
+                });
+            }
+
+            return transaction;
+        });
+
+        res.json(result);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── EXPENSE ──────────────────────────────────────────────────────────────────
 
 // GET /api/finance/expenses
