@@ -21,6 +21,8 @@ import express from 'express';
 import { handleBotWebhook } from '../bot/index.js';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
+import { logAudit } from '../middleware/audit.js';
 import {
     sendMessage, sendBroadcast, getBotInfo, setMenuButton,
 } from '../services/telegramService.js';
@@ -28,6 +30,17 @@ import {
 const router = express.Router();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
+
+function isValidWebhookUrl(urlStr: string): boolean {
+    try {
+        const u = new URL(urlStr);
+        if (u.protocol !== 'https:') return false;
+        if (!u.hostname || u.hostname.length < 3) return false;
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 // ─── Bot webhook (grammY) ─────────────────────────────────────────────────────
 
@@ -42,10 +55,15 @@ router.post('/webhook', (req, res) => {
 
 // ─── Webhook sozlash ──────────────────────────────────────────────────────────
 
-router.get('/set-webhook', async (req, res) => {
-    if (!BOT_TOKEN) return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN not set' });
-    const webhookUrl = req.query.url as string;
-    if (!webhookUrl) return res.status(400).json({ error: 'url query param required' });
+router.post('/set-webhook', requireAuth, requirePermission('settings'), async (req, res) => {
+    if (!BOT_TOKEN) return res.status(400).json({ error: 'TELEGRAM_BOT_TOKEN sozlanmagan' });
+    const webhookUrl = (req.body?.url || req.query.url) as string;
+    if (!webhookUrl) return res.status(400).json({ error: 'url parametri talab qilinadi' });
+
+    if (!isValidWebhookUrl(webhookUrl)) {
+        return res.status(400).json({ error: 'Faqat xavfsiz HTTPS webhook URL ruxsat etiladi' });
+    }
+
     const body = JSON.stringify({
         url: webhookUrl,
         secret_token: WEBHOOK_SECRET || undefined,
@@ -56,7 +74,18 @@ router.get('/set-webhook', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body,
     });
-    res.json(await r.json());
+    const data = await r.json();
+
+    const user = (req as any).user;
+    await logAudit({
+        userId: user?.id,
+        userName: user?.name || 'admin',
+        action: 'set_webhook',
+        resource: 'telegram',
+        metadata: { webhookUrl, ok: data.ok }
+    });
+
+    res.json(data);
 });
 
 // ─── Webhook holati ───────────────────────────────────────────────────────────
