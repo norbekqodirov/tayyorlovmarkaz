@@ -555,6 +555,18 @@ router.post('/click', async (req, res) => {
         merchant_prepare_id
     } = req.body;
 
+    // RS-05 tuzatish: CLICK_SECRET_KEY (yoki SERVICE_ID/MERCHANT_ID) sozlanmagan
+    // bo'lsa, pastdagi imzo tekshiruvi `''` bilan hisoblanardi — bu holda
+    // secretni bilmasa ham (yoki oddiy konfiguratsiya xatosi tufayli bo'sh
+    // qolgan bo'lsa) to'g'ri imzoni hisoblash OSON bo'lib qolardi. Endi
+    // konfiguratsiya to'liq bo'lmasa so'rov UMUMAN qayta ishlanmaydi.
+    if (!CLICK_SECRET_KEY || !CLICK_SERVICE_ID || !CLICK_MERCHANT_ID) {
+        return res.json({
+            error: -8,
+            error_note: 'Merchant not configured'
+        });
+    }
+
     // Validate request integrity using signature
     // Formula: click_trans_id + service_id + secret_key + merchant_trans_id + amount + action + sign_time
     const calculatedString = `${click_trans_id}${service_id}${CLICK_SECRET_KEY}${merchant_trans_id}${amount}${action}${sign_time}`;
@@ -572,7 +584,7 @@ router.post('/click', async (req, res) => {
     // to'g'ri bo'lishi uchun baribir CLICK_SECRET_KEY bilinishi kerak — bu
     // aniq tekshiruv qo'shimcha himoya qatlami (masalan bir nechta xizmat
     // bir xil secret bilan sozlangan holatlar uchun).
-    if (CLICK_SERVICE_ID && String(service_id) !== String(CLICK_SERVICE_ID)) {
+    if (String(service_id) !== String(CLICK_SERVICE_ID)) {
         return res.json({
             error: -1,
             error_note: 'Invalid service_id'
@@ -581,10 +593,15 @@ router.post('/click', async (req, res) => {
 
     // Handle Click Errors
     if (error && Number(error) < 0) {
-        // If transaction has failed at Click, we log it and cancel if prepared
+        // RS-05 tuzatish: ilgari HAR QANDAY holatdagi tranzaksiyani (hatto
+        // allaqachon YAKUNLANGAN, state=1 bo'lganini ham) shartsiz state=2'ga
+        // o'tkazardi — bu balans/Payment/Transaction allaqachon yozilgan
+        // bo'lsa ham, DB holatini "bekor qilingan" deb ko'rsatib, haqiqiy
+        // moliyaviy holat bilan mos kelmaslik yaratardi. Endi faqat hali
+        // YAKUNLANMAGAN (state != 1) tranzaksiyaga qo'llanadi.
         if (click_trans_id) {
             await prisma.onlineTransaction.updateMany({
-                where: { transactionId: String(click_trans_id) },
+                where: { transactionId: String(click_trans_id), state: { not: 1 } },
                 data: {
                     state: 2, // Click cancel code
                     cancelAt: new Date()
@@ -727,6 +744,20 @@ router.post('/click', async (req, res) => {
                     merchant_trans_id,
                     error: -6,
                     error_note: 'Transaction does not match prepare id'
+                });
+            }
+
+            // RS-05 tuzatish: Complete callback'dagi studentId/amount ILGARI
+            // hech qachon Prepare bosqichida saqlangan qiymatlar bilan
+            // solishtirilmasdi — nazariy jihatdan mavjud click_trans_id bilan
+            // BOSHQA studentId/amount yuborilsa, callback'dagi qiymat
+            // (Prepare'dagi emas) kreditlanishi mumkin edi.
+            if (tx.studentId !== studentId || tx.amount !== amountUZS) {
+                return res.json({
+                    click_trans_id,
+                    merchant_trans_id,
+                    error: -6,
+                    error_note: 'Transaction does not match prepare details'
                 });
             }
 
