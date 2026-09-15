@@ -47,17 +47,53 @@ async function portalAuth(req: any, res: any, next: any) {
     next();
 }
 
+// ─── EDU-08: ota-onaning bir nechta farzandi ────────────────────────────────
+// Bitta Telegram akkaunt (parentTelegramId) bir nechta o'quvchi yozuviga
+// bog'langan bo'lishi mumkin (aka-uka/opa-singil). Avval har bir endpoint
+// `findFirst` bilan FAQAT birinchisini olardi — qolgan farzandlar portalda
+// umuman ko'rinmas edi. Endi har bir so'rov ixtiyoriy `?studentId=` qabul
+// qiladi (faqat shu ota-onaning O'Z farzandlari orasidan tanlanadi), va
+// yo'q bo'lsa birinchisi standart bo'yicha ishlatiladi (eski xatti-harakat
+// bitta farzandli holatda o'zgarishsiz qoladi).
+async function resolvePortalStudent(chatId: string, requestedId?: string) {
+    const linked = await prisma.student.findMany({
+        where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
+        select: { id: true, name: true, photo: true, telegramChatId: true },
+        orderBy: { createdAt: 'asc' },
+    });
+    if (linked.length === 0) return null;
+    const chosen = (requestedId && linked.find(s => s.id === requestedId)) || linked[0];
+    return {
+        id: chosen.id,
+        role: (chosen.telegramChatId === chatId ? 'student' : 'parent') as 'student' | 'parent',
+        children: linked.map(s => ({ id: s.id, name: s.name, photo: s.photo })),
+    };
+}
+
+// ─── GET /api/portal/children — ota-onaga bog'langan barcha farzandlar ──────
+
+router.get('/children', portalAuth, async (req: any, res) => {
+    try {
+        const resolved = await resolvePortalStudent(req.portalChatId);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+        res.json(resolved.children);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── GET /api/portal/me ───────────────────────────────────────────────────────
 
 router.get('/me', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
+        const resolved = await resolvePortalStudent(chatId, req.query.studentId as string | undefined);
+        if (!resolved) {
+            return res.status(404).json({ error: 'Tizimda ro\'yxatdan o\'tilmagan', linked: false });
+        }
 
-        const student = await prisma.student.findFirst({
-            where: {
-                OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }],
-                deletedAt: null,
-            },
+        const student = await prisma.student.findUnique({
+            where: { id: resolved.id },
             include: {
                 enrollments: {
                     include: {
@@ -77,7 +113,7 @@ router.get('/me', portalAuth, async (req: any, res) => {
             return res.status(404).json({ error: 'Tizimda ro\'yxatdan o\'tilmagan', linked: false });
         }
 
-        const role = student.telegramChatId === chatId ? 'student' : 'parent';
+        const role = resolved.role;
 
         const groups = student.enrollments.map(e => ({
             id: e.group.id,
@@ -103,6 +139,7 @@ router.get('/me', portalAuth, async (req: any, res) => {
                 email: role === 'student' ? student.email : undefined,
             },
             groups,
+            children: resolved.children.length > 1 ? resolved.children : undefined,
         });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -114,20 +151,18 @@ router.get('/me', portalAuth, async (req: any, res) => {
 router.get('/attendance', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
-        const { month } = req.query as { month?: string };
+        const { month, studentId: requestedId } = req.query as { month?: string; studentId?: string };
 
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
-            select: { id: true },
-        });
-        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+        const resolved = await resolvePortalStudent(chatId, requestedId);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+        const studentId = resolved.id;
 
         // Filter by month if provided (format: YYYY-MM), otherwise last 30 days
         let records;
         if (month) {
             records = await prisma.attendanceRecord.findMany({
                 where: {
-                    studentId: student.id,
+                    studentId,
                     date: { startsWith: month },
                 },
                 include: { group: { select: { name: true, course: { select: { name: true } } } } },
@@ -138,7 +173,7 @@ router.get('/attendance', portalAuth, async (req: any, res) => {
 
             records = await prisma.attendanceRecord.findMany({
                 where: {
-                    studentId: student.id,
+                    studentId,
                     date: { gte: fromStr },
                 },
                 include: { group: { select: { name: true, course: { select: { name: true } } } } },
@@ -176,21 +211,20 @@ router.get('/attendance', portalAuth, async (req: any, res) => {
 router.get('/payments', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
+        const { studentId: requestedId } = req.query as { studentId?: string };
 
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
-            select: { id: true },
-        });
-        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+        const resolved = await resolvePortalStudent(chatId, requestedId);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+        const studentId = resolved.id;
 
         const [unpaid, recent] = await Promise.all([
             prisma.payment.findMany({
-                where: { studentId: student.id, status: { in: ['pending', 'overdue'] }, deletedAt: null },
+                where: { studentId, status: { in: ['pending', 'overdue'] }, deletedAt: null },
                 orderBy: { dueDate: 'asc' },
                 take: 10,
             }),
             prisma.payment.findMany({
-                where: { studentId: student.id, status: 'paid', deletedAt: null },
+                where: { studentId, status: 'paid', deletedAt: null },
                 orderBy: { date: 'desc' },
                 take: 10,
             }),
@@ -202,7 +236,7 @@ router.get('/payments', portalAuth, async (req: any, res) => {
         // yozuvidan mustaqil — 3 kundan ortiq qoldirilgan darslar uchun avtomatik
         // chegirma bilan). Ota-onaga "bu oy qancha to'lash kerak" ko'rsatish uchun.
         const now = new Date();
-        const monthlyDue = await calculateStudentMonthlyDue(student.id, now.getFullYear(), now.getMonth() + 1);
+        const monthlyDue = await calculateStudentMonthlyDue(studentId, now.getFullYear(), now.getMonth() + 1);
 
         res.json({
             unpaid: unpaid.map(p => ({
@@ -233,15 +267,14 @@ router.get('/payments', portalAuth, async (req: any, res) => {
 router.get('/grades', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
+        const { studentId: requestedId } = req.query as { studentId?: string };
 
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
-            select: { id: true },
-        });
-        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+        const resolved = await resolvePortalStudent(chatId, requestedId);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+        const studentId = resolved.id;
 
         const assessments = await prisma.assessment.findMany({
-            where: { studentId: student.id },
+            where: { studentId },
             orderBy: { date: 'desc' },
             take: 20,
         });
@@ -274,18 +307,17 @@ router.get('/grades', portalAuth, async (req: any, res) => {
 router.get('/schedule', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
+        const { studentId: requestedId } = req.query as { studentId?: string };
 
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
-            select: { id: true },
-        });
-        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+        const resolved = await resolvePortalStudent(chatId, requestedId);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+        const studentId = resolved.id;
 
         // Haqiqiy dars jadvali GroupSchedule modelida ("schedule" kolleksiyasi,
         // CrmGroups.tsx/CrmSchedule.tsx to'ldiradi) — Group.schedules (alohida
         // "Schedule" modeli) hech qayerda yozilmaydi, shuning uchun ishlatilmaydi.
         const enrollments = await prisma.enrollment.findMany({
-            where: { studentId: student.id },
+            where: { studentId },
             include: {
                 group: {
                     include: {
@@ -343,8 +375,11 @@ router.get('/schedule', portalAuth, async (req: any, res) => {
 router.get('/chat-threads', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
+        const resolved = await resolvePortalStudent(chatId, req.query.studentId as string | undefined);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+
+        const student = await prisma.student.findUnique({
+            where: { id: resolved.id },
             include: {
                 enrollments: {
                     include: { group: { include: { course: { select: { name: true } }, teacher: { select: { id: true, name: true } } } } },
@@ -409,15 +444,12 @@ function resolvePartnerKey(key: string): string | null {
 router.get('/chat-threads/:key', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
-            select: { id: true },
-        });
-        if (!student) return res.status(404).json({ error: 'Topilmadi' });
+        const resolved = await resolvePortalStudent(chatId, req.query.studentId as string | undefined);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
 
         const partnerKey = resolvePartnerKey(req.params.key);
         if (!partnerKey) return res.status(400).json({ error: "Noto'g'ri suhbat turi" });
-        const sKey = studentKey(student.id);
+        const sKey = studentKey(resolved.id);
 
         const messages = await prisma.message.findMany({
             where: { OR: [{ senderId: sKey, receiverId: partnerKey }, { senderId: partnerKey, receiverId: sKey }] },
@@ -440,13 +472,13 @@ router.get('/chat-threads/:key', portalAuth, async (req: any, res) => {
 router.post('/chat-threads/:key', portalAuth, async (req: any, res) => {
     try {
         const chatId = req.portalChatId;
-        const { content } = req.body as { content: string };
+        const { content, studentId: requestedId } = req.body as { content: string; studentId?: string };
         if (!content?.trim()) return res.status(400).json({ error: 'Xabar matni kiritilishi shart' });
 
-        const student = await prisma.student.findFirst({
-            where: { OR: [{ telegramChatId: chatId }, { parentTelegramId: chatId }], deletedAt: null },
-            select: { id: true, name: true },
-        });
+        const resolved = await resolvePortalStudent(chatId, requestedId);
+        if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
+
+        const student = await prisma.student.findUnique({ where: { id: resolved.id }, select: { id: true, name: true } });
         if (!student) return res.status(404).json({ error: 'Topilmadi' });
 
         const partnerKey = resolvePartnerKey(req.params.key);

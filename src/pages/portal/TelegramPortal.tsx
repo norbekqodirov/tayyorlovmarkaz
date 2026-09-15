@@ -22,7 +22,8 @@ interface Group {
     id: string; name: string; course: string; teacher: string;
     days: string; time: string; room: string; status: string;
 }
-interface MeData { linked: boolean; role: 'student' | 'parent'; student: PortalStudent; groups: Group[]; }
+interface PortalChild { id: string; name: string; photo?: string; }
+interface MeData { linked: boolean; role: 'student' | 'parent'; student: PortalStudent; groups: Group[]; children?: PortalChild[]; }
 
 interface AttendanceRecord { id: string; date: string; status: string; group: string; course: string; note?: string; }
 interface AttendanceSummary { present: number; absent: number; late: number; excused: number; total: number; }
@@ -128,6 +129,14 @@ async function portalPost(endpoint: string, initData: string, body: any) {
     return res.json();
 }
 
+// EDU-08: ota-onaning bir nechta farzandi bo'lsa, so'rov qaysi farzand
+// uchunligini serverga aytish uchun `studentId` qo'shamiz.
+function withStudentParam(endpoint: string, studentId: string | null): string {
+    if (!studentId) return endpoint;
+    const sep = endpoint.includes('?') ? '&' : '?';
+    return `${endpoint}${sep}studentId=${encodeURIComponent(studentId)}`;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(n: number | null | undefined): string {
@@ -192,6 +201,8 @@ export default function TelegramPortal() {
     const [meData, setMeData] = useState<MeData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // EDU-08: ota-onaning bir nechta farzandi bo'lsa, hozir qaysi biri ko'rsatilyapti
+    const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
 
     // Tab data & error states
     const [attendance, setAttendance] = useState<{ records: AttendanceRecord[]; summary: AttendanceSummary } | null>(null);
@@ -255,8 +266,9 @@ export default function TelegramPortal() {
         setError('');
         const currentInitData = initData ?? '';
         try {
-            const data = await portalFetch('/me', currentInitData);
+            const data = await portalFetch(withStudentParam('/me', activeStudentId), currentInitData);
             setMeData(data);
+            if (!activeStudentId) setActiveStudentId(data.student.id);
         } catch (e: any) {
             console.error('Portal fetch error:', e.message, (e as any).debug, 'initData len:', currentInitData.length);
             if (e.message === '404') setError('linked');
@@ -273,15 +285,15 @@ export default function TelegramPortal() {
         setTabLoading(true);
         try {
             if (t === 'attendance' && (!attendance || force)) {
-                setAttendance(await portalFetch('/attendance', initData));
+                setAttendance(await portalFetch(withStudentParam('/attendance', activeStudentId), initData));
             } else if (t === 'payments' && (!payments || force)) {
-                setPayments(await portalFetch('/payments', initData));
+                setPayments(await portalFetch(withStudentParam('/payments', activeStudentId), initData));
             } else if (t === 'grades' && (!grades || force)) {
-                setGrades(await portalFetch('/grades', initData));
+                setGrades(await portalFetch(withStudentParam('/grades', activeStudentId), initData));
             } else if (t === 'schedule' && (!schedule || force)) {
-                setSchedule(await portalFetch('/schedule', initData));
+                setSchedule(await portalFetch(withStudentParam('/schedule', activeStudentId), initData));
             } else if (t === 'chat' && (!chatThreads || force)) {
-                setChatThreads(await portalFetch('/chat-threads', initData));
+                setChatThreads(await portalFetch(withStudentParam('/chat-threads', activeStudentId), initData));
             }
         } catch (err: any) {
             console.error(`Portal tab [${t}] error:`, err);
@@ -294,7 +306,7 @@ export default function TelegramPortal() {
         } finally {
             setTabLoading(false);
         }
-    }, [initData, meData, attendance, payments, grades, schedule, chatThreads]);
+    }, [initData, meData, attendance, payments, grades, schedule, chatThreads, activeStudentId]);
 
     const openChatThread = useCallback(async (key: string) => {
         setActiveChatKey(key);
@@ -302,7 +314,7 @@ export default function TelegramPortal() {
         setChatError(null);
         setChatLoading(true);
         try {
-            const msgs = await portalFetch(`/chat-threads/${key}`, initData ?? '');
+            const msgs = await portalFetch(withStudentParam(`/chat-threads/${key}`, activeStudentId), initData ?? '');
             setChatMessages(msgs);
         } catch (err: any) {
             console.error('Chat thread fetch error:', err);
@@ -310,13 +322,13 @@ export default function TelegramPortal() {
         } finally {
             setChatLoading(false);
         }
-    }, [initData]);
+    }, [initData, activeStudentId]);
 
     const sendChatMessage = useCallback(async () => {
         if (!activeChatKey || !chatInput.trim()) return;
         setChatSending(true);
         try {
-            const msg = await portalPost(`/chat-threads/${activeChatKey}`, initData ?? '', { content: chatInput.trim() });
+            const msg = await portalPost(`/chat-threads/${activeChatKey}`, initData ?? '', { content: chatInput.trim(), studentId: activeStudentId });
             setChatMessages(prev => [...(prev || []), { ...msg, fromMe: true }]);
             setChatInput('');
             setChatThreads(null); // ro'yxatni keyingi ochilishda yangilash uchun
@@ -325,7 +337,7 @@ export default function TelegramPortal() {
         } finally {
             setChatSending(false);
         }
-    }, [activeChatKey, chatInput, initData]);
+    }, [activeChatKey, chatInput, initData, activeStudentId]);
 
     // Auto-scroll chat to bottom
     useEffect(() => {
@@ -338,6 +350,36 @@ export default function TelegramPortal() {
         setTab(t);
         loadTabData(t);
     };
+
+    // EDU-08: farzand almashtirilganda barcha keshlangan tab ma'lumotlari
+    // tozalanadi va joriy tab yangi farzand uchun qayta yuklanadi.
+    const selectChild = useCallback((id: string) => {
+        if (id === activeStudentId) return;
+        setActiveStudentId(id);
+        setAttendance(null);
+        setPayments(null);
+        setGrades(null);
+        setSchedule(null);
+        setChatThreads(null);
+        setActiveChatKey(null);
+        setChatMessages(null);
+    }, [activeStudentId]);
+
+    // activeStudentId o'zgarganda /me va joriy tabni shu farzand uchun qayta yuklash.
+    // Birinchi marta activeStudentId o'rnatilishi fetchMe()ning o'zidan kelib chiqadi
+    // (standart farzand) — shu holatda qayta so'rov yubormaslik uchun ref bilan o'tkazib
+    // yuboriladi, faqat HAQIQIY almashtirishda (selectChild) qayta yuklanadi.
+    const didSetInitialStudent = useRef(false);
+    useEffect(() => {
+        if (!activeStudentId || initData === null) return;
+        if (!didSetInitialStudent.current) {
+            didSetInitialStudent.current = true;
+            return;
+        }
+        fetchMe();
+        if (tab !== 'home') loadTabData(tab, true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStudentId]);
 
     // ── Loading & Error states ──────────────────────────────────────────────
 
@@ -448,6 +490,34 @@ export default function TelegramPortal() {
                         <RefreshCw size={16} className="text-zinc-400" />
                     </button>
                 </div>
+
+                {/* EDU-08: bir nechta farzand bo'lsa — almashtirish paneli */}
+                {meData?.children && meData.children.length > 1 && (
+                    <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-0.5" role="tablist" aria-label="Farzandni tanlash">
+                        {meData.children.map(c => {
+                            const isActive = c.id === activeStudentId;
+                            return (
+                                <button
+                                    key={c.id}
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    onClick={() => selectChild(c.id)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-full text-xs font-bold whitespace-nowrap transition-colors active:scale-95 ${
+                                        isActive
+                                            ? 'bg-blue-500 text-white'
+                                            : isDark ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-600'
+                                    }`}
+                                >
+                                    {c.photo
+                                        ? <img src={c.photo} alt="" className="w-4 h-4 rounded-full object-cover" />
+                                        : <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] ${isActive ? 'bg-white/20' : 'bg-blue-500/20 text-blue-500'}`}>{c.name.charAt(0)}</span>
+                                    }
+                                    {c.name}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
             </header>
 
             {/* Tab content */}

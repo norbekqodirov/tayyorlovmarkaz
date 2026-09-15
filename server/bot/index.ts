@@ -121,14 +121,13 @@ bot.on('message:contact', async (ctx) => {
         select: { id: true, name: true, phone: true, parentPhone: true, telegramChatId: true, parentTelegramId: true },
     });
 
-    let matched: { id: string; name: string; telegramChatId?: string | null; parentTelegramId?: string | null } | null = null;
-    let asParent = false;
-    for (const s of students) {
-        if (s.phone && extractDigits(s.phone) === digits) { matched = s; asParent = false; break; }
-        if (s.parentPhone && extractDigits(s.parentPhone) === digits) { matched = s; asParent = true; break; }
-    }
+    // EDU-08: ota-onaning bir nechta farzandi bitta telefon raqamiga (parentPhone)
+    // bog'langan bo'lishi mumkin — birinchi topilgan o'quvchini olib qolganlarini
+    // e'tiborsiz qoldirish o'rniga, MOS KELGAN HAMMASINI aniqlaymiz.
+    const studentMatches = students.filter(s => s.phone && extractDigits(s.phone) === digits);
+    const parentMatches = students.filter(s => s.parentPhone && extractDigits(s.parentPhone) === digits);
 
-    if (!matched) {
+    if (studentMatches.length === 0 && parentMatches.length === 0) {
         await ctx.reply(
             `❌ <b>Raqam topilmadi</b>\n\n` +
             `<code>${contact.phone_number}</code> tizimda o'quvchi yoki ota-ona sifatida ro'yxatda yo'q.\n\n` +
@@ -138,26 +137,35 @@ bot.on('message:contact', async (ctx) => {
         return;
     }
 
-    // Allaqachon boshqa akkauntga bog'langanligini tekshirish
-    const existingChatId = asParent ? matched.parentTelegramId : matched.telegramChatId;
-    if (existingChatId && existingChatId !== chatId) {
+    // O'z raqami sifatida topilgan bo'lsa o'quvchi, aks holda ota-ona (bir nechta farzand)
+    const asParent = studentMatches.length === 0;
+    const matches = asParent ? parentMatches : studentMatches;
+
+    // Ulardan biri allaqachon boshqa Telegram akkauntiga bog'langanmi?
+    const conflicting = matches.find(m => {
+        const existing = asParent ? m.parentTelegramId : m.telegramChatId;
+        return existing && existing !== chatId;
+    });
+    if (conflicting) {
         await ctx.reply(
-            `⚠️ <b>Ogohlantirish:</b> Ushbu ${asParent ? 'ota-ona' : 'o\'quvchi'} hisobi allaqachon boshqa Telegram akkauntiga bog'langan.\n\n` +
+            `⚠️ <b>Ogohlantirish:</b> Ushbu ${asParent ? 'ota-ona' : 'o\'quvchi'} hisobi (${conflicting.name}) allaqachon boshqa Telegram akkauntiga bog'langan.\n\n` +
             `Xavfsizlik yuzasidan qayta bog'lash uchun admin bilan bog'laning.`,
             { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
         );
         return;
     }
 
-    // Telegram chatId ni o'quvchi (yoki ota-ona) maydoniga saqlash
-    await prisma.student.update({
-        where: { id: matched.id },
+    // Telegram chatId'ni HAR BIR mos o'quvchi (yoki ota-ona) yozuviga saqlash
+    await prisma.student.updateMany({
+        where: { id: { in: matches.map(m => m.id) } },
         data: asParent ? { parentTelegramId: chatId } : { telegramChatId: chatId },
     });
 
+    const namesList = matches.map(m => m.name).join(', ');
     await ctx.reply(
-        `✅ <b>Xush kelibsiz, ${matched.name}!</b>\n\n` +
-        `${asParent ? 'Ota-ona' : 'O\'quvchi'} sifatida muvaffaqiyatli ulandingiz.`,
+        `✅ <b>Xush kelibsiz!</b>\n\n` +
+        `${asParent ? 'Ota-ona' : 'O\'quvchi'} sifatida muvaffaqiyatli ulandingiz: <b>${namesList}</b>` +
+        (matches.length > 1 ? `\n\nBarcha farzandlaringizni Portal ichida ko'rib, ular orasida almashtirishingiz mumkin.` : ''),
         { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } }
     );
 
