@@ -32,6 +32,7 @@ export async function getEffectivePermissions(userId: string, role: string): Pro
     const user = await prisma.user.findUnique({
         where: { id: userId },
         select: {
+            permissions: true,
             roleRef: {
                 select: {
                     permissions: { select: { permission: { select: { key: true } } } },
@@ -40,9 +41,30 @@ export async function getEffectivePermissions(userId: string, role: string): Pro
         },
     });
 
-    const effective = new Set<string>(
-        (user?.roleRef?.permissions ?? []).map(rp => rp.permission.key)
-    );
+    // 2026-09-15'da topilgan bo'shliq: `roleId` faqat CrmUsers.tsx'da admin
+    // aniq "Maxsus Rol" tanlaganda o'rnatiladi (server/services/roleAssignment.ts
+    // shu payt chaqiriladi) — andoza (TEACHER/MANAGER/MARKETING/...) tanlab
+    // yaratilgan (bu ODATIY, birinchi ko'rinadigan oqim) foydalanuvchida
+    // roleId HECH QACHON o'rnatilmaydi. migrate_rbac_schema.ts (2026-09-12)
+    // faqat O'SHA PAYTDA MAVJUD bo'lgan userlarni bir martalik bog'lagan —
+    // shundan keyin andoza orqali yaratilgan HAR BIR yangi foydalanuvchi
+    // roleRef'siz qolgan. Agar shu yerda faqat roleRef'ga tayansak, bunday
+    // foydalanuvchi (frontend ProtectedRoute.tsx/WidgetPicker.tsx ularning
+    // saqlangan `permissions` massivini o'qib to'liq ishlayotganday
+    // ko'rsatgani holda) requirePermission() talab qiladigan HAR QANDAY
+    // yo'lda (courseTiers/inventory/settings/news/leads va — RBAC xaritasi
+    // kengaytirilgach — students/groups/finance/courses'da ham) doim 403
+    // olardi, real ruxsatidan qat'i nazar. Shu sabab roleRef yo'q bo'lsa
+    // eski `User.permissions` JSON maydoniga tushamiz — bu frontend
+    // allaqachon ishonadigan manba bilan bir xil.
+    let effective: Set<string>;
+    if (user?.roleRef) {
+        effective = new Set(user.roleRef.permissions.map(rp => rp.permission.key));
+    } else {
+        let legacy: unknown = [];
+        try { legacy = JSON.parse(user?.permissions || '[]'); } catch { /* buzuq JSON — bo'sh ro'yxat sifatida davom etamiz */ }
+        effective = new Set(Array.isArray(legacy) ? legacy.filter((k): k is string => typeof k === 'string') : []);
+    }
 
     const now = new Date();
     const overrides = await prisma.permissionOverride.findMany({

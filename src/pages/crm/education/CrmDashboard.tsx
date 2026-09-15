@@ -204,9 +204,34 @@ export default function CrmDashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 6 ? 'Xayrli tun' : hour < 12 ? 'Xayrli tong' : hour < 18 ? 'Xayrli kun' : 'Xayrli kech';
 
+  // Ba'zi kolleksiyalar (students/groups/leads/finance) endi COLLECTION_PERMISSION_MAP
+  // orqali ruxsat talab qiladi (crud.ts) — TEACHER/MANAGER kabi cheklangan rol uchun
+  // bu 403 (ruxsat yo'q) qaytaradi, tarmoq/server xatosi EMAS. Ikkalasini
+  // aralashtirib "Dashboard yuklanmadi" degan qo'rqinchli xato ko'rsatish
+  // noto'g'ri — 403 holida faqat tegishli vidjet(lar) jim yashiriladi,
+  // butun sahifa "singan" ko'rinmasligi kerak.
+  const isForbidden = (err: any) => err?.response?.status === 403;
+  const deniedPermissions = useMemo(() => {
+    const denied = new Set<string>();
+    if (isForbidden(errorStudents)) denied.add('students');
+    if (isForbidden(errorGroups)) denied.add('groups');
+    if (isForbidden(errorLeads)) denied.add('leads');
+    if (isForbidden(errorTransactions)) denied.add('finance');
+    return denied;
+  }, [errorStudents, errorGroups, errorLeads, errorTransactions]);
+
   const isInitialLoading = loadingStudents && loadingGroups && loadingLeads && loadingTransactions;
-  const isFatalError = (errorStudents && errorGroups && errorLeads && errorTransactions) &&
+  const isFatalError = (errorStudents && !isForbidden(errorStudents)) && (errorGroups && !isForbidden(errorGroups)) &&
+    (errorLeads && !isForbidden(errorLeads)) && (errorTransactions && !isForbidden(errorTransactions)) &&
     students.length === 0 && groups.length === 0 && leads.length === 0;
+
+  const visibleWidgets = useMemo(
+    () => activeWidgets.filter(id => {
+      const meta = getWidgetMeta(id);
+      return !meta?.permission || !deniedPermissions.has(meta.permission);
+    }),
+    [activeWidgets, deniedPermissions]
+  );
 
   if (isInitialLoading) {
     return (
@@ -247,10 +272,10 @@ export default function CrmDashboard() {
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {[
-              { label: "O'quvchi", value: aggrData.studentsTotal, icon: GraduationCap },
-              { label: 'Guruh', value: aggrData.groupsActive, icon: Layers },
-              { label: 'Lid', value: aggrData.totalLeads, icon: TrendingUp },
-            ].map((s, i) => (
+              { label: "O'quvchi", value: aggrData.studentsTotal, icon: GraduationCap, permission: 'students' },
+              { label: 'Guruh', value: aggrData.groupsActive, icon: Layers, permission: 'groups' },
+              { label: 'Lid', value: aggrData.totalLeads, icon: TrendingUp, permission: 'leads' },
+            ].filter(s => !deniedPermissions.has(s.permission)).map((s, i) => (
               <div key={i} className="flex flex-col items-center px-3 py-2 rounded-xl bg-white/10 border border-white/10 min-w-[58px]">
                 <s.icon size={12} className="text-white/70 mb-1" />
                 <span className="text-white font-black text-base leading-none">{s.value}</span>
@@ -286,12 +311,14 @@ export default function CrmDashboard() {
         {/* Revenue highlight */}
         <div className="relative border-t border-white/10 px-5 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Zap size={12} className="text-yellow-300" />
-              <span className="text-white/70 text-[10px] font-semibold">Bu oylik daromad:</span>
-              <span className="text-white font-black text-[13px]">{formatCompact(aggrData.monthRevenue)} so'm</span>
-            </div>
-            {aggrData.debtors > 0 && (
+            {!deniedPermissions.has('finance') && (
+              <div className="flex items-center gap-2">
+                <Zap size={12} className="text-yellow-300" />
+                <span className="text-white/70 text-[10px] font-semibold">Bu oylik daromad:</span>
+                <span className="text-white font-black text-[13px]">{formatCompact(aggrData.monthRevenue)} so'm</span>
+              </div>
+            )}
+            {aggrData.debtors > 0 && !deniedPermissions.has('students') && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/30 rounded-lg border border-rose-400/30">
                 <AlertTriangle size={11} className="text-rose-300" />
                 <span className="text-white/90 text-[10px] font-bold">{aggrData.debtors} ta qarzdor</span>
@@ -321,9 +348,15 @@ export default function CrmDashboard() {
       </AnimatePresence>
 
       {/* Widget Grid */}
+      {visibleWidgets.length === 0 && !isEditMode && (
+        <div className="rounded-2xl border-2 border-dashed border-zinc-200 dark:border-white/10 py-14 flex flex-col items-center justify-center text-center gap-1">
+          <p className="text-sm font-black text-zinc-400">Sizga ko'rsatish uchun vidjet yo'q</p>
+          <p className="text-xs text-zinc-400">Vidjetlar sizning ruxsatlaringizga qarab ko'rsatiladi</p>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-auto">
         <AnimatePresence>
-          {activeWidgets.map(id => {
+          {visibleWidgets.map(id => {
             const meta = getWidgetMeta(id);
             if (!meta) return null;
             const rendered = renderWidget(id);
