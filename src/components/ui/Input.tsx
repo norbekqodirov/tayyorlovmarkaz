@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useId } from 'react';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -19,7 +19,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   disabled,
   ...props
 }, ref) => {
-  const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+  const generatedId = useId();
+  const inputId = id || generatedId;
+  const errorId = error ? `${inputId}-error` : undefined;
+  const helperId = helperText && !error ? `${inputId}-helper` : undefined;
 
   return (
     <div className="flex flex-col gap-1.5 w-full">
@@ -38,14 +41,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
           ref={ref}
           id={inputId}
           disabled={disabled}
-          className={`flex-1 w-full bg-zinc-50 dark:bg-zinc-800/50 border 
-            ${error ? 'border-rose-300 dark:border-rose-500/30 ring-rose-500' : 'border-zinc-200 dark:border-zinc-700 ring-blue-500'} 
+          aria-invalid={error ? true : undefined}
+          aria-describedby={errorId || helperId}
+          className={`flex-1 w-full bg-zinc-50 dark:bg-zinc-800/50 border
+            ${error ? 'border-rose-300 dark:border-rose-500/30 ring-rose-500' : 'border-zinc-200 dark:border-zinc-700 ring-blue-500'}
             text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none
             focus:ring-2 focus:border-transparent
             disabled:opacity-60 disabled:cursor-not-allowed
             placeholder:text-zinc-400 font-medium
-            ${leftIcon ? 'pl-10' : ''} 
-            ${rightIcon ? 'pr-10' : ''} 
+            ${leftIcon ? 'pl-10' : ''}
+            ${rightIcon ? 'pr-10' : ''}
             ${className}`}
           {...props}
         />
@@ -55,8 +60,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
           </div>
         )}
       </div>
-      {error && <p className="text-xs font-bold text-rose-500 mt-0.5">{error}</p>}
-      {helperText && !error && <p className="text-xs font-medium text-zinc-500 mt-0.5">{helperText}</p>}
+      {error && <p id={errorId} className="text-xs font-bold text-rose-500 mt-0.5">{error}</p>}
+      {helperText && !error && <p id={helperId} className="text-xs font-medium text-zinc-500 mt-0.5">{helperText}</p>}
     </div>
   );
 });

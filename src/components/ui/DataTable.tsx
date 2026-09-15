@@ -176,6 +176,7 @@ export function DataTable<T extends Record<string, any>>({
                     checked={allSelected}
                     ref={(el) => { if (el) el.indeterminate = !allSelected && someSelected; }}
                     onChange={toggleAll}
+                    aria-label="Barchasini tanlash"
                     className="w-4 h-4 rounded text-blue-600 bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 focus:ring-blue-500 cursor-pointer"
                   />
                 </th>
@@ -183,22 +184,30 @@ export function DataTable<T extends Record<string, any>>({
               {visibleColumns.map((col) => {
                 const isSorted = currentSort.column === col.id;
                 const SortIcon = !isSorted ? ChevronsUpDown : currentSort.direction === 'asc' ? ChevronUp : ChevronDown;
+                const ariaSort = !col.sortable ? undefined : !isSorted ? 'none' : currentSort.direction === 'asc' ? 'ascending' : currentSort.direction === 'desc' ? 'descending' : 'none';
                 return (
                   <th
                     key={col.id}
                     style={{ width: col.width, minWidth: col.minWidth }}
+                    aria-sort={ariaSort as any}
                     className={`${headerPad} text-[10px] font-black uppercase tracking-widest text-zinc-400 dark:text-zinc-500
                       ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}
-                      ${col.sortable ? 'cursor-pointer select-none hover:text-slate-700 dark:hover:text-zinc-300' : ''}
                       ${col.headerClassName || ''}`}
-                    onClick={() => col.sortable && handleSort(col.id)}
                   >
-                    <div className={`inline-flex items-center gap-1.5 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : ''}`}>
-                      <span>{col.header}</span>
-                      {col.sortable && (
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.id)}
+                        className={`inline-flex items-center gap-1.5 select-none hover:text-slate-700 dark:hover:text-zinc-300 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : ''}`}
+                      >
+                        <span>{col.header}</span>
                         <SortIcon size={12} className={isSorted ? 'text-blue-500' : 'text-zinc-300 dark:text-zinc-600'} />
-                      )}
-                    </div>
+                      </button>
+                    ) : (
+                      <div className={`inline-flex items-center gap-1.5 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : ''}`}>
+                        <span>{col.header}</span>
+                      </div>
+                    )}
                   </th>
                 );
               })}
@@ -232,8 +241,15 @@ export function DataTable<T extends Record<string, any>>({
                   <tr
                     key={id}
                     onClick={() => onRowClick?.(row, idx)}
+                    tabIndex={onRowClick ? 0 : undefined}
+                    onKeyDown={onRowClick ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onRowClick(row, idx);
+                      }
+                    } : undefined}
                     className={`border-b border-zinc-100 dark:border-zinc-800/60 transition-colors group
-                      ${onRowClick ? 'cursor-pointer' : ''}
+                      ${onRowClick ? 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset' : ''}
                       ${isSelected ? 'bg-blue-50/50 dark:bg-blue-500/5' : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/30'}
                       ${rowClassName ? rowClassName(row, idx) : ''}`}
                   >
@@ -243,6 +259,7 @@ export function DataTable<T extends Record<string, any>>({
                           type="checkbox"
                           checked={isSelected || false}
                           onChange={() => toggleRow(id)}
+                          aria-label="Qatorni tanlash"
                           className="w-4 h-4 rounded text-blue-600 bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 focus:ring-blue-500 cursor-pointer"
                         />
                       </td>
@@ -260,7 +277,7 @@ export function DataTable<T extends Record<string, any>>({
                     ))}
                     {rowActions && (
                       <td className={`${rowPad} text-right`} onClick={(e) => e.stopPropagation()}>
-                        <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
                           {rowActions(row, idx)}
                         </div>
                       </td>

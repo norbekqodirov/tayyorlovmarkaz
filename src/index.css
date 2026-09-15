@@ -33,6 +33,22 @@ body {
 /* ─── Smooth scrolling ─── */
 html { scroll-behavior: smooth; }
 
+/* ─── Reduced motion (7.1-topilma) ─── */
+/* Foydalanuvchi OS darajasida animatsiyalarni kamaytirishni so'ragan bo'lsa
+   (masalan harakatdan bosh aylanishi), CSS animatsiya/o'tish/scroll effektlari
+   deyarli darhol tugaydi. Framer Motion bilan boshqariladigan JS animatsiyalari
+   bunga kirmaydi — ular alohida bosqichda useReducedMotion() bilan hal qilinishi
+   kerak, bu yerda faqat global CSS xavfsizlik tarmog'i. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ─── Toast Animations ─── */
 @keyframes slide-in {
   from { transform: translateX(calc(100% + 24px)); opacity: 0; }
