@@ -165,31 +165,53 @@ async function runAttendanceMonitoring() {
             if (ok) sentCount++;
         }
 
-        // 3 kun ketma-ket kelmagan o'quvchilar → managerga
+        // 3 dars ketma-ket kelmagan o'quvchilar → managerga. Oddiy taqvim-kuni sanog'i
+        // emas — guruhning HAQIQIY dars kunlari (Schedule.dayOfWeek) bo'yicha, chunki
+        // aks holda boshqa-boshqa guruhlarga/kunlarga tarqalgan 3 ta "absent" yozuv
+        // (masalan bugun ikkita guruhda kelmagan + ertaga bittada) noto'g'ri "3 kun
+        // ketma-ket" deb hisoblanardi.
         const adminChatId = await getSetting('telegram_admin_chat_id');
         if (adminChatId) {
-            const threeDaysAgo = addDaysDateStr(-3);
-            const absentStudents = await prisma.attendanceRecord.findMany({
-                where: { date: { gte: threeDaysAgo, lte: today }, status: 'absent' },
-                select: { studentId: true },
+            const enrollments = await prisma.enrollment.findMany({
+                select: {
+                    studentId: true,
+                    groupId: true,
+                    student: { select: { name: true, phone: true } },
+                    group: { select: { name: true, schedules: { select: { dayOfWeek: true } } } },
+                },
             });
 
-            const studentAbsences: Record<string, number> = {};
-            absentStudents.forEach(r => {
-                studentAbsences[r.studentId] = (studentAbsences[r.studentId] || 0) + 1;
-            });
+            const seriousList: { name: string; phone: string; groupName: string }[] = [];
 
-            const seriousAbsents = Object.entries(studentAbsences).filter(([_, count]) => count >= 3);
-            if (seriousAbsents.length > 0) {
-                const ids = seriousAbsents.map(([id]) => id);
-                const students = await prisma.student.findMany({
-                    where: { id: { in: ids } },
-                    select: { name: true, phone: true },
+            for (const enr of enrollments) {
+                const scheduleDays = new Set(enr.group.schedules.map(s => s.dayOfWeek));
+                if (scheduleDays.size === 0) continue;
+
+                // Guruhning oxirgi 3 ta REJALASHTIRILGAN dars sanasini (bugundan orqaga) topamiz
+                const classDates: string[] = [];
+                for (let i = 0; i < 21 && classDates.length < 3; i++) {
+                    const dateStr = addDaysDateStr(-i);
+                    const dow = tashkentDayOfWeek(tashkentMidnightInstant(dateStr));
+                    if (scheduleDays.has(dow)) classDates.push(dateStr);
+                }
+                if (classDates.length < 3) continue;
+
+                const records = await prisma.attendanceRecord.findMany({
+                    where: { studentId: enr.studentId, groupId: enr.groupId, date: { in: classDates } },
+                    select: { date: true, status: true },
                 });
+                const byDate = new Map(records.map(r => [r.date, r.status]));
+                const allAbsent = classDates.every(d => byDate.get(d) === 'absent');
 
-                const list = students.map(s => `• ${s.name} (${s.phone})`).join('\n');
+                if (allAbsent) {
+                    seriousList.push({ name: enr.student.name, phone: enr.student.phone, groupName: enr.group.name });
+                }
+            }
+
+            if (seriousList.length > 0) {
+                const list = seriousList.map(s => `• ${s.name} (${s.phone}) — ${s.groupName}`).join('\n');
                 await sendMessage(adminChatId,
-                    `⚠️ <b>Ketma-ket kelmagan o'quvchilar (3+ kun)</b>\n\n${list}\n\n` +
+                    `⚠️ <b>Ketma-ket kelmagan o'quvchilar (guruh jadvali bo'yicha 3+ dars)</b>\n\n${list}\n\n` +
                     `Iltimos, ular bilan bog'laning!`
                 );
             }
