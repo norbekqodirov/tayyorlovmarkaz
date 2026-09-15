@@ -5,6 +5,7 @@ import prisma from '../db.js';
 import { requireAuth, requireRole, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { withAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
+import { resolveRoleAssignment } from '../services/roleAssignment.js';
 
 const router = express.Router();
 
@@ -114,7 +115,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'transaction': ['type', 'amount', 'category', 'description', 'date', 'method', 'studentId', 'studentName', 'staffId', 'staffName'],
     'payment': ['studentId', 'amount', 'method', 'date', 'month', 'dueDate', 'status', 'notes'],
     'staffMember': ['name', 'role', 'positionId', 'email', 'phone', 'salary', 'joinedDate', 'status', 'department', 'address', 'passport', 'education', 'experience', 'photo'],
-    'position': ['name', 'description', 'responsibilities', 'suggestedRole', 'defaultPermissions', 'isActive'],
+    'position': ['name', 'description', 'responsibilities', 'suggestedRole', 'defaultPermissions', 'roleId', 'isActive'],
     'transactionCategory': ['name', 'type', 'isActive'],
     'post': ['title', 'content', 'excerpt', 'imageUrl', 'author', 'status', 'category', 'date'],
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
@@ -165,6 +166,12 @@ const RELATION_INCLUDES: Record<string, any> = {
     },
     'course': {
         tiers: { orderBy: { price: 'asc' } },
+    },
+    // 2026-09-14 — Position endi Sozlamalar > Rollar va Ruxsatlar'dagi
+    // haqiqiy Role'ga bog'lanishi mumkin (roleId); ro'yxat/forma buni
+    // ko'rsatishi uchun label + ruxsatlar soni birga qaytariladi.
+    'position': {
+        roleRef: { select: { id: true, label: true, baseRoleLevel: true, _count: { select: { permissions: true } } } },
     },
 };
 
@@ -304,11 +311,26 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
 
     let role = mapStaffRoleToUserRole(staff.role);
     let permissions = '[]';
+    let roleId: string | null = null;
     if (staff.positionId) {
         const position = await prisma.position.findUnique({ where: { id: staff.positionId } });
         if (position) {
-            role = position.suggestedRole;
-            permissions = position.defaultPermissions ?? '[]';
+            // 2026-09-14: Lavozim endi Sozlamalar > Rollar va Ruxsatlar
+            // sahifasidagi haqiqiy Role'ga bog'langan bo'lishi mumkin
+            // (roleId) — o'rnatilgan bo'lsa, shu Role'ning baseRoleLevel'i
+            // va RolePermission to'plami ishlatiladi (auth.ts'dagi
+            // resolveRoleAssignment bilan bir xil, endi umumiy joyda).
+            // Aks holda eski suggestedRole/defaultPermissions'ga qaytiladi
+            // — hali biror Role'ga bog'lanmagan mavjud lavozimlar uchun.
+            const resolved = position.roleId ? await resolveRoleAssignment(position.roleId) : null;
+            if (resolved) {
+                role = resolved.baseRoleLevel;
+                permissions = JSON.stringify(resolved.permissionKeys);
+                roleId = position.roleId;
+            } else {
+                role = position.suggestedRole;
+                permissions = position.defaultPermissions ?? '[]';
+            }
         }
     }
     // Lavozim matnidan avtomatik aniqlangan rol so'rov yuboruvchining o'z
@@ -319,6 +341,7 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
     if ((ROLE_LEVEL[role] || 0) > requesterLevel && requesterRole) {
         role = requesterRole;
         permissions = '[]';
+        roleId = null;
     }
     const hashed = await bcrypt.hash(rawPassword || '123456', 12);
     return await prisma.user.create({
@@ -329,6 +352,7 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
             role,
             isActive: true,
             permissions,
+            roleId,
         } as any,
     });
 }

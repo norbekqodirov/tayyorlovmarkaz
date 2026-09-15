@@ -10,6 +10,7 @@ import { getDbConfig } from '../services/dbBackup.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 import { getEffectivePermissions } from '../middleware/authorize.js';
 import { withAudit } from '../middleware/audit.js';
+import { resolveRoleAssignment } from '../services/roleAssignment.js';
 
 const router = express.Router();
 
@@ -52,25 +53,6 @@ function resetLoginRateLimit(key: string) {
 // ─── Normalize phone number ───────────────────────────────────────────────────
 function normalizePhone(raw: string): string {
     return raw.replace(/\s/g, '').trim();
-}
-
-// ─── RBAC Bosqich 3: DB'dagi Role'ni User.role/permissions'ga aylantirish ────
-// CrmUsers.tsx endi (eski qo'lda tanlangan andoza o'rniga) haqiqiy Role
-// tanlashi mumkin — bu funksiya o'sha Role'ning baseRoleLevel'ini User.role
-// (ROLE_LEVEL/requireMinRole hali ham shuni o'qiydi) va uning RolePermission
-// to'plamini User.permissions (eski, frontend menyu hali shuni o'qiydi) ga
-// aylantiradi. Ikkalasi ham Role'dan HOSILA — mos kelmaslik imkonsiz.
-async function resolveRoleAssignment(roleId: string) {
-    const role = await prisma.role.findUnique({
-        where: { id: roleId },
-        include: { permissions: { include: { permission: true } } },
-    });
-    if (!role) return null;
-    return {
-        role,
-        baseRoleLevel: role.baseRoleLevel,
-        permissionKeys: role.permissions.map(rp => rp.permission.key),
-    };
 }
 
 // ─── POST /auth/login  (phone + password) ────────────────────────────────────

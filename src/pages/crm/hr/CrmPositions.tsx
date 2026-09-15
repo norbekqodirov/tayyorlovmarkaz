@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Edit2, Plus, Search, Trash2 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
@@ -6,12 +6,23 @@ import ConfirmDialog from '../../../components/ConfirmDialog';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
+import api from '../../../api/client';
 import { ALL_PERMISSIONS, PERMISSION_GROUPS } from '../../../constants/permissions';
 import type { Position } from '../../../types/position';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
-const ROLE_LABELS = { TEACHER: "O'qituvchi", MANAGER: 'Menejer', ADMIN: 'Administrator' };
-type PositionForm = Omit<Position, 'id' | 'defaultPermissions'> & { defaultPermissions: string[] };
+// Sozlamalar > Rollar va Ruxsatlar sahifasida yaratilgan haqiqiy Role —
+// server/routes/roles.ts GET / javobi bilan bir xil shakl (CrmUsers.tsx'dagi
+// DbRole bilan bir xil naqsh).
+interface DbRole {
+  id: string;
+  label: string;
+  baseRoleLevel: string;
+  isActive: boolean;
+  permissionCount: number;
+}
+
+type PositionForm = Omit<Position, 'id' | 'defaultPermissions' | 'roleRef'> & { defaultPermissions: string[] };
 
 function parsePermissions(value: Position['defaultPermissions']): string[] {
   try {
@@ -23,7 +34,7 @@ function parsePermissions(value: Position['defaultPermissions']): string[] {
 }
 
 const emptyForm = (): PositionForm => ({
-  name: '', description: '', responsibilities: '', suggestedRole: 'TEACHER', defaultPermissions: [], isActive: true,
+  name: '', description: '', responsibilities: '', suggestedRole: 'TEACHER', defaultPermissions: [], roleId: null, isActive: true,
 });
 const fieldClass = 'w-full px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white';
 
@@ -31,6 +42,32 @@ export default function CrmPositions() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.ADMIN;
   const { data: positions, loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<Position>('positions');
   const { showToast } = useToast();
+  const [dbRoles, setDbRoles] = useState<DbRole[]>([]);
+
+  // 2026-09-14: "Taklif qilinadigan rol" endi shu yerdan — qattiq kodlangan
+  // 3 ta variant o'rniga Sozlamalar > Rollar va Ruxsatlar'da yaratilgan
+  // haqiqiy rollar ro'yxati (CrmRoles.tsx bilan bir xil manba).
+  useEffect(() => {
+    api.get('/roles').then(res => setDbRoles(Array.isArray(res.data) ? res.data.filter((r: DbRole) => r.isActive) : [])).catch(() => {});
+  }, []);
+
+  const applyDbRole = async (roleId: string) => {
+    if (!roleId) {
+      setForm(prev => ({ ...prev, roleId: null }));
+      return;
+    }
+    try {
+      const res = await api.get(`/roles/${roleId}`);
+      setForm(prev => ({
+        ...prev,
+        roleId,
+        suggestedRole: res.data.baseRoleLevel,
+        defaultPermissions: res.data.permissionKeys || [],
+      }));
+    } catch {
+      showToast("Rolni yuklab bo'lmadi", 'error');
+    }
+  };
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -46,7 +83,8 @@ export default function CrmPositions() {
     setEditingId(position?.id ?? null);
     setForm(position ? {
       name: position.name, description: position.description ?? '', responsibilities: position.responsibilities ?? '',
-      suggestedRole: position.suggestedRole, defaultPermissions: parsePermissions(position.defaultPermissions), isActive: position.isActive,
+      suggestedRole: position.suggestedRole, defaultPermissions: parsePermissions(position.defaultPermissions),
+      roleId: position.roleId ?? null, isActive: position.isActive,
     } : emptyForm());
     setIsOpen(true);
   };
@@ -114,7 +152,7 @@ export default function CrmPositions() {
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {filtered.map(position => <tr key={position.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                   <td className="px-6 py-4"><p className="font-bold text-slate-900 dark:text-white">{position.name}</p><p className="text-zinc-500 line-clamp-2 max-w-sm whitespace-pre-line">{position.description}</p></td>
-                  <td className="px-6 py-4 whitespace-nowrap">{ROLE_LABELS[position.suggestedRole]}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{position.roleRef?.label ?? <span className="text-zinc-400 italic">Rol tanlanmagan</span>}</td>
                   <td className="px-6 py-4">{parsePermissions(position.defaultPermissions).length} ta</td>
                   <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-xs font-bold ${position.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>{position.isActive ? 'Faol' : 'Nofaol'}</span></td>
                   <td className="px-6 py-4">{canManage && <div className="flex gap-2">
@@ -133,10 +171,18 @@ export default function CrmPositions() {
             <Input id="position-name" label="Nom" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             <label className="block space-y-2 text-sm font-bold"> <span>Yo'riqnoma</span><textarea className={fieldClass} rows={3} value={form.description ?? ''} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
             <label className="block space-y-2 text-sm font-bold"> <span>Vazifalar</span><textarea className={fieldClass} rows={3} value={form.responsibilities ?? ''} onChange={e => setForm({ ...form, responsibilities: e.target.value })} /></label>
-            <label className="block space-y-2 text-sm font-bold"><span>Taklif qilinadigan rol</span>
-              <select className={fieldClass} value={form.suggestedRole} onChange={e => setForm({ ...form, suggestedRole: e.target.value as Position['suggestedRole'] })}>
-                {Object.entries(ROLE_LABELS).map(([role, label]) => <option key={role} value={role}>{label}</option>)}
+            <label className="block space-y-2 text-sm font-bold">
+              <div className="flex items-center justify-between">
+                <span>Taklif qilinadigan rol</span>
+                <a href="/crmtayyorlovmarkaz/roles" className="text-[11px] font-bold text-blue-600 hover:underline">Rollarni boshqarish</a>
+              </div>
+              <select className={fieldClass} value={form.roleId ?? ''} onChange={e => void applyDbRole(e.target.value)}>
+                <option value="">— Rol tanlanmagan (qo'lda ruxsat belgilash) —</option>
+                {dbRoles.map(r => <option key={r.id} value={r.id}>{r.label} ({r.permissionCount} ta ruxsat)</option>)}
               </select>
+              <p className="text-xs font-normal text-zinc-400">
+                Rol tanlansa, shu lavozim orqali ochilgan login o'sha rolning ruxsatlarini oladi — pastdagi ro'yxatdan yana moslashtirish mumkin.
+              </p>
             </label>
             <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} className="size-4 accent-blue-600" />Faol lavozim</label>
             <fieldset className="space-y-4">

@@ -329,8 +329,18 @@ model Position {
   name               String   @unique
   description        String?  @db.Text // Yo'riqnoma
   responsibilities   String?  @db.Text // Vazifalar
+  // ESKI (RBAC qayta qurishdan oldingi) andoza — roleId o'rnatilmagan
+  // lavozimlar uchun hali ham zaxira sifatida ishlatiladi.
   suggestedRole      String   @default("TEACHER") // TEACHER | MANAGER | ADMIN — login ochilganda taklif qilinadigan rol
   defaultPermissions String?  @default("[]") @db.Text // JSON array — ALL_PERMISSIONS kalitlari
+  // YANGI (2026-09-14) — Sozlamalar > Rollar va Ruxsatlar sahifasida
+  // yaratilgan haqiqiy Role'ga FK. O'rnatilgan bo'lsa, ensureStaffLoginAccount()
+  // suggestedRole/defaultPermissions o'rniga shu Role'ning baseRoleLevel'i va
+  // RolePermission to'plamidan hosila qiymatlarni ishlatadi (auth.ts'dagi
+  // resolveRoleAssignment bilan bir xil naqsh — CrmUsers.tsx'dagi "Maxsus Rol"
+  // ulanishiga o'xshab, endi Lavozim ham haqiqiy Role'ga bog'lanishi mumkin).
+  roleId             String?
+  roleRef            Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -386,6 +396,7 @@ model Role {
 
   permissions RolePermission[]
   users       User[]
+  positions   Position[]
 }
 
 // Ruxsat — bitta aniq imkoniyat (masalan "finance", "journal").
