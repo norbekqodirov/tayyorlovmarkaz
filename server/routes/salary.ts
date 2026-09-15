@@ -42,12 +42,24 @@ router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), async (req
 });
 
 // POST /api/salary — create or update salary for a staff/month
+// RF-05 tuzatish: ilgari `upsert` allaqachon `paid:true` bo'lgan yozuvni ham
+// so'rovdagi `paid` qiymati bilan (hatto false'ga!) cheklovsiz qayta yozardi —
+// to'langan oylikni "to'lanmagan" deb ko'rsatib, keyin PUT /:id/pay orqali
+// IKKINCHI marta xarajat yozib bo'lardi. Endi to'langan yozuv shu yo'l orqali
+// UMUMAN o'zgartirilmaydi — tuzatish kerak bo'lsa alohida jarayon (hozircha
+// mavjud emas) kerak bo'ladi.
 router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { staffId, month, baseSalary = 0, bonus = 0, deduction = 0, notes, paid = false } = req.body;
         if (!staffId || !month) {
             return res.status(400).json({ message: 'staffId va month kiritilishi shart' });
         }
+
+        const existing = await prisma.salary.findUnique({ where: { staffId_month: { staffId, month } } });
+        if (existing?.paid) {
+            return res.status(400).json({ message: "To'langan oylik yozuvini bu yo'l orqali o'zgartirib bo'lmaydi" });
+        }
+
         const total = Number(baseSalary) + Number(bonus) - Number(deduction);
         const data = {
             staffId,
@@ -86,6 +98,14 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
 });
 
 // PUT /api/salary/:id/pay — mark salary as paid + create expense transaction
+// RF-04 tuzatish: ilgari holat o'zgarishi va xarajat yozuvi IKKI ALOHIDA amal
+// edi (tranzaksiyasiz), va xarajat yozuvi xatosi `catch {/* silent */}` bilan
+// yutilardi — natijada "to'landi" deb belgilangan oylikning moliyaviy
+// xarajat yozuvi umuman bo'lmasligi mumkin edi, hech qanday xato ko'rinmasdan.
+// Parallel ikki so'rov ham ikkalasi `salary.paid===false`ni ko'rib, ikkalasi
+// ham davom etishi mumkin edi (oddiy o'qi-tekshir-yoz poygasi). Endi holat
+// o'tishi `updateMany({paid:false})` sharti bilan va xarajat yozuvi BITTA
+// $transaction ichida — yoki ikkalasi ham muvaffaqiyatli, yoki hech biri.
 router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({
@@ -95,40 +115,53 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), async (req, res) 
         if (!salary) return res.status(404).json({ message: 'Topilmadi' });
         if (salary.paid) return res.status(400).json({ message: "Allaqachon to'langan" });
 
-        const updated = await prisma.salary.update({
-            where: { id: req.params.id },
-            data: { paid: true, paidAt: new Date() },
-        });
+        const todayStr = todayDateStr();
+        const result = await prisma.$transaction(async (tx) => {
+            const { count } = await tx.salary.updateMany({
+                where: { id: req.params.id, paid: false },
+                data: { paid: true, paidAt: new Date() },
+            });
+            if (count === 0) return { applied: false };
 
-        // Create matching expense transaction in finance
-        try {
-            await prisma.transaction.create({
+            await tx.transaction.create({
                 data: {
                     type: 'expense',
                     amount: salary.total,
                     category: 'Oylik',
                     description: `${salary.staff.name} - ${salary.month} oyligi`,
-                    date: todayDateStr(),
+                    date: todayStr,
                     method: req.body.method || 'Bank',
                     staffId: salary.staffId,
                     staffName: salary.staff.name,
                 },
             });
-        } catch {/* silent */}
+            const updated = await tx.salary.findUnique({ where: { id: req.params.id } });
+            return { applied: true, updated };
+        });
+
+        if (!result.applied) return res.status(400).json({ message: "Allaqachon to'langan" });
 
         invalidate(NS.FINANCE);
         invalidate(NS.ANALYTICS);
-        emitToAdmins('salary:paid', updated);
+        emitToAdmins('salary:paid', result.updated);
 
-        res.json(updated);
+        res.json(result.updated);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
 });
 
 // DELETE /api/salary/:id
+// RF-05 tuzatish: to'langan oylik yozuvini o'chirishga hech qanday cheklov
+// yo'q edi — real xarajat yozuvi (Transaction) qolgan holda payroll yozuvi
+// yo'qolib, tarixiy hisobot manbasiz qolib ketardi.
 router.delete('/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
+        const salary = await prisma.salary.findUnique({ where: { id: req.params.id }, select: { paid: true } });
+        if (!salary) return res.status(404).json({ message: 'Topilmadi' });
+        if (salary.paid) {
+            return res.status(400).json({ message: "To'langan oylik yozuvini o'chirib bo'lmaydi — moliyaviy tarix saqlanishi shart" });
+        }
         await prisma.salary.delete({ where: { id: req.params.id } });
         invalidate(NS.FINANCE);
         res.json({ success: true });
@@ -174,7 +207,10 @@ router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), async (re
 });
 
 // ─── Staff attendance ─────────────────────────────────────────────────────────
-router.get('/attendance', requireAuth, async (req, res) => {
+// RS-03 tuzatish: yonidagi GET / va GET /staff/:staffId SEC-04'da MANAGER+ga
+// cheklangan edi, lekin bu endpoint (butun markaz xodimlarining kelish-ketish
+// vaqtlari) o'sha safar unutilgan — faqat requireAuth bilan qolgan edi.
+router.get('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
     try {
         const { staffId, from, to } = req.query as Record<string, string>;
         const where: any = {};

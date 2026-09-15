@@ -160,7 +160,11 @@ router.get('/stats', requireAuth, async (_req, res) => {
 
 // ─── Xabar tarixi ─────────────────────────────────────────────────────────────
 
-router.get('/messages', requireAuth, async (req, res) => {
+// RS-03 tuzatish: yonidagi /test, /send, /broadcast, /link-direct 'communication'
+// ruxsatini talab qiladi, lekin xabar TARIXINI o'qish endpointi shu paytgacha
+// faqat requireAuth bilan qolgan edi — istalgan login qilgan foydalanuvchi
+// butun markazning Telegram xabar tarixini o'qiy olardi.
+router.get('/messages', requireAuth, requirePermission('communication'), async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(50, Number(req.query.limit) || 20);
     const type = req.query.type as string;

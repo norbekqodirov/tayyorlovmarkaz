@@ -793,11 +793,46 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
             return res.json({ success: true });
         }
 
+        const modelName = (req as any).modelName;
+
+        // RF-11 tuzatish: `payment` yozuvlari hech qanday UI'dan o'chirilmaydi
+        // (faqat o'qish uchun) — generic yo'l orqali o'chirishga umuman ehtiyoj
+        // yo'q, shuning uchun butunlay yopiladi (balans bilan bog'liqligini
+        // buzish xavfini oldindan yo'q qiladi).
+        if (modelName === 'payment') {
+            return res.status(400).json({
+                message: "To'lov yozuvini bu yo'l orqali o'chirib bo'lmaydi",
+            });
+        }
+        // `transaction` esa CrmFinance.tsx'ning "Tranzaksiyalar" ro'yxatida
+        // haqiqatan o'chiriladigan mavjud funksiya — buni butunlay yopish
+        // o'rniga, "income"+studentId bo'lgan yozuv o'chirilganda CREATE
+        // vaqtida oshirilgan Student.balance endi ATOMAR ravishda ORQAGA
+        // QAYTARILADI (ilgari umuman qaytarilmasdi).
+        if (modelName === 'transaction') {
+            const tx = await prisma.transaction.findUnique({ where: { id }, select: { type: true, amount: true, studentId: true } });
+            if (!tx) return res.status(404).json({ message: 'Topilmadi' });
+            const student = tx.studentId ? await prisma.student.findUnique({ where: { id: tx.studentId }, select: { id: true } }) : null;
+            await prisma.$transaction(async (txClient) => {
+                if (tx.type === 'income' && student) {
+                    const updated = await txClient.student.update({
+                        where: { id: student.id },
+                        data: { balance: { decrement: tx.amount } },
+                    });
+                    await txClient.student.update({
+                        where: { id: student.id },
+                        data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
+                    });
+                }
+                await txClient.transaction.delete({ where: { id } });
+            });
+            return res.json({ success: true });
+        }
+
         // SEC-06 tuzatish: POST/PUT'da TEACHER guruh egaligi tekshirilardi,
         // DELETE'da esa UMUMAN yo'q edi — TEACHER boshqa ustozning guruhiga
         // tegishli davomat/baho/imtihon/eslatma yozuvini (ID'sini bilsa yoki
         // taxmin qilsa) hech qanday tekshiruvsiz o'chira olardi.
-        const modelName = (req as any).modelName;
         const requester = (req as any).user;
         if (requester?.role === 'TEACHER' && TEACHER_WRITE_SCOPE_MODELS.has(modelName)) {
             // @ts-ignore
