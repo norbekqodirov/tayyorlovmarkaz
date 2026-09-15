@@ -117,8 +117,18 @@ _(hozircha bo'sh)_
 - [Antigravity] SEC-01/02/05/08/09/10/11/12, TEST-01/02 — bajarildi, Claude
   tomonidan ko'rib chiqildi (2 ta kamchilik topildi va tuzatildi: xlsx
   package-lock.json yangilanmagan edi, upload rad etish 500 qaytarardi) va
-  master'ga merge qilindi. FIN-05 va 7.1-bo'lim (accessibility) BAJARILMADI —
-  keyingi partiyaga qoldi.
+  master'ga merge qilindi.
+
+<!-- YAKUNLANGAN (2026-09-15, 2-partiya): -->
+- [Claude] FIN-05 (yil filtri), EDU-07 (ketma-ket kelmagan o'quvchi — guruh
+  jadvali bo'yicha), EDU-08 (ota-onaning bir nechta farzandi — bot+portal
+  to'liq), 7.1-bo'lim (DataTable/Input erishuvchanlik + reduced-motion) —
+  bajarildi, jonli tekshirildi, alohida commit qilindi, production'ga hali
+  deploy qilinmagan. EDU-06 (bir kunda ikki dars) ataylab hali qoldirilgan —
+  hozirgi ma'lumot modeli bu stsenariyni umuman yaratishga imkon bermaydi,
+  to'g'ri tuzatish LessonSession kabi katta qayta qurishni talab qiladi.
+  EDU-07/EDU-08 hech qachon Antigravity'ga berilmagan edi (faqat FIN-05 va
+  7.1 berilgan edi, ANTIGRAVITY_PROMPT_2026-09-14.md'ga qarang).
 
 ## 6. Merge oqimi
 
