@@ -1,13 +1,16 @@
 /**
  * Oylik to'lovni davomat asosida hisoblash.
  *
- * Qoida (foydalanuvchi tomonidan berilgan):
+ * Qoida (foydalanuvchi tomonidan 2026-09-15'da qat'iy tasdiqlangan — RF-01):
  * - Har bir kurs (guruh) alohida hisoblanadi.
- * - Agar o'quvchi shu oyda o'sha guruhdan sozlamalarda belgilangan chegaradan
- *   (standart: 3) KO'P dars qoldirsa — guruh narxi "oyiga necha dars" sozlamasiga
- *   (standart: 12) bo'linib, bitta dars narxi topiladi va QOLDIRGAN BARCHA
- *   kunlar uchun shu summa umumiy narxdan ayriladi.
- * - Agar chegaradan kam yoki teng qoldirgan bo'lsa — chegirma YO'Q, to'liq narx.
+ * - M — sozlamadagi chegirma boshlanadigan ENG KAM qoldirilgan dars soni (standart: 3).
+ * - Agar o'quvchi shu oyda o'sha guruhdan qoldirgan darslar soni (A) M dan
+ *   KATTA YOKI TENG bo'lsa (A >= M) — guruh narxi "oyiga necha dars" sozlamasiga
+ *   (standart: 12) bo'linib, bitta dars narxi topiladi va QOLDIRGAN BARCHA (A ta)
+ *   dars uchun shu summa umumiy narxdan ayriladi. M dan ORTGAN qismgina emas —
+ *   aynan M ta qoldirilganda ham barcha M taning puli ayriladi (masalan M=3,
+ *   A=3 bo'lsa 3 dars puli, A=4 bo'lsa 4 dars puli ayriladi).
+ * - Agar A < M bo'lsa — chegirma YO'Q, to'liq narx.
  * - Bitta o'quvchi bir nechta kursda o'qisa, har biri mustaqil hisoblanadi.
  */
 import prisma from '../db.js';
@@ -87,7 +90,13 @@ export async function calculateStudentMonthlyDue(
             where: { studentId, groupId: group.id, date: { startsWith: monthStr }, status: 'absent' },
         });
         const perLessonPrice = s.lessonsPerMonth > 0 ? basePrice / s.lessonsPerMonth : 0;
-        const discountApplied = absences > s.absenceThreshold;
+        // RF-01: foydalanuvchi qat'iy tasdiqlagan qoida — A >= M (M dan ORTGAN
+        // qism emas, M ga TENG bo'lganda ham barcha qoldirilganlar hisoblanadi).
+        // `absences > 0` qo'shimcha sharti: M=0 qilib qo'yilsa (chegirmani
+        // "har doim faol" qilish), 0 ta qoldirgan o'quvchida ham 0>=0=true
+        // chiqib, UI'da chegirma "qo'llandi" deb noto'g'ri ko'rsatilmasin
+        // (raqamga ta'siri yo'q edi, faqat displayApplied flagi noto'g'ri edi).
+        const discountApplied = absences > 0 && absences >= s.absenceThreshold;
         const discount = discountApplied ? Math.round(perLessonPrice * absences) : 0;
         const finalPrice = Math.max(0, Math.round(basePrice - discount));
 

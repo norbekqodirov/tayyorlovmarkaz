@@ -24,9 +24,25 @@ router.get('/billing-settings', requireAuth, requirePermission('finance'), async
 });
 
 // PUT /api/finance/billing-settings — faqat ADMIN
+// RF-12 tuzatish: ilgari hech qanday tekshiruvsiz String(value) sifatida
+// saqlanardi — masalan teacherSalaryPercent=500 yoki absenceThreshold=-1
+// ham qabul qilinib, billing.ts'da jimgina noto'g'ri natija berardi.
 router.put('/billing-settings', requireAuth, requireMinRole('ADMIN'), requirePermission('finance'), async (req, res) => {
     try {
         const { lessonsPerMonth, absenceThreshold, teacherSalaryPercent } = req.body as Record<string, number>;
+
+        const isNonNegativeInt = (v: number) => Number.isInteger(v) && v >= 0;
+
+        if (lessonsPerMonth !== undefined && (!isNonNegativeInt(lessonsPerMonth) || lessonsPerMonth === 0)) {
+            return res.status(400).json({ message: "Oyiga necha dars — musbat butun son bo'lishi kerak" });
+        }
+        if (absenceThreshold !== undefined && !isNonNegativeInt(absenceThreshold)) {
+            return res.status(400).json({ message: "Chegirma boshlanadigan dars soni — manfiy bo'lmagan butun son bo'lishi kerak" });
+        }
+        if (teacherSalaryPercent !== undefined && (!isNonNegativeInt(teacherSalaryPercent) || teacherSalaryPercent > 100)) {
+            return res.status(400).json({ message: "O'qituvchi stavkasi 0 dan 100 gacha butun son bo'lishi kerak" });
+        }
+
         const updates: Array<{ key: string; value: string }> = [];
         if (lessonsPerMonth !== undefined) updates.push({ key: 'monthly_lessons_count', value: String(lessonsPerMonth) });
         if (absenceThreshold !== undefined) updates.push({ key: 'absence_discount_threshold', value: String(absenceThreshold) });

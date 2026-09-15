@@ -250,7 +250,11 @@ export async function validateStaffInitData(initData: string): Promise<{
 
 /** Set Staff bot webhook */
 export async function setStaffWebhook(url: string): Promise<any> {
-    return sendStaffBotRequest('setWebhook', { url, drop_pending_updates: true });
+    // RS-01 tuzatish: ilgari secret_token UMUMAN yuborilmasdi — demak
+    // staffTelegram.ts'dagi qanday secret tekshiruvi bo'lsa ham, Telegram'ning
+    // o'zi hech qachon `X-Telegram-Bot-Api-Secret-Token` header'ini yubormasdi.
+    const secret = process.env.STAFF_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || undefined;
+    return sendStaffBotRequest('setWebhook', { url, drop_pending_updates: true, secret_token: secret });
 }
 
 /** Get Staff bot webhook info */

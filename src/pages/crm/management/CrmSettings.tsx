@@ -582,8 +582,8 @@ export default function CrmSettings() {
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">To'lov / Davomat Hisob-kitobi</h2>
                 <p className="text-sm text-zinc-500 mb-6">
                   Har bir o'quvchining oylik to'lovi davomat asosida avtomatik hisoblanadi:
-                  agar shu oy ichida bir kursdan pastdagi chegaradan ko'p dars qoldirsa,
-                  qoldirgan kunlari uchun pul avtomatik ayriladi.
+                  agar shu oy ichida bir kursdan pastdagi chegaradagi songa yetadigan yoki undan
+                  ko'p dars qoldirsa, qoldirgan barcha kunlari uchun pul avtomatik ayriladi.
                 </p>
                 <div className="space-y-5 max-w-md">
                   <div>
@@ -599,14 +599,14 @@ export default function CrmSettings() {
                   <div>
                     <Input
                       type="number" min="0"
-                      label="Nechta darsdan ko'p qoldirilsa chegirma ishlaydi"
+                      label="Chegirma boshlanadigan eng kam qoldirilgan dars soni"
                       disabled={!isAdmin}
                       value={billingSettings.absenceThreshold}
                       onChange={e => setBillingSettings({ ...billingSettings, absenceThreshold: Number(e.target.value) })}
                     />
                     <p className="text-xs text-zinc-400 mt-1">
-                      Masalan {billingSettings.absenceThreshold} bo'lsa: {billingSettings.absenceThreshold} tagacha qoldirsa to'liq narx,
-                      {' '}{billingSettings.absenceThreshold + 1}+ qoldirsa barcha qoldirgan kunlari uchun chegirma (manfiy emas).
+                      Masalan {billingSettings.absenceThreshold} bo'lsa: {Math.max(0, billingSettings.absenceThreshold - 1)} tagacha qoldirsa to'liq narx,
+                      {' '}{billingSettings.absenceThreshold}+ qoldirsa BARCHA qoldirilgan darslar (aynan {billingSettings.absenceThreshold} tasi ham) uchun chegirma.
                     </p>
                   </div>
                   <div>

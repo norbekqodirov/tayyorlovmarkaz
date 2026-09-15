@@ -32,7 +32,9 @@ router.post('/webhook', async (req, res) => {
         const secretHeader = req.headers['x-telegram-bot-api-secret-token'];
         const settingSecret = await prisma.setting.findUnique({ where: { key: 'staff_webhook_secret' } }).catch(() => null);
         const expectedSecret = settingSecret?.value || process.env.STAFF_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || '';
-        if (expectedSecret && secretHeader !== expectedSecret) {
+        // RS-01 tuzatish: secret sozlanmagan bo'lsa ham endi so'rov rad etiladi
+        // (fail-closed) — student botdagi bilan bir xil tuzatish.
+        if (!expectedSecret || secretHeader !== expectedSecret) {
             return res.status(403).json({ message: 'Forbidden' });
         }
 

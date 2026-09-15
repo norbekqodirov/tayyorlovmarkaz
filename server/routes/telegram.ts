@@ -48,11 +48,26 @@ router.post('/webhook', async (req, res) => {
     const secret = req.headers['x-telegram-bot-api-secret-token'];
     const settingSecret = await prisma.setting.findUnique({ where: { key: 'telegram_webhook_secret' } }).catch(() => null);
     const expectedSecret = settingSecret?.value || WEBHOOK_SECRET || '';
-    if (expectedSecret && secret !== expectedSecret) {
+    // RS-01 tuzatish: ilgari `expectedSecret` bo'sh bo'lsa (sozlanmagan) tekshiruv
+    // BUTUNLAY o'tkazib yuborilardi — demak secret sozlanmagan muhitda ISTALGAN
+    // odam webhook'ga to'g'ridan-to'g'ri soxta Telegram update yubora olardi.
+    // Endi secret sozlanmagan bo'lsa ham so'rov RAD ETILADI (fail-closed).
+    if (!expectedSecret || secret !== expectedSecret) {
         res.status(403).json({ message: 'Forbidden' });
         return;
     }
-    handleBotWebhook(req, res);
+    // Xavfsizlik tarmog'i: grammY botning o'zi ichki xato (masalan noto'g'ri/
+    // eskirgan TELEGRAM_BOT_TOKEN sabab Bot.init()dagi getMe chaqiruvi
+    // muvaffaqiyatsiz bo'lsa) tashlasa, wrap qilinmagan promise rad etilishi
+    // BUTUN Node jarayonini ag'darib yuborishi mumkin edi (Node 15+ default
+    // xatti-harakati). Endi bunday xato faqat shu so'rovni 500 bilan
+    // yakunlaydi, server ishlashda davom etadi.
+    try {
+        await handleBotWebhook(req, res);
+    } catch (err) {
+        console.error('[Telegram webhook] xato:', err);
+        if (!res.headersSent) res.sendStatus(200); // Telegram qayta-qayta jo'natishning oldini olish uchun 200
+    }
 });
 
 // ─── Webhook sozlash ──────────────────────────────────────────────────────────
