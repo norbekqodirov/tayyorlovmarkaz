@@ -42,6 +42,33 @@ model User {
   leadActivities LeadActivity[]
   permissionOverrides        PermissionOverride[] @relation("PermissionOverrides")
   grantedPermissionOverrides PermissionOverride[] @relation("PermissionOverridesGranted")
+  teacherPayrolls            TeacherPayroll[]
+}
+
+// Finance-audit (2026-09-15), F4: o'qituvchi oyligi — Salary (StaffMember uchun)
+// bilan bir xil naqsh, lekin User (teacher)ga to'g'ridan-to'g'ri bog'langan
+// (RF-06: ilgari User↔StaffMember orasida hech qanday canonical bog'lanish
+// yo'q edi, teacher payroll esa umuman alohida, tasdiqlanmagan yo'l — HR
+// kartasidagi "to'lash" oddiy generic xarajat yaratardi). "paid" holatidan
+// chiqish yoki qayta yozish TAQIQLANADI (Salary'dagi RF-05 bilan bir xil
+// himoya) — tuzatish kerak bo'lsa alohida (hali qo'shilmagan) adjustment
+// jarayoni kerak bo'ladi.
+model TeacherPayroll {
+  id             String    @id @default(uuid())
+  teacherId      String
+  teacher        User      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  month          String    // "2026-09"
+  basis          String    // "accrual" | "cash"
+  accruedAmount  Float     // Tasdiqlangunga qadar qayta hisoblanishi mumkin
+  paidAmount     Float     @default(0)
+  status         String    @default("draft") // draft | approved | paid
+  sourceSnapshot String?   @db.Text // JSON — hisoblangan paytdagi breakdown (audit uchun)
+  notes          String?
+  approvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([teacherId, month, basis])
 }
 
 // ============================================
@@ -298,6 +325,13 @@ model Transaction {
   studentName String?
   staffId     String?
   staffName   String?
+  // Finance-audit (2026-09-15), F2: qaysi domen hodisasi bu yozuvni
+  // yaratgani (masalan "teacher_payroll"/"<TeacherPayroll.id>") — hozircha
+  // faqat YANGI yozish yo'llarida (masalan teacher payroll payout)
+  // to'ldiriladi, eski yozuvlarda null qoladi (additive, orqaga qarab
+  // to'ldirilmaydi).
+  sourceType  String?
+  sourceId    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

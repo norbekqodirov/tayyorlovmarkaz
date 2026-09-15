@@ -44,6 +44,7 @@ import staffAttendanceRoutes from './routes/staffAttendance.js';
 import rolesRoutes from './routes/roles.js';
 import studentAttendanceRoutes from './routes/studentAttendance.js';
 import lessonSessionsRoutes from './routes/lessonSessions.js';
+import teacherPayrollRoutes from './routes/teacherPayroll.js';
 import { startScheduler } from './services/scheduler.js';
 import path from 'path';
 import fs from 'fs';
@@ -125,6 +126,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/finance/teacher-payroll', teacherPayrollRoutes);
 app.use('/api/finance', financeRoutes);
 // MUHIM: bildirishnoma yo'llari communication.ts ichida '/notifications' prefiksi
 // bilan yozilgan (masalan router.get('/notifications', ...)) — demak faqat
