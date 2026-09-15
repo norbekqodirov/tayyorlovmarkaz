@@ -365,17 +365,19 @@ export default function CrmFinance() {
   };
 
   const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
   const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const prevMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
 
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((a, t) => a + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
   const balance = totalIncome - totalExpense;
 
-  const monthIncome = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === currentMonth).reduce((a, t) => a + t.amount, 0);
-  const prevMonthIncome = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === prevMonth).reduce((a, t) => a + t.amount, 0);
+  const monthIncome = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear).reduce((a, t) => a + t.amount, 0);
+  const prevMonthIncome = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === prevMonth && new Date(t.date).getFullYear() === prevMonthYear).reduce((a, t) => a + t.amount, 0);
   const monthGrowth = prevMonthIncome > 0 ? Math.round(((monthIncome - prevMonthIncome) / prevMonthIncome) * 100) : 0;
 
-  const monthExpense = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === currentMonth).reduce((a, t) => a + t.amount, 0);
+  const monthExpense = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear).reduce((a, t) => a + t.amount, 0);
 
   const debtors = useMemo(() =>
     students
@@ -402,12 +404,14 @@ export default function CrmFinance() {
 
   const chartData = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
-      const mi = (currentMonth - 5 + i + 12) % 12;
-      const income = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === mi).reduce((a, t) => a + t.amount, 0);
-      const expense = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === mi).reduce((a, t) => a + t.amount, 0);
+      const d = new Date(currentYear, currentMonth - 5 + i, 1);
+      const mi = d.getMonth();
+      const yr = d.getFullYear();
+      const income = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === mi && new Date(t.date).getFullYear() === yr).reduce((a, t) => a + t.amount, 0);
+      const expense = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === mi && new Date(t.date).getFullYear() === yr).reduce((a, t) => a + t.amount, 0);
       return { name: MONTHS[mi], income, expense, profit: income - expense };
     });
-  }, [transactions, currentMonth]);
+  }, [transactions, currentMonth, currentYear]);
 
   const categoryData = useMemo(() => {
     const cats: Record<string, number> = {};
@@ -421,11 +425,11 @@ export default function CrmFinance() {
 
   const monthlySummary = useMemo(() => {
     return Array.from({ length: 12 }, (_, mi) => {
-      const inc = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === mi).reduce((a, t) => a + t.amount, 0);
-      const exp = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === mi).reduce((a, t) => a + t.amount, 0);
+      const inc = transactions.filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === mi && new Date(t.date).getFullYear() === currentYear).reduce((a, t) => a + t.amount, 0);
+      const exp = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === mi && new Date(t.date).getFullYear() === currentYear).reduce((a, t) => a + t.amount, 0);
       return { month: MONTHS[mi], income: inc, expense: exp, profit: inc - exp };
     });
-  }, [transactions]);
+  }, [transactions, currentYear]);
 
   return (
     <div className="space-y-5">
@@ -1153,8 +1157,8 @@ export default function CrmFinance() {
       {activeTab === 'monthly' && (
         <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] shadow-sm overflow-hidden">
           <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-            <p className="text-sm font-black text-slate-900 dark:text-white">Oylik Hisobot</p>
-            <p className="text-[10px] text-zinc-400 mt-0.5">Har oylik moliyaviy ko'rsatkichlar</p>
+            <p className="text-sm font-black text-slate-900 dark:text-white">Oylik Hisobot — {currentYear}</p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">{currentYear}-yil bo'yicha oylik moliyaviy ko'rsatkichlar</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
