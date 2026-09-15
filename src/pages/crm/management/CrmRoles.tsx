@@ -9,10 +9,10 @@ import { Modal } from '../../../components/ui/Modal';
 
 // RBAC qayta qurish — Bosqich 3 (C:\Users\user\.claude\plans\cosmic-fluttering-quill.md).
 // Bu sahifa server/routes/roles.ts orqali HAQIQIY Role/Permission/
-// RolePermission jadvallarini boshqaradi — CrmUsers.tsx'dagi eski
-// ROLE_TEMPLATES (statik, kod ichida) bunga tegishli EMAS, u alohida
-// qoladi; bu yerda yaratilgan Role'lar CrmUsers.tsx'ning "Maxsus Rol"
-// tanlovida foydalanuvchiga biriktiriladi.
+// RolePermission jadvallarini boshqaradi — bu yerda yaratilgan/tahrirlangan
+// Role'lar CrmUsers.tsx'ning (2026-09-15'dan, eski statik ROLE_TEMPLATES
+// olib tashlangandan keyin) yagona "Rol" tanlovida foydalanuvchiga
+// biriktiriladi.
 
 const BASE_ROLE_LABELS: Record<string, string> = {
     TEACHER: "O'qituvchi darajasi",
