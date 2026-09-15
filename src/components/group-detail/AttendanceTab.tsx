@@ -18,6 +18,7 @@ import { Check, X, Clock, FileText, ChevronLeft, ChevronRight, CalendarDays, Lis
 import api from '../../api/client';
 import { useToast } from '../Toast';
 import MonthSelector from './MonthSelector';
+import ExtraLessons from './ExtraLessons';
 
 const DAY_JS_MAP: Record<string, number> = {
   Dush: 1, Sesh: 2, Chor: 3, Pay: 4, Jum: 5, Shan: 6, Yak: 0,
@@ -365,6 +366,8 @@ const AttendanceTab: React.FC<Props> = ({ group, groupStudents }) => {
           })
         )}
       </div>
+
+      {group?.id && <ExtraLessons groupId={group.id} date={dateStr} groupStudents={groupStudents} />}
     </div>
   );
 };

@@ -85,6 +85,7 @@ model Student {
   certificates      Certificate[]
   testSubmissions   TestSubmission[]
   leads             Lead[]
+  lessonAttendance  LessonAttendance[]
 }
 
 // ============================================
@@ -152,6 +153,7 @@ model Group {
   groupExams        GroupExam[]
   notes             GroupStudentNote[]
   tests             Test[]
+  lessonSessions    LessonSession[]
 }
 
 model Enrollment {
@@ -208,6 +210,40 @@ model AttendanceRecord {
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId, date])
+}
+
+// EDU-06: guruh bir kunda bir necha marta o'tilishi mumkin (qo'shimcha/qoplash
+// darsi) — lekin AttendanceRecord'ning yuqoridagi (studentId,groupId,date)
+// yagona kaliti buni qo'llab-quvvatlamaydi (kundagi ikkinchi dars uchun
+// yozuv yozib bo'lmaydi). Bu ataylab ALOHIDA, qo'shimcha jadval sifatida
+// qilindi — AttendanceRecord va uni o'qiydigan barcha joylar (billing,
+// scheduler, analytics, bot, portal) o'zgarishsiz qoladi (standart,
+// kundalik yagona dars holati uchun hech qanday xavf yo'q); faqat haqiqatan
+// bir kunda ikkinchi darsi bo'lgan (kamdan-kam) holatlar uchun o'qituvchi
+// LessonSession yaratib, unga alohida davomat yozadi.
+model LessonSession {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  date      String   // "2026-03-22" — asosiy darsning O'ZI ham shu kunga to'g'ri keladi
+  startTime String?  // "14:00" — bir nechta qo'shimcha dars bo'lsa ajratish uchun
+  label     String?  // masalan "Qoplash darsi", "2-smena"
+  createdAt DateTime @default(now())
+
+  attendance LessonAttendance[]
+}
+
+model LessonAttendance {
+  id        String        @id @default(uuid())
+  sessionId String
+  session   LessonSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status    String        @default("present") // present, absent, late, excused
+  note      String?
+  createdAt DateTime      @default(now())
+
+  @@unique([sessionId, studentId])
 }
 
 model JournalEntry {
