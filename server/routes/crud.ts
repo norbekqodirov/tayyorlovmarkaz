@@ -390,32 +390,52 @@ async function getPublicTeachersList() {
 const PUBLIC_READ_COLLECTIONS = new Set(['pageContent', 'gallery', 'news', 'teachers']);
 
 // RBAC qayta qurish — Bosqich 4 (authorize.ts'ni router'larga ulash).
-// MUHIM — bu xarita ATAYLAB juda tor: dastlab kengroq (students/groups/
-// courses/finance/transactions/schedule/rooms/forms/campaigns) qilib
-// boshlangan edi, lekin jonli tekshiruv paytida bularning barchasi
-// KO'P SAHIFA tomonidan (turli, ba'zan farqli ruxsatli rollar orqali)
-// umumiy/ichki qidiruv yoki dashboard vidjeti sifatida o'qilishi
-// aniqlandi — masalan CrmDashboard.tsx (har bir rolga ochiq, faqat
-// 'dashboard' ruxsati bilan) 'students'/'groups'/'transactions'/
-// 'schedule'/'attendance'/'teachers'/'leads' kolleksiyalarini
-// TO'G'RIDAN-TO'G'RI o'qiydi, GlobalSearch.tsx (butun CRM'da doim
-// ko'rinadigan qidiruv) 'students'/'courses'/'leads'/'teachers'ni,
-// LeadFilters.tsx (Lidlar sahifasi, faqat 'leads' ruxsati kifoya)
-// 'forms'/'campaigns'ni. Agar bu kolleksiyalar o'z sahifasining
-// ruxsat kaliti bilan yopilsa — masalan 'schedule' ruxsati bilan —
-// bu umumiy joylardan foydalanuvchi (masalan 'leads' ruxsatli, lekin
-// 'schedule'siz MANAGER) haqiqatda ishlatayotgan funksiyasi (Dashboard,
-// qidiruv) buzilib qolardi. Shuning uchun FAQAT tasdiqlangan — boshqa
-// hech qanday sahifa tomonidan o'qilmaydigan — kolleksiyalar qoldirildi.
-// Qolganlari (students/groups/courses/finance/transactions/schedule/
-// rooms/forms/campaigns) ataylab QOLDIRILMAGAN — ular hali faqat rol
-// darajasi (COLLECTION_READ/WRITE_LEVEL) bilan himoyalanadi. Granular
-// kalit talab qilish ularga keyinroq, avval frontend'dagi umumiy
-// joylar (Dashboard/GlobalSearch/LeadFilters) har bir vidjetni
-// ruxsatsizlik xatosida oqilona (vidjetni yashirish/bo'sh ko'rsatish)
-// boshqara oladigan qilib qayta ko'rilgandan keyin qo'shiladi.
+// Xarita avval ATAYLAB tor qoldirilgan edi: kengroq (students/groups/
+// courses/finance/transactions) qilib sinalganda CrmDashboard.tsx (har bir
+// rolga ochiq, faqat 'dashboard' ruxsati bilan ishlaydi) va GlobalSearch.tsx
+// (butun CRM'da doim ko'rinadigan qidiruv) aynan shu kolleksiyalarni HAR
+// QANDAY foydalanuvchi ruxsatidan qat'i nazar umumiy o'qishi kerakligi
+// aniqlanib, ular 403 bilan sinib qolgan edi.
+//
+// 2026-09-15: shu ikkala consumer endi 403'ni oqilona boshqaradi —
+// CrmDashboard.tsx har bir vidjetni WIDGET_REGISTRY'dagi `permission`
+// maydoniga qarab, mos kolleksiya 403 qaytarganda JIM yashiradi (butun
+// sahifani "singan" ko'rsatuvchi umumiy xato o'rniga), GlobalSearch.tsx esa
+// useFirestore'ning o'zi 403'da `data`ni bo'sh massiv sifatida qoldirgani
+// (throw qilmaydi) tufayli allaqachon xavfsiz edi — 403'langan kategoriya
+// natijalarda shunchaki ko'rinmaydi, sahifa buzilmaydi. Shu sabab quyidagi
+// to'rtta asosiy kolleksiya endi granular ruxsat talab qiladi:
+//   - students/groups: Dashboard + CrmStudents/CrmGroups sahifalari bilan
+//     bir xil 'students'/'groups' kalitlari (App.tsx'dagi requiredPermission
+//     bilan mos).
+//   - transactions (Dashboard'ning kolleksiya nomi) VA finance (CrmFinance.tsx
+//     hamda CrmDashboard'dagi boshqa joylar ishlatadigan nom) — ikkalasi ham
+//     bitta Prisma modeliga (`transaction`) tushadi, lekin URL segmenti
+//     boshqa-boshqa bo'lgani uchun ikkalasi ham xaritada bo'lishi shart,
+//     aks holda faqat bittasi yopiladi.
+//   - courses: faqat GlobalSearch o'qiydi (Dashboard'da courses vidjeti yo'q);
+//     GlobalSearch 403'ni yuqoridagi sabab bilan allaqachon jim yutadi.
+//
+// 'leads' ATAYLAB bu yerda YO'Q — server/routes/leads.ts allaqachon
+// crud.ts'dan OLDIN mount qilingan va requireMinRole('MANAGER') +
+// requirePermission('leads')'ni o'zi qo'llaydi (bu yerga qo'shish o'lik kod
+// bo'lardi, chunki so'rov bu faylga hech qachon yetib kelmaydi). 'teachers'
+// ham YO'Q — GET har doim PUBLIC_READ_COLLECTIONS orqali autentifikatsiyasiz
+// o'tadi (ommaviy sayt uchun), shuning uchun bu yerga ruxsat qo'shish GET
+// uchun hech narsani o'zgartirmaydi.
+//
+// Qolganlari (schedule/rooms/forms/campaigns) hamon ATAYLAB QOLDIRILMAGAN —
+// ular hali faqat rol darajasi (COLLECTION_READ/WRITE_LEVEL) bilan
+// himoyalanadi, chunki ularni o'qiydigan umumiy joylar (WeeklySchedule
+// vidjeti, LeadFilters.tsx) hali granular 403'ni xuddi shu tarzda
+// tekshirilmagan/qayta ko'rilmagan.
 const COLLECTION_PERMISSION_MAP: Record<string, string> = {
     courseTiers:            'courses',   // faqat CrmCourses.tsx o'qiydi
+    courses:                 'courses',   // CrmCourses.tsx + GlobalSearch.tsx (403'ni jim yutadi)
+    students:                'students',  // CrmStudents.tsx + CrmDashboard.tsx (403'da vidjet yashiriladi)
+    groups:                  'groups',    // CrmGroups.tsx + CrmDashboard.tsx (403'da vidjet yashiriladi)
+    finance:                 'finance',   // CrmFinance.tsx (App.tsx'da allaqachon requiredPermission="finance")
+    transactions:            'finance',   // CrmDashboard.tsx'ning 'finance' uchun ishlatadigan kolleksiya nomi
     inventory:               'inventory', // faqat CrmInventory.tsx (ADMIN+, allaqachon rol darajasi bilan yopiq)
     transactionCategories:   'transaction_categories', // CrmCategories.tsx + CrmFinance.tsx — ikkalasi ham 'finance' VA 'transaction_categories'ga ega MANAGER+ talab qiladi
     settings:                'settings',  // faqat CrmSettings.tsx (ADMIN+)
