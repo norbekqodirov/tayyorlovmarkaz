@@ -74,6 +74,7 @@ export default function CrmTelegram() {
     const [autoPayment, setAutoPayment] = useState(false);
     const [autoLead, setAutoLead] = useState(false);
     const [savingSettings, setSavingSettings] = useState(false);
+    const [settingWebhook, setSettingWebhook] = useState(false);
 
     // Mini App
     const [miniAppUrl, setMiniAppUrl] = useState('');
@@ -143,6 +144,26 @@ export default function CrmTelegram() {
         } finally {
             setLoading(false);
         }
+    };
+
+    // RS-01 (audit, 2026-09) tuzatishidan keyin kerak bo'lgan qadam: webhook
+    // secret sozlangach, Telegram'ning o'ziga buni MA'LUM QILISH uchun
+    // webhook qayta ro'yxatdan o'tkazilishi shart (aks holda Telegram eski,
+    // secret'siz ro'yxatga asosan header yubormay davom etadi va bot
+    // "javob bermayapti"ga o'xshab qoladi).
+    const setWebhookHandler = async () => {
+        setSettingWebhook(true);
+        try {
+            const url = `${window.location.origin}/api/telegram/webhook`;
+            const res = await api.post('/telegram/set-webhook', { url });
+            if (res.data.ok) {
+                showToast("Webhook qayta o'rnatildi! ✅", 'success');
+            } else {
+                showToast('Xato: ' + (res.data.description || ''), 'error');
+            }
+        } catch (err: any) {
+            showToast(err.response?.data?.error || err.response?.data?.message || err.message || 'Server xatosi', 'error');
+        } finally { setSettingWebhook(false); }
     };
 
     const loadHistory = async () => {
@@ -710,10 +731,22 @@ export default function CrmTelegram() {
                         </div>
                     </div>
                     <div className="bg-zinc-50 dark:bg-zinc-800 rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-                        <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Webhook manzil</p>
-                        <code className="text-xs text-zinc-600 dark:text-zinc-400 break-all">
-                            {window.location.origin}/api/telegram/webhook
-                        </code>
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <div>
+                                <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Webhook manzil</p>
+                                <code className="text-xs text-zinc-600 dark:text-zinc-400 break-all">
+                                    {window.location.origin}/api/telegram/webhook
+                                </code>
+                            </div>
+                            <button onClick={setWebhookHandler} disabled={settingWebhook}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors shrink-0">
+                                {settingWebhook ? <RefreshCw size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                                Qayta o'rnatish
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-zinc-400 mt-2">
+                            Webhook secret o'zgarganda (yoki manzil ishlamay qolganda) shu tugmani bosing — Telegram'ga qayta ro'yxatdan o'tkaziladi.
+                        </p>
                     </div>
                 </motion.div>
             )}
