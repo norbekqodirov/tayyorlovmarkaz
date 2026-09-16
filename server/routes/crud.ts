@@ -107,7 +107,21 @@ async function teacherOwnsGroup(groupId: string | undefined | null, userId: stri
 const SCHEMA_FIELDS: Record<string, string[]> = {
     // ── Core entities ────────────────────────────────────────────────────────
     // 'lead' shu yerda YO'Q — server/routes/leads.ts (Faza 3) o'z whitelist'iga ega.
-    'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'balance', 'joinedDate'],
+    // Finance-audit (2026-09-16), F06 (qisman): 'balance' bu yerdan ataylab
+    // olib tashlangan — bu generic /:collection/:id yo'liga qo'shimcha
+    // himoya (agar kelajakda server/routes/students.ts o'chirilsa/o'zgarsa
+    // ham, generic yo'l balansni bevosita yozishga ruxsat bermaydi). DIQQAT:
+    // haqiqiy, hozir ishlatiladigan PUT /api/students/:id YO'LI bu generic
+    // route emas — students.ts o'zining ALOHIDA router'i (crud.ts'dan OLDIN
+    // mount qilingan) va u o'z whitelist'ida 'balance'ni ATAYLAB saqlaydi,
+    // chunki CrmStudents.tsx'da yangi o'quvchi yaratishda "boshlang'ich
+    // qoldiq" (masalan kurs narxidan boshlanadigan qarz) shu maydon orqali
+    // belgilanadi — bu haqiqiy, keng ishlatiladigan funksiya, tasodifiy teshik
+    // emas. To'liq tuzatish (sababli/auditli alohida "balans tuzatish"
+    // hodisasi, moliyaviy ledger bilan bog'langan) kelgusi bosqichga
+    // qoldirilgan — hozircha faqat mavjud withAudit('student') orqali
+    // eski/yangi qiymat jurnalga yoziladi.
+    'student': ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone', 'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'joinedDate'],
     'group': ['name', 'courseId', 'teacherId', 'status', 'startDate', 'endDate', 'maxSize', 'price'],
     'room': ['name', 'capacity', 'color'],
     'course': ['name', 'title', 'category', 'description', 'price', 'duration', 'lessonDuration', 'lessonsPerWeek', 'status', 'image'],
@@ -662,6 +676,17 @@ router.get('/:collection/:id', async (req, res) => {
 router.post('/:collection', auditPositionsOnly, async (req, res) => {
     const { collection } = req.params;
     try {
+        // Finance-audit (2026-09-16), F06 tuzatish: generic POST orqali
+        // istalgan `Payment` yozuvini (status='paid' bilan ham) Transaction/
+        // balansdan mustaqil ravishda yaratish mumkin edi — bu haqiqiy pul
+        // harakatisiz "to'lov" ko'rsatishning ochiq yo'li edi. Haqiqiy to'lov
+        // yo'llari (POST /finance/transactions, invoice paid, Payme/Click
+        // callback) Payment'ni o'zi, tegishli balans/Transaction bilan birga
+        // atomar yaratadi — bu yerdan yaratishga ehtiyoj yo'q.
+        if ((req as any).modelName === 'payment') {
+            return res.status(400).json({ message: "To'lov yozuvini bu yo'l orqali yaratib bo'lmaydi — /api/finance/transactions yoki tegishli to'lov oqimidan foydalaning" });
+        }
+
         if (!(req as any).useFallback) {
             const validationError = validateInput((req as any).modelName, req.body);
             if (validationError) return res.status(400).json({ message: validationError });
@@ -751,6 +776,18 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
 // ─── PUT /:collection/:id ──────────────────────────────────────────────────────
 router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
     try {
+        // Finance-audit (2026-09-16), F05/F06 tuzatish: generic PUT orqali
+        // `payment` (summasi/holati Transaction/balansdan mustaqil o'zgarardi)
+        // va `transaction` (amount/type/studentId o'zgarsa ham balans qayta
+        // moslashtirilmasdi) yozuvlarini tahrirlash moliyaviy yozuvlarni
+        // ularning balans proyeksiyasidan uzib qo'yishi mumkin edi. Hozircha
+        // bu ikkalasi uchun ham hech qanday UI generic PUT'ni ishlatmaydi
+        // (Transaction faqat maxsus /finance/* endpointlar orqali yaratiladi/
+        // o'chiriladi, Payment esa umuman generic yo'ldan yaratilmaydi) —
+        // shuning uchun bu yo'l butunlay yopiladi.
+        if ((req as any).modelName === 'payment' || (req as any).modelName === 'transaction') {
+            return res.status(400).json({ message: "Bu yozuvni umumiy tahrirlash yo'li orqali o'zgartirib bo'lmaydi — moliyaviy yaxlitlik uchun maxsus jarayon talab qilinadi" });
+        }
         if ((req as any).useFallback) {
             // SEC-06 tuzatish: avval `id` topilmasa ham (yoki boshqa
             // kolleksiyaga tegishli bo'lsa ham) `update()` baribir ishga

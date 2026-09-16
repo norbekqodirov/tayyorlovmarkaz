@@ -1,6 +1,7 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 import { invalidate, NS } from '../services/cache.js';
 import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
@@ -8,11 +9,23 @@ import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
+// Finance-audit (2026-09-16), F13 tuzatish: bu fayldagi barcha route'lar
+// ilgari faqat requireMinRole('MANAGER')ga tayanardi — /finance/* va
+// /finance/teacher-payroll/* esa xuddi shu maosh/moliya ma'lumoti uchun
+// QO'SHIMCHA `requirePermission('finance')`ni talab qiladi. Amalda bu
+// MANAGER darajasidagi, lekin DB Role/Permission tizimida 'finance'
+// ruxsati BERILMAGAN foydalanuvchi uchun izchilsizlik edi — /finance/*'da
+// 403 olsa-da, /salary/*'da ochiq qolardi. Endi har bir route'da ham
+// requireMinRole('MANAGER') YONIDA requirePermission('finance') talab
+// qilinadi (ADMIN/SUPER_ADMIN har doim FULL_ACCESS_ROLES orqali o'tadi —
+// authorize.ts'ga q. — shuning uchun bu qo'shimcha tekshiruv ADMIN-only
+// CrmStaffDetail.tsx oqimini buzmaydi).
+
 // GET /api/salary?month=YYYY-MM
 // SEC-04 tuzatish: ilgari faqat requireAuth bor edi — istalgan login qilgan
 // TEACHER butun markazdagi HAMMA xodimning oyligini (asosiy/bonus/total)
 // ko'ra olardi. Maosh ma'lumoti HR-maxfiy, MANAGER+ talab qilinadi.
-router.get('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
         const salaries = await prisma.salary.findMany({
@@ -28,7 +41,7 @@ router.get('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
 
 // GET /api/salary/staff/:staffId  — staff's full salary history
 // SEC-04 tuzatish: xuddi shu sabab bilan MANAGER+.
-router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const salaries = await prisma.salary.findMany({
             where: { staffId: req.params.staffId },
@@ -48,7 +61,7 @@ router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), async (req
 // IKKINCHI marta xarajat yozib bo'lardi. Endi to'langan yozuv shu yo'l orqali
 // UMUMAN o'zgartirilmaydi — tuzatish kerak bo'lsa alohida jarayon (hozircha
 // mavjud emas) kerak bo'ladi.
-router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { staffId, month, baseSalary = 0, bonus = 0, deduction = 0, notes, paid = false } = req.body;
         if (!staffId || !month) {
@@ -106,7 +119,7 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
 // ham davom etishi mumkin edi (oddiy o'qi-tekshir-yoz poygasi). Endi holat
 // o'tishi `updateMany({paid:false})` sharti bilan va xarajat yozuvi BITTA
 // $transaction ichida — yoki ikkalasi ham muvaffaqiyatli, yoki hech biri.
-router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({
             where: { id: req.params.id },
@@ -155,7 +168,7 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), async (req, res) 
 // RF-05 tuzatish: to'langan oylik yozuvini o'chirishga hech qanday cheklov
 // yo'q edi — real xarajat yozuvi (Transaction) qolgan holda payroll yozuvi
 // yo'qolib, tarixiy hisobot manbasiz qolib ketardi.
-router.delete('/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({ where: { id: req.params.id }, select: { paid: true } });
         if (!salary) return res.status(404).json({ message: 'Topilmadi' });
@@ -171,7 +184,7 @@ router.delete('/:id', requireAuth, requireMinRole('MANAGER'), async (req, res) =
 });
 
 // POST /api/salary/generate-month — bulk generate salaries for all staff for given month
-router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { month } = req.body;
         if (!month) return res.status(400).json({ message: 'month kiritilishi shart' });
@@ -210,7 +223,7 @@ router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), async (re
 // RS-03 tuzatish: yonidagi GET / va GET /staff/:staffId SEC-04'da MANAGER+ga
 // cheklangan edi, lekin bu endpoint (butun markaz xodimlarining kelish-ketish
 // vaqtlari) o'sha safar unutilgan — faqat requireAuth bilan qolgan edi.
-router.get('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/attendance', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { staffId, from, to } = req.query as Record<string, string>;
         const where: any = {};
@@ -234,7 +247,7 @@ router.get('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, re
 
 // Qo'lda tuzatish — HR/menejer vakolati talab qiladi (Face ID check-in/out
 // staffPortal.ts orqali o'tadi, bu yerga tegishli emas).
-router.post('/attendance', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.post('/attendance', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { staffId, date, checkIn, checkOut, status = 'present', notes } = req.body;
         if (!staffId || !date) return res.status(400).json({ message: 'staffId va date kerak' });

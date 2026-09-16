@@ -324,28 +324,58 @@ router.get('/invoices/:id/payment-links', requireAuth, requirePermission('financ
 // $transaction ichida: Transaction yaratiladi va (kirim + studentId bo'lsa)
 // Student.balance ATOMAR `increment` bilan yangilanadi — brauzer yakuniy
 // balansni hech qachon hisoblamaydi/yubormaydi.
+//
+// Finance-audit (2026-09-16), F01 tuzatish: bu yo'l ilgari faqat Transaction
+// yaratardi, Payment yozuvi YO'Q edi — natijada qo'lda kiritilgan naqd/karta
+// to'lov "haqiqiy tushum" hisoblaydigan hech bir joyda (teacher payroll CASH
+// bazasi, ota-ona portali to'lovlar tarixi, /finance/reports/students) umuman
+// ko'rinmasdi. Endi kirim + studentId bo'lsa, bitta $transaction ichida
+// Payment(status='paid') ham yaratiladi — Transaction va Payment shu yerdan
+// boshlab BIR VOQEANING ikki proyeksiyasi (`sourceType`/`sourceId` bilan
+// bog'langan), mustaqil ikki yozuv emas.
 router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { type, amount, category, description, date, method, studentId, studentName, staffId, staffName } = req.body;
         if (!type || !category || !date) {
             return res.status(400).json({ error: 'type, category va date majburiy' });
         }
+        if (type !== 'income' && type !== 'expense') {
+            return res.status(400).json({ error: "type faqat 'income' yoki 'expense' bo'lishi mumkin" });
+        }
         const numAmount = Number(amount);
         if (!Number.isFinite(numAmount) || numAmount <= 0) {
             return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
         }
+        if (studentId) {
+            const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true } });
+            if (!student) return res.status(400).json({ error: "Ko'rsatilgan o'quvchi topilmadi" });
+        }
 
         const result = await prisma.$transaction(async (tx) => {
+            let payment: { id: string } | null = null;
+            // Faqat kirim + studentId bo'lsa balansga ta'sir qiladi va Payment
+            // yozuvi yaratiladi — eski frontend mantig'i bilan bir xil shart,
+            // endi atomar va ikkalasi (balans + Payment) bir hodisa sifatida.
+            if (type === 'income' && studentId) {
+                payment = await tx.payment.create({
+                    data: {
+                        studentId, amount: numAmount, method: method || 'Naqd', date,
+                        status: 'paid',
+                        notes: description || "Qo'lda kiritilgan to'lov (Moliya)",
+                    },
+                    select: { id: true },
+                });
+            }
+
             const transaction = await tx.transaction.create({
                 data: {
                     type, amount: numAmount, category, description, date, method,
                     studentId: studentId || null, studentName: studentName || null,
                     staffId: staffId || null, staffName: staffName || null,
+                    ...(payment ? { sourceType: 'manual_payment', sourceId: payment.id } : {}),
                 },
             });
 
-            // Faqat kirim + studentId bo'lsa balansga ta'sir qiladi — eski
-            // frontend mantig'i bilan bir xil shart, endi atomar.
             if (type === 'income' && studentId) {
                 const updated = await tx.student.update({
                     where: { id: studentId },
@@ -383,24 +413,40 @@ router.get('/expenses', requireAuth, requirePermission('finance'), async (req, r
     }
 });
 
-// POST /api/finance/expenses
+// POST /api/finance/expenses — Finance-audit (2026-09-16), F04 tuzatish.
+// Ilgari Expense va uning Transaction "juftligi" IKKI ALOHIDA, tranzaksiyasiz
+// yozuv edi (birinchisi muvaffaqiyatli, ikkinchisi xato bersa — yarim yozuv
+// qolardi) va hech qanday bog'lanish (sourceId) saqlanmasdi. Endi ikkalasi
+// bitta $transaction ichida va Transaction.sourceType='expense'/sourceId
+// orqali aniq bog'langan — PATCH/DELETE shu bog'lanish orqali juft yozuvni
+// ham izchil saqlaydi (pastga q.).
 router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { category, amount, description, date, receipt } = req.body;
         if (!category || !amount || !date) {
             return res.status(400).json({ error: 'category, amount va date majburiy' });
         }
-        const expense = await prisma.expense.create({
-            data: { category, amount: Number(amount), description: description || '', date, receipt },
-        });
+        const numAmount = Number(amount);
+        if (!Number.isFinite(numAmount) || numAmount <= 0) {
+            return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
+        }
 
-        // Also create a transaction record for consistency
-        await prisma.transaction.create({
-            data: {
-                type: 'expense', amount: Number(amount),
-                category, description: description || category,
-                date, method: 'Naqd',
-            },
+        const expense = await prisma.$transaction(async (tx) => {
+            const created = await tx.expense.create({
+                data: {
+                    category, amount: numAmount, description: description || '', date, receipt,
+                    createdById: (req as any).user?.id || null,
+                },
+            });
+            await tx.transaction.create({
+                data: {
+                    type: 'expense', amount: numAmount,
+                    category, description: description || category,
+                    date, method: 'Naqd',
+                    sourceType: 'expense', sourceId: created.id,
+                },
+            });
+            return created;
         });
 
         res.status(201).json(expense);
@@ -409,28 +455,65 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
     }
 });
 
-// PATCH /api/finance/expenses/:id
+// PATCH /api/finance/expenses/:id — F04 tuzatish: ilgari faqat Expense
+// yangilanardi, POST'da yaratilgan juft Transaction yozuvi ESKI summa/
+// kategoriya/sana bilan qolib ketardi — umumiy chiqim jami (Transaction'dan
+// hisoblanadi) Expense ro'yxatidagi summaga mos kelmay qolardi. Endi
+// (sourceType='expense', sourceId=bu Expense) bo'yicha topilgan Transaction
+// ham bitta $transaction ichida bir xil qiymatlarga yangilanadi. Eski
+// (bog'lanishsiz, sourceId=null) Expense yozuvlari uchun mos Transaction
+// topilmasa — Expense baribir yangilanadi (orqaga qarab qattiq bog'lash
+// mumkin emas), lekin bu holat javobda `transactionSynced: false` bilan
+// ko'rsatiladi.
 router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { category, amount, description, date, receipt } = req.body;
         const data: any = {};
         if (category !== undefined) data.category = category;
-        if (amount !== undefined) data.amount = Number(amount);
+        if (amount !== undefined) {
+            const numAmount = Number(amount);
+            if (!Number.isFinite(numAmount) || numAmount <= 0) {
+                return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
+            }
+            data.amount = numAmount;
+        }
         if (description !== undefined) data.description = description;
         if (date !== undefined) data.date = date;
         if (receipt !== undefined) data.receipt = receipt;
 
-        const expense = await prisma.expense.update({ where: { id: req.params.id }, data });
-        res.json(expense);
+        const result = await prisma.$transaction(async (tx) => {
+            const expense = await tx.expense.update({ where: { id: req.params.id }, data });
+            const linkedTx = await tx.transaction.findFirst({ where: { sourceType: 'expense', sourceId: expense.id } });
+            if (linkedTx) {
+                await tx.transaction.update({
+                    where: { id: linkedTx.id },
+                    data: {
+                        amount: expense.amount,
+                        category: expense.category,
+                        description: expense.description || expense.category,
+                        date: expense.date,
+                    },
+                });
+            }
+            return { expense, transactionSynced: !!linkedTx };
+        });
+
+        res.json({ ...result.expense, transactionSynced: result.transactionSynced });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// DELETE /api/finance/expenses/:id
+// DELETE /api/finance/expenses/:id — F04 tuzatish: ilgari faqat Expense
+// o'chirilardi, juft Transaction "orfan" (manbasiz) chiqim sifatida
+// tarixda abadiy qolib ketardi. Endi bog'langan Transaction ham bitta
+// $transaction ichida birga o'chiriladi.
 router.delete('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
-        await prisma.expense.delete({ where: { id: req.params.id } });
+        await prisma.$transaction(async (tx) => {
+            await tx.transaction.deleteMany({ where: { sourceType: 'expense', sourceId: req.params.id } });
+            await tx.expense.delete({ where: { id: req.params.id } });
+        });
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ error: err.message });

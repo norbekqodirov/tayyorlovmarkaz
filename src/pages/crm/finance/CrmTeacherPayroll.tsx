@@ -109,8 +109,11 @@ export default function CrmTeacherPayroll() {
 
   // ─── Teachers: list data ──────────────────────────────────────────────────
   useEffect(() => {
-    api.get('/auth/users').then(res => {
-      setTeachers((res.data || []).filter((u: any) => u.role === 'TEACHER').map((u: any) => ({ id: u.id, name: u.name, subject: u.subject })));
+    // O01 tuzatish: `/auth/users` ADMIN+ talab qiladi — MANAGER shu sahifada
+    // 403 olib, ro'yxat jimgina bo'sh qolardi. Endi shu sahifa uchun maxsus,
+    // MANAGER+finance ruxsati bilan ochiq tor endpoint ishlatiladi.
+    api.get('/finance/teacher-payroll/teachers-list').then(res => {
+      setTeachers((res.data || []).map((u: any) => ({ id: u.id, name: u.name, subject: u.subject })));
     }).catch(() => {});
   }, []);
 

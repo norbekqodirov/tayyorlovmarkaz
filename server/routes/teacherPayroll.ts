@@ -21,6 +21,27 @@ function parseBasis(raw: any): PayrollBasis {
     return raw === 'cash' ? 'cash' : 'accrual';
 }
 
+// GET /api/finance/teacher-payroll/teachers-list — Finance-audit (2026-09-16),
+// O01 tuzatish. CrmTeacherPayroll.tsx ilgari `/auth/users`ni chaqirardi —
+// bu endpoint ADMIN+ talab qiladi (server/routes/auth.ts), MANAGER esa 403
+// olib, `.catch(() => {})` uni jimgina yutar edi — natijada MANAGER uchun
+// o'qituvchilar ro'yxati doim BO'SH ko'rinardi (xatosiz, tushunarsiz holda).
+// Bu yerda 'finance' ruxsati allaqachon yuqorida tekshirilgan (router.use),
+// shuning uchun tor, faqat kerakli maydonlarni qaytaruvchi maxsus endpoint —
+// email/telefon/permissions kabi HR-maxfiy ma'lumotlarsiz.
+router.get('/teachers-list', async (_req, res) => {
+    try {
+        const teachers = await prisma.user.findMany({
+            where: { role: 'TEACHER', isActive: true },
+            select: { id: true, name: true, subject: true, salaryPercent: true },
+            orderBy: { name: 'asc' },
+        });
+        res.json(teachers);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // GET /api/finance/teacher-payroll/preview?teacherId=&year=&month=&basis=
 // Faqat hisoblash — hech narsa yozilmaydi (draft ham yaratilmaydi).
 router.get('/preview', async (req, res) => {
@@ -115,6 +136,24 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: "Bu davr uchun oylik allaqachon tasdiqlangan — qayta hisoblab bo'lmaydi" });
         }
 
+        // Finance-audit (2026-09-16), O02 tuzatish: unikallik teacherId+month+
+        // basis bo'yicha edi — accrual VA cash uchun bitta davrda ikkita
+        // MUSTAQIL, ikkalasi ham to'lanadigan yozuv yaratish mumkin edi (ikki
+        // barobar to'lov xavfi). Bitta davr uchun faqat BITTA usul (basis)
+        // tasdiqlanishi/to'lanishi mumkin — boshqa usul allaqachon
+        // tasdiqlangan/to'langan bo'lsa, bu usulda draft yaratish ham
+        // bloklanadi (foydalanuvchi avval qaysi usul ishlatilishini tanlashi
+        // kerak).
+        const otherBasis: PayrollBasis = basis === 'cash' ? 'accrual' : 'cash';
+        const otherBasisRow = await prisma.teacherPayroll.findUnique({
+            where: { teacherId_month_basis: { teacherId, month: monthStr, basis: otherBasis } },
+        });
+        if (otherBasisRow && otherBasisRow.status !== 'draft') {
+            return res.status(400).json({
+                message: `Bu davr uchun boshqa usul (${otherBasis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'}) bo'yicha oylik allaqachon tasdiqlangan — bitta davr uchun faqat bitta usul ishlatiladi`,
+            });
+        }
+
         const breakdown = await calculateTeacherPayroll(teacherId, year, month, basis);
         const data = {
             teacherId,
@@ -137,13 +176,27 @@ router.post('/', async (req, res) => {
 // POST /api/finance/teacher-payroll/:id/approve — draft -> approved, summa muzlaydi
 router.post('/:id/approve', async (req, res) => {
     try {
+        const draft = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
+        if (!draft) return res.status(404).json({ message: 'Topilmadi' });
+
+        // O02 tuzatish: draft yaratishda tekshirilgan bo'lsa ham, orada boshqa
+        // usul bo'yicha alohida draft tasdiqlangan/to'langan bo'lib qolishi
+        // mumkin (poyga holati) — tasdiqlashdan oldin YANA tekshiriladi.
+        const otherBasis: PayrollBasis = draft.basis === 'cash' ? 'accrual' : 'cash';
+        const otherBasisRow = await prisma.teacherPayroll.findUnique({
+            where: { teacherId_month_basis: { teacherId: draft.teacherId, month: draft.month, basis: otherBasis } },
+        });
+        if (otherBasisRow && otherBasisRow.status !== 'draft') {
+            return res.status(400).json({
+                message: `Bu davr uchun boshqa usul (${otherBasis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'}) bo'yicha oylik allaqachon tasdiqlangan — bitta davr uchun faqat bitta usul ishlatiladi`,
+            });
+        }
+
         const { count } = await prisma.teacherPayroll.updateMany({
             where: { id: req.params.id, status: 'draft' },
             data: { status: 'approved', approvedAt: new Date() },
         });
         if (count === 0) {
-            const existing = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
-            if (!existing) return res.status(404).json({ message: 'Topilmadi' });
             return res.status(400).json({ message: "Faqat 'draft' holatidagi yozuv tasdiqlanishi mumkin" });
         }
         const updated = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
