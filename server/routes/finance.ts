@@ -12,6 +12,22 @@ import { getBillingSettings, calculateStudentMonthlyDue, calculateTeacherMonthly
 
 const router = express.Router();
 
+// Finance-audit (2026-09-16), F02 tuzatish: `Invoice.discount` FOIZ sifatida
+// saqlanadi (masalan 10 = 10%) va CrmFinance.tsx UI'da yakuniy summani
+// `amount * (1 - discount/100) + tax` sifatida hisoblab ko'rsatadi — lekin
+// invoice "paid" qilinganda server bu formulani ISHLATMASDI, xom
+// `invoice.amount`ni Payment/Transaction/balansga yozardi (600 000 va 10%
+// misolida UI 540 000 ko'rsatadi, server 600 000 yozadi). Endi bitta
+// funksiya HAR IKKI joyda (paid yozish, payment-link summasi) ishlatiladi —
+// gross/discount/tax/net formulasi endi bitta joyda.
+export function computeInvoiceNetAmount(invoice: { amount: number; discount: number; tax: number }): number {
+    const gross = Number(invoice.amount) || 0;
+    const discountPercent = Math.max(0, Number(invoice.discount) || 0);
+    const tax = Number(invoice.tax) || 0;
+    const afterDiscount = gross * (1 - discountPercent / 100);
+    return Math.max(0, Math.round(afterDiscount + tax));
+}
+
 // ─── OYLIK TO'LOV HISOB-KITOBI (davomat asosida) ──────────────────────────────
 
 // GET /api/finance/billing-settings
@@ -205,10 +221,12 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                 });
                 if (!invoice || count === 0) return { invoice, applied: false };
 
+                const netAmount = computeInvoiceNetAmount(invoice);
+
                 await tx.payment.create({
                     data: {
                         studentId: invoice.studentId,
-                        amount: invoice.amount,
+                        amount: netAmount,
                         method: invoice.method || 'Naqd',
                         date: todayStr,
                         status: 'paid',
@@ -218,18 +236,20 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                 await tx.transaction.create({
                     data: {
                         type: 'income',
-                        amount: invoice.amount,
+                        amount: netAmount,
                         category: "Kurs to'lovi",
                         description: `Invoice ${invoice.number} to'lovi`,
                         date: todayStr,
                         method: invoice.method || 'Naqd',
                         studentId: invoice.studentId,
                         studentName: invoice.student.name,
+                        sourceType: 'invoice',
+                        sourceId: invoice.id,
                     },
                 });
                 await tx.student.update({
                     where: { id: invoice.studentId },
-                    data: { balance: { increment: invoice.amount }, paymentStatus: 'Tolov qilingan' },
+                    data: { balance: { increment: netAmount }, paymentStatus: 'Tolov qilingan' },
                 });
 
                 return { invoice, applied: true };
@@ -297,7 +317,10 @@ router.get('/invoices/:id/payment-links', requireAuth, requirePermission('financ
         });
         if (!invoice) return res.status(404).json({ error: 'Invoice topilmadi' });
 
-        const amount = Number(req.query.amount) || invoice.amount;
+        // F02 tuzatish: ilgari `req.query.amount` bo'lmasa xom `invoice.amount`
+        // (chegirma/soliqsiz gross summa) ishlatilardi — mijoz aslida
+        // to'lashi kerak bo'lgan net summadan ko'proq to'lashga yo'naltirilardi.
+        const amount = Number(req.query.amount) || computeInvoiceNetAmount(invoice);
         const PAYME_MERCHANT_ID = process.env.PAYME_MERCHANT_ID || '';
         const CLICK_SERVICE_ID = process.env.CLICK_SERVICE_ID || '';
         const CLICK_MERCHANT_ID = process.env.CLICK_MERCHANT_ID || '';
