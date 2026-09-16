@@ -129,6 +129,38 @@ _(hozircha bo'sh)_
   to'g'ri tuzatish LessonSession kabi katta qayta qurishni talab qiladi.
   EDU-07/EDU-08 hech qachon Antigravity'ga berilmagan edi (faqat FIN-05 va
   7.1 berilgan edi, ANTIGRAVITY_PROMPT_2026-09-14.md'ga qarang).
+- [Claude] EDU-06 (LessonSession, "bir kunda bir nechta dars") — endi
+  bajarildi. AttendanceRecord'ning yagona (studentId,groupId,date) kaliti
+  o'zgartirilmadi (xavfsizlik uchun) — o'rniga ALOHIDA, qo'shimcha
+  LessonSession/LessonAttendance jadvallari qo'shildi, AttendanceTab.tsx'da
+  "Qo'shimcha darslar" bo'limi orqali ishlaydi. Additive schema, production'ga
+  hali deploy qilinmagan.
+- [Claude] Finance/o'qituvchi oyligi qayta auditi (docs/CRM_REAUDIT_FINANCE_
+  TEACHER_PAYROLL_PLAN_2026-09-15.md) to'liq tekshirilib, tasdiqlangan
+  topilmalar F0-F5 bosqichlarida bajarildi: RF-01 (davomat qoidasi A>=M),
+  RF-04/05/11/12 (salary/transaction atomarlik va immutability), RS-01/03/05
+  (webhook secret, keng moliyaviy reportlar scope, Click qattiqlashtirish),
+  RF-06 (ikki bazali — Accrual/Cash — o'qituvchi oyligi, yangi
+  TeacherPayroll modeli + Finance'da yangi sahifa). Barchasi jonli
+  tekshirilgan, alohida commit qilingan, production'ga hali deploy
+  qilinmagan (TeacherPayroll va Transaction.sourceType/sourceId — additive
+  schema o'zgarishi bor).
+
+<!-- YAKUNLANGAN (2026-09-16): -->
+- [Claude, fon-vazifa "angry-hypatia"] CrmUsers.tsx'dagi statik ROLE_TEMPLATES
+  olib tashlandi, endi Sozlamalar > Rollar va Ruxsatlar'dagi haqiqiy DB
+  Role'lar yagona manba. Ko'rib chiqildi, jonli tekshirildi (brauzerda),
+  master'ga merge qilindi.
+- [Claude, fon-vazifa "practical-hawking"] COLLECTION_PERMISSION_MAP
+  students/groups/finance/transactions/courses'ga kengaytirildi — FAQAT
+  CrmDashboard.tsx 403'ni jim boshqaradigan qilib qayta ko'rilgandan keyin.
+  Yo'l-yo'lakay muhim bo'shliq topildi va tuzatildi: authorize.ts'ning
+  getEffectivePermissions() faqat roleRef orqali bog'langan
+  foydalanuvchilarni tekshirar edi — andoza orqali (roleId'siz) yaratilgan
+  HAR BIR foydalanuvchi xaritaning o'zi kengaytirilgach 403 ola boshlagan
+  bo'lardi. Endi roleRef yo'q bo'lsa eski User.permissions massiviga
+  tushadi. Ko'rib chiqildi, jonli regression testi bilan tasdiqlandi
+  (legacy-permission TEACHER to'g'ri 200/403 oladi), master'ga merge qilindi.
 
 ## 6. Merge oqimi
 
