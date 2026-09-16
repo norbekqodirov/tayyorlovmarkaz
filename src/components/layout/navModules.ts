@@ -131,6 +131,7 @@ export const MODULES: NavModule[] = [
       {
         links: [
           { name: 'Moliya',    path: '/crmtayyorlovmarkaz/finance',    icon: Wallet,      permission: 'finance' },
+          { name: "O'qituvchilar Oyligi", path: '/crmtayyorlovmarkaz/teacher-payroll', icon: Users, permission: 'finance' },
           { name: 'Kirim/Chiqim kategoriyalari', path: '/crmtayyorlovmarkaz/transaction-categories', icon: Layers, permission: 'transaction_categories' },
           { name: 'Chegirmalar', path: '/crmtayyorlovmarkaz/discounts', icon: TrendingDown, permission: 'discounts' },
         ],

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp, Download, Calendar, Percent } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { exportToExcel, exportToPDF } from '../../../utils/export';
@@ -37,16 +38,14 @@ export default function CrmTeachers() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isPayrollOpen, setIsPayrollOpen] = useState(false);
-  const [payrollRate, setPayrollRate] = useState<number>(40);
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const { showToast } = useToast();
-  
+  const navigate = useNavigate();
+
   const { data: groups = [] } = useFirestore<any>('groups');
   const { data: students = [] } = useFirestore<any>('students');
-  const { addDocument: addFinance } = useFirestore<any>('finance');
   const { courses: courseList } = useCrmData();
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
@@ -470,15 +469,12 @@ export default function CrmTeachers() {
                     </div>
 
                     <div className="flex gap-3 pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                      <Button 
+                      <Button
                         variant="secondary"
-                        onClick={() => {
-                          setPayrollRate(selectedTeacher.salaryPercent ?? 40);
-                          setIsPayrollOpen(true);
-                        }}
+                        onClick={() => navigate(`/crmtayyorlovmarkaz/teacher-payroll?teacherId=${selectedTeacher.id}`)}
                         className="flex-1 text-sm font-black bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20"
                       >
-                        Oylik Hisoblash
+                        Oylik Hisobi
                       </Button>
                     </div>
 
@@ -507,66 +503,6 @@ export default function CrmTeachers() {
            </>
         )}
       </AnimatePresence>
-
-      {/* Payroll Modal */}
-      {selectedTeacher && (
-        <Modal 
-          isOpen={isPayrollOpen}
-          onClose={() => setIsPayrollOpen(false)}
-          title="Oylik to'lash (Avto-hisoblash)"
-        >
-          <div className="space-y-6">
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/50 rounded-2xl">
-              {(() => {
-                const totalEstRevenue = teacherRevenue?.revenue || 0;
-                const finalSalary = totalEstRevenue * (payrollRate / 100);
-
-                const handlePay = async () => {
-                  try {
-                    await addFinance({
-                      type: 'expense',
-                      amount: finalSalary,
-                      category: 'Oylik',
-                      description: `${selectedTeacher.name} ga ${payrollRate}% lik stavka asosida oylik to'lovi`,
-                      date: new Date().toISOString().split('T')[0],
-                      method: 'Karta',
-                      staffId: selectedTeacher.id,
-                      staffName: selectedTeacher.name
-                    });
-                    showToast("Oylik to'lovi finance bo'limiga muvaffaqiyatli qo'shildi!", 'success');
-                    setIsPayrollOpen(false);
-                    setIsDetailOpen(false);
-                  } catch (e) {
-                    showToast("Xatolik yuz berdi", 'error');
-                  }
-                };
-
-                return (
-                  <div className="space-y-4">
-                     <div className="flex justify-between items-center text-sm font-bold text-slate-700 dark:text-zinc-300">
-                       <span>Bu oylik haqiqiy tushum (davomat chegirmasi bilan)</span>
-                       <span>{formatNumber(totalEstRevenue)} so'm</span>
-                     </div>
-                     <div className="flex items-center gap-4">
-                       <Input 
-                         type="number" 
-                         label="Stavka Foizi (%)" 
-                         value={payrollRate} 
-                         onChange={(e) => setPayrollRate(Number(e.target.value))} 
-                       />
-                     </div>
-                     <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 rounded-xl">
-                       <span className="text-sm font-black text-emerald-800 dark:text-emerald-400">To'lanadigan Summa:</span>
-                       <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">{formatNumber(finalSalary)} so'm</span>
-                     </div>
-                     <Button className="w-full mt-4" onClick={handlePay}>Moliya bo'limiga yozib to'lash</Button>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </Modal>
-      )}
 
       {/* Modal */}
       <Modal 
