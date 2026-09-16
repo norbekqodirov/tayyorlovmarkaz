@@ -154,17 +154,25 @@ never a CRM JWT.
 
 JWT payload carries `role` (`TEACHER` < `MANAGER` < `ADMIN` < `SUPER_ADMIN`,
 see `ROLE_LEVEL` in `server/middleware/auth.ts`) plus an optional
-`permissions` JSON array set per-user in `CrmUsers.tsx`. `ProtectedRoute.tsx`
-(`canAccess`) and `crud.ts`'s `requireRole` both special-case ADMIN/SUPER_ADMIN
-as "always allowed". The important subtlety: **if a user has a non-empty
-custom `permissions` array, `requiredPermission` alone decides access —
-`allowedRoles` is ignored.** So a route meant to be reachable by TEACHER must
-have its required permission key present in the TEACHER template in
-`CrmUsers.tsx`'s `ROLE_TEMPLATES`, not just be listed in `allowedRoles`.
-Adding a new permission-gated page = add the permission to `ALL_PERMISSIONS`,
-add it to the relevant `ROLE_TEMPLATES`, and use it consistently as both the
-nav link's `permission` in `CrmLayout.tsx` and the route's `requiredPermission`
-in `App.tsx`.
+`permissions` JSON array. `ProtectedRoute.tsx` (`canAccess`) and `crud.ts`'s
+`requireRole` both special-case ADMIN/SUPER_ADMIN as "always allowed". The
+important subtlety: **if a user has a non-empty custom `permissions` array,
+`requiredPermission` alone decides access — `allowedRoles` is ignored.** So a
+route meant to be reachable by TEACHER must have its required permission key
+present in the TEACHER system Role's permission set.
+
+**Since 2026-09-15, the permission set per role lives in the DB** (`Role`/
+`Permission`/`RolePermission`, `server/routes/roles.ts`), managed via the
+"Rollar va Ruxsatlar" page (`CrmRoles.tsx`) — the earlier static
+`ROLE_TEMPLATES` array in `CrmUsers.tsx` was removed in favor of this single
+source. `CrmUsers.tsx` now assigns a user's `role`/`permissions` by picking
+one of these DB `Role`s (`applyDbRole`), which stores both the resolved
+values and a `roleId` FK (`server/services/roleAssignment.ts`). Adding a new
+permission-gated page = add the permission to `ALL_PERMISSIONS`
+(`src/constants/permissions.ts`), add it to the relevant system Role(s) via
+the "Rollar va Ruxsatlar" page (e.g. TEACHER's role, so teachers keep access),
+and use the permission key consistently as both the nav link's `permission`
+in `CrmLayout.tsx` and the route's `requiredPermission` in `App.tsx`.
 
 ### CRM navigation: one source of truth
 

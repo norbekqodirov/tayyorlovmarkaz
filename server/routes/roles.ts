@@ -35,10 +35,16 @@ router.get('/permissions', async (_req, res) => {
 });
 
 // ─── GET /api/roles — ro'yxat (ruxsat/foydalanuvchi soni bilan) ─────────────
+// `permissionKeys` — CrmUsers.tsx'ning eski, statik ROLE_TEMPLATES olib
+// tashlangandan (2026-09-15) keyin shu ro'yxatdan foydalanadi: har bir
+// foydalanuvchiga eng mos Role'ni topish uchun har birining kalitlarini
+// alohida so'rovsiz solishtirish kerak (N+1 chaqiruvdan qochish uchun bu
+// yerda birga qaytariladi).
 router.get('/', async (_req, res) => {
     try {
         const roles = await prisma.role.findMany({
             include: {
+                permissions: { include: { permission: true } },
                 _count: { select: { permissions: true, users: true } },
             },
             orderBy: [{ isSystem: 'desc' }, { label: 'asc' }],
@@ -47,6 +53,7 @@ router.get('/', async (_req, res) => {
             id: r.id, name: r.name, label: r.label, description: r.description,
             baseRoleLevel: r.baseRoleLevel, isSystem: r.isSystem, isActive: r.isActive,
             permissionCount: r._count.permissions, userCount: r._count.users,
+            permissionKeys: r.permissions.map(rp => rp.permission.key),
             createdAt: r.createdAt, updatedAt: r.updatedAt,
         })));
     } catch (err: any) {

@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Users, Plus, Edit2, Trash2, Shield, X, Eye, EyeOff,
-    UserCheck, Megaphone, GraduationCap, Settings, Check,
+    UserCheck, GraduationCap, Settings, Check,
     Lock, Mail, Phone, User, Search, ChevronDown
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
@@ -14,81 +15,53 @@ import { ErrorState, EmptyState } from '../../../components/States';
 // ─── Permission Definitions ──────────────────────────────────────────
 import { ALL_PERMISSIONS, PERMISSION_GROUPS } from '../../../constants/permissions';
 
+// 2026-09-15: statik ROLE_TEMPLATES ro'yxati olib tashlandi — endi yagona
+// manba Sozlamalar > Rollar va Ruxsatlar sahifasida yaratiladigan haqiqiy
+// Role/RolePermission jadvallari (server/routes/roles.ts, dbRoles state).
+// Ko'rinish (rang/ikonka) esa baseRoleLevel'dan hosila qilinadi — bitta
+// darajada ko'plab turli nomdagi Role bo'lishi mumkin (masalan "Menejer" va
+// "Marketing Xodimi" ikkalasi ham MANAGER darajasida).
+const BASE_LEVEL_STYLE: Record<string, { icon: LucideIcon; label: string; color: string; bg: string; border: string }> = {
+    SUPER_ADMIN: { icon: Shield, label: 'Super Admin', color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-900/30', border: 'border-amber-300 dark:border-amber-700' },
+    ADMIN: { icon: Shield, label: 'Administrator', color: 'text-purple-600', bg: 'bg-purple-100 dark:bg-purple-900/30', border: 'border-purple-300 dark:border-purple-700' },
+    MANAGER: { icon: UserCheck, label: 'Menejer', color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-900/30', border: 'border-emerald-300 dark:border-emerald-700' },
+    TEACHER: { icon: GraduationCap, label: "O'qituvchi", color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-900/30', border: 'border-blue-300 dark:border-blue-700' },
+};
+const FALLBACK_LEVEL_STYLE = { icon: Settings, label: 'Boshqa', color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800', border: 'border-zinc-300 dark:border-zinc-700' };
+function styleForLevel(level: string) {
+    return BASE_LEVEL_STYLE[level] || FALLBACK_LEVEL_STYLE;
+}
+// Pastdan yuqoriga — "Maxsus" (hech qanday Role'ga bog'lanmagan) tanlovda
+// asosiy ROLE_LEVEL darajasini qo'lda tanlash uchun.
+const BASE_LEVELS = ['TEACHER', 'MANAGER', 'ADMIN', 'SUPER_ADMIN'] as const;
 
-// "MARKETING" haqiqiy User.role qiymati emas (faqat TEACHER/MANAGER/ADMIN/
-// SUPER_ADMIN mavjud — server/middleware/auth.ts ROLE_LEVEL) — shu andoza
-// tanlanganda haqiqiy rol sifatida MANAGER saqlanadi (pastda applyTemplate),
-// permissions massivi esa cheklaydi. Shu funksiya buni orqaga qaytarib,
-// saqlangan permissions'ga qarab qaysi andoza ekanini aniqlaydi — aks holda
-// ro'yxat/tahrirlashda bunday foydalanuvchi "Menejer" yoki "Administrator"
-// deb noto'g'ri ko'rsatilardi.
-function matchTemplateId(user: { role: string; permissions?: string }): string {
-    let perms: string[] = [];
-    try { perms = JSON.parse(user.permissions || '[]'); } catch { /* noop */ }
-    if (perms.length > 0) {
-        const sorted = [...perms].sort().join(',');
-        const match = ROLE_TEMPLATES.find(t => [...t.permissions].sort().join(',') === sorted);
-        if (match) return match.id;
-    }
-    return user.role;
+function parsePerms(raw?: string): string[] {
+    try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+function permKey(perms: string[]): string {
+    return [...perms].sort().join(',');
 }
 
-// ─── Role Templates ───────────────────────────────────────────────────
-const ROLE_TEMPLATES = [
-    {
-        id: 'SUPER_ADMIN',
-        label: 'Super Admin',
-        description: "Barcha tizim va foydalanuvchilarga to'liq nazorat",
-        icon: Shield,
-        color: 'text-amber-600',
-        bg: 'bg-amber-100 dark:bg-amber-900/30',
-        border: 'border-amber-300 dark:border-amber-700',
-        permissions: ALL_PERMISSIONS.map(p => p.id),
-    },
-    {
-        id: 'ADMIN',
-        label: 'Administrator',
-        description: "Tizimning barcha qisimlariga to'liq ruxsat",
-        icon: Shield,
-        color: 'text-purple-600',
-        bg: 'bg-purple-100 dark:bg-purple-900/30',
-        border: 'border-purple-300 dark:border-purple-700',
-        permissions: ALL_PERMISSIONS.map(p => p.id),
-    },
-    {
-        id: 'TEACHER',
-        label: 'Ustoz / O\'qituvchi',
-        description: "Dars jadvali, jurnal, davomat va baholash",
-        icon: GraduationCap,
-        color: 'text-blue-600',
-        bg: 'bg-blue-100 dark:bg-blue-900/30',
-        border: 'border-blue-300 dark:border-blue-700',
-        // Test Tizimi/Imtihonlar ataylab yo'q — hali tugallanmagan, mustaqil
-        // yoqiladi (Foydalanuvchilar sahifasida "Test Tizimi"/"Imtihonlar"
-        // katagini alohida belgilab).
-        permissions: ['dashboard', 'schedule', 'journal', 'students', 'groups', 'parent_chat'],
-    },
-    {
-        id: 'MARKETING',
-        label: 'Marketing Xodimi',
-        description: "Lidlar, marketing kampaniyalar va formalar",
-        icon: Megaphone,
-        color: 'text-rose-600',
-        bg: 'bg-rose-100 dark:bg-rose-900/30',
-        border: 'border-rose-300 dark:border-rose-700',
-        permissions: ['dashboard', 'leads', 'marketing', 'ai_content', 'communication', 'target_forms'],
-    },
-    {
-        id: 'MANAGER',
-        label: 'Menejer',
-        description: "O'quvchilar, moliya va guruhlarni boshqarish",
-        icon: UserCheck,
-        color: 'text-emerald-600',
-        bg: 'bg-emerald-100 dark:bg-emerald-900/30',
-        border: 'border-emerald-300 dark:border-emerald-700',
-        permissions: ['dashboard', 'students', 'groups', 'courses', 'finance', 'transaction_categories', 'discounts', 'bi', 'predictions', 'goals', 'reports', 'certificates', 'leads', 'teachers', 'leave_requests', 'staff_attendance', 'parent_chat'],
-    },
-];
+// Foydalanuvchiga ENG MOS Role'ni topadi — faqat KO'RSATISH uchun, hech
+// qachon avtomatik `roleId` yozilmaydi (bu funksiya chaqirilgan joyda ham).
+// Avval haqiqiy `roleId` (hali faol bo'lsa) tekshiriladi; aks holda —
+// 2026-09-13'gacha (RBAC qayta qurishdan oldin) yoki eski andoza orqali
+// yaratilgan/tahrirlangan, hali haqiqiy Role'ga bog'lanmagan foydalanuvchilar
+// uchun — saqlangan role (ROLE_LEVEL) darajasidagi Role'lar orasidan xuddi
+// shu permissions to'plamiga ega bo'lganini qidiradi. ADMIN va SUPER_ADMIN
+// tizim rollari bir xil (to'liq) permissions to'plamiga ega bo'lgani uchun
+// ular orasidagi farq faqat baseRoleLevel bo'yicha (permissions bo'yicha
+// emas) hal qilinadi.
+function resolveDisplayRole(user: { role: string; roleId?: string | null; permissions?: string }, dbRoles: DbRole[]): DbRole | null {
+    if (user.roleId) {
+        const linked = dbRoles.find(r => r.id === user.roleId);
+        if (linked) return linked;
+    }
+    const sameLevel = dbRoles.filter(r => r.baseRoleLevel === user.role);
+    if (sameLevel.length <= 1) return sameLevel[0] ?? null;
+    const userKey = permKey(parsePerms(user.permissions));
+    return sameLevel.find(r => permKey(r.permissionKeys) === userKey) ?? null;
+}
 
 interface CrmUser {
     id: string;
@@ -110,6 +83,7 @@ interface DbRole {
     isActive: boolean;
     isSystem: boolean;
     permissionCount: number;
+    permissionKeys: string[];
 }
 
 const EMPTY_FORM = {
@@ -132,14 +106,13 @@ export default function CrmUsers() {
     const [form, setForm] = useState({ ...EMPTY_FORM });
     const [showPassword, setShowPassword] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [selectedTemplate, setSelectedTemplate] = useState('');
     const [expandedGroups, setExpandedGroups] = useState<string[]>(PERMISSION_GROUPS);
     const { showToast } = useToast();
     const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; user: CrmUser | null }>({ open: false, user: null });
 
-    // RBAC Bosqich 3 — DB'dagi haqiqiy Role'lar (Rollar va Ruxsatlar sahifasida
-    // yaratilgan/tahrirlangan). Bular eski ROLE_TEMPLATES'ga QO'SHIMCHA
-    // tanlov — biriktirilsa, foydalanuvchining role/permissions'i shu Role'dan
+    // RBAC Bosqich 3 — Sozlamalar > Rollar va Ruxsatlar sahifasida
+    // yaratilgan/tahrirlangan haqiqiy Role'lar. Yagona rol tanlash manbasi —
+    // biriktirilganda foydalanuvchining role/permissions'i shu Role'dan
     // hosila bo'ladi (server/routes/auth.ts'dagi resolveRoleAssignment()).
     const [dbRoles, setDbRoles] = useState<DbRole[]>([]);
     const [accessInfo, setAccessInfo] = useState<any>(null);
@@ -178,26 +151,26 @@ export default function CrmUsers() {
         setEditingUser(null);
         setAccessInfo(null);
         setForm({ ...EMPTY_FORM });
-        setSelectedTemplate('TEACHER');
-        applyTemplate('TEACHER');
+        // Standart holat — tizim TEACHER roli (agar hali yuklangan/mavjud
+        // bo'lsa); aks holda EMPTY_FORM'ning qo'lda belgilangan standarti
+        // (role:'TEACHER', permissions:[]) qoladi.
+        const defaultRole = dbRoles.find(r => r.isSystem && r.baseRoleLevel === 'TEACHER') || dbRoles[0];
+        if (defaultRole) void applyDbRole(defaultRole.id);
         setIsModalOpen(true);
     };
 
     const openEdit = (user: CrmUser) => {
         setEditingUser(user);
         setAccessInfo(null);
-        let perms: string[] = [];
-        try { perms = JSON.parse(user.permissions || '[]'); } catch { }
         setForm({
             name: user.name,
             email: user.email || '',
             phone: user.phone || '',
             password: '',
             role: user.role,
-            permissions: perms,
+            permissions: parsePerms(user.permissions),
             roleId: user.roleId || null,
         });
-        setSelectedTemplate(user.roleId ? 'CUSTOM_DB' : matchTemplateId(user));
         setIsModalOpen(true);
 
         setLoadingAccess(true);
@@ -207,27 +180,17 @@ export default function CrmUsers() {
             .finally(() => setLoadingAccess(false));
     };
 
-    const applyTemplate = (templateId: string) => {
-        const template = ROLE_TEMPLATES.find(t => t.id === templateId);
-        if (!template) return;
-        setSelectedTemplate(templateId);
-        setForm(prev => ({
-            ...prev,
-            role: templateId === 'MARKETING' ? 'MANAGER' : templateId,
-            permissions: template.permissions,
-            roleId: null,
-        }));
-    };
-
+    // Rol tanlash — endi yagona mexanizm: bo'sh roleId "Maxsus" (qo'lda
+    // ruxsat belgilash, `form.role`/`form.permissions` o'zgarishsiz qoladi),
+    // aks holda tanlangan Role'ning baseRoleLevel/permissionKeys'i
+    // to'g'ridan-to'g'ri qo'llanadi.
     const applyDbRole = async (roleId: string) => {
         if (!roleId) {
-            setSelectedTemplate('TEACHER');
-            applyTemplate('TEACHER');
+            setForm(prev => ({ ...prev, roleId: null }));
             return;
         }
         try {
             const res = await api.get(`/roles/${roleId}`);
-            setSelectedTemplate('CUSTOM_DB');
             setForm(prev => ({
                 ...prev,
                 role: res.data.baseRoleLevel,
@@ -240,7 +203,6 @@ export default function CrmUsers() {
     };
 
     const togglePermission = (permId: string) => {
-        setSelectedTemplate('CUSTOM');
         setForm(prev => ({
             ...prev,
             permissions: prev.permissions.includes(permId)
@@ -253,7 +215,6 @@ export default function CrmUsers() {
     const toggleGroup = (group: string) => {
         const groupPerms = ALL_PERMISSIONS.filter(p => p.group === group).map(p => p.id);
         const allSelected = groupPerms.every(p => form.permissions.includes(p));
-        setSelectedTemplate('CUSTOM');
         setForm(prev => ({
             ...prev,
             permissions: allSelected
@@ -264,7 +225,6 @@ export default function CrmUsers() {
     };
 
     const selectAllPermissions = () => {
-        setSelectedTemplate('CUSTOM');
         setForm(prev => ({
             ...prev,
             permissions: ALL_PERMISSIONS.map(p => p.id),
@@ -273,7 +233,6 @@ export default function CrmUsers() {
     };
 
     const deselectAllPermissions = () => {
-        setSelectedTemplate('CUSTOM');
         setForm(prev => ({
             ...prev,
             permissions: [],
@@ -310,12 +269,10 @@ export default function CrmUsers() {
         }
 
         // Oxirgi SUPER_ADMIN rolini tushirib qo'ymaslik xavfsizlik tekshiruvi.
-        // MUHIM: faqat haqiqiy user.role maydoniga qaraladi — matchTemplateId()
-        // faqat UI andozasini taxmin qiluvchi evristika, u SUPER_ADMIN va ADMIN
-        // andozalari bir xil (to'liq) permissions to'plamiga ega bo'lgani uchun
-        // to'liq ruxsatli oddiy ADMIN'ni ham SUPER_ADMIN deb noto'g'ri hisoblab
-        // qo'yishi mumkin edi — bu esa oxirgi haqiqiy SUPER_ADMIN'ni tasodifan
-        // pastga tushirish/o'chirishga yo'l qo'yib yuborardi.
+        // MUHIM: faqat haqiqiy user.role/form.role maydoniga qaraladi —
+        // resolveDisplayRole() faqat UI'da ko'rsatish uchun taxmin qiluvchi
+        // evristika (jadvaldagi rol yorlig'i uchun), xavfsizlik qarori uchun
+        // hech qachon ishlatilmasligi kerak.
         const superAdminCount = users.filter(u => u.role === 'SUPER_ADMIN').length;
         if (editingUser) {
             const isCurrentlySuperAdmin = editingUser.role === 'SUPER_ADMIN';
@@ -423,8 +380,15 @@ export default function CrmUsers() {
     );
 
     function getRoleInfo(user: CrmUser) {
-        return ROLE_TEMPLATES.find(t => t.id === matchTemplateId(user))
-            || ROLE_TEMPLATES.find(t => t.id === 'TEACHER')!;
+        const role = resolveDisplayRole(user, dbRoles);
+        const style = styleForLevel(user.role);
+        return {
+            label: role ? role.label : `${style.label} (maxsus)`,
+            icon: style.icon,
+            color: style.color,
+            bg: style.bg,
+            border: style.border,
+        };
     }
 
     function getPermCount(user: CrmUser) {
@@ -466,23 +430,42 @@ export default function CrmUsers() {
                 </button>
             </div>
 
-            {/* Role Templates Overview */}
+            {/* Rollar bo'yicha statistika — Sozlamalar > Rollar va Ruxsatlar'da
+                yaratilgan haqiqiy Role'lar asosida */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {ROLE_TEMPLATES.map(t => {
-                    const Icon = t.icon;
-                    const count = users.filter(u => matchTemplateId(u) === t.id).length;
+                {dbRoles.map(role => {
+                    const style = styleForLevel(role.baseRoleLevel);
+                    const Icon = style.icon;
+                    const count = users.filter(u => resolveDisplayRole(u, dbRoles)?.id === role.id).length;
                     return (
-                        <div key={t.id} className={`p-4 rounded-2xl border ${t.border} ${t.bg} flex items-center gap-3`}>
-                            <div className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-black/20 flex items-center justify-center ${t.color}`}>
+                        <div key={role.id} className={`p-4 rounded-2xl border ${style.border} ${style.bg} flex items-center gap-3`}>
+                            <div className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-black/20 flex items-center justify-center ${style.color}`}>
                                 <Icon size={20} />
                             </div>
                             <div>
-                                <p className="text-xs font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">{t.label}</p>
-                                <p className={`text-xl font-black ${t.color}`}>{count} ta</p>
+                                <p className="text-xs font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest truncate">{role.label}</p>
+                                <p className={`text-xl font-black ${style.color}`}>{count} ta</p>
                             </div>
                         </div>
                     );
                 })}
+                {(() => {
+                    const customCount = users.filter(u => !resolveDisplayRole(u, dbRoles)).length;
+                    if (customCount === 0) return null;
+                    const style = FALLBACK_LEVEL_STYLE;
+                    const Icon = style.icon;
+                    return (
+                        <div className={`p-4 rounded-2xl border ${style.border} ${style.bg} flex items-center gap-3`}>
+                            <div className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-black/20 flex items-center justify-center ${style.color}`}>
+                                <Icon size={20} />
+                            </div>
+                            <div>
+                                <p className="text-xs font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">Maxsus</p>
+                                <p className={`text-xl font-black ${style.color}`}>{customCount} ta</p>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
 
             {/* Search */}
@@ -681,7 +664,7 @@ export default function CrmUsers() {
                                     <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                                         {editingUser ? 'Foydalanuvchini tahrirlash' : 'Yangi foydalanuvchi qo\'shish'}
                                     </h3>
-                                    <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">Ruxsat andozasini tanlang va sozlang</p>
+                                    <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">Rolni tanlang va kerak bo'lsa ruxsatlarni moslashtiring</p>
                                 </div>
                                 <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
                                     <X size={22} className="text-zinc-500" />
@@ -689,60 +672,98 @@ export default function CrmUsers() {
                             </div>
 
                             <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
-                                {/* Role Templates */}
+                                {/* Rol — yagona tanlov manbasi: Sozlamalar > Rollar va Ruxsatlar
+                                    sahifasida yaratilgan haqiqiy Role'lar + "Maxsus" (qo'lda
+                                    ruxsat belgilash). */}
                                 <div>
-                                    <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-3">Lavozim Andozasi (Template)</p>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
-                                        {ROLE_TEMPLATES.map(t => {
-                                            const Icon = t.icon;
-                                            const isSelected = selectedTemplate === t.id;
+                                    <div className="flex items-center justify-between mb-3">
+                                        <p className="text-xs font-black text-zinc-400 uppercase tracking-widest">Rol</p>
+                                        <a href="/crmtayyorlovmarkaz/roles" className="text-[11px] font-bold text-blue-600 hover:underline">Rollarni boshqarish</a>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
+                                        {dbRoles.map(role => {
+                                            const style = styleForLevel(role.baseRoleLevel);
+                                            const Icon = style.icon;
+                                            const isSelected = form.roleId === role.id;
                                             return (
                                                 <button
-                                                    key={t.id}
+                                                    key={role.id}
                                                     type="button"
-                                                    onClick={() => applyTemplate(t.id)}
+                                                    onClick={() => applyDbRole(role.id)}
                                                     className={`p-2.5 sm:p-3 rounded-2xl border-2 transition-all text-left ${isSelected
-                                                            ? `${t.border} ${t.bg}`
+                                                            ? `${style.border} ${style.bg}`
                                                             : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
                                                         }`}
                                                 >
-                                                    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center mb-1.5 ${isSelected ? t.bg + ' ' + t.color : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
+                                                    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center mb-1.5 ${isSelected ? style.bg + ' ' + style.color : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
                                                         <Icon size={16} />
                                                     </div>
-                                                    <p className={`text-xs font-black truncate ${isSelected ? t.color : 'text-zinc-600 dark:text-zinc-300'}`}>{t.label}</p>
-                                                    {isSelected && <Check size={14} className={`mt-1 ${t.color}`} />}
+                                                    <p className={`text-xs font-black truncate ${isSelected ? style.color : 'text-zinc-600 dark:text-zinc-300'}`}>{role.label}</p>
+                                                    <p className="text-[10px] text-zinc-400 font-medium">{role.permissionCount} ta ruxsat</p>
+                                                    {isSelected && <Check size={14} className={`mt-1 ${style.color}`} />}
                                                 </button>
                                             );
                                         })}
+                                        {(() => {
+                                            const isSelected = !form.roleId;
+                                            const style = FALLBACK_LEVEL_STYLE;
+                                            const Icon = style.icon;
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applyDbRole('')}
+                                                    className={`p-2.5 sm:p-3 rounded-2xl border-2 transition-all text-left ${isSelected
+                                                            ? `${style.border} ${style.bg}`
+                                                            : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                                                        }`}
+                                                >
+                                                    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center mb-1.5 ${isSelected ? style.bg + ' ' + style.color : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'}`}>
+                                                        <Icon size={16} />
+                                                    </div>
+                                                    <p className={`text-xs font-black truncate ${isSelected ? style.color : 'text-zinc-600 dark:text-zinc-300'}`}>Maxsus</p>
+                                                    <p className="text-[10px] text-zinc-400 font-medium">Qo'lda belgilash</p>
+                                                    {isSelected && <Check size={14} className={`mt-1 ${style.color}`} />}
+                                                </button>
+                                            );
+                                        })()}
                                     </div>
-                                </div>
 
-                                {/* RBAC Bosqich 3 — Rollar va Ruxsatlar sahifasida yaratilgan haqiqiy Role */}
-                                {dbRoles.length > 0 && (
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest">
-                                                Maxsus Rol (Rollar va Ruxsatlar sahifasidan)
-                                            </label>
-                                            <a href="/crmtayyorlovmarkaz/roles" className="text-[11px] font-bold text-blue-600 hover:underline">Rollarni boshqarish</a>
-                                        </div>
-                                        <select
-                                            value={form.roleId || ''}
-                                            onChange={e => applyDbRole(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-                                        >
-                                            <option value="">— Yo'q (yuqoridagi andozadan foydalanish) —</option>
-                                            {dbRoles.map(r => (
-                                                <option key={r.id} value={r.id}>{r.label} ({r.permissionCount} ta ruxsat)</option>
-                                            ))}
-                                        </select>
-                                        {form.roleId && (
-                                            <p className="text-[11px] text-blue-600 mt-1.5">
-                                                Ushbu foydalanuvchining ruxsatlari endi shu roldan boshqariladi — pastdagi katakchalarni qo'lda o'zgartirsangiz, rol biriktiruvi bekor bo'ladi.
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
+                                    {form.roleId && (
+                                        <p className="text-[11px] text-blue-600 mt-2.5">
+                                            Ushbu foydalanuvchining ruxsatlari endi shu roldan boshqariladi — pastdagi katakchalarni qo'lda o'zgartirsangiz, rol biriktiruvi bekor bo'ladi.
+                                        </p>
+                                    )}
+
+                                    {!form.roleId && (() => {
+                                        // Legacy: hali haqiqiy Role'ga bog'lanmagan, lekin saqlangan
+                                        // permissions to'plami mavjud rollardan biriga mos keladigan
+                                        // foydalanuvchi — faqat ma'lumot uchun, roleId majburiy
+                                        // tayinlanmaydi (foydalanuvchi o'zi yuqoridan tanlashi kerak).
+                                        const guessed = editingUser ? resolveDisplayRole(editingUser, dbRoles) : null;
+                                        return (
+                                            <div className="mt-3 space-y-2.5">
+                                                {guessed && (
+                                                    <p className="text-[11px] text-amber-600">
+                                                        Joriy ruxsatlar "{guessed.label}" roliga mos keladi, lekin hali rasman bog'lanmagan — bog'lash uchun yuqoridan shu rolni tanlang.
+                                                    </p>
+                                                )}
+                                                <label className="block text-xs font-black text-zinc-400 uppercase tracking-widest">Asosiy daraja</label>
+                                                <select
+                                                    value={form.role}
+                                                    onChange={e => setForm(prev => ({ ...prev, role: e.target.value }))}
+                                                    className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                                                >
+                                                    {BASE_LEVELS.map(level => (
+                                                        <option key={level} value={level}>{BASE_LEVEL_STYLE[level].label}</option>
+                                                    ))}
+                                                </select>
+                                                <p className="text-[11px] text-zinc-400">
+                                                    Tizimning asosiy xavfsizlik darajasi — pastda ruxsatlarni qo'lda belgilang.
+                                                </p>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
 
                                 {/* Effective Access Viewer — faqat tahrirlashda, RBAC Bosqich 3 */}
                                 {editingUser && (
