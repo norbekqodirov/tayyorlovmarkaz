@@ -36,6 +36,48 @@ router.get('/preview', async (req, res) => {
     }
 });
 
+// GET /api/finance/teacher-payroll/:teacherId/staff-attendance?month=YYYY-MM
+// O'qituvchining O'ZINING ishga kelish-ketish davomati (Face ID orqali,
+// StaffAttendance). `User` va `StaffMember` orasida rasmiy FK yo'q — mavjud,
+// allaqachon ishlaydigan bog'lanish naqshi (staffPortal.ts'dagi
+// getOrCreateStaffMember() bilan bir xil): ikkalasi ham BIR XIL Telegram
+// hisobiga ulangan bo'lsa, `telegramChatId` orqali moslashtiriladi.
+router.get('/:teacherId/staff-attendance', async (req, res) => {
+    try {
+        const { month } = req.query as { month?: string };
+        const teacher = await prisma.user.findUnique({
+            where: { id: req.params.teacherId },
+            select: { telegramChatId: true },
+        });
+        if (!teacher?.telegramChatId) {
+            return res.json({ linked: false, records: [], summary: null });
+        }
+        const staffMember = await prisma.staffMember.findFirst({
+            where: { telegramChatId: teacher.telegramChatId },
+            select: { id: true, name: true, photo: true },
+        });
+        if (!staffMember) {
+            return res.json({ linked: false, records: [], summary: null });
+        }
+        const where: any = { staffId: staffMember.id };
+        if (month) where.date = { startsWith: month };
+        const records = await prisma.staffAttendance.findMany({
+            where,
+            orderBy: { date: 'desc' },
+            take: 60,
+        });
+        const summary = {
+            present: records.filter(r => r.status === 'present').length,
+            late: records.filter(r => r.status === 'late').length,
+            absent: records.filter(r => r.status === 'absent').length,
+            total: records.length,
+        };
+        res.json({ linked: true, staffMemberId: staffMember.id, records, summary });
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // GET /api/finance/teacher-payroll?teacherId=&month=
 router.get('/', async (req, res) => {
     try {

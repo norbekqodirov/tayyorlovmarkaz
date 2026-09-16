@@ -18,15 +18,29 @@
  *   lekin UI'da albatta "taxminiy" deb belgilanishi kerak bo'lgan holat.
  */
 import prisma from '../db.js';
-import { getBillingSettings, calculateTeacherMonthlyRevenue } from './billing.js';
+import { getBillingSettings, calculateStudentMonthlyDue } from './billing.js';
 
 export type PayrollBasis = 'accrual' | 'cash';
+
+export interface TeacherPayrollStudentRow {
+    studentId: string;
+    studentName: string;
+    absences: number;
+    basePrice: number;
+    discountApplied: boolean;
+    discount: number;
+    finalPrice: number;
+}
 
 export interface TeacherPayrollGroupBreakdown {
     groupId: string;
     groupName: string;
     studentCount: number;
     revenue: number;
+    /** Shu oyda ushbu guruh uchun necha kun davomat olingani (o'tilgan dars soni). */
+    lessonsHeld?: number;
+    /** HR "tabel" ko'rinishi uchun — har o'quvchining davomat/chegirma qatori. */
+    students?: TeacherPayrollStudentRow[];
 }
 
 export interface TeacherPayrollBreakdown {
@@ -42,17 +56,62 @@ export interface TeacherPayrollBreakdown {
     note: string | null;
 }
 
+// ACCRUAL — HR "bu son qayerdan chiqdi?" deb tekshira olishi uchun, har bir
+// guruh ichida HAR BIR o'quvchining o'zi (necha dars qoldirgani, shu sabab
+// qancha chegirma olgani) ko'rsatiladi — shuning uchun mavjud (agregat)
+// calculateTeacherMonthlyRevenue()ga emas, to'g'ridan-to'g'ri
+// calculateStudentMonthlyDue()ga tayanadi (billing.ts, RF-01 tuzatilgan).
 export async function calculateTeacherAccrual(teacherId: string, year: number, month: number): Promise<TeacherPayrollBreakdown> {
-    const result = await calculateTeacherMonthlyRevenue(teacherId, year, month);
+    const settings = await getBillingSettings();
+    const teacher = await prisma.user.findUnique({ where: { id: teacherId }, select: { salaryPercent: true } });
+    const salaryPercent = teacher?.salaryPercent ?? settings.teacherSalaryPercent;
+
+    const groups = await prisma.group.findMany({
+        where: { teacherId },
+        include: { enrollments: { include: { student: { select: { id: true, name: true } } } } },
+    });
+
+    const groupBreakdown: TeacherPayrollGroupBreakdown[] = await Promise.all(groups.map(async (g) => {
+        const studentRows: TeacherPayrollStudentRow[] = await Promise.all(g.enrollments.map(async (e) => {
+            const due = await calculateStudentMonthlyDue(e.studentId, year, month, settings);
+            const groupDue = due.byGroup.find(b => b.groupId === g.id);
+            return {
+                studentId: e.studentId,
+                studentName: e.student.name,
+                absences: groupDue?.absences ?? 0,
+                basePrice: groupDue?.basePrice ?? 0,
+                discountApplied: groupDue?.discountApplied ?? false,
+                discount: groupDue?.discount ?? 0,
+                finalPrice: groupDue?.finalPrice ?? 0,
+            };
+        }));
+        const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+        const lessonDates = await prisma.attendanceRecord.findMany({
+            where: { groupId: g.id, date: { startsWith: monthStr } },
+            select: { date: true },
+            distinct: ['date'],
+        });
+        return {
+            groupId: g.id,
+            groupName: g.name,
+            studentCount: g.enrollments.length,
+            revenue: studentRows.reduce((sum, s) => sum + s.finalPrice, 0),
+            lessonsHeld: lessonDates.length,
+            students: studentRows,
+        };
+    }));
+
+    const revenue = groupBreakdown.reduce((sum, g) => sum + g.revenue, 0);
+
     return {
         teacherId,
         year,
         month,
         basis: 'accrual',
-        salaryPercent: result.salaryPercent,
-        revenue: result.revenue,
-        salary: result.salary,
-        groups: result.groups,
+        salaryPercent,
+        revenue,
+        salary: Math.round(revenue * (salaryPercent / 100)),
+        groups: groupBreakdown,
         note: null,
     };
 }
