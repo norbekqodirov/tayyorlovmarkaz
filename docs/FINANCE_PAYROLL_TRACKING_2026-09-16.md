@@ -9,7 +9,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 
 | Paket | Qamrov | Holat | Commit |
 |---|---|---|---|
-| **P1 — hisob ishonchliligi (asosiy)** | F01, F04, F05, F06 (qisman), F13, O01, O02 | ✅ | (shu partiyada) |
+| **P1 — hisob ishonchliligi (asosiy)** | F01, F02, F04, F05, F06 (qisman), F12 (qisman), F13, O01, O02, O07 | ✅ | `6937e01`, `f7ce72d`, (shu partiya) |
 | P2 — invoice net/allocation | F02, F03, F09-adjacent | ⬜ | — |
 | P3 — provider qattiqlashtirish | F07, F08, F09 | ⬜ | — |
 | P4 — hisobot/pagination to'g'irlash | F14, F15, F16, F20 | ⬜ | — |
@@ -59,7 +59,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | O04 | P1 | ⬜ | Guruh yig'indisi va header mos emas (O03 bilan bog'liq) — P10. |
 | O05 | P1 | ⬜ | Tasdiqlangandan keyin UI saqlangan snapshot'ni emas, live preview'ni ko'rsatadi — P8. |
 | O06 | P1 | ⬜ | Staff formda dirty-state himoyasi yo'q — P8. |
-| O07 | P1 | ⬜ | Salary POST `paid=true`ni expense'siz qabul qiladi (RF-05 qisman yopgan — endi shu yo'l orqali paid=true umuman o'zgartirilmaydi agar mavjud yozuv paid bo'lsa, lekin YANGI yozuvni bevosita `paid:true` bilan yaratish hali mumkin) — P8'da to'liq yopiladi. |
+| O07 | P1 | ✅ | `POST /salary` endi `paid`ni request body'dan umuman olmaydi — yaratilgan/yangilangan yozuv har doim `paid:false, paidAt:null` bilan boshlanadi. "To'landi" holatiga faqat `PUT /:id/pay` orqali (xarajat yozuvi bilan atomar) o'tiladi. Joriy UI hech qachon `paid` yubormagani uchun xatti-harakat o'zgarmadi, faqat API-darajasidagi teshik yopildi. — `server/routes/salary.ts` |
 | O08 | P1 | ⬜ | Draft qayta hisoblash version/hash bilan qulflanmagan — P8. |
 | O09 | P2 | ⬜ | Ro'yxat mutatsiyadan keyin invalidatsiya qilinmaydi — P8. |
 | O10 | P2 | ⬜ | Staff attendance oxirgi-200-yozuv + client-side oy filtri — P9. |

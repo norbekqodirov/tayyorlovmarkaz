@@ -63,7 +63,7 @@ router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), requirePer
 // mavjud emas) kerak bo'ladi.
 router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
-        const { staffId, month, baseSalary = 0, bonus = 0, deduction = 0, notes, paid = false } = req.body;
+        const { staffId, month, baseSalary = 0, bonus = 0, deduction = 0, notes } = req.body;
         if (!staffId || !month) {
             return res.status(400).json({ message: 'staffId va month kiritilishi shart' });
         }
@@ -74,6 +74,14 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('fina
         }
 
         const total = Number(baseSalary) + Number(bonus) - Number(deduction);
+        // Finance-audit (2026-09-16), O07 tuzatish: `paid` ilgari request
+        // body'dan olinardi — chaqiruvchi `paid:true`ni to'g'ridan-to'g'ri
+        // yuborsa, hech qanday xarajat (Transaction) yozuvisiz "to'landi" deb
+        // belgilash mumkin edi. Joriy UI hech qachon `paid` yubormaydi, lekin
+        // API darajasida bu teshik ochiq edi. Endi bu yo'l orqali yaratilgan/
+        // yangilangan yozuv HAR DOIM `paid:false` bilan boshlanadi — "to'landi"
+        // holatiga o'tish FAQAT `PUT /:id/pay` orqali (u yerda xarajat yozuvi
+        // bilan bitta $transaction ichida atomar).
         const data = {
             staffId,
             month,
@@ -81,8 +89,8 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('fina
             bonus: Number(bonus),
             deduction: Number(deduction),
             total,
-            paid,
-            paidAt: paid ? new Date() : null,
+            paid: false,
+            paidAt: null,
             notes,
         };
         const salary = await prisma.salary.upsert({
