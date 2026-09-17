@@ -247,6 +247,38 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, a
     }
 });
 
+// GET /api/salary/:id/payouts — O12 tuzatish (2026-09-16 audit): TeacherPayroll
+// bilan bir xil — har bir alohida to'lov/avans-qoplash hodisasini xronologik
+// ko'rsatadi, faqat davr darajasidagi jami emas.
+router.get('/:id/payouts', requireAuth, requireMinRole('MANAGER'), canReview, async (req, res) => {
+    try {
+        const [transactions, advanceApplications] = await Promise.all([
+            prisma.transaction.findMany({
+                where: { sourceType: 'salary', sourceId: req.params.id },
+                orderBy: { createdAt: 'desc' },
+            }),
+            prisma.staffAdvanceApplication.findMany({
+                where: { appliedToType: 'salary', appliedToId: req.params.id },
+                include: { advance: { select: { date: true, method: true } } },
+                orderBy: { createdAt: 'desc' },
+            }),
+        ]);
+        const events = [
+            ...transactions.map(t => ({
+                kind: 'payout' as const, id: t.id, date: t.date, amount: t.amount,
+                method: t.method, createdAt: t.createdAt,
+            })),
+            ...advanceApplications.map(a => ({
+                kind: 'advance' as const, id: a.id, date: a.advance.date, amount: a.amount,
+                method: a.advance.method, createdAt: a.createdAt,
+            })),
+        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        res.json(events);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // DELETE /api/salary/:id
 // RF-05 tuzatish: to'langan oylik yozuvini o'chirishga hech qanday cheklov
 // yo'q edi — real xarajat yozuvi (Transaction) qolgan holda payroll yozuvi

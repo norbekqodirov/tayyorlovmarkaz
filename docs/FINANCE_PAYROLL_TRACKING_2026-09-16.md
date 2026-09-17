@@ -16,8 +16,9 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | P5 — chegirma/kategoriya | F17, F18 | ⬜ | — |
 | P6 — byudjet | F19 | ⬜ | — |
 | P7 — UX/idempotency | F21, F22 (qisman) | ⬜ | — |
-| P8 — payroll UI ishonchliligi | O05, O06, O08, O09, O11 | ⬜ | — |
-| P9 — payroll UI kengaytirish | O03, O04, O07, O10, O12, O13, O14 | ⬜ | — |
+| **P14 — dizayn namunasidan (oylik-ish-varaqasi.html) O05/O12** | O05, O12 | ✅ | (shu partiyada) |
+| P8 — payroll UI ishonchliligi (qolgani) | O06, O08, O09, O11 | ⬜ | — |
+| P9 — payroll UI kengaytirish (qolgani) | O03, O04, O07 (qisman bajarilgan), O10, O13, O14 | ⬜ | — |
 | P10 — billing snapshot/allocation (katta) | F10, F11, W14-W20 ruhida | ⬜ | Katta — alohida reja kerak |
 | **P13 — Payroll-avans + berish tartibi tizimi (2026-09-17, foydalanuvchi so'rovi)** | Yangi `StaffAdvance`, Salary qisman to'lov, `payroll_review` ruxsati | ✅ | (shu partiyada) |
 | P11 — RBAC granular payroll ruxsatlari (approve/pay ajratish) | 11-bo'lim (payroll.calculate/approve/pay/...) | 🟡 | P13'da qisman bajarildi (pastga q.) |
@@ -58,14 +59,14 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | O02 | P1 | ✅ | Draft yaratish (`POST /`) va tasdiqlash (`POST /:id/approve`) endi boshqa basis (accrual/cash) allaqachon tasdiqlangan/to'langan bo'lsa bloklaydi — bitta davr uchun ikkita mustaqil to'lanadigan majburiyat endi yaratilmaydi. — `server/routes/teacherPayroll.ts` |
 | O03 | P1 | ⬜ | Cash allocation yo'q — katta, P10 (Receipt/PaymentAllocation modeli kerak). |
 | O04 | P1 | ⬜ | Guruh yig'indisi va header mos emas (O03 bilan bog'liq) — P10. |
-| O05 | P1 | ⬜ | Tasdiqlangandan keyin UI saqlangan snapshot'ni emas, live preview'ni ko'rsatadi — P8. |
+| O05 | P1 | ✅ | Tasdiqlangan/to'langan payroll uchun UI endi `sourceSnapshot`dan (muzlatilgan, tasdiqlash paytidagi holat) ko'rsatadi, live preview'dan emas — 🔒 "Saqlangan hisob" belgisi bilan. Joriy davomat/narx asosida qayta hisoblansa natija farq qilishi mumkinligi alohida ogohlantirishda ko'rsatiladi (tasdiqlangan raqamning o'zi o'zgarmaydi). Brauzerda tasdiqlangan. — `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 | O06 | P1 | ⬜ | Staff formda dirty-state himoyasi yo'q — P8. |
 | O07 | P1 | ✅ | `POST /salary` endi `paid`ni request body'dan umuman olmaydi — yaratilgan/yangilangan yozuv har doim `paid:false, paidAt:null` bilan boshlanadi. "To'landi" holatiga faqat `PUT /:id/pay` orqali (xarajat yozuvi bilan atomar) o'tiladi. Joriy UI hech qachon `paid` yubormagani uchun xatti-harakat o'zgarmadi, faqat API-darajasidagi teshik yopildi. — `server/routes/salary.ts` |
 | O08 | P1 | ⬜ | Draft qayta hisoblash version/hash bilan qulflanmagan — P8. |
 | O09 | P2 | ⬜ | Ro'yxat mutatsiyadan keyin invalidatsiya qilinmaydi — P8. |
 | O10 | P2 | ⬜ | Staff attendance oxirgi-200-yozuv + client-side oy filtri — P9. |
 | O11 | P2 | ⬜ | Staff form async salary bilan qayta sinxronlanmaydi — P8. |
-| O12 | P2 | ⬜ | Har bir payout hodisasi (sana/usul/kassir/chek) alohida ko'rinmaydi — P9. |
+| O12 | P2 | ✅ | Yangi `GET /finance/teacher-payroll/:id/payouts` va `GET /salary/:id/payouts` — har bir naqd/bank to'lov (Transaction) VA avtomatik avans-qoplash (StaffAdvanceApplication) hodisasini sana/summa/usul bilan xronologik qaytaradi. UI'da yangi "To'lovlar tarixi (bu davr)" kartasi (`PayoutTimeline`). Brauzerda ikkita alohida to'lov (500000 Naqd + 800000 Bank) to'g'ri, alohida-alohida ko'rsatilgani tasdiqlandi. — `server/routes/teacherPayroll.ts`, `server/routes/salary.ts`, `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 | O13 | P2 | ⬜ | Tabelda kun/dars matritsasi yo'q — P9. |
 | O14 | P2 | ⬜ | Qidiruv/holat filtri/tekshirish navbati/ommaviy amal yo'q — P9. |
 

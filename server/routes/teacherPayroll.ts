@@ -310,6 +310,40 @@ router.post('/:id/pay', canManageMoney, async (req, res) => {
     }
 });
 
+// GET /api/finance/teacher-payroll/:id/payouts — O12 tuzatish (2026-09-16
+// audit): "Tarix" ilgari faqat davr darajasidagi jami holatni ko'rsatardi —
+// har bir ALOHIDA to'lov hodisasi (sana/summa/usul) ko'rinmasdi. Endi
+// naqd/bank to'lovlar (Transaction) va avtomatik avans qoplashlar
+// (StaffAdvanceApplication) bitta xronologik ro'yxatga birlashtiriladi.
+router.get('/:id/payouts', canReview, async (req, res) => {
+    try {
+        const [transactions, advanceApplications] = await Promise.all([
+            prisma.transaction.findMany({
+                where: { sourceType: 'teacher_payroll', sourceId: req.params.id },
+                orderBy: { createdAt: 'desc' },
+            }),
+            prisma.staffAdvanceApplication.findMany({
+                where: { appliedToType: 'teacher_payroll', appliedToId: req.params.id },
+                include: { advance: { select: { date: true, method: true } } },
+                orderBy: { createdAt: 'desc' },
+            }),
+        ]);
+        const events = [
+            ...transactions.map(t => ({
+                kind: 'payout' as const, id: t.id, date: t.date, amount: t.amount,
+                method: t.method, createdAt: t.createdAt,
+            })),
+            ...advanceApplications.map(a => ({
+                kind: 'advance' as const, id: a.id, date: a.advance.date, amount: a.amount,
+                method: a.advance.method, createdAt: a.createdAt,
+            })),
+        ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        res.json(events);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // DELETE /api/finance/teacher-payroll/:id — faqat DRAFT holatidagi yozuvni olib tashlash
 router.delete('/:id', canManageMoney, async (req, res) => {
     try {

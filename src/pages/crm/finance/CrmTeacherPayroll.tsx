@@ -49,12 +49,18 @@ interface Payroll {
   id: string; teacherId: string; month: string; basis: 'accrual' | 'cash';
   accruedAmount: number; paidAmount: number; advanceApplied: number; status: 'draft' | 'approved' | 'paid';
   createdAt: string; approvedAt: string | null; remaining?: number;
+  sourceSnapshot?: string | null;
 }
 // Payroll-avans (2026-09-17): "hisoblanishi berilishi degani emas" —
 // xodimga oldindan berilgan, hali oylikka hisobga olinmagan pul.
 interface Advance {
   id: string; personType: 'teacher' | 'staff'; personId: string;
   amount: number; remaining: number; date: string; method: string; notes?: string | null; createdAt: string;
+}
+// O12 tuzatish (2026-09-16 audit): davr darajasidagi jami emas, har bir
+// ALOHIDA to'lov/avans-qoplash hodisasi — sana/summa/usul bilan.
+interface PayoutEvent {
+  kind: 'payout' | 'advance'; id: string; date: string; amount: number; method: string; createdAt: string;
 }
 interface StaffAttSummary {
   linked: boolean; staffMemberId?: string;
@@ -109,6 +115,7 @@ export default function CrmTeacherPayroll() {
   const [cashPreview, setCashPreview] = useState<Preview | null>(null);
   const [payroll, setPayroll] = useState<Payroll | null>(null);
   const [history, setHistory] = useState<Payroll[]>([]);
+  const [payoutEvents, setPayoutEvents] = useState<PayoutEvent[]>([]);
   const [staffAtt, setStaffAtt] = useState<StaffAttSummary | null>(null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -118,6 +125,7 @@ export default function CrmTeacherPayroll() {
   const [staffSalaries, setStaffSalaries] = useState<SalaryRow[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [staffAttendance, setStaffAttendance] = useState<StaffAttendanceRow[]>([]);
+  const [staffPayoutEvents, setStaffPayoutEvents] = useState<PayoutEvent[]>([]);
   const [staffDetailLoading, setStaffDetailLoading] = useState(false);
   const [staffForm, setStaffForm] = useState({ baseSalary: 0, bonus: 0, deduction: 0, notes: '' });
 
@@ -206,7 +214,28 @@ export default function CrmTeacherPayroll() {
 
   useEffect(() => { if (section === 'teachers' && selectedTeacherId) void loadTeacherDetail(); }, [section, selectedTeacherId, loadTeacherDetail]);
 
-  const activePreview = basis === 'accrual' ? accrualPreview : cashPreview;
+  // O12 tuzatish: tanlangan davr o'zgarganda shu davrning ALOHIDA to'lov/
+  // avans-qoplash hodisalari (individual events) yuklanadi.
+  useEffect(() => {
+    if (!payroll) { setPayoutEvents([]); return; }
+    api.get(`/finance/teacher-payroll/${payroll.id}/payouts`).then(res => setPayoutEvents(res.data || [])).catch(() => setPayoutEvents([]));
+  }, [payroll?.id]);
+
+  const livePreview = basis === 'accrual' ? accrualPreview : cashPreview;
+  // O05 tuzatish (2026-09-16 audit): payroll tasdiqlangandan/to'langandan
+  // keyin ham sahifa doim JONLI (bugungi davomat/narx bilan qayta hisoblangan)
+  // preview'ni ko'rsatardi — agar davomat orqada o'zgartirilsa, tasdiqlangan
+  // raqam O'ZGARMAYDI, lekin pastdagi tabel jim ravishda BOSHQA (yangi)
+  // sonlarni ko'rsatardi, "bu qayerdan chiqdi?" ishonchini yo'qotardi. Endi
+  // draft bo'lmagan payroll uchun `sourceSnapshot` (aynan tasdiqlash paytida
+  // muzlatilgan breakdown) ko'rsatiladi; joriy live hisob undan farq qilsa,
+  // pastda alohida ogohlantirish chiqadi (frozen raqam ustidan yozilmaydi).
+  const frozenSnapshot: Preview | null = useMemo(() => {
+    if (!payroll || payroll.status === 'draft' || !payroll.sourceSnapshot) return null;
+    try { return JSON.parse(payroll.sourceSnapshot) as Preview; } catch { return null; }
+  }, [payroll?.sourceSnapshot, payroll?.status]);
+  const activePreview = frozenSnapshot || livePreview;
+  const liveDiffersFromFrozen = !!frozenSnapshot && !!livePreview && Math.round(frozenSnapshot.salary) !== Math.round(livePreview.salary);
   // Server har doim authoritative `remaining`ni qaytaradi (avansni ham
   // hisobga olib) — UI formulani mustaqil takrorlamaydi; eski
   // yozuvlar/fallback uchun faqat serverdan kelmagan holatda hisoblanadi.
@@ -314,6 +343,14 @@ export default function CrmTeacherPayroll() {
 
   useEffect(() => { if (section === 'staff' && selectedStaffId) void loadStaffDetail(); }, [section, selectedStaffId, loadStaffDetail]);
 
+  // O12 tuzatish: xodim oyligi uchun ham xuddi shunday alohida hodisalar.
+  useEffect(() => {
+    const sal = selectedStaffId ? staffSalaryFor(selectedStaffId) : null;
+    if (!sal) { setStaffPayoutEvents([]); return; }
+    api.get(`/salary/${sal.id}/payouts`).then(res => setStaffPayoutEvents(res.data || [])).catch(() => setStaffPayoutEvents([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStaffId ? staffSalaryFor(selectedStaffId)?.id : null]);
+
   useEffect(() => {
     if (selectedStaff) {
       const existing = staffSalaryFor(selectedStaff.id);
@@ -415,8 +452,8 @@ export default function CrmTeacherPayroll() {
             year={year} month={month}
             basis={basis} setBasis={setBasis}
             accrualPreview={accrualPreview} cashPreview={cashPreview}
-            activePreview={activePreview}
-            payroll={payroll} history={history} remaining={remaining}
+            activePreview={activePreview} isFrozen={!!frozenSnapshot} liveDiffersFromFrozen={liveDiffersFromFrozen}
+            payroll={payroll} history={history} payoutEvents={payoutEvents} remaining={remaining}
             accrualCashDelta={accrualCashDelta}
             staffAtt={staffAtt}
             loading={detailLoading} busy={busy}
@@ -442,6 +479,7 @@ export default function CrmTeacherPayroll() {
             staff={selectedStaff}
             salary={selectedStaffSalary}
             attendance={staffAttendance}
+            payoutEvents={staffPayoutEvents}
             monthLabel={`${MONTHS[month - 1]} ${year}`}
             form={staffForm} setForm={setStaffForm}
             loading={staffDetailLoading} busy={busy}
@@ -558,7 +596,8 @@ function TeacherDetail(props: {
   teacherName: string; year: number; month: number;
   basis: 'accrual' | 'cash'; setBasis: (b: 'accrual' | 'cash') => void;
   accrualPreview: Preview | null; cashPreview: Preview | null; activePreview: Preview | null;
-  payroll: Payroll | null; history: Payroll[]; remaining: number; accrualCashDelta: number | null;
+  isFrozen: boolean; liveDiffersFromFrozen: boolean;
+  payroll: Payroll | null; history: Payroll[]; payoutEvents: PayoutEvent[]; remaining: number; accrualCashDelta: number | null;
   staffAtt: StaffAttSummary | null;
   loading: boolean; busy: boolean;
   expandedGroupId: string | null; setExpandedGroupId: (id: string | null) => void;
@@ -569,7 +608,8 @@ function TeacherDetail(props: {
 }) {
   const {
     teacherName, month, year, basis, setBasis, accrualPreview, cashPreview, activePreview,
-    payroll, history, remaining, accrualCashDelta, staffAtt, loading, busy,
+    isFrozen, liveDiffersFromFrozen,
+    payroll, history, payoutEvents, remaining, accrualCashDelta, staffAtt, loading, busy,
     expandedGroupId, setExpandedGroupId, payAmount, setPayAmount, payMethod, setPayMethod,
     outstandingAdvance, onGiveAdvance, canManageMoney,
     onBack, onCreateDraft, onApprove, onPay,
@@ -615,7 +655,7 @@ function TeacherDetail(props: {
 
             {/* Hisoblash breakdown */}
             <div className="p-5 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05]">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
                 <h2 className="text-sm font-black text-slate-900 dark:text-white">{teacherName} — {MONTHS[month - 1]} {year}</h2>
                 <div className="flex items-center gap-2">
                   {payroll && <StatusBadge status={displayPayrollStatus(payroll.status, payroll.paidAmount, payroll.advanceApplied)} />}
@@ -624,6 +664,16 @@ function TeacherDetail(props: {
                     <button onClick={() => setBasis('cash')} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${basis === 'cash' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'text-zinc-500'}`}>Tushgan</button>
                   </div>
                 </div>
+              </div>
+              {/* O05 tuzatish: tasdiqlangandan keyin bu yerdagi tabel MUZLATILGAN
+                  (tasdiqlash paytidagi) hisob — joriy davomat o'zgarsa ham bu
+                  raqamlar o'zgarmaydi, faqat pastda alohida ogohlantirish chiqadi. */}
+              <div className="mb-3">
+                {isFrozen ? (
+                  <span className="text-[10px] font-bold text-zinc-400 flex items-center gap-1"><Lock size={11} /> Saqlangan hisob — tasdiqlangan paytdagi holat, o'zgarmaydi</span>
+                ) : (
+                  <span className="text-[10px] font-bold text-blue-500">Joriy hisob-kitob (loyiha) — hali tasdiqlanmagan, qayta hisoblash bilan yangilanadi</span>
+                )}
               </div>
 
               {activePreview && (
@@ -643,6 +693,13 @@ function TeacherDetail(props: {
                     <div className="flex items-center gap-2 p-3 mb-4 rounded-xl bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 text-xs">
                       <Info size={14} className="shrink-0" />
                       Hisoblangan {formatNumber(accrualPreview.salary)} so'm, tushgan pulga qarab {formatNumber(cashPreview.salary)} so'm — farq <b>{formatNumber(Math.abs(accrualCashDelta))} so'm</b> hali {accrualCashDelta > 0 ? "to'liq to'lanmagan" : ''}.
+                    </div>
+                  )}
+
+                  {isFrozen && liveDiffersFromFrozen && (
+                    <div className="flex items-center gap-2 p-3 mb-4 rounded-xl bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 text-xs">
+                      <AlertTriangle size={14} className="shrink-0" />
+                      Tasdiqlangandan keyin davomat/narx o'zgargan — joriy ma'lumot bilan qayta hisoblansa natija <b>{formatNumber((basis === 'accrual' ? accrualPreview : cashPreview)?.salary || 0)} so'm</b> bo'lardi. Tasdiqlangan summa (yuqorida) o'zgarmaydi.
                     </div>
                   )}
 
@@ -742,6 +799,9 @@ function TeacherDetail(props: {
                 </div>
               )}
             </div>
+
+            {/* O12 tuzatish: har bir to'lov/avans-qoplash hodisasi alohida */}
+            {payroll && payroll.status !== 'draft' && <PayoutTimeline events={payoutEvents} />}
           </div>
 
           {/* Tarix */}
@@ -813,12 +873,12 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
 }
 
 function StaffDetail({
-  staff, salary, attendance, monthLabel, form, setForm, loading, busy,
+  staff, salary, attendance, payoutEvents, monthLabel, form, setForm, loading, busy,
   remaining, payAmount, setPayAmount, payMethod, setPayMethod,
   outstandingAdvance, onGiveAdvance, canManageMoney,
   onBack, onSave, onPay,
 }: {
-  staff: StaffPerson | null; salary: SalaryRow | null; attendance: StaffAttendanceRow[]; monthLabel: string;
+  staff: StaffPerson | null; salary: SalaryRow | null; attendance: StaffAttendanceRow[]; payoutEvents: PayoutEvent[]; monthLabel: string;
   form: { baseSalary: number; bonus: number; deduction: number; notes: string };
   setForm: (f: { baseSalary: number; bonus: number; deduction: number; notes: string }) => void;
   loading: boolean; busy: boolean;
@@ -964,9 +1024,41 @@ function StaffDetail({
                 </div>
               )}
             </div>
+
+            {/* O12 tuzatish: har bir to'lov/avans-qoplash hodisasi alohida */}
+            {salary && isLocked && <PayoutTimeline events={payoutEvents} />}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// O12 tuzatish (2026-09-16 audit): "Tarix" panelidagi davr darajasidagi
+// jamidan farqli — bu shu BITTA davrga tegishli har bir alohida to'lov
+// (naqd/bank) yoki avtomatik avans-qoplash hodisasini sana/summa/usul bilan
+// ko'rsatadi. TeacherDetail va StaffDetail ikkalasi uchun umumiy.
+function PayoutTimeline({ events }: { events: PayoutEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="p-5 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05]">
+      <h3 className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+        <History size={13} /> To'lovlar tarixi (bu davr)
+      </h3>
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {events.map(e => (
+          <div key={e.id} className="flex items-center justify-between py-2.5 text-xs">
+            <div className="flex items-center gap-2">
+              {e.kind === 'advance' ? <HandCoins size={13} className="text-amber-500 shrink-0" /> : <Check size={13} className="text-emerald-500 shrink-0" />}
+              <div>
+                <p className="font-bold text-slate-700 dark:text-zinc-300">{e.date} · {e.method}</p>
+                <p className="text-zinc-400">{e.kind === 'advance' ? 'Avansdan qoplandi' : "Naqd/bank to'lovi"}</p>
+              </div>
+            </div>
+            <span className={`font-black ${e.kind === 'advance' ? 'text-amber-600' : 'text-emerald-600'}`}>{formatNumber(e.amount)} so'm</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
