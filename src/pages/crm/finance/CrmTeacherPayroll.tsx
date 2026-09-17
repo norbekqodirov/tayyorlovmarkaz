@@ -176,11 +176,18 @@ export default function CrmTeacherPayroll() {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => {
+  // O09 tuzatish (2026-09-16 audit): ilgari faqat `monthStr` o'zgarganda
+  // qayta yuklanardi — tafsilot sahifasida tasdiqlash/to'lov qilib
+  // ro'yxatga qaytilganda, o'sha xodimning ro'yxatdagi holat/summasi
+  // ESKI (mutatsiyadan oldingi) holicha qolib ketardi, foydalanuvchi
+  // sahifani qo'lda yangilamaguncha. Endi qayta ishlatiladigan funksiya —
+  // har bir mutatsiyadan keyin ham chaqiriladi.
+  const refreshTeacherPayrollList = useCallback(() => {
     api.get('/finance/teacher-payroll', { params: { month: monthStr } })
       .then(res => setTeacherPayrolls(res.data || []))
       .catch(() => setTeacherPayrolls([]));
   }, [monthStr]);
+  useEffect(() => { refreshTeacherPayrollList(); }, [refreshTeacherPayrollList]);
 
   const teacherStatusFor = useCallback((teacherId: string): Payroll | null => {
     return teacherPayrolls.find(p => p.teacherId === teacherId && p.basis === basis) || null;
@@ -266,6 +273,7 @@ export default function CrmTeacherPayroll() {
       setPayroll(res.data);
       showToast(payroll ? 'Qayta hisoblandi' : 'Loyiha yaratildi', 'success');
       void loadTeacherDetail();
+      refreshTeacherPayrollList();
     } catch (e: any) {
       showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
     } finally { setBusy(false); }
@@ -279,6 +287,7 @@ export default function CrmTeacherPayroll() {
       setPayroll(res.data);
       showToast('Tasdiqlandi', 'success');
       void loadTeacherDetail();
+      refreshTeacherPayrollList();
     } catch (e: any) {
       showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
     } finally { setBusy(false); }
@@ -292,6 +301,7 @@ export default function CrmTeacherPayroll() {
       setPayroll(res.data);
       showToast("To'lov qayd etildi", 'success');
       void loadTeacherDetail();
+      refreshTeacherPayrollList();
     } catch (e: any) {
       showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
     } finally { setBusy(false); }
@@ -351,18 +361,37 @@ export default function CrmTeacherPayroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStaffId ? staffSalaryFor(selectedStaffId)?.id : null]);
 
+  // O06/O11 tuzatish (2026-09-16 audit): ilgari bu effekt FAQAT
+  // selectedStaffId/monthStr o'zgarganda ishlardi — agar `loadStaffDetail`ning
+  // ASINXRON so'rovi KEYINROQ (bu effekt allaqachon eski/bo'sh qiymat bilan
+  // ishga tushgandan keyin) haqiqiy saqlangan maosh ma'lumotini keltirsa,
+  // forma ESKI holicha qolib ketardi (O11). Bundan tashqari, foydalanuvchi
+  // formani tahrirlab, hali SAQLAMASDAN "To'lov qayd etish"ga bossa, to'lov
+  // ESKI (saqlangan) summaga nisbatan hisoblanardi — forma o'zgarishi
+  // yo'qolgandek ko'rinardi (O06). Endi: (1) forma "dirty" (saqlanmagan
+  // o'zgarish bor) holatida serverdan kelgan ma'lumot uni QAYTA YOZMAYDI;
+  // (2) shaxs/oy almashganda dirty holati asl holiga qaytadi; (3) dirty
+  // paytida to'lov bloklanadi (StaffDetail'da ko'rsatiladi).
+  const existingStaffSalary = selectedStaffId ? staffSalaryFor(selectedStaffId) : null;
+  const [staffFormDirty, setStaffFormDirty] = useState(false);
+  useEffect(() => { setStaffFormDirty(false); }, [selectedStaffId, monthStr]);
   useEffect(() => {
-    if (selectedStaff) {
-      const existing = staffSalaryFor(selectedStaff.id);
-      setStaffForm({
-        baseSalary: existing?.baseSalary ?? selectedStaff.salary ?? 0,
-        bonus: existing?.bonus ?? 0,
-        deduction: existing?.deduction ?? 0,
-        notes: existing?.notes ?? '',
-      });
-    }
+    if (!selectedStaff || staffFormDirty) return;
+    setStaffForm({
+      baseSalary: existingStaffSalary?.baseSalary ?? selectedStaff.salary ?? 0,
+      bonus: existingStaffSalary?.bonus ?? 0,
+      deduction: existingStaffSalary?.deduction ?? 0,
+      notes: existingStaffSalary?.notes ?? '',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStaffId, monthStr]);
+  }, [
+    selectedStaffId, monthStr, staffFormDirty,
+    existingStaffSalary?.baseSalary, existingStaffSalary?.bonus, existingStaffSalary?.deduction, existingStaffSalary?.notes,
+  ]);
+  const setStaffFormTracked = useCallback((f: { baseSalary: number; bonus: number; deduction: number; notes: string }) => {
+    setStaffForm(f);
+    setStaffFormDirty(true);
+  }, []);
 
   const [payStaffAmount, setPayStaffAmount] = useState(0);
   const [payStaffMethod, setPayStaffMethod] = useState('Bank');
@@ -372,11 +401,13 @@ export default function CrmTeacherPayroll() {
 
   // Xodim tanlanganda/oylik yozuvi yuklanganda to'lov summasi qoldiqqa
   // moslashtiriladi — TeacherDetail bilan bir xil "standart to'liq qoldiq"
-  // taklifi (qo'lda o'zgartirish mumkin).
+  // taklifi (qo'lda o'zgartirish mumkin). `total` ham deps'da — aks holda
+  // "Saqlash" bilan tarkib (masalan bonus) o'zgarganda taklif summasi ESKI
+  // (saqlashdan oldingi) qoldiqda qotib qolardi.
   useEffect(() => {
     setPayStaffAmount(staffRemaining);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStaffSalary?.id, selectedStaffSalary?.paidAmount, selectedStaffSalary?.advanceApplied]);
+  }, [selectedStaffSalary?.id, selectedStaffSalary?.paidAmount, selectedStaffSalary?.advanceApplied, selectedStaffSalary?.total]);
 
   const saveStaffSalary = async () => {
     if (!selectedStaffId) return;
@@ -384,6 +415,7 @@ export default function CrmTeacherPayroll() {
     try {
       const res = await api.post('/salary', { staffId: selectedStaffId, month: monthStr, ...staffForm });
       setStaffSalaries(prev => [...prev.filter(s => s.id !== res.data.id), res.data]);
+      setStaffFormDirty(false);
       showToast('Saqlandi', 'success');
     } catch (e: any) {
       showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
@@ -395,7 +427,10 @@ export default function CrmTeacherPayroll() {
   // birinchi to'lovda avans avtomatik hisobga olinadi).
   const payStaffSalary = async () => {
     const sal = selectedStaffId ? staffSalaryFor(selectedStaffId) : null;
-    if (!sal || payStaffAmount <= 0) return;
+    // O06 tuzatish: saqlanmagan forma o'zgarishi bo'lsa to'lov bloklanadi —
+    // aks holda summa ekranda ko'ringan (hali saqlanmagan) qiymatga emas,
+    // serverdagi ESKI qiymatga nisbatan hisoblanib qolardi.
+    if (!sal || payStaffAmount <= 0 || staffFormDirty) return;
     setBusy(true);
     try {
       const res = await api.put(`/salary/${sal.id}/pay`, { amount: payStaffAmount, method: payStaffMethod });
@@ -481,7 +516,7 @@ export default function CrmTeacherPayroll() {
             attendance={staffAttendance}
             payoutEvents={staffPayoutEvents}
             monthLabel={`${MONTHS[month - 1]} ${year}`}
-            form={staffForm} setForm={setStaffForm}
+            form={staffForm} setForm={setStaffFormTracked} dirty={staffFormDirty}
             loading={staffDetailLoading} busy={busy}
             remaining={staffRemaining}
             payAmount={payStaffAmount} setPayAmount={setPayStaffAmount}
@@ -873,7 +908,7 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
 }
 
 function StaffDetail({
-  staff, salary, attendance, payoutEvents, monthLabel, form, setForm, loading, busy,
+  staff, salary, attendance, payoutEvents, monthLabel, form, setForm, dirty, loading, busy,
   remaining, payAmount, setPayAmount, payMethod, setPayMethod,
   outstandingAdvance, onGiveAdvance, canManageMoney,
   onBack, onSave, onPay,
@@ -881,6 +916,7 @@ function StaffDetail({
   staff: StaffPerson | null; salary: SalaryRow | null; attendance: StaffAttendanceRow[]; payoutEvents: PayoutEvent[]; monthLabel: string;
   form: { baseSalary: number; bonus: number; deduction: number; notes: string };
   setForm: (f: { baseSalary: number; bonus: number; deduction: number; notes: string }) => void;
+  dirty: boolean;
   loading: boolean; busy: boolean;
   remaining: number; payAmount: number; setPayAmount: (n: number) => void;
   payMethod: string; setPayMethod: (m: string) => void;
@@ -1006,15 +1042,22 @@ function StaffDetail({
                       <p className="text-lg font-black text-emerald-600">{formatNumber(total)} so'm</p>
                     </div>
                   </div>
+                  {/* O06 tuzatish: dizayn namunasidagi bilan bir xil ogohlantirish —
+                      saqlanmagan o'zgarish bo'lsa to'lov summasi/tugmasi ko'rinmaydi. */}
+                  {dirty && (
+                    <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 text-xs font-bold">
+                      <AlertTriangle size={13} className="shrink-0" /> Saqlanmagan o'zgarishlar — to'lovdan oldin saqlang
+                    </div>
+                  )}
                   <div className="flex gap-2 items-center flex-wrap">
                     <Button onClick={onSave} disabled={busy} variant="secondary" className="text-xs">Saqlash</Button>
-                    {salary && canManageMoney && (
+                    {salary && !dirty && canManageMoney && (
                       <>
                         <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
                         <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs"><Check size={14} /> To'lov qayd etish</Button>
                       </>
                     )}
-                    {salary && !canManageMoney && (
+                    {salary && !dirty && !canManageMoney && (
                       <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-bold">
                         <Lock size={12} /> To'lov qayd etish uchun moliya vakolati kerak
                       </span>
