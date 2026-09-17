@@ -61,6 +61,12 @@ model TeacherPayroll {
   basis          String    // "accrual" | "cash"
   accruedAmount  Float     // Tasdiqlangunga qadar qayta hisoblanishi mumkin
   paidAmount     Float     @default(0)
+  // Payroll-avans (2026-09-17): tasdiqlash vaqtida shu xodimning OLDINDAN
+  // (StaffAdvance) berilgan, hali qoplanmagan summasidan avtomatik qoplangan
+  // qism — "berilgan" (paidAmount, keyingi qo'lda to'lovlar) dan ALOHIDA
+  // ko'rsatiladi, chunki bu pul allaqachon avans sifatida berib bo'lingan,
+  // endi shunchaki QAYSI davr hisobiga o'tkazilgani belgilanmoqda.
+  advanceApplied Float     @default(0)
   status         String    @default("draft") // draft | approved | paid
   sourceSnapshot String?   @db.Text // JSON — hisoblangan paytdagi breakdown (audit uchun)
   notes          String?
@@ -69,6 +75,45 @@ model TeacherPayroll {
   updatedAt      DateTime  @updatedAt
 
   @@unique([teacherId, month, basis])
+}
+
+// Payroll-avans tizimi (2026-09-17, foydalanuvchi so'rovi): "oylik
+// hisoblanishi — berilishi degani emas; xodim oldindan avans olishi mumkin".
+// Bitta umumiy jadval HAM o'qituvchi (personType="teacher", personId=User.id)
+// HAM boshqa xodim (personType="staff", personId=StaffMember.id) uchun —
+// avans shaxsga tegishli, muayyan oyga emas (oy tasdiqlanganda avtomatik
+// eng eski avansdan boshlab qoplanadi, FIFO).
+model StaffAdvance {
+  id          String   @id @default(uuid())
+  personType  String   // "teacher" | "staff"
+  personId    String
+  amount      Float    // berilgan asl summa
+  remaining   Float    // hali qoplanmagan qoldiq (amount'dan boshlanadi, qoplangan sari kamayadi)
+  date        String
+  method      String   @default("Naqd")
+  notes       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  applications StaffAdvanceApplication[]
+
+  @@index([personType, personId])
+}
+
+// Bitta avans BIR NECHTA davrga bo'lib qoplanishi mumkin (agar avans
+// bitta oylikdan katta bo'lsa) — shuning uchun qoplash alohida, ko'p
+// yozuvli jadvalda: "qaysi avansdan, qanchasi, qaysi oylik/maosh yozuviga
+// o'tkazilgani" har doim orqaga qarab tekshirilishi mumkin.
+model StaffAdvanceApplication {
+  id            String       @id @default(uuid())
+  advanceId     String
+  advance       StaffAdvance @relation(fields: [advanceId], references: [id], onDelete: Cascade)
+  amount        Float
+  appliedToType String       // "teacher_payroll" | "salary"
+  appliedToId   String
+  createdAt     DateTime     @default(now())
+
+  @@index([appliedToType, appliedToId])
 }
 
 // ============================================
@@ -1219,6 +1264,13 @@ model Salary {
   bonus      Float       @default(0)
   deduction  Float       @default(0)
   total      Float       @default(0)
+  // Payroll-avans (2026-09-17): TeacherPayroll bilan bir xil qisman
+  // to'lash + avans naqshi — "paid" endi FAQAT (paidAmount+advanceApplied
+  // >= total) bo'lganda true bo'ladigan hosila belgi, PUT /:id/pay esa
+  // qisman summa bilan chaqirilishi mumkin (avval faqat to'liq/hech qanday
+  // oraliq holatsiz edi).
+  paidAmount     Float     @default(0)
+  advanceApplied Float     @default(0)
   paid       Boolean     @default(false)
   paidAt     DateTime?
   notes      String?

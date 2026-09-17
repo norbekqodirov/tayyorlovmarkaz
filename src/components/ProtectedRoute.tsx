@@ -4,7 +4,11 @@ import { Navigate, useLocation } from 'react-router-dom';
 interface ProtectedRouteProps {
   children: ReactNode;
   allowedRoles?: string[];
-  requiredPermission?: string;
+  // Payroll-avans (2026-09-17): ba'zi sahifalar ("Xodimlar Oyligi") endi
+  // 'finance' YOKI 'payroll_review' (HR) ruxsatlaridan BIRI bilan ochiq —
+  // shuning uchun endi array ham qabul qilinadi (mavjud bitta-string
+  // chaqiruvlar o'zgarishsiz ishlayveradi).
+  requiredPermission?: string | string[];
 }
 
 function parsePermissions(user: any): string[] {
@@ -13,17 +17,18 @@ function parsePermissions(user: any): string[] {
   try { return JSON.parse(user.permissions); } catch { return []; }
 }
 
-function canAccess(user: any, allowedRoles?: string[], requiredPermission?: string): boolean {
+function canAccess(user: any, allowedRoles?: string[], requiredPermission?: string | string[]): boolean {
   if (!user) return false;
   const role = String(user.role).toUpperCase();
   // ADMIN and SUPER_ADMIN always have full access
   if (role === 'ADMIN' || role === 'SUPER_ADMIN') return true;
 
   const perms = parsePermissions(user);
+  const requiredKeys = Array.isArray(requiredPermission) ? requiredPermission : (requiredPermission ? [requiredPermission] : []);
 
   // If user has a custom permissions array, use it
   if (perms.length > 0) {
-    if (requiredPermission) return perms.includes(requiredPermission);
+    if (requiredKeys.length > 0) return requiredKeys.some(key => perms.includes(key));
     // No required permission = admin-only route
     return false;
   }

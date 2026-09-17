@@ -162,7 +162,7 @@ export default function App() {
 
               {/* ─── Moliya ─── */}
               <Route path="finance"   element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmFinance /></ProtectedRoute>} />
-              <Route path="teacher-payroll" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmTeacherPayroll /></ProtectedRoute>} />
+              <Route path="teacher-payroll" element={<ProtectedRoute requiredPermission={['finance', 'payroll_review']} allowedRoles={['ADMIN','MANAGER']}><CrmTeacherPayroll /></ProtectedRoute>} />
               <Route path="transaction-categories" element={<ProtectedRoute requiredPermission="transaction_categories" allowedRoles={['ADMIN','MANAGER']}><CrmCategories /></ProtectedRoute>} />
               <Route path="discounts" element={<ProtectedRoute requiredPermission="discounts" allowedRoles={['ADMIN','MANAGER']}><CrmDiscounts /></ProtectedRoute>} />
 

@@ -9,16 +9,30 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/authorize.js';
+import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { calculateTeacherPayroll, PayrollBasis } from '../services/teacherPayroll.js';
+import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 
 const router = express.Router();
 
-router.use(requireAuth, requireMinRole('MANAGER'), requirePermission('finance'));
+// Payroll-avans partiyasi (2026-09-17): ilgari HAMMA route 'finance'ni
+// talab qilardi. Foydalanuvchi so'rovi — oylik HISOBLASH (davomat/tabelni
+// ko'rib chiqish) HR'ga tegishli bo'lishi mumkin, TASDIQLASH/TO'LOV esa
+// pul harakati yaratadigan, moliyaviy vakolat talab qiladigan amal. Endi:
+// - ko'rish/hisoblash (preview, list, draft yaratish/qayta hisoblash) —
+//   'finance' YOKI 'payroll_review' (HR) yetarli;
+// - tasdiqlash/to'lov/o'chirish — FAQAT 'finance'.
+router.use(requireAuth, requireMinRole('MANAGER'));
+const canReview = requireAnyPermission(['finance', 'payroll_review']);
+const canManageMoney = requirePermission('finance');
 
 function parseBasis(raw: any): PayrollBasis {
     return raw === 'cash' ? 'cash' : 'accrual';
+}
+
+function remainingOf(row: { accruedAmount: number; paidAmount: number; advanceApplied: number }): number {
+    return Math.max(0, row.accruedAmount - row.paidAmount - row.advanceApplied);
 }
 
 // GET /api/finance/teacher-payroll/teachers-list — Finance-audit (2026-09-16),
@@ -29,7 +43,7 @@ function parseBasis(raw: any): PayrollBasis {
 // Bu yerda 'finance' ruxsati allaqachon yuqorida tekshirilgan (router.use),
 // shuning uchun tor, faqat kerakli maydonlarni qaytaruvchi maxsus endpoint —
 // email/telefon/permissions kabi HR-maxfiy ma'lumotlarsiz.
-router.get('/teachers-list', async (_req, res) => {
+router.get('/teachers-list', canReview, async (_req, res) => {
     try {
         const teachers = await prisma.user.findMany({
             where: { role: 'TEACHER', isActive: true },
@@ -44,7 +58,7 @@ router.get('/teachers-list', async (_req, res) => {
 
 // GET /api/finance/teacher-payroll/preview?teacherId=&year=&month=&basis=
 // Faqat hisoblash — hech narsa yozilmaydi (draft ham yaratilmaydi).
-router.get('/preview', async (req, res) => {
+router.get('/preview', canReview, async (req, res) => {
     try {
         const { teacherId, year, month, basis } = req.query as Record<string, string>;
         if (!teacherId || !year || !month) {
@@ -63,7 +77,7 @@ router.get('/preview', async (req, res) => {
 // allaqachon ishlaydigan bog'lanish naqshi (staffPortal.ts'dagi
 // getOrCreateStaffMember() bilan bir xil): ikkalasi ham BIR XIL Telegram
 // hisobiga ulangan bo'lsa, `telegramChatId` orqali moslashtiriladi.
-router.get('/:teacherId/staff-attendance', async (req, res) => {
+router.get('/:teacherId/staff-attendance', canReview, async (req, res) => {
     try {
         const { month } = req.query as { month?: string };
         const teacher = await prisma.user.findUnique({
@@ -100,7 +114,7 @@ router.get('/:teacherId/staff-attendance', async (req, res) => {
 });
 
 // GET /api/finance/teacher-payroll?teacherId=&month=
-router.get('/', async (req, res) => {
+router.get('/', canReview, async (req, res) => {
     try {
         const { teacherId, month } = req.query as Record<string, string>;
         const where: any = {};
@@ -111,7 +125,9 @@ router.get('/', async (req, res) => {
             include: { teacher: { select: { id: true, name: true } } },
             orderBy: [{ month: 'desc' }, { createdAt: 'desc' }],
         });
-        res.json(rows);
+        // UI moliyaviy formulani mustaqil takrorlamasin — server har doim
+        // authoritative `remaining`ni ham qaytaradi.
+        res.json(rows.map(r => ({ ...r, remaining: remainingOf(r) })));
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -120,7 +136,7 @@ router.get('/', async (req, res) => {
 // POST /api/finance/teacher-payroll — draft yaratish/qayta hisoblash
 // Faqat hali DRAFT bo'lgan (yoki mavjud bo'lmagan) yozuv uchun ishlaydi —
 // tasdiqlangan/to'langan yozuv bu yo'l orqali umuman o'zgartirilmaydi.
-router.post('/', async (req, res) => {
+router.post('/', canReview, async (req, res) => {
     try {
         const { teacherId, year, month, basis: rawBasis } = req.body as { teacherId: string; year: number; month: number; basis?: string };
         if (!teacherId || !year || !month) {
@@ -167,14 +183,19 @@ router.post('/', async (req, res) => {
             create: data,
             update: data,
         });
-        res.json(payroll);
+        const outstandingAdvance = await getOutstandingAdvanceTotal(prisma, 'teacher', teacherId);
+        res.json({ ...payroll, remaining: remainingOf(payroll), outstandingAdvance });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// POST /api/finance/teacher-payroll/:id/approve — draft -> approved, summa muzlaydi
-router.post('/:id/approve', async (req, res) => {
+// POST /api/finance/teacher-payroll/:id/approve — draft -> approved, summa muzlaydi.
+// Payroll-avans (2026-09-17): shu daqiqada xodimning HALI qoplanmagan
+// avanslari (agar bo'lsa) yangi tasdiqlangan summadan avtomatik qoplanadi —
+// "hisoblanishi to'lanishi degani emas, lekin oldindan berilgan pul ham
+// yo'qolib ketmasin, shu davrga hisobga olinsin" talabi shu yerda bajariladi.
+router.post('/:id/approve', canManageMoney, async (req, res) => {
     try {
         const draft = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
         if (!draft) return res.status(404).json({ message: 'Topilmadi' });
@@ -192,15 +213,31 @@ router.post('/:id/approve', async (req, res) => {
             });
         }
 
-        const { count } = await prisma.teacherPayroll.updateMany({
-            where: { id: req.params.id, status: 'draft' },
-            data: { status: 'approved', approvedAt: new Date() },
+        const result = await prisma.$transaction(async (tx) => {
+            const { count } = await tx.teacherPayroll.updateMany({
+                where: { id: req.params.id, status: 'draft' },
+                data: { status: 'approved', approvedAt: new Date() },
+            });
+            if (count === 0) return { applied: false };
+
+            const advanceApplied = await applyOutstandingAdvances(
+                tx, 'teacher', draft.teacherId, draft.accruedAmount, 'teacher_payroll', draft.id,
+            );
+            const willBeFullyCovered = advanceApplied >= draft.accruedAmount;
+            const updated = await tx.teacherPayroll.update({
+                where: { id: req.params.id },
+                data: {
+                    advanceApplied,
+                    status: willBeFullyCovered ? 'paid' : 'approved',
+                },
+            });
+            return { applied: true, updated };
         });
-        if (count === 0) {
+
+        if (!result.applied) {
             return res.status(400).json({ message: "Faqat 'draft' holatidagi yozuv tasdiqlanishi mumkin" });
         }
-        const updated = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
-        res.json(updated);
+        res.json({ ...result.updated, remaining: remainingOf(result.updated) });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -209,7 +246,7 @@ router.post('/:id/approve', async (req, res) => {
 // POST /api/finance/teacher-payroll/:id/pay — qisman/to'liq to'lov qayd etish
 // RF-03/RF-04 bilan bir xil atomar naqsh: holat/qoldiq tekshiruvi va
 // Transaction yozuvi BITTA $transaction ichida.
-router.post('/:id/pay', async (req, res) => {
+router.post('/:id/pay', canManageMoney, async (req, res) => {
     try {
         const { amount, method } = req.body as { amount: number; method?: string };
         const numAmount = Number(amount);
@@ -225,7 +262,7 @@ router.post('/:id/pay', async (req, res) => {
         if (payroll.status === 'draft') {
             return res.status(400).json({ message: "Avval oylik tasdiqlanishi kerak" });
         }
-        const remaining = payroll.accruedAmount - payroll.paidAmount;
+        const remaining = remainingOf(payroll);
         if (numAmount > remaining) {
             return res.status(400).json({ message: `Qoldiqdan (${remaining}) ortiq summa to'lanmaydi` });
         }
@@ -233,7 +270,7 @@ router.post('/:id/pay', async (req, res) => {
         const todayStr = todayDateStr();
         const result = await prisma.$transaction(async (tx) => {
             const newPaidAmount = payroll.paidAmount + numAmount;
-            const willBeFullyPaid = newPaidAmount >= payroll.accruedAmount;
+            const willBeFullyPaid = newPaidAmount + payroll.advanceApplied >= payroll.accruedAmount;
 
             const { count } = await tx.teacherPayroll.updateMany({
                 where: { id: req.params.id, paidAmount: payroll.paidAmount },
@@ -267,14 +304,14 @@ router.post('/:id/pay', async (req, res) => {
             return res.status(409).json({ message: "Boshqa so'rov shu vaqtda to'lov qildi — qoldiqni yangilab qayta urinib ko'ring" });
         }
 
-        res.json(result.updated);
+        res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
 });
 
 // DELETE /api/finance/teacher-payroll/:id — faqat DRAFT holatidagi yozuvni olib tashlash
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canManageMoney, async (req, res) => {
     try {
         const payroll = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id }, select: { status: true } });
         if (!payroll) return res.status(404).json({ message: 'Topilmadi' });

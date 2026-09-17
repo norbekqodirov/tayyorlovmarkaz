@@ -19,7 +19,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | P8 — payroll UI ishonchliligi | O05, O06, O08, O09, O11 | ⬜ | — |
 | P9 — payroll UI kengaytirish | O03, O04, O07, O10, O12, O13, O14 | ⬜ | — |
 | P10 — billing snapshot/allocation (katta) | F10, F11, W14-W20 ruhida | ⬜ | Katta — alohida reja kerak |
-| P11 — RBAC granular payroll ruxsatlari | 11-bo'lim (payroll.calculate/approve/pay/...) | ⬜ | Biznes qaror kerak |
+| **P13 — Payroll-avans + berish tartibi tizimi (2026-09-17, foydalanuvchi so'rovi)** | Yangi `StaffAdvance`, Salary qisman to'lov, `payroll_review` ruxsati | ✅ | (shu partiyada) |
+| P11 — RBAC granular payroll ruxsatlari (approve/pay ajratish) | 11-bo'lim (payroll.calculate/approve/pay/...) | 🟡 | P13'da qisman bajarildi (pastga q.) |
 | P12 — kassa/bank/reconciliation | W24-W26 | ⬜ | Katta — alohida reja kerak |
 
 ## F01–F22 (Moliya)
@@ -68,6 +69,28 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | O13 | P2 | ⬜ | Tabelda kun/dars matritsasi yo'q — P9. |
 | O14 | P2 | ⬜ | Qidiruv/holat filtri/tekshirish navbati/ommaviy amal yo'q — P9. |
 
+## P13 — Payroll-avans va berish tartibi tizimi (2026-09-17)
+
+**Foydalanuvchi so'rovi (asl matn ma'nosi):** "oylik xodimga hisoblanishi bu berilishi degani emas; berilishi alohida, hisoblangan bo'yicha beriladi, ammo birdaniga to'liq berilmasligi mumkin yoki xodim oldindan avans olishi mumkin — shunga qarab berish tartibi tizimini to'liq o'ylab chiqish kerak; balki oylik hisoblash HR'ga o'tkazilishi kerak."
+
+**Qabul qilingan yechim:**
+
+1. **Yangi `StaffAdvance` modeli** — o'qituvchi (`personType='teacher'`, `personId=User.id`) va boshqa xodim (`personType='staff'`, `personId=StaffMember.id`) uchun BITTA umumiy jadval. Avans muayyan oyga emas, SHAXSGA tegishli — "markaz oldidagi qarz" sifatida `remaining` maydonida saqlanadi.
+2. **Avtomatik, FIFO qoplash** (`server/services/staffAdvance.ts`'dagi `applyOutstandingAdvances()`): TeacherPayroll TASDIQLANGANDA yoki Salary BIRINCHI to'lovida, shu shaxsning eng ESKI avansidan boshlab, yangi hisoblangan summagacha avtomatik qopla­nadi. Bitta avans (agar bir oylikdan katta bo'lsa) bir necha davrga bo'lib qoplanishi mumkin — bu `StaffAdvanceApplication` orqali kuzatiladi (qaysi avansdan, qanchasi, qaysi davrga).
+3. **Uch alohida ko'rsatkich hamma joyda aniq ajratilgan:** Hisoblangan (accruedAmount/total) → Avansdan qoplandi (advanceApplied) → Naqd/bank to'langan (paidAmount) → Qoldiq (remaining, server hisoblaydi). Hech qanday summa boshqasiga "yashirincha" qo'shilmaydi.
+4. **Qisman to'lov endi Salary (boshqa xodimlar) uchun ham bor** — ilgari faqat TeacherPayroll'da bor edi, Salary faqat to'liq/hech narsa edi. Endi ikkalasi bir xil naqshda.
+5. **HR/Moliya vakolat ajratishi (foydalanuvchining "HR'ga o'tkazish" g'oyasiga javob):** sahifani jismonan ko'chirish o'rniga (bu "bitta joy — bitta manba" navigatsiya tamoyilini buzardi), yangi **`payroll_review`** ruxsati qo'shildi. Endi:
+   - Ko'rish/hisoblash (tabelni ko'rib chiqish, draft yaratish/qayta hisoblash) — `finance` YOKI `payroll_review` (HR) yetarli.
+   - Tasdiqlash, to'lov, avans berish (haqiqiy pul harakati) — FAQAT `finance`.
+   - Admin "Rollar va Ruxsatlar" sahifasida istalgan (masalan HR) rolga `payroll_review`ni biriktirishi mumkin — kod o'zgarishi kerak emas.
+
+**Jonli tekshirildi** (local, curl + brauzer, keyin tozalangan):
+- HR (faqat `payroll_review`): ro'yxat/draft yaratish 200, tasdiqlash/avans berish 403.
+- O'qituvchiga 1,000,000 avans → 1,500,000 hisoblangan oylik tasdiqlanganda avtomatik 1,000,000 qoplandi, qoldiq 500,000 to'g'ri chiqdi.
+- Katta (3,000,000) avans → kichikroq (1,200,000) keyingi oy TO'LIQ avansdan qoplanib avtomatik "to'langan" bo'ldi, qolgan 1,800,000 avans keyingi davrga to'g'ri ko'chdi (multi-period FIFO).
+- Xodim (Salary): 500,000 avans + 700,000 qisman to'lov (birinchi to'lovda avans avtomatik qo'shilib jami 1,200,000 hisobga olindi) + 800,000 qolgan to'lov → to'liq to'langan, barcha oraliq summalar aniq. Qisman to'lovdan keyin tarkibni (Saqlash) tahrirlash to'g'ri bloklandi.
+- Brauzerda: "Oldindan berilgan avans (qoldiq)" karta, "Avans berish" oynasi, tarix ro'yxatidagi "(X avansdan)" izohi va Xodim tafsilotidagi to'liq breakdown (Asosiy/Bonus/Ushlanma/Jami/Avansdan qoplandi/Naqd to'langan) — barchasi ekran suratlarida tasdiqlangan.
+
 ## Ochiq biznes qarorlari (foydalanuvchidan tasdiq kerak, mustaqil ish davom etmoqda)
 
 1. **F06/balance:** boshlang'ich qoldiqni belgilash (yangi o'quvchi) bilan keyinchalik "balans tuzatish" (mavjud o'quvchi)ni backend darajasida ajratish kerakmi? Ajratilsa, tuzatish uchun sabab-majburiy alohida endpoint + ledger yozuvi qo'shiladi.
@@ -78,6 +101,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 ## Schema o'zgarishlari (production'ga alohida, tasdiqlangan qadam kerak)
 
 - **`Payment.sourceType String?` / `Payment.sourceId String?`** (F07, P3) — additive, nullable, mavjud yozuvlarga ta'sir qilmaydi. Lokal PostgreSQL'ga `npx prisma db push` bilan qo'llanildi va tekshirildi. **Production'da hali qo'llanilmagan** — CLAUDE.md protokoliga muvofiq, productionga deploy qilinganda bu FAQAT foydalanuvchi tomonidan alohida, aniq tasdiqlangan qadam sifatida qo'llanishi kerak (production SQLite'da mos ustunlarni qo'shish).
+- **P13 (2026-09-17) — Payroll-avans:** yangi `StaffAdvance` va `StaffAdvanceApplication` jadvallari; `TeacherPayroll.advanceApplied Float @default(0)`; `Salary.paidAmount Float @default(0)` va `Salary.advanceApplied Float @default(0)`. Barchasi additive (yangi jadval/nullable-defaultli ustun), mavjud yozuvlarga ta'sir qilmaydi. Lokalda `npx prisma db push` bilan qo'llanildi va to'liq tekshirildi (pastga q.). **Production'da hali qo'llanilmagan.**
+- Yangi `Permission` DB yozuvi: `payroll_review` (`scripts/seed_payroll_review_permission.ts` orqali idempotent qo'shildi — bu skript schema emas, ma'lumot seed'i, lekin productionga o'tkazishda ham xuddi shunday bir martalik skript sifatida ishga tushirilishi kerak).
 
 ## Tekshiruv usuli (P1 uchun bajarilgan)
 

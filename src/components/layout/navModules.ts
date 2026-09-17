@@ -14,7 +14,8 @@ export type NavItem = {
   name: string;
   path: string;
   icon: any;
-  permission: string | undefined;
+  // string[] = "any of" (masalan 'finance' YOKI 'payroll_review')
+  permission: string | string[] | undefined;
   end?: boolean;
 };
 export type NavSection = { title?: string; links: NavItem[] };
@@ -131,7 +132,7 @@ export const MODULES: NavModule[] = [
       {
         links: [
           { name: 'Moliya',    path: '/crmtayyorlovmarkaz/finance',    icon: Wallet,      permission: 'finance' },
-          { name: "Xodimlar Oyligi", path: '/crmtayyorlovmarkaz/teacher-payroll', icon: Users, permission: 'finance' },
+          { name: "Xodimlar Oyligi", path: '/crmtayyorlovmarkaz/teacher-payroll', icon: Users, permission: ['finance', 'payroll_review'] },
           { name: 'Kirim/Chiqim kategoriyalari', path: '/crmtayyorlovmarkaz/transaction-categories', icon: Layers, permission: 'transaction_categories' },
           { name: 'Chegirmalar', path: '/crmtayyorlovmarkaz/discounts', icon: TrendingDown, permission: 'discounts' },
         ],

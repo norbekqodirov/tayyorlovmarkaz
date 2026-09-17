@@ -27,6 +27,11 @@ export const ALL_PERMISSIONS = [
     { id: 'teachers', label: "O'qituvchilar ro'yxati", group: 'HR' },
     { id: 'leave_requests', label: "Mehnat Ta'tillari", group: 'HR' },
     { id: 'staff_attendance', label: 'Xodim Davomati', group: 'HR' },
+    // Payroll-avans (2026-09-17): oylik HISOBLASH/ko'rish/tabelni tekshirish
+    // — pul harakati yaratmaydigan qism — HR'ga 'finance'ni to'liq
+    // bermasdan ham berilishi mumkin. Tasdiqlash/to'lov/avans esa hamon
+    // faqat 'finance' orqali (server: requireAnyPermission vs requirePermission).
+    { id: 'payroll_review', label: 'Oylik hisoblash va tabel (HR)', group: 'HR' },
     { id: 'users', label: 'Foydalanuvchilar', group: "Tizim" },
     { id: 'parent_chat', label: 'Ota-ona xabarlari', group: "Kommunikatsiya" },
 ];

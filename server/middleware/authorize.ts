@@ -110,3 +110,27 @@ export function requirePermission(permissionKey: string) {
         }
     };
 }
+
+/**
+ * Payroll-avans partiyasi (2026-09-17): ba'zi amallar (masalan oylik
+ * HISOBLASH/ko'rish) "finance" YOKI "payroll_review" (HR) ruxsatlaridan
+ * BIRI bilan yetarli, lekin pul harakatini yaratuvchi amallar (tasdiqlash,
+ * to'lov, avans berish) hamon FAQAT "finance" bilan cheklangan — bu ikkalasi
+ * requirePermission() bilan ifodalab bo'lmaydigan "OR" holati.
+ */
+export function requireAnyPermission(permissionKeys: string[]) {
+    return async (req: Request, res: Response, next: NextFunction) => {
+        const requester = (req as any).user;
+        if (!requester) return res.status(401).json({ message: "Avtorizatsiya talab qilinadi" });
+        try {
+            const perms = await getEffectivePermissions(requester.id, requester.role);
+            const allowed = permissionKeys.some(key => perms.has(key));
+            if (!allowed) {
+                return res.status(403).json({ message: "Sizda bu amalni bajarish uchun ruxsat yo'q" });
+            }
+            next();
+        } catch (err: any) {
+            res.status(500).json({ message: err.message });
+        }
+    };
+}

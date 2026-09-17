@@ -15,13 +15,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Wallet, Check, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight,
-  History, Info, Users, GraduationCap, Clock, CalendarCheck, Plus, X,
+  History, Info, Users, GraduationCap, Clock, CalendarCheck, Plus, X, HandCoins, Lock,
 } from 'lucide-react';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import { Button } from '../../../components/ui/Button';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
+import { Modal } from '../../../components/ui/Modal';
 import { formatNumber } from '../../../utils/formatters';
+import { hasAnyPermission } from '../../../utils/roles';
 
 const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
@@ -45,8 +47,14 @@ interface Preview {
 }
 interface Payroll {
   id: string; teacherId: string; month: string; basis: 'accrual' | 'cash';
-  accruedAmount: number; paidAmount: number; status: 'draft' | 'approved' | 'paid';
-  createdAt: string; approvedAt: string | null;
+  accruedAmount: number; paidAmount: number; advanceApplied: number; status: 'draft' | 'approved' | 'paid';
+  createdAt: string; approvedAt: string | null; remaining?: number;
+}
+// Payroll-avans (2026-09-17): "hisoblanishi berilishi degani emas" —
+// xodimga oldindan berilgan, hali oylikka hisobga olinmagan pul.
+interface Advance {
+  id: string; personType: 'teacher' | 'staff'; personId: string;
+  amount: number; remaining: number; date: string; method: string; notes?: string | null; createdAt: string;
 }
 interface StaffAttSummary {
   linked: boolean; staffMemberId?: string;
@@ -56,6 +64,7 @@ interface StaffAttSummary {
 interface SalaryRow {
   id: string; staffId: string; month: string; baseSalary: number; bonus: number;
   deduction: number; total: number; paid: boolean; paidAt: string | null; notes?: string | null;
+  paidAmount: number; advanceApplied: number; remaining?: number;
   staff: { id: string; name: string; role: string; salary: number; photo?: string };
 }
 interface StaffAttendanceRow { id: string; date: string; checkIn?: string; checkOut?: string; status: string; }
@@ -63,9 +72,18 @@ interface StaffAttendanceRow { id: string; date: string; checkIn?: string; check
 const STATUS_META: Record<string, { label: string; className: string }> = {
   draft: { label: 'Loyiha', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' },
   approved: { label: 'Tasdiqlangan', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  partial: { label: 'Qisman to\'langan', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
   paid: { label: "To'langan", className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
   none: { label: 'Hisoblanmagan', className: 'bg-zinc-50 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600' },
 };
+
+// Payroll-avans (2026-09-17): server faqat draft/approved/paid saqlaydi —
+// "qisman to'langan" UI'da hisoblanadigan holat (approved + biror to'lov/
+// avans allaqachon bo'lgan, lekin hali to'liq emas).
+function displayPayrollStatus(status: string, paidAmount: number, advanceApplied: number): string {
+  if (status !== 'approved') return status;
+  return (paidAmount + advanceApplied) > 0 ? 'partial' : 'approved';
+}
 
 const ATT_STATUS_LABEL: Record<string, string> = { present: "Keldi", late: 'Kech qoldi', absent: 'Kelmadi', pending: 'Kutilmoqda' };
 const ATT_STATUS_COLOR: Record<string, string> = {
@@ -107,6 +125,39 @@ export default function CrmTeacherPayroll() {
   const [payAmount, setPayAmount] = useState(0);
   const [payMethod, setPayMethod] = useState('Bank');
 
+  // Payroll-avans (2026-09-17) — tanlangan shaxsning (o'qituvchi YOKI xodim)
+  // hali qoplanmagan avansi va uni berish oynasi. Ikkala bo'lim uchun umumiy.
+  const canManageMoney = hasAnyPermission('finance');
+  const [outstandingAdvance, setOutstandingAdvance] = useState(0);
+  const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
+  const [advanceForm, setAdvanceForm] = useState({ amount: 0, method: 'Naqd', date: new Date().toISOString().split('T')[0], notes: '' });
+
+  const loadOutstandingAdvance = useCallback(async (personType: 'teacher' | 'staff', personId: string) => {
+    try {
+      const res = await api.get('/finance/advances/outstanding', { params: { personType, personId } });
+      setOutstandingAdvance(res.data?.outstanding || 0);
+    } catch {
+      setOutstandingAdvance(0);
+    }
+  }, []);
+
+  const giveAdvance = async () => {
+    const personType: 'teacher' | 'staff' = section === 'teachers' ? 'teacher' : 'staff';
+    const personId = section === 'teachers' ? selectedTeacherId : selectedStaffId;
+    if (!personId || advanceForm.amount <= 0) return;
+    setBusy(true);
+    try {
+      await api.post('/finance/advances', { personType, personId, ...advanceForm });
+      showToast('Avans berildi', 'success');
+      setAdvanceModalOpen(false);
+      setAdvanceForm({ amount: 0, method: 'Naqd', date: new Date().toISOString().split('T')[0], notes: '' });
+      void loadOutstandingAdvance(personType, personId);
+      if (personType === 'teacher') void loadTeacherDetail(); else void loadStaffDetail();
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
+    } finally { setBusy(false); }
+  };
+
   // ─── Teachers: list data ──────────────────────────────────────────────────
   useEffect(() => {
     // O01 tuzatish: `/auth/users` ADMIN+ talab qiladi — MANAGER shu sahifada
@@ -144,6 +195,7 @@ export default function CrmTeacherPayroll() {
       setHistory(rows);
       setPayroll(rows.find(r => r.month === monthStr && r.basis === basis) || null);
       setStaffAtt(attRes.data);
+      void loadOutstandingAdvance('teacher', selectedTeacherId);
     } catch {
       showToast("Ma'lumotlarni yuklashda xatolik", 'error');
     } finally {
@@ -155,7 +207,10 @@ export default function CrmTeacherPayroll() {
   useEffect(() => { if (section === 'teachers' && selectedTeacherId) void loadTeacherDetail(); }, [section, selectedTeacherId, loadTeacherDetail]);
 
   const activePreview = basis === 'accrual' ? accrualPreview : cashPreview;
-  const remaining = payroll ? Math.max(0, payroll.accruedAmount - payroll.paidAmount) : 0;
+  // Server har doim authoritative `remaining`ni qaytaradi (avansni ham
+  // hisobga olib) — UI formulani mustaqil takrorlamaydi; eski
+  // yozuvlar/fallback uchun faqat serverdan kelmagan holatda hisoblanadi.
+  const remaining = payroll ? (payroll.remaining ?? Math.max(0, payroll.accruedAmount - payroll.paidAmount - (payroll.advanceApplied || 0))) : 0;
   // Farq: hisoblangan (accrual) va tushgan (cash) baza orasidagi tafovut —
   // "hali qoplanmagan" qism qancha ekanini ko'rsatadi.
   const accrualCashDelta = accrualPreview && cashPreview ? accrualPreview.salary - cashPreview.salary : null;
@@ -166,13 +221,13 @@ export default function CrmTeacherPayroll() {
   // standart bo'yicha shu summani taklif qiladi (qo'lda o'zgartirish mumkin).
   useEffect(() => {
     if (payroll && payroll.status === 'approved' && cashPreview) {
-      const suggested = Math.max(0, Math.min(remaining, cashPreview.salary - payroll.paidAmount));
+      const suggested = Math.max(0, Math.min(remaining, cashPreview.salary - payroll.paidAmount - payroll.advanceApplied));
       setPayAmount(suggested);
     } else {
       setPayAmount(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payroll?.id, payroll?.status, payroll?.paidAmount, cashPreview?.salary]);
+  }, [payroll?.id, payroll?.status, payroll?.paidAmount, payroll?.advanceApplied, cashPreview?.salary]);
 
   const createDraft = async () => {
     if (!selectedTeacherId) return;
@@ -250,6 +305,7 @@ export default function CrmTeacherPayroll() {
         const thisMonth = (salRes.data || []).find((s: any) => s.month === monthStr);
         return thisMonth ? [...others, thisMonth] : others;
       });
+      void loadOutstandingAdvance('staff', selectedStaffId);
     } catch {
       showToast('Davomat/maosh yuklanmadi', 'error');
     } finally { setStaffDetailLoading(false); }
@@ -271,6 +327,20 @@ export default function CrmTeacherPayroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStaffId, monthStr]);
 
+  const [payStaffAmount, setPayStaffAmount] = useState(0);
+  const [payStaffMethod, setPayStaffMethod] = useState('Bank');
+  const staffRemaining = selectedStaffSalary
+    ? (selectedStaffSalary.remaining ?? Math.max(0, selectedStaffSalary.total - selectedStaffSalary.paidAmount - selectedStaffSalary.advanceApplied))
+    : 0;
+
+  // Xodim tanlanganda/oylik yozuvi yuklanganda to'lov summasi qoldiqqa
+  // moslashtiriladi — TeacherDetail bilan bir xil "standart to'liq qoldiq"
+  // taklifi (qo'lda o'zgartirish mumkin).
+  useEffect(() => {
+    setPayStaffAmount(staffRemaining);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStaffSalary?.id, selectedStaffSalary?.paidAmount, selectedStaffSalary?.advanceApplied]);
+
   const saveStaffSalary = async () => {
     if (!selectedStaffId) return;
     setBusy(true);
@@ -283,14 +353,17 @@ export default function CrmTeacherPayroll() {
     } finally { setBusy(false); }
   };
 
+  // Payroll-avans (2026-09-17): endi qisman to'lov qo'llab-quvvatlanadi —
+  // TeacherPayroll bilan bir xil naqsh (summani qo'lda o'zgartirish mumkin,
+  // birinchi to'lovda avans avtomatik hisobga olinadi).
   const payStaffSalary = async () => {
     const sal = selectedStaffId ? staffSalaryFor(selectedStaffId) : null;
-    if (!sal) return;
+    if (!sal || payStaffAmount <= 0) return;
     setBusy(true);
     try {
-      const res = await api.put(`/salary/${sal.id}/pay`, {});
+      const res = await api.put(`/salary/${sal.id}/pay`, { amount: payStaffAmount, method: payStaffMethod });
       setStaffSalaries(prev => prev.map(s => s.id === res.data.id ? res.data : s));
-      showToast("To'landi", 'success');
+      showToast("To'lov qayd etildi", 'success');
     } catch (e: any) {
       showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
     } finally { setBusy(false); }
@@ -350,6 +423,8 @@ export default function CrmTeacherPayroll() {
             expandedGroupId={expandedGroupId} setExpandedGroupId={setExpandedGroupId}
             payAmount={payAmount} setPayAmount={setPayAmount}
             payMethod={payMethod} setPayMethod={setPayMethod}
+            outstandingAdvance={outstandingAdvance} onGiveAdvance={() => setAdvanceModalOpen(true)}
+            canManageMoney={canManageMoney}
             onBack={() => setSelectedTeacherId(null)}
             onCreateDraft={createDraft} onApprove={approve} onPay={pay}
           />
@@ -370,6 +445,11 @@ export default function CrmTeacherPayroll() {
             monthLabel={`${MONTHS[month - 1]} ${year}`}
             form={staffForm} setForm={setStaffForm}
             loading={staffDetailLoading} busy={busy}
+            remaining={staffRemaining}
+            payAmount={payStaffAmount} setPayAmount={setPayStaffAmount}
+            payMethod={payStaffMethod} setPayMethod={setPayStaffMethod}
+            outstandingAdvance={outstandingAdvance} onGiveAdvance={() => setAdvanceModalOpen(true)}
+            canManageMoney={canManageMoney}
             onBack={() => setSelectedStaffId(null)}
             onSave={saveStaffSalary} onPay={payStaffSalary}
           />
@@ -377,6 +457,14 @@ export default function CrmTeacherPayroll() {
           <StaffList staff={staffList} salaryFor={staffSalaryFor} onSelect={setSelectedStaffId} />
         )
       )}
+
+      <AdvanceModal
+        isOpen={advanceModalOpen}
+        onClose={() => setAdvanceModalOpen(false)}
+        personName={section === 'teachers' ? (selectedTeacher?.name || '') : (selectedStaff?.name || '')}
+        form={advanceForm} setForm={setAdvanceForm}
+        busy={busy} onSubmit={giveAdvance}
+      />
     </div>
   );
 }
@@ -414,8 +502,8 @@ function TeacherList({ teachers, basis, setBasis, statusFor, onSelect }: {
                   {t.subject && <p className="text-[11px] text-zinc-400">{t.subject}</p>}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  {p && <span className="text-xs font-bold text-slate-600 dark:text-zinc-300">{formatNumber(p.paidAmount)}/{formatNumber(p.accruedAmount)} so'm</span>}
-                  <StatusBadge status={p?.status} />
+                  {p && <span className="text-xs font-bold text-slate-600 dark:text-zinc-300">{formatNumber(p.paidAmount + p.advanceApplied)}/{formatNumber(p.accruedAmount)} so'm</span>}
+                  <StatusBadge status={p ? displayPayrollStatus(p.status, p.paidAmount, p.advanceApplied) : undefined} />
                   <ChevronRight size={16} className="text-zinc-300" />
                 </div>
               </button>
@@ -476,12 +564,14 @@ function TeacherDetail(props: {
   expandedGroupId: string | null; setExpandedGroupId: (id: string | null) => void;
   payAmount: number; setPayAmount: (n: number) => void;
   payMethod: string; setPayMethod: (m: string) => void;
+  outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
   onBack: () => void; onCreateDraft: () => void; onApprove: () => void; onPay: () => void;
 }) {
   const {
     teacherName, month, year, basis, setBasis, accrualPreview, cashPreview, activePreview,
     payroll, history, remaining, accrualCashDelta, staffAtt, loading, busy,
     expandedGroupId, setExpandedGroupId, payAmount, setPayAmount, payMethod, setPayMethod,
+    outstandingAdvance, onGiveAdvance, canManageMoney,
     onBack, onCreateDraft, onApprove, onPay,
   } = props;
 
@@ -510,12 +600,25 @@ function TeacherDetail(props: {
               )}
             </div>
 
+            {/* Avans — hisoblanishi berilishi degani emas: xodim oldindan pul olgan bo'lishi mumkin */}
+            <div className="p-4 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-1 flex items-center gap-1.5"><HandCoins size={13} /> Oldindan berilgan avans (qoldiq)</p>
+                <p className={`text-lg font-black ${outstandingAdvance > 0 ? 'text-amber-600' : 'text-zinc-400'}`}>{formatNumber(outstandingAdvance)} so'm</p>
+              </div>
+              {canManageMoney && (
+                <Button onClick={onGiveAdvance} disabled={busy} variant="secondary" className="text-xs">
+                  <Plus size={14} /> Avans berish
+                </Button>
+              )}
+            </div>
+
             {/* Hisoblash breakdown */}
             <div className="p-5 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05]">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h2 className="text-sm font-black text-slate-900 dark:text-white">{teacherName} — {MONTHS[month - 1]} {year}</h2>
                 <div className="flex items-center gap-2">
-                  {payroll && <StatusBadge status={payroll.status} />}
+                  {payroll && <StatusBadge status={displayPayrollStatus(payroll.status, payroll.paidAmount, payroll.advanceApplied)} />}
                   <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
                     <button onClick={() => setBasis('accrual')} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${basis === 'accrual' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'text-zinc-500'}`}>Hisoblangan</button>
                     <button onClick={() => setBasis('cash')} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${basis === 'cash' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'text-zinc-500'}`}>Tushgan</button>
@@ -571,9 +674,15 @@ function TeacherDetail(props: {
                       {payroll ? 'Qayta hisoblash' : 'Loyiha yaratish'}
                     </Button>
                     {payroll && (
-                      <Button onClick={onApprove} disabled={busy} className="text-xs">
-                        <Check size={14} /> Tasdiqlash
-                      </Button>
+                      canManageMoney ? (
+                        <Button onClick={onApprove} disabled={busy} className="text-xs">
+                          <Check size={14} /> Tasdiqlash
+                        </Button>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-bold px-3 py-2">
+                          <Lock size={12} /> Tasdiqlash uchun moliya vakolati kerak
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
@@ -583,8 +692,14 @@ function TeacherDetail(props: {
                     <span className="text-zinc-500">Tasdiqlangan summa</span>
                     <span className="font-black">{formatNumber(payroll.accruedAmount)} so'm</span>
                   </div>
+                  {payroll.advanceApplied > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-zinc-500 flex items-center gap-1"><HandCoins size={13} className="text-amber-500" /> Avansdan qoplandi</span>
+                      <span className="font-black text-amber-600">{formatNumber(payroll.advanceApplied)} so'm</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-zinc-500">Berilgan</span>
+                    <span className="text-zinc-500">Naqd/bank to'langan</span>
                     <span className="font-black text-emerald-600">{formatNumber(payroll.paidAmount)} so'm</span>
                   </div>
                   <div className="flex items-center justify-between text-sm pb-2 border-b border-zinc-100 dark:border-zinc-800">
@@ -592,26 +707,32 @@ function TeacherDetail(props: {
                     <span className="font-black text-rose-600">{formatNumber(remaining)} so'm</span>
                   </div>
                   {remaining > 0 && (
-                    <>
-                      <p className="text-[10px] text-zinc-400">Standart bo'yicha faqat hozirgacha TUSHGAN pulga mos ulush taklif etiladi — qolgani keyingi to'lovlarda, pul tushgani sayin berilishi mumkin. Kerak bo'lsa summani qo'lda o'zgartiring.</p>
-                      <div className="flex items-end gap-2">
-                        <div className="flex-1">
-                          <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
+                    canManageMoney ? (
+                      <>
+                        <p className="text-[10px] text-zinc-400">Standart bo'yicha faqat hozirgacha TUSHGAN pulga mos ulush taklif etiladi — qolgani keyingi to'lovlarda, pul tushgani sayin berilishi mumkin. Kerak bo'lsa summani qo'lda o'zgartiring.</p>
+                        <div className="flex items-end gap-2">
+                          <div className="flex-1">
+                            <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
+                          </div>
+                          <select
+                            value={payMethod}
+                            onChange={e => setPayMethod(e.target.value)}
+                            className="px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
+                          >
+                            <option value="Bank">Bank</option>
+                            <option value="Naqd">Naqd</option>
+                            <option value="Karta">Karta</option>
+                          </select>
+                          <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs shrink-0">
+                            To'lov qayd etish
+                          </Button>
                         </div>
-                        <select
-                          value={payMethod}
-                          onChange={e => setPayMethod(e.target.value)}
-                          className="px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
-                        >
-                          <option value="Bank">Bank</option>
-                          <option value="Naqd">Naqd</option>
-                          <option value="Karta">Karta</option>
-                        </select>
-                        <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs shrink-0">
-                          To'lov qayd etish
-                        </Button>
-                      </div>
-                    </>
+                      </>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-bold">
+                        <Lock size={12} /> To'lov qayd etish uchun moliya vakolati kerak
+                      </span>
+                    )
                   )}
                   {payroll.status === 'paid' && (
                     <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold">
@@ -636,9 +757,12 @@ function TeacherDetail(props: {
                   <div key={h.id} className="flex items-center justify-between text-xs p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/50">
                     <div>
                       <p className="font-bold text-slate-700 dark:text-zinc-300">{h.month} <span className="text-zinc-400 font-medium">({h.basis === 'cash' ? 'tushgan' : 'hisoblangan'})</span></p>
-                      <p className="text-zinc-400">{formatNumber(h.paidAmount)} / {formatNumber(h.accruedAmount)} so'm</p>
+                      <p className="text-zinc-400">
+                        {formatNumber(h.paidAmount + h.advanceApplied)} / {formatNumber(h.accruedAmount)} so'm
+                        {h.advanceApplied > 0 && <span className="text-amber-500"> ({formatNumber(h.advanceApplied)} avansdan)</span>}
+                      </p>
                     </div>
-                    <StatusBadge status={h.status} />
+                    <StatusBadge status={displayPayrollStatus(h.status, h.paidAmount, h.advanceApplied)} />
                   </div>
                 ))}
               </div>
@@ -676,7 +800,7 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
                   <span className="text-xs font-bold text-slate-600 dark:text-zinc-300">
                     {sal ? `${formatNumber(sal.total)} so'm` : `${formatNumber(s.salary)} so'm (asosiy)`}
                   </span>
-                  <StatusBadge status={sal ? (sal.paid ? 'paid' : 'draft') : 'none'} />
+                  <StatusBadge status={sal ? (sal.paid ? 'paid' : ((sal.paidAmount > 0 || sal.advanceApplied > 0) ? 'partial' : 'draft')) : 'none'} />
                   <ChevronRight size={16} className="text-zinc-300" />
                 </div>
               </button>
@@ -688,11 +812,19 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
   );
 }
 
-function StaffDetail({ staff, salary, attendance, monthLabel, form, setForm, loading, busy, onBack, onSave, onPay }: {
+function StaffDetail({
+  staff, salary, attendance, monthLabel, form, setForm, loading, busy,
+  remaining, payAmount, setPayAmount, payMethod, setPayMethod,
+  outstandingAdvance, onGiveAdvance, canManageMoney,
+  onBack, onSave, onPay,
+}: {
   staff: StaffPerson | null; salary: SalaryRow | null; attendance: StaffAttendanceRow[]; monthLabel: string;
   form: { baseSalary: number; bonus: number; deduction: number; notes: string };
   setForm: (f: { baseSalary: number; bonus: number; deduction: number; notes: string }) => void;
   loading: boolean; busy: boolean;
+  remaining: number; payAmount: number; setPayAmount: (n: number) => void;
+  payMethod: string; setPayMethod: (m: string) => void;
+  outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
   onBack: () => void; onSave: () => void; onPay: () => void;
 }) {
   if (!staff) return null;
@@ -702,6 +834,11 @@ function StaffDetail({ staff, salary, attendance, monthLabel, form, setForm, loa
     absent: attendance.filter(a => a.status === 'absent').length,
   };
   const total = Number(form.baseSalary) + Number(form.bonus) - Number(form.deduction);
+  // Payroll-avans (2026-09-17): birinchi to'lov/avans qo'llanilgandan keyin
+  // backend tarkibni (baseSalary/bonus/deduction) o'zgartirishni bloklaydi —
+  // shuning uchun UI ham shu holatda tahrirlash formasi o'rniga o'qish-uchun
+  // xulosani ko'rsatadi.
+  const isLocked = !!salary && (salary.paidAmount > 0 || salary.advanceApplied > 0);
 
   return (
     <div className="space-y-4">
@@ -727,10 +864,23 @@ function StaffDetail({ staff, salary, attendance, monthLabel, form, setForm, loa
               )}
             </div>
 
+            {/* Avans — hisoblanishi berilishi degani emas */}
+            <div className="p-4 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-1 flex items-center gap-1.5"><HandCoins size={13} /> Oldindan berilgan avans (qoldiq)</p>
+                <p className={`text-lg font-black ${outstandingAdvance > 0 ? 'text-amber-600' : 'text-zinc-400'}`}>{formatNumber(outstandingAdvance)} so'm</p>
+              </div>
+              {canManageMoney && (
+                <Button onClick={onGiveAdvance} disabled={busy} variant="secondary" className="text-xs">
+                  <Plus size={14} /> Avans berish
+                </Button>
+              )}
+            </div>
+
             <div className="p-5 bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05]">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-black text-slate-900 dark:text-white">{staff.name} — {monthLabel}</h2>
-                {salary && <StatusBadge status={salary.paid ? 'paid' : 'draft'} />}
+                {salary && <StatusBadge status={salary.paid ? 'paid' : (isLocked ? 'partial' : 'draft')} />}
               </div>
 
               {salary?.paid ? (
@@ -739,7 +889,51 @@ function StaffDetail({ staff, salary, attendance, monthLabel, form, setForm, loa
                   <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Bonus</span><span className="font-bold text-emerald-600">+{formatNumber(salary.bonus)} so'm</span></div>
                   <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Ushlanma</span><span className="font-bold text-rose-600">-{formatNumber(salary.deduction)} so'm</span></div>
                   <div className="flex items-center justify-between text-sm pt-2 border-t border-zinc-100 dark:border-zinc-800"><span className="font-black">Jami</span><span className="font-black text-emerald-600">{formatNumber(salary.total)} so'm</span></div>
+                  {salary.advanceApplied > 0 && (
+                    <div className="flex items-center justify-between text-sm"><span className="text-zinc-500 flex items-center gap-1"><HandCoins size={13} className="text-amber-500" /> Avansdan qoplandi</span><span className="font-bold text-amber-600">{formatNumber(salary.advanceApplied)} so'm</span></div>
+                  )}
+                  <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Naqd/bank to'langan</span><span className="font-bold text-emerald-600">{formatNumber(salary.paidAmount)} so'm</span></div>
                   <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold pt-2"><Check size={14} /> To'langan{salary.paidAt ? ` — ${new Date(salary.paidAt).toLocaleDateString('uz-UZ')}` : ''}.</div>
+                </div>
+              ) : isLocked ? (
+                // Qisman to'lov/avans allaqachon qo'llanilgan — tarkib endi
+                // tahrirlanmaydi (backend ham bloklaydi), faqat qoldiqni
+                // to'lash davom etadi.
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Asosiy</span><span className="font-bold">{formatNumber(salary.baseSalary)} so'm</span></div>
+                  <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Bonus</span><span className="font-bold text-emerald-600">+{formatNumber(salary.bonus)} so'm</span></div>
+                  <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Ushlanma</span><span className="font-bold text-rose-600">-{formatNumber(salary.deduction)} so'm</span></div>
+                  <div className="flex items-center justify-between text-sm pt-2 border-t border-zinc-100 dark:border-zinc-800"><span className="font-black">Jami</span><span className="font-black">{formatNumber(salary.total)} so'm</span></div>
+                  {salary.advanceApplied > 0 && (
+                    <div className="flex items-center justify-between text-sm"><span className="text-zinc-500 flex items-center gap-1"><HandCoins size={13} className="text-amber-500" /> Avansdan qoplandi</span><span className="font-bold text-amber-600">{formatNumber(salary.advanceApplied)} so'm</span></div>
+                  )}
+                  <div className="flex items-center justify-between text-sm"><span className="text-zinc-500">Naqd/bank to'langan</span><span className="font-bold text-emerald-600">{formatNumber(salary.paidAmount)} so'm</span></div>
+                  <div className="flex items-center justify-between text-sm pb-2 border-b border-zinc-100 dark:border-zinc-800"><span className="text-zinc-500">Qoldiq</span><span className="font-black text-rose-600">{formatNumber(remaining)} so'm</span></div>
+                  {remaining > 0 && (
+                    canManageMoney ? (
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1">
+                          <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
+                        </div>
+                        <select
+                          value={payMethod}
+                          onChange={e => setPayMethod(e.target.value)}
+                          className="px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
+                        >
+                          <option value="Bank">Bank</option>
+                          <option value="Naqd">Naqd</option>
+                          <option value="Karta">Karta</option>
+                        </select>
+                        <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs shrink-0">
+                          To'lov qayd etish
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-bold">
+                        <Lock size={12} /> To'lov qayd etish uchun moliya vakolati kerak
+                      </span>
+                    )
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -752,13 +946,21 @@ function StaffDetail({ staff, salary, attendance, monthLabel, form, setForm, loa
                       <p className="text-lg font-black text-emerald-600">{formatNumber(total)} so'm</p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center flex-wrap">
                     <Button onClick={onSave} disabled={busy} variant="secondary" className="text-xs">Saqlash</Button>
-                    {salary && (
-                      <Button onClick={onPay} disabled={busy} className="text-xs"><Check size={14} /> To'lash</Button>
+                    {salary && canManageMoney && (
+                      <>
+                        <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
+                        <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs"><Check size={14} /> To'lov qayd etish</Button>
+                      </>
+                    )}
+                    {salary && !canManageMoney && (
+                      <span className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-bold">
+                        <Lock size={12} /> To'lov qayd etish uchun moliya vakolati kerak
+                      </span>
                     )}
                   </div>
-                  {!salary && <p className="text-[10px] text-zinc-400">Avval saqlang, keyin "To'lash" tugmasi paydo bo'ladi.</p>}
+                  {!salary && <p className="text-[10px] text-zinc-400">Avval saqlang, keyin to'lov summasi maydoni paydo bo'ladi.</p>}
                 </div>
               )}
             </div>
@@ -766,5 +968,56 @@ function StaffDetail({ staff, salary, attendance, monthLabel, form, setForm, loa
         </div>
       )}
     </div>
+  );
+}
+
+// Payroll-avans (2026-09-17): shaxsga (o'qituvchi/xodim) oldindan pul
+// berish oynasi — TeacherDetail va StaffDetail ikkalasi uchun umumiy.
+function AdvanceModal({ isOpen, onClose, personName, form, setForm, busy, onSubmit }: {
+  isOpen: boolean; onClose: () => void; personName: string;
+  form: { amount: number; method: string; date: string; notes: string };
+  setForm: (f: { amount: number; method: string; date: string; notes: string }) => void;
+  busy: boolean; onSubmit: () => void;
+}) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Avans berish" description={personName ? `${personName} uchun oldindan to'lov` : undefined} width="sm">
+      <div className="space-y-3">
+        <MoneyInput label="Summa" value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 mb-1">Usul</label>
+          <select
+            value={form.method}
+            onChange={e => setForm({ ...form, method: e.target.value })}
+            className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
+          >
+            <option value="Naqd">Naqd</option>
+            <option value="Bank">Bank</option>
+            <option value="Karta">Karta</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 mb-1">Sana</label>
+          <input
+            type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
+            className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 mb-1">Izoh (ixtiyoriy)</label>
+          <input
+            type="text" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+            placeholder="Masalan: shoshilinch ehtiyoj uchun"
+            className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm"
+          />
+        </div>
+        <p className="text-[10px] text-zinc-400 flex items-start gap-1.5">
+          <Info size={12} className="shrink-0 mt-0.5" />
+          Bu summa darhol xarajat sifatida yoziladi va keyingi tasdiqlanadigan/to'lanadigan oylikdan avtomatik ayiriladi.
+        </p>
+        <Button onClick={onSubmit} disabled={busy || form.amount <= 0} className="w-full text-sm">
+          <HandCoins size={14} /> Avans berish
+        </Button>
+      </div>
+    </Modal>
   );
 }

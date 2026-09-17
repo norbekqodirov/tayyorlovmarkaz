@@ -1,11 +1,12 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/authorize.js';
+import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
 import { invalidate, NS } from '../services/cache.js';
 import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
 import { todayDateStr } from '../utils/timezone.js';
+import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 
 const router = express.Router();
 
@@ -15,17 +16,26 @@ const router = express.Router();
 // QO'SHIMCHA `requirePermission('finance')`ni talab qiladi. Amalda bu
 // MANAGER darajasidagi, lekin DB Role/Permission tizimida 'finance'
 // ruxsati BERILMAGAN foydalanuvchi uchun izchilsizlik edi — /finance/*'da
-// 403 olsa-da, /salary/*'da ochiq qolardi. Endi har bir route'da ham
-// requireMinRole('MANAGER') YONIDA requirePermission('finance') talab
-// qilinadi (ADMIN/SUPER_ADMIN har doim FULL_ACCESS_ROLES orqali o'tadi —
-// authorize.ts'ga q. — shuning uchun bu qo'shimcha tekshiruv ADMIN-only
-// CrmStaffDetail.tsx oqimini buzmaydi).
+// 403 olsa-da, /salary/*'da ochiq qolardi.
+//
+// Payroll-avans (2026-09-17): ko'rish/hisoblash (GET, oylik loyihasini
+// saqlash) endi 'finance' YOKI 'payroll_review' (HR) bilan yetarli —
+// tasdiqlash tushunchasi Salary'da yo'q, lekin pul chiqadigan yagona amal
+// (to'lov) hamon FAQAT 'finance' bilan cheklangan (ADMIN/SUPER_ADMIN har
+// doim FULL_ACCESS_ROLES orqali o'tadi — bu CrmStaffDetail.tsx oqimini
+// buzmaydi).
+const canReview = requireAnyPermission(['finance', 'payroll_review']);
+const canManageMoney = requirePermission('finance');
+
+function remainingOf(row: { total: number; paidAmount: number; advanceApplied: number }): number {
+    return Math.max(0, row.total - row.paidAmount - row.advanceApplied);
+}
 
 // GET /api/salary?month=YYYY-MM
 // SEC-04 tuzatish: ilgari faqat requireAuth bor edi — istalgan login qilgan
 // TEACHER butun markazdagi HAMMA xodimning oyligini (asosiy/bonus/total)
 // ko'ra olardi. Maosh ma'lumoti HR-maxfiy, MANAGER+ talab qilinadi.
-router.get('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.get('/', requireAuth, requireMinRole('MANAGER'), canReview, async (req, res) => {
     try {
         const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
         const salaries = await prisma.salary.findMany({
@@ -33,7 +43,7 @@ router.get('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finan
             include: { staff: { select: { id: true, name: true, role: true, salary: true, photo: true } } },
             orderBy: { createdAt: 'desc' },
         });
-        res.json(salaries);
+        res.json(salaries.map(s => ({ ...s, remaining: remainingOf(s) })));
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -41,14 +51,14 @@ router.get('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finan
 
 // GET /api/salary/staff/:staffId  — staff's full salary history
 // SEC-04 tuzatish: xuddi shu sabab bilan MANAGER+.
-router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), canReview, async (req, res) => {
     try {
         const salaries = await prisma.salary.findMany({
             where: { staffId: req.params.staffId },
             orderBy: { month: 'desc' },
             take: 24,
         });
-        res.json(salaries);
+        res.json(salaries.map(s => ({ ...s, remaining: remainingOf(s) })));
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -61,7 +71,7 @@ router.get('/staff/:staffId', requireAuth, requireMinRole('MANAGER'), requirePer
 // IKKINCHI marta xarajat yozib bo'lardi. Endi to'langan yozuv shu yo'l orqali
 // UMUMAN o'zgartirilmaydi — tuzatish kerak bo'lsa alohida jarayon (hozircha
 // mavjud emas) kerak bo'ladi.
-router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.post('/', requireAuth, requireMinRole('MANAGER'), canReview, async (req, res) => {
     try {
         const { staffId, month, baseSalary = 0, bonus = 0, deduction = 0, notes } = req.body;
         if (!staffId || !month) {
@@ -71,6 +81,15 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('fina
         const existing = await prisma.salary.findUnique({ where: { staffId_month: { staffId, month } } });
         if (existing?.paid) {
             return res.status(400).json({ message: "To'langan oylik yozuvini bu yo'l orqali o'zgartirib bo'lmaydi" });
+        }
+        // Payroll-avans (2026-09-17): birinchi to'lov (yoki avans qoplash)
+        // sodir bo'lgandan keyin ham baseSalary/bonus/deduction'ni "Saqlash"
+        // orqali o'zgartirish paidAmount/advanceApplied bilan mos kelmay
+        // qolishi mumkin (masalan jami kamaytirilsa, allaqachon to'langan
+        // summadan kam bo'lib qoladi) — shuning uchun qisman to'lovdan
+        // keyin ham bu yo'l orqali tuzatish endi bloklanadi.
+        if (existing && (existing.paidAmount > 0 || existing.advanceApplied > 0)) {
+            return res.status(400).json({ message: "Bu oylikka allaqachon to'lov/avans qo'llanilgan — endi tarkibini o'zgartirib bo'lmaydi" });
         }
 
         const total = Number(baseSalary) + Number(bonus) - Number(deduction);
@@ -112,7 +131,8 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('fina
             after: salary,
         });
 
-        res.json(salary);
+        const outstandingAdvance = await getOutstandingAdvanceTotal(prisma, 'staff', staffId);
+        res.json({ ...salary, remaining: remainingOf(salary), outstandingAdvance });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -127,7 +147,16 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), requirePermission('fina
 // ham davom etishi mumkin edi (oddiy o'qi-tekshir-yoz poygasi). Endi holat
 // o'tishi `updateMany({paid:false})` sharti bilan va xarajat yozuvi BITTA
 // $transaction ichida — yoki ikkalasi ham muvaffaqiyatli, yoki hech biri.
-router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+// PUT /api/salary/:id/pay — qisman/to'liq to'lov qayd etish.
+// Payroll-avans (2026-09-17): ilgari bu yo'l FAQAT to'liq to'lov edi
+// (`paid:true` bittada). Endi TeacherPayroll bilan bir xil qisman to'lov
+// naqshi — `amount` berilmasa (eski chaqiruvlar bilan moslik uchun) hozirgi
+// qoldiqning HAMMASI to'lanadi. BIRINCHI to'lov chaqiruvida (hali hech
+// qanday to'lov/avans qo'llanilmagan bo'lsa) shu xodimning oldindan
+// berilgan (StaffAdvance) qoldig'i avtomatik shu oylikka hisobga olinadi —
+// "hisoblanishi to'lanishi degani emas, lekin avans yo'qolib ketmaydi"
+// talabi shu yerda ham bajariladi.
+router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({
             where: { id: req.params.id },
@@ -136,37 +165,83 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), requirePermission
         if (!salary) return res.status(404).json({ message: 'Topilmadi' });
         if (salary.paid) return res.status(400).json({ message: "Allaqachon to'langan" });
 
+        const isFirstPayout = salary.paidAmount === 0 && salary.advanceApplied === 0;
+        // Birinchi chaqiruvda avans qoplanishi mumkinligi uchun, "qoldiq"ni
+        // hisoblashdan oldin qancha avans qoplanishi mumkinligini bilib olamiz.
+        const potentialAdvance = isFirstPayout
+            ? Math.min(await getOutstandingAdvanceTotal(prisma, 'staff', salary.staffId), salary.total)
+            : 0;
+        const remainingAfterAdvance = Math.max(0, salary.total - salary.paidAmount - salary.advanceApplied - potentialAdvance);
+
+        const requestedAmount = req.body.amount !== undefined ? Number(req.body.amount) : remainingAfterAdvance;
+        if (!Number.isFinite(requestedAmount) || requestedAmount < 0) {
+            return res.status(400).json({ message: "Summa manfiy bo'lmagan son bo'lishi kerak" });
+        }
+        if (requestedAmount > remainingAfterAdvance) {
+            return res.status(400).json({ message: `Qoldiqdan (${remainingAfterAdvance}) ortiq summa to'lanmaydi` });
+        }
+        if (requestedAmount === 0 && potentialAdvance === 0) {
+            return res.status(400).json({ message: "To'lov summasi 0 bo'lishi mumkin emas" });
+        }
+
         const todayStr = todayDateStr();
         const result = await prisma.$transaction(async (tx) => {
+            // Guard-only yozuv (real qiymatni o'ziga qaytarib qo'yadi) — bu
+            // shu $transaction ichidagi BIRINCHI yozuv bo'lgani uchun,
+            // muvaffaqiyatsiz bo'lsa (count===0) hali hech narsa
+            // o'zgartirilmagan, oddiy `return` bilan xavfsiz chiqish mumkin.
             const { count } = await tx.salary.updateMany({
-                where: { id: req.params.id, paid: false },
-                data: { paid: true, paidAt: new Date() },
+                where: { id: req.params.id, paidAmount: salary.paidAmount, advanceApplied: salary.advanceApplied },
+                data: { paidAmount: salary.paidAmount },
             });
             if (count === 0) return { applied: false };
 
-            await tx.transaction.create({
+            const advanceApplied = isFirstPayout
+                ? await applyOutstandingAdvances(tx, 'staff', salary.staffId, salary.total, 'salary', salary.id)
+                : 0;
+
+            const newPaidAmount = salary.paidAmount + requestedAmount;
+            const willBeFullyPaid = newPaidAmount + salary.advanceApplied + advanceApplied >= salary.total;
+
+            await tx.salary.update({
+                where: { id: req.params.id },
                 data: {
-                    type: 'expense',
-                    amount: salary.total,
-                    category: 'Oylik',
-                    description: `${salary.staff.name} - ${salary.month} oyligi`,
-                    date: todayStr,
-                    method: req.body.method || 'Bank',
-                    staffId: salary.staffId,
-                    staffName: salary.staff.name,
+                    paidAmount: newPaidAmount,
+                    advanceApplied: salary.advanceApplied + advanceApplied,
+                    paid: willBeFullyPaid,
+                    paidAt: willBeFullyPaid ? new Date() : null,
                 },
             });
+
+            if (requestedAmount > 0) {
+                await tx.transaction.create({
+                    data: {
+                        type: 'expense',
+                        amount: requestedAmount,
+                        category: 'Oylik',
+                        description: `${salary.staff.name} - ${salary.month} oyligi`,
+                        date: todayStr,
+                        method: req.body.method || 'Bank',
+                        staffId: salary.staffId,
+                        staffName: salary.staff.name,
+                        sourceType: 'salary',
+                        sourceId: salary.id,
+                    },
+                });
+            }
             const updated = await tx.salary.findUnique({ where: { id: req.params.id } });
             return { applied: true, updated };
         });
 
-        if (!result.applied) return res.status(400).json({ message: "Allaqachon to'langan" });
+        if (!result.applied) {
+            return res.status(409).json({ message: "Boshqa so'rov shu vaqtda to'lov qildi — qoldiqni yangilab qayta urinib ko'ring" });
+        }
 
         invalidate(NS.FINANCE);
         invalidate(NS.ANALYTICS);
         emitToAdmins('salary:paid', result.updated);
 
-        res.json(result.updated);
+        res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -176,7 +251,7 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), requirePermission
 // RF-05 tuzatish: to'langan oylik yozuvini o'chirishga hech qanday cheklov
 // yo'q edi — real xarajat yozuvi (Transaction) qolgan holda payroll yozuvi
 // yo'qolib, tarixiy hisobot manbasiz qolib ketardi.
-router.delete('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.delete('/:id', requireAuth, requireMinRole('MANAGER'), canManageMoney, async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({ where: { id: req.params.id }, select: { paid: true } });
         if (!salary) return res.status(404).json({ message: 'Topilmadi' });
@@ -192,7 +267,7 @@ router.delete('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission(
 });
 
 // POST /api/salary/generate-month — bulk generate salaries for all staff for given month
-router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), canManageMoney, async (req, res) => {
     try {
         const { month } = req.body;
         if (!month) return res.status(400).json({ message: 'month kiritilishi shart' });
@@ -231,7 +306,7 @@ router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), requirePe
 // RS-03 tuzatish: yonidagi GET / va GET /staff/:staffId SEC-04'da MANAGER+ga
 // cheklangan edi, lekin bu endpoint (butun markaz xodimlarining kelish-ketish
 // vaqtlari) o'sha safar unutilgan — faqat requireAuth bilan qolgan edi.
-router.get('/attendance', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.get('/attendance', requireAuth, requireMinRole('MANAGER'), canReview, async (req, res) => {
     try {
         const { staffId, from, to } = req.query as Record<string, string>;
         const where: any = {};
@@ -254,8 +329,10 @@ router.get('/attendance', requireAuth, requireMinRole('MANAGER'), requirePermiss
 });
 
 // Qo'lda tuzatish — HR/menejer vakolati talab qiladi (Face ID check-in/out
-// staffPortal.ts orqali o'tadi, bu yerga tegishli emas).
-router.post('/attendance', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+// staffPortal.ts orqali o'tadi, bu yerga tegishli emas). Payroll-avans
+// (2026-09-17): bu tabel/hisoblashga tegishli tuzatish, shuning uchun
+// 'payroll_review' (HR) bilan ham ochiq.
+router.post('/attendance', requireAuth, requireMinRole('MANAGER'), canReview, async (req, res) => {
     try {
         const { staffId, date, checkIn, checkOut, status = 'present', notes } = req.body;
         if (!staffId || !date) return res.status(400).json({ message: 'staffId va date kerak' });

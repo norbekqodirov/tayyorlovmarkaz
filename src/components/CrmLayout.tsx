@@ -120,11 +120,12 @@ export default function CrmLayout() {
   // ── Permission filtering ─────────────────────────────────────────────────
   const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
 
-  const canSeeLink = (permission: string | undefined): boolean => {
+  const canSeeLink = (permission: string | string[] | undefined): boolean => {
     if (isAdmin) return true;
     if (permission === undefined) return false; // admin-only links
     if (userPermissions.length === 0) return false; // no permissions assigned
-    return userPermissions.includes(permission);
+    const keys = Array.isArray(permission) ? permission : [permission];
+    return keys.some(key => userPermissions.includes(key));
   };
 
   const visibleModules = MODULES.map(mod => ({
