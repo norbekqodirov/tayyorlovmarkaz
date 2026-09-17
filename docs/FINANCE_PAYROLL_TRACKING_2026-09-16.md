@@ -11,7 +11,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 |---|---|---|---|
 | **P1 — hisob ishonchliligi (asosiy)** | F01, F02, F04, F05, F06 (qisman), F12 (qisman), F13, O01, O02, O07 | ✅ | `6937e01`, `f7ce72d`, (shu partiya) |
 | P2 — invoice net/allocation | F02, F03, F09-adjacent | ⬜ | — |
-| P3 — provider qattiqlashtirish | F07, F08, F09 | ⬜ | — |
+| **P3 — provider qattiqlashtirish** | F07, F08, F09 | ✅ | (shu partiyada) |
 | P4 — hisobot/pagination to'g'irlash | F14, F15, F16, F20 | ⬜ | — |
 | P5 — chegirma/kategoriya | F17, F18 | ⬜ | — |
 | P6 — byudjet | F19 | ⬜ | — |
@@ -32,9 +32,9 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | F04 | P1 | ✅ | Expense POST/PATCH/DELETE endi bog'langan Transaction (`sourceType='expense'`) bilan bitta `$transaction`da izchil; `createdById` endi to'ldiriladi. — `server/routes/finance.ts` |
 | F05 | P1 | ✅ | Generic `PUT /:collection/:id` `transaction` modeli uchun butunlay yopildi (hech qanday UI ishlatmasdi). — `server/routes/crud.ts` |
 | F06 | P1 | 🟡 | Generic `POST/PUT /:collection` `payment` modeli uchun yopildi. `student.balance` generic crud.ts whitelist'idan olib tashlandi (defense-in-depth), LEKIN haqiqiy yo'l `server/routes/students.ts`'ning ALOHIDA router'i — u yerda `balance` ATAYLAB whitelist'da qoladi, chunki CrmStudents.tsx yangi o'quvchi yaratishda "boshlang'ich qoldiq"ni shu maydon orqali belgilaydi (haqiqiy, keng ishlatiladigan funksiya). **Ochiq qaror:** balans tuzatmasini alohida, sababli/ledger-bog'langan "adjustment" hodisasiga aylantirish kerakmi (yangi schema jadvali talab qiladi) — hozircha faqat mavjud `withAudit('student')` orqali eski/yangi qiymat jurnalga yoziladi. |
-| F07 | P1 | ⬜ | Payme cancel/Payment/cash uzilishi — P3. |
-| F08 | P1 | ⬜ | Click complete imzo formulasi (`merchant_prepare_id`) — P3, rasmiy hujjat bilan qayta tekshirish kerak. |
-| F09 | P1 | ⬜ | Payme `GetStatement` yo'q — P3. |
+| F07 | P1 | ✅ | Payme `PerformTransaction`/Click Complete endi yaratilgan `Payment`ni `sourceType='online_transaction'/sourceId=OnlineTransaction.id` bilan bog'laydi. Payme `CancelTransaction` (state 2→-2, ya'ni tasdiqlangandan keyin bekor qilish) endi shu bog'lanish orqali topib, Payment.status'ni `'refunded'`ga o'tkazadi (avval abadiy "paid" bo'lib qolardi). Yon ta'sir: teacher payroll CASH bazasi (`Payment.status='paid'` bo'yicha filtrlaydi) endi refund qilingan to'lovni to'g'ri chetlab o'tadi. Click tomonida rasmiy "completed'dan keyin bekor qilish" callback'i yo'q (faqat Prepare/Complete bor) — shuning uchun bu qism faqat Payme uchun. — `prisma/schema.prisma` (`Payment.sourceType/sourceId` additive), `server/routes/payments.ts` |
+| F08 | P1 | ✅ | Click Complete (`action=1`) imzo formulasi ilgari Prepare bilan bir xil edi — `merchant_prepare_id` umuman qo'shilmagan. Click'ning rasmiy referens implementatsiyasi (`click-llc/click-integration-php`, `BasicPaymentsErrors.php`) bilan solishtirib tasdiqlandi va tuzatildi: `merchant_prepare_id` endi FAQAT action=1'da, `merchant_trans_id`dan keyin qo'shiladi. Curl/python bilan eski (noto'g'ri) formula endi rad etilishi, rasmiy formula esa qabul qilinishi tasdiqlandi. — `server/routes/payments.ts` |
+| F09 | P1 | ✅ | Payme rasmiy MAJBURIY `GetStatement` metodi qo'shildi (`from`/`to` oralig'ida yaratilgan tranzaksiyalar ro'yxati) — rasmiy hujjat (developer.help.paycom.uz) bilan maydon-maydon solishtirilib yozilgan. Jonli tekshirildi: Create→Perform→GetStatement to'g'ri qatorni qaytardi (amount tiyin birligida to'g'ri round-trip). — `server/routes/payments.ts` |
 | F10 | P1 | ⬜ | Billing joriy narx/a'zolikka bog'liq (tarixiy snapshot yo'q) — katta, P10. |
 | F11 | P1 | ⬜ | Oylik billing charge yaratish/yakunlash yagona oqimi yo'q — P10. |
 | F12 | P1 | 🟡 | `/finance/billing-settings` va `/finance/transactions` validatsiyasi allaqachon bor edi (oldingi audit, F0). Bu safar `/finance/transactions`ga `type` validatsiyasi, `/finance/expenses` POST/PATCH'ga musbat-summa tekshiruvi, `POST /finance/transactions`da studentId mavjudligi tekshiruvi qo'shildi. To'liq domen-sxema validatsiyasi (invoice/budget uchun ham) hali qolgan. |
@@ -74,6 +74,10 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 2. **O07/Salary paid=true:** yangi Salary yozuvini to'g'ridan-to'g'ri `paid:true` bilan yaratishni butunlay yopish (faqat `PUT /:id/pay` orqali to'lash) — buzilishi mumkin bo'lgan mavjud oqim bormi, tekshirish kerak.
 3. **11-bo'lim (ruxsat matritsasi):** `payroll.calculate/approve/pay/refund/close/export` kabi granular kalitlarni DB Role/Permission tizimiga qachon qo'shish — hozircha hammasi bitta `finance` kalitiga tayanadi.
 4. **P10 (billing snapshot/allocation) va P12 (kassa/reconciliation):** bular alohida, ko'p kunlik ishlar — davom etishdan oldin ustuvorlikni tasdiqlash foydali (audit hujjatining o'zi ham R3/R4 sifatida keyinga qoldirgan).
+
+## Schema o'zgarishlari (production'ga alohida, tasdiqlangan qadam kerak)
+
+- **`Payment.sourceType String?` / `Payment.sourceId String?`** (F07, P3) — additive, nullable, mavjud yozuvlarga ta'sir qilmaydi. Lokal PostgreSQL'ga `npx prisma db push` bilan qo'llanildi va tekshirildi. **Production'da hali qo'llanilmagan** — CLAUDE.md protokoliga muvofiq, productionga deploy qilinganda bu FAQAT foydalanuvchi tomonidan alohida, aniq tasdiqlangan qadam sifatida qo'llanishi kerak (production SQLite'da mos ustunlarni qo'shish).
 
 ## Tekshiruv usuli (P1 uchun bajarilgan)
 

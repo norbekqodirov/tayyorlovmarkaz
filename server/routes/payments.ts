@@ -299,7 +299,11 @@ router.post('/payme', async (req, res) => {
                                     method: 'Payme',
                                     date: todayStr,
                                     status: 'paid',
-                                    notes: `Payme transaction ID: ${txId}`
+                                    notes: `Payme transaction ID: ${txId}`,
+                                    // F07: keyinchalik CancelTransaction kelsa, aynan
+                                    // shu Payment yozuvini topib "refunded" qilish uchun.
+                                    sourceType: 'online_transaction',
+                                    sourceId: tx.id,
                                 }
                             });
                             await txClient.transaction.create({
@@ -311,7 +315,9 @@ router.post('/payme', async (req, res) => {
                                     date: todayStr,
                                     method: 'Bank',
                                     studentId: student.id,
-                                    studentName: student.name
+                                    studentName: student.name,
+                                    sourceType: 'online_transaction',
+                                    sourceId: tx.id,
                                 }
                             });
                         }
@@ -438,8 +444,22 @@ router.post('/payme', async (req, res) => {
                                     date: todayStr,
                                     method: 'Bank',
                                     studentId: student.id,
-                                    studentName: student.name
+                                    studentName: student.name,
+                                    sourceType: 'online_transaction_refund',
+                                    sourceId: tx.id,
                                 }
+                            });
+
+                            // F07 tuzatish: ilgari shu yerda balans/xarajat yozuvi
+                            // yaratilsa-da, PerformTransaction'da yaratilgan asl
+                            // Payment(status='paid') hech qachon o'zgartirilmasdi —
+                            // to'lov tarixi (masalan ota-ona portali, hisobotlar)
+                            // aslida bekor qilingan to'lovni hamon "to'langan" deb
+                            // ko'rsatardi. Endi sourceId orqali topilib 'refunded'
+                            // qilinadi.
+                            await txClient.payment.updateMany({
+                                where: { sourceType: 'online_transaction', sourceId: tx.id, status: 'paid' },
+                                data: { status: 'refunded' },
                             });
                         }
                         return { current };
@@ -510,6 +530,57 @@ router.post('/payme', async (req, res) => {
                 });
             }
 
+            // Finance-audit (2026-09-16), F09 tuzatish: Payme rasmiy protokolida
+            // MAJBURIY metod (developer.help.paycom.uz/metody-merchant-api/
+            // getstatement/) — Payme davriy ravishda shu bilan o'z tomonidagi
+            // tranzaksiyalarni bizning tizim bilan solishtiradi (reconciliation).
+            // Ilgari `switch`da umuman yo'q edi — Payme buni chaqirsa
+            // "Method not found" (-32601) qaytar edi. Faqat CreateTransaction
+            // muvaffaqiyatli bo'lgan yozuvlar qaytariladi — bizda ham faqat shu
+            // holatda OnlineTransaction yaratiladi, shuning uchun qo'shimcha
+            // filtrsiz izchil.
+            case 'GetStatement': {
+                const from = Number(params?.from);
+                const to = Number(params?.to);
+                if (!Number.isFinite(from) || !Number.isFinite(to)) {
+                    return res.json({
+                        jsonrpc: '2.0',
+                        id,
+                        error: {
+                            code: -31008,
+                            message: 'Missing or invalid from/to parameters'
+                        }
+                    });
+                }
+
+                const transactions = await prisma.onlineTransaction.findMany({
+                    where: {
+                        provider: 'payme',
+                        createdAt: { gte: new Date(from), lte: new Date(to) },
+                    },
+                    orderBy: { createdAt: 'asc' },
+                });
+
+                return res.json({
+                    jsonrpc: '2.0',
+                    id,
+                    result: {
+                        transactions: transactions.map(tx => ({
+                            id: tx.transactionId,
+                            time: tx.createdAt.getTime(),
+                            amount: Math.round(tx.amount * 100), // Payme summasi tiyinda
+                            account: { student_id: tx.studentId },
+                            create_time: tx.createdAt.getTime(),
+                            perform_time: tx.performAt ? tx.performAt.getTime() : 0,
+                            cancel_time: tx.cancelAt ? tx.cancelAt.getTime() : 0,
+                            transaction: tx.id,
+                            state: tx.state,
+                            reason: tx.reason ?? null,
+                        })),
+                    }
+                });
+            }
+
             default:
                 return res.json({
                     jsonrpc: '2.0',
@@ -567,9 +638,20 @@ router.post('/click', async (req, res) => {
         });
     }
 
-    // Validate request integrity using signature
-    // Formula: click_trans_id + service_id + secret_key + merchant_trans_id + amount + action + sign_time
-    const calculatedString = `${click_trans_id}${service_id}${CLICK_SECRET_KEY}${merchant_trans_id}${amount}${action}${sign_time}`;
+    // Finance-audit (2026-09-16), F08 tuzatish: Complete (action=1) uchun
+    // imzo formulasi PREPARE bilan bir xil edi — `merchant_prepare_id`
+    // umuman qo'shilmagan. Click'ning rasmiy referens implementatsiyasi
+    // (github.com/click-llc/click-integration-php, BasicPaymentsErrors.php
+    // `request_check()`) buni aniq tasdiqlaydi:
+    //   md5(click_trans_id + service_id + secret_key + merchant_trans_id +
+    //       (action==1 ? merchant_prepare_id : '') + amount + action + sign_time)
+    // — ya'ni `merchant_prepare_id` FAQAT Complete'da, `merchant_trans_id`dan
+    // KEYIN va `amount`dan OLDIN qo'shiladi. Ilgari bu maydon umuman
+    // ishlatilmagani uchun har qanday Complete so'rovi (to'g'ri
+    // merchant_prepare_id bilan yuborilgan bo'lsa ham) noto'g'ri imzo deb
+    // rad etilishi yoki (agar Click implementatsiyasi buni tashlab ketsa)
+    // qalbaki so'rov osonroq mos kelishi mumkin edi.
+    const calculatedString = `${click_trans_id}${service_id}${CLICK_SECRET_KEY}${merchant_trans_id}${Number(action) === 1 ? (merchant_prepare_id ?? '') : ''}${amount}${action}${sign_time}`;
     const calculatedHash = md5(calculatedString);
 
     if (calculatedHash !== sign_string) {
@@ -708,7 +790,9 @@ router.post('/click', async (req, res) => {
                             method: 'Click',
                             date: todayStr,
                             status: 'paid',
-                            notes: `Click transaction ID: ${click_trans_id}`
+                            notes: `Click transaction ID: ${click_trans_id}`,
+                            sourceType: 'online_transaction',
+                            sourceId: newTx.id,
                         }
                     });
                     await txClient.transaction.create({
@@ -720,7 +804,9 @@ router.post('/click', async (req, res) => {
                             date: todayStr,
                             method: 'Bank',
                             studentId: student.id,
-                            studentName: student.name
+                            studentName: student.name,
+                            sourceType: 'online_transaction',
+                            sourceId: newTx.id,
                         }
                     });
                     return newTx;
@@ -811,7 +897,9 @@ router.post('/click', async (req, res) => {
                         method: 'Click',
                         date: todayStr,
                         status: 'paid',
-                        notes: `Click transaction ID: ${click_trans_id}`
+                        notes: `Click transaction ID: ${click_trans_id}`,
+                        sourceType: 'online_transaction',
+                        sourceId: tx.id,
                     }
                 });
                 await txClient.transaction.create({
@@ -823,7 +911,9 @@ router.post('/click', async (req, res) => {
                         date: todayStr,
                         method: 'Bank',
                         studentId: student.id,
-                        studentName: student.name
+                        studentName: student.name,
+                        sourceType: 'online_transaction',
+                        sourceId: tx.id,
                     }
                 });
                 return { applied: true };

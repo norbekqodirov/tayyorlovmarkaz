@@ -345,10 +345,18 @@ model Payment {
   date      String
   month     String?
   dueDate   String?
-  status    String   @default("paid") // paid, pending, overdue
+  status    String   @default("paid") // paid, pending, overdue, refunded
   notes     String?
   deletedAt DateTime?
   createdAt DateTime @default(now())
+  // Finance-audit (2026-09-16), F07: qaysi domen hodisasi (masalan
+  // "online_transaction"/OnlineTransaction.id) bu Payment'ni yaratgani —
+  // Transaction.sourceType/sourceId bilan bir xil naqsh. Payme/Click orqali
+  // kelgan to'lov keyinchalik bekor qilinsa (Payme CancelTransaction),
+  // aynan shu Payment yozuvini topib status='refunded' qilish uchun kerak —
+  // bo'lmasa "paid" Payment abadiy noto'g'ri ko'rinib qolardi.
+  sourceType String?
+  sourceId   String?
 }
 
 // ============================================
