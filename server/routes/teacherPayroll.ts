@@ -113,6 +113,51 @@ router.get('/:teacherId/staff-attendance', canReview, async (req, res) => {
     }
 });
 
+// GET /api/finance/teacher-payroll/group/:groupId/attendance-matrix?month=YYYY-MM
+// O13 tuzatish (2026-09-16 audit, dizayn namunasi): guruh tabelida ilgari
+// faqat har o'quvchining OYLIK QOLDIRGAN DARSLAR SONI ko'rinardi (masalan
+// "3 kun") — HR aynan QAYSI sanalarda kelmagani/kelganini ko'ra olmasdi.
+// Endi sana x o'quvchi matritsasi — har katakcha shu kundagi holat (yoki
+// yozuv umuman yo'q bo'lsa `null`, "avtomatik kelmadi" deb taxmin
+// QILINMAYDI).
+router.get('/group/:groupId/attendance-matrix', canReview, async (req, res) => {
+    try {
+        const { month } = req.query as { month?: string };
+        if (!month) return res.status(400).json({ message: 'month talab qilinadi' });
+
+        const group = await prisma.group.findUnique({
+            where: { id: req.params.groupId },
+            select: {
+                name: true,
+                enrollments: { select: { student: { select: { id: true, name: true } } } },
+            },
+        });
+        if (!group) return res.status(404).json({ message: 'Guruh topilmadi' });
+
+        const records = await prisma.attendanceRecord.findMany({
+            where: { groupId: req.params.groupId, date: { startsWith: month } },
+            select: { studentId: true, date: true, status: true },
+        });
+
+        const dates = Array.from(new Set(records.map(r => r.date))).sort();
+        const cellsByStudent = new Map<string, Map<string, string>>();
+        for (const r of records) {
+            if (!cellsByStudent.has(r.studentId)) cellsByStudent.set(r.studentId, new Map());
+            cellsByStudent.get(r.studentId)!.set(r.date, r.status);
+        }
+
+        const students = group.enrollments.map(e => ({
+            studentId: e.student.id,
+            studentName: e.student.name,
+            cells: dates.map(d => cellsByStudent.get(e.student.id)?.get(d) ?? null),
+        }));
+
+        res.json({ groupName: group.name, dates, students });
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // GET /api/finance/teacher-payroll?teacherId=&month=
 router.get('/', canReview, async (req, res) => {
     try {

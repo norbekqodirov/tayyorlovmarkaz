@@ -19,7 +19,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | **P14 — dizayn namunasidan (oylik-ish-varaqasi.html) O05/O12** | O05, O12 | ✅ | (shu partiyada) |
 | **P15 — payroll UI ishonchliligi** | O06, O09, O11 | ✅ | (shu partiyada) |
 | P8 — payroll UI ishonchliligi (qolgani) | O08 | ⬜ | — |
-| P9 — payroll UI kengaytirish (qolgani) | O03, O04, O10, O13, O14 | ⬜ | — |
+| **P16 — dizayn namunasidan O13/O14 (tabel matritsasi, qidiruv/filtr)** | O13, O14 | ✅ | (shu partiyada) |
+| P9 — payroll UI kengaytirish (qolgani) | O03, O04, O10 | ⬜ | — |
 | P10 — billing snapshot/allocation (katta) | F10, F11, W14-W20 ruhida | ⬜ | Katta — alohida reja kerak |
 | **P13 — Payroll-avans + berish tartibi tizimi (2026-09-17, foydalanuvchi so'rovi)** | Yangi `StaffAdvance`, Salary qisman to'lov, `payroll_review` ruxsati | ✅ | (shu partiyada) |
 | P11 — RBAC granular payroll ruxsatlari (approve/pay ajratish) | 11-bo'lim (payroll.calculate/approve/pay/...) | 🟡 | P13'da qisman bajarildi (pastga q.) |
@@ -68,8 +69,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | O10 | P2 | ⬜ | Staff attendance oxirgi-200-yozuv + client-side oy filtri — P9. |
 | O11 | P2 | ✅ | Staff forma endi haqiqiy saqlangan ma'lumot ASINXRON kelganda ham to'g'ri sinxronlanadi (avval faqat `selectedStaffId`/`monthStr` o'zgarganda ishlaydigan effekt, server javobi keyinroq kelsa eski/bo'sh qiymatda qolib ketardi) — LEKIN foydalanuvchi formani tahrirlab turgan bo'lsa (dirty), server ma'lumoti uni qayta yozmaydi. Shu bilan bir qatorda taklif qilinadigan to'lov summasi (`payStaffAmount`) ham `total` o'zgarganda to'g'ri yangilanadigan qilib tuzatildi (avval faqat paidAmount/advanceApplied'ga bog'liq edi — Saqlashdan keyin eski qoldiqda qotib qolardi). Ikkalasi ham brauzerda tasdiqlangan. — `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 | O12 | P2 | ✅ | Yangi `GET /finance/teacher-payroll/:id/payouts` va `GET /salary/:id/payouts` — har bir naqd/bank to'lov (Transaction) VA avtomatik avans-qoplash (StaffAdvanceApplication) hodisasini sana/summa/usul bilan xronologik qaytaradi. UI'da yangi "To'lovlar tarixi (bu davr)" kartasi (`PayoutTimeline`). Brauzerda ikkita alohida to'lov (500000 Naqd + 800000 Bank) to'g'ri, alohida-alohida ko'rsatilgani tasdiqlandi. — `server/routes/teacherPayroll.ts`, `server/routes/salary.ts`, `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
-| O13 | P2 | ⬜ | Tabelda kun/dars matritsasi yo'q — P9. |
-| O14 | P2 | ⬜ | Qidiruv/holat filtri/tekshirish navbati/ommaviy amal yo'q — P9. |
+| O13 | P2 | ✅ | Yangi `GET /finance/teacher-payroll/group/:groupId/attendance-matrix?month=` — sana x o'quvchi davomat matritsasi (yozuv yo'q bo'lsa `null`, "kelmadi" deb TAXMIN QILINMAYDI). Guruh kartasida "Kunlik davomat" kengaytmasi (lazy-load) sifatida qo'shildi. Brauzerda 2 o'quvchi × 3 sana bilan aniq tekshirildi — har bir katakcha (Keldi/Kelmadi/Kech) to'g'ri rang bilan chiqdi. — `server/routes/teacherPayroll.ts`, `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
+| O14 | P2 | ✅ | O'qituvchilar VA xodimlar ro'yxatiga ism bo'yicha qidiruv + holat filtri (Hisoblanmagan/Loyiha/Qisman/To'langan) qo'shildi, dizayn namunasidagi "N ta xodim · Summalar so'mda" natija soni bilan. Ommaviy amal/"tekshirish navbati" hali qo'shilmagan (kelgusi ish). Brauzerda tasdiqlangan. — `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 
 ## P13 — Payroll-avans va berish tartibi tizimi (2026-09-17)
 

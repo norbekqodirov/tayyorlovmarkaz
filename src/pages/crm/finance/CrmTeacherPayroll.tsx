@@ -549,24 +549,66 @@ function StatusBadge({ status }: { status?: string }) {
   return <span className={`text-[10px] font-black px-2 py-1 rounded-full shrink-0 ${meta.className}`}>{meta.label}</span>;
 }
 
+// O14 tuzatish (2026-09-16 audit, dizayn namunasi): ro'yxatda qidiruv va
+// holat filtri yo'q edi — 30-100 xodimda kerakli odamni topish qiyin
+// bo'lardi. Endi ism bo'yicha qidiruv + holat bo'yicha filtr, natija soni
+// bilan (dizayn namunasidagi "3 ta xodim · Summalar so'mda" naqshiga mos).
+type ListStatusFilter = 'all' | 'none' | 'draft' | 'partial' | 'paid';
+const LIST_STATUS_OPTIONS: { value: ListStatusFilter; label: string }[] = [
+  { value: 'all', label: 'Barcha holatlar' },
+  { value: 'none', label: 'Hisoblanmagan' },
+  { value: 'draft', label: 'Loyiha' },
+  { value: 'partial', label: "Qisman to'langan" },
+  { value: 'paid', label: "To'langan" },
+];
+
 function TeacherList({ teachers, basis, setBasis, statusFor, onSelect }: {
   teachers: Teacher[]; basis: 'accrual' | 'cash'; setBasis: (b: 'accrual' | 'cash') => void;
   statusFor: (id: string) => Payroll | null; onSelect: (id: string) => void;
 }) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ListStatusFilter>('all');
+
+  const filtered = teachers.filter(t => {
+    if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter === 'all') return true;
+    const p = statusFor(t.id);
+    const display = p ? displayPayrollStatus(p.status, p.paidAmount, p.advanceApplied) : 'none';
+    return display === statusFilter;
+  });
+
   return (
     <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] overflow-hidden">
-      <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+      <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm font-black text-slate-900 dark:text-white">O'qituvchilar ({teachers.length})</p>
         <div className="flex items-center gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
           <button onClick={() => setBasis('accrual')} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${basis === 'accrual' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-zinc-500'}`}>Hisoblangan</button>
           <button onClick={() => setBasis('cash')} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${basis === 'cash' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-zinc-500'}`}>Tushgan</button>
         </div>
       </div>
-      {teachers.length === 0 ? (
+      <div className="flex flex-wrap items-end gap-3 p-4 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex-1 min-w-[160px]">
+          <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Ism bo'yicha qidirish</label>
+          <input
+            type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="O'qituvchi ismi"
+            className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm"
+          />
+        </div>
+        <div className="min-w-[160px]">
+          <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Holat</label>
+          <select
+            value={statusFilter} onChange={e => setStatusFilter(e.target.value as ListStatusFilter)}
+            className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
+          >
+            {LIST_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
         <p className="p-8 text-center text-sm text-zinc-400">O'qituvchi topilmadi</p>
       ) : (
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {teachers.map(t => {
+          {filtered.map(t => {
             const p = statusFor(t.id);
             return (
               <button key={t.id} onClick={() => onSelect(t.id)} className="w-full flex items-center justify-between gap-3 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors text-left">
@@ -584,11 +626,37 @@ function TeacherList({ teachers, basis, setBasis, statusFor, onSelect }: {
           })}
         </div>
       )}
+      <div className="px-4 py-2.5 text-[11px] text-zinc-400 border-t border-zinc-100 dark:border-zinc-800">
+        {filtered.length} ta o'qituvchi · Summalar so'mda
+      </div>
     </div>
   );
 }
 
-function GroupBreakdownCard({ group, expanded, onToggle }: { group: GroupBreakdown; expanded: boolean; onToggle: () => void }) {
+// O13 tuzatish (2026-09-16 audit, dizayn namunasi): sana x o'quvchi
+// davomat matritsasi — "Kunlik davomat" kengaytmasi bosilganda lazy-load
+// qilinadi (har guruh uchun avtomatik so'ralmaydi).
+interface AttendanceMatrix { groupName: string; dates: string[]; students: { studentId: string; studentName: string; cells: (string | null)[] }[]; }
+const ATT_CELL_LABEL: Record<string, string> = { present: 'Keldi', absent: 'Kelmadi', late: 'Kech', excused: 'Sababli' };
+const ATT_CELL_COLOR: Record<string, string> = {
+  present: 'text-emerald-600', absent: 'text-rose-600', late: 'text-amber-600', excused: 'text-blue-500',
+};
+
+function GroupBreakdownCard({ group, expanded, onToggle, monthStr }: { group: GroupBreakdown; expanded: boolean; onToggle: () => void; monthStr: string }) {
+  const [showMatrix, setShowMatrix] = useState(false);
+  const [matrix, setMatrix] = useState<AttendanceMatrix | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+
+  const loadMatrix = () => {
+    if (matrix || matrixLoading) { setShowMatrix(v => !v); return; }
+    setMatrixLoading(true);
+    setShowMatrix(true);
+    api.get(`/finance/teacher-payroll/group/${group.groupId}/attendance-matrix`, { params: { month: monthStr } })
+      .then(res => setMatrix(res.data))
+      .catch(() => setMatrix({ groupName: group.groupName, dates: [], students: [] }))
+      .finally(() => setMatrixLoading(false));
+  };
+
   return (
     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
       <button onClick={onToggle} className="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/40 text-left">
@@ -600,28 +668,65 @@ function GroupBreakdownCard({ group, expanded, onToggle }: { group: GroupBreakdo
         <span className="text-xs font-black shrink-0">{formatNumber(group.revenue)} so'm</span>
       </button>
       {expanded && group.students && (
-        <table className="w-full text-left text-[11px]">
-          <thead>
-            <tr className="text-zinc-400 uppercase text-[9px] border-b border-zinc-100 dark:border-zinc-800">
-              <th className="px-3 py-1.5">O'quvchi</th>
-              <th className="px-3 py-1.5 text-right">Qoldirgan</th>
-              <th className="px-3 py-1.5 text-right">Baza</th>
-              <th className="px-3 py-1.5 text-right">Chegirma</th>
-              <th className="px-3 py-1.5 text-right">Yakuniy</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
-            {group.students.map(s => (
-              <tr key={s.studentId}>
-                <td className="px-3 py-1.5 font-bold text-slate-700 dark:text-zinc-300">{s.studentName}</td>
-                <td className={`px-3 py-1.5 text-right ${s.discountApplied ? 'text-rose-600 font-bold' : 'text-zinc-500'}`}>{s.absences} kun</td>
-                <td className="px-3 py-1.5 text-right text-zinc-500">{formatNumber(s.basePrice)}</td>
-                <td className="px-3 py-1.5 text-right text-rose-600">{s.discount > 0 ? `-${formatNumber(s.discount)}` : '—'}</td>
-                <td className="px-3 py-1.5 text-right font-black">{formatNumber(s.finalPrice)}</td>
+        <>
+          <table className="w-full text-left text-[11px]">
+            <thead>
+              <tr className="text-zinc-400 uppercase text-[9px] border-b border-zinc-100 dark:border-zinc-800">
+                <th className="px-3 py-1.5">O'quvchi</th>
+                <th className="px-3 py-1.5 text-right">Qoldirgan</th>
+                <th className="px-3 py-1.5 text-right">Baza</th>
+                <th className="px-3 py-1.5 text-right">Chegirma</th>
+                <th className="px-3 py-1.5 text-right">Yakuniy</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
+              {group.students.map(s => (
+                <tr key={s.studentId}>
+                  <td className="px-3 py-1.5 font-bold text-slate-700 dark:text-zinc-300">{s.studentName}</td>
+                  <td className={`px-3 py-1.5 text-right ${s.discountApplied ? 'text-rose-600 font-bold' : 'text-zinc-500'}`}>{s.absences} kun</td>
+                  <td className="px-3 py-1.5 text-right text-zinc-500">{formatNumber(s.basePrice)}</td>
+                  <td className="px-3 py-1.5 text-right text-rose-600">{s.discount > 0 ? `-${formatNumber(s.discount)}` : '—'}</td>
+                  <td className="px-3 py-1.5 text-right font-black">{formatNumber(s.finalPrice)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="border-t border-zinc-100 dark:border-zinc-800 px-3 py-2">
+            <button onClick={loadMatrix} className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1">
+              {showMatrix ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Kunlik davomat (sana bo'yicha)
+            </button>
+            {showMatrix && (
+              matrixLoading ? (
+                <div className="py-3 flex justify-center"><Loader2 size={16} className="animate-spin text-zinc-400" /></div>
+              ) : matrix && matrix.dates.length === 0 ? (
+                <p className="text-[11px] text-zinc-400 py-2">Bu oy uchun davomat yozuvi topilmadi.</p>
+              ) : matrix && (
+                <div className="overflow-x-auto mt-2">
+                  <table className="text-[10px] border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="text-left px-2 py-1 text-zinc-400 sticky left-0 bg-white dark:bg-[#111118]">O'quvchi</th>
+                        {matrix.dates.map(d => <th key={d} className="px-2 py-1 text-zinc-400 font-bold whitespace-nowrap">{d.slice(5)}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
+                      {matrix.students.map(s => (
+                        <tr key={s.studentId}>
+                          <td className="px-2 py-1 font-bold text-slate-700 dark:text-zinc-300 whitespace-nowrap sticky left-0 bg-white dark:bg-[#111118]">{s.studentName}</td>
+                          {s.cells.map((cell, i) => (
+                            <td key={i} className={`px-2 py-1 text-center whitespace-nowrap ${cell ? ATT_CELL_COLOR[cell] || '' : 'text-zinc-300 dark:text-zinc-700'}`}>
+                              {cell ? ATT_CELL_LABEL[cell] || cell : '—'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -747,7 +852,11 @@ function TeacherDetail(props: {
                   <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Guruhlar bo'yicha tabel — HR tekshirishi uchun</p>
                   <div className="space-y-2">
                     {activePreview.groups.map(g => (
-                      <GroupBreakdownCard key={g.groupId} group={g} expanded={expandedGroupId === g.groupId} onToggle={() => setExpandedGroupId(expandedGroupId === g.groupId ? null : g.groupId)} />
+                      <GroupBreakdownCard
+                        key={g.groupId} group={g} expanded={expandedGroupId === g.groupId}
+                        onToggle={() => setExpandedGroupId(expandedGroupId === g.groupId ? null : g.groupId)}
+                        monthStr={`${year}-${String(month).padStart(2, '0')}`}
+                      />
                     ))}
                   </div>
                 </>
@@ -874,16 +983,49 @@ function TeacherDetail(props: {
 }
 
 function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salaryFor: (id: string) => SalaryRow | null; onSelect: (id: string) => void }) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ListStatusFilter>('all');
+
+  const statusOf = (s: StaffPerson): ListStatusFilter => {
+    const sal = salaryFor(s.id);
+    if (!sal) return 'none';
+    if (sal.paid) return 'paid';
+    return (sal.paidAmount > 0 || sal.advanceApplied > 0) ? 'partial' : 'draft';
+  };
+  const filtered = staff.filter(s => {
+    if (search && !s.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter === 'all') return true;
+    return statusOf(s) === statusFilter;
+  });
+
   return (
     <div className="bg-white dark:bg-[#111118] rounded-2xl border border-zinc-200 dark:border-white/[0.05] overflow-hidden">
       <div className="p-4 border-b border-zinc-100 dark:border-zinc-800">
         <p className="text-sm font-black text-slate-900 dark:text-white">Xodimlar ({staff.length})</p>
       </div>
-      {staff.length === 0 ? (
+      <div className="flex flex-wrap items-end gap-3 p-4 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex-1 min-w-[160px]">
+          <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Ism bo'yicha qidirish</label>
+          <input
+            type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Xodim ismi"
+            className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm"
+          />
+        </div>
+        <div className="min-w-[160px]">
+          <label className="block text-[10px] font-bold text-zinc-400 uppercase mb-1">Holat</label>
+          <select
+            value={statusFilter} onChange={e => setStatusFilter(e.target.value as ListStatusFilter)}
+            className="w-full px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
+          >
+            {LIST_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+      {filtered.length === 0 ? (
         <p className="p-8 text-center text-sm text-zinc-400">Xodim topilmadi</p>
       ) : (
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {staff.map(s => {
+          {filtered.map(s => {
             const sal = salaryFor(s.id);
             return (
               <button key={s.id} onClick={() => onSelect(s.id)} className="w-full flex items-center justify-between gap-3 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors text-left">
@@ -895,7 +1037,7 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
                   <span className="text-xs font-bold text-slate-600 dark:text-zinc-300">
                     {sal ? `${formatNumber(sal.total)} so'm` : `${formatNumber(s.salary)} so'm (asosiy)`}
                   </span>
-                  <StatusBadge status={sal ? (sal.paid ? 'paid' : ((sal.paidAmount > 0 || sal.advanceApplied > 0) ? 'partial' : 'draft')) : 'none'} />
+                  <StatusBadge status={statusOf(s)} />
                   <ChevronRight size={16} className="text-zinc-300" />
                 </div>
               </button>
@@ -903,6 +1045,9 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
           })}
         </div>
       )}
+      <div className="px-4 py-2.5 text-[11px] text-zinc-400 border-t border-zinc-100 dark:border-zinc-800">
+        {filtered.length} ta xodim · Summalar so'mda
+      </div>
     </div>
   );
 }
