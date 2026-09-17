@@ -4,8 +4,11 @@ import { formatNumber } from '../../../utils/formatters';
 
 export function DebtorsTable({ students }: { students: any[] }) {
   const navigate = useNavigate();
+  // F16 tuzatish: CrmFinance.tsx bilan bir xil qoida — qarz FAQAT manfiy
+  // balans, stale `paymentStatus` mustaqil shart sifatida ishlatilmaydi
+  // (aks holda musbat balansli o'quvchi ham "qarzdor" ko'rinishi mumkin edi).
   const debtors = students
-    .filter(s => (s.balance || 0) < 0 || s.paymentStatus === 'Qarzdorlik')
+    .filter(s => (s.balance || 0) < 0)
     .sort((a, b) => (a.balance || 0) - (b.balance || 0))
     .slice(0, 7);
 

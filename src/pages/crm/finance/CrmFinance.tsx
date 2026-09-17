@@ -379,9 +379,17 @@ export default function CrmFinance() {
 
   const monthExpense = transactions.filter(t => t.type === 'expense' && t.date && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear).reduce((a, t) => a + t.amount, 0);
 
+  // Finance-audit (2026-09-16), F16 tuzatish: ilgari `paymentStatus === 'Qarzdorlik'`
+  // ham mustaqil shart edi — bu maydon balansdan mustaqil, qo'lda yoki eski
+  // yo'llar bilan yozilishi mumkin (masalan balans allaqachon musbat bo'lib
+  // qolgan, lekin status yangilanmagan holat). Natijada ijobiy balansli
+  // o'quvchi ham "qarzdor" ro'yxatida chiqib, `Math.abs(balance)` uning
+  // KREDITINI qarz sifatida ko'rsatardi. Endi yagona, izchil qoida: qarz =
+  // FAQAT manfiy balans (ochiq majburiyat qoldig'i); musbat balans — avans,
+  // qarz emas.
   const debtors = useMemo(() =>
     students
-      .filter(s => (s.balance || 0) < 0 || s.paymentStatus === 'Qarzdorlik')
+      .filter(s => (s.balance || 0) < 0)
       .sort((a, b) => (a.balance || 0) - (b.balance || 0)),
     [students]
   );
@@ -430,6 +438,18 @@ export default function CrmFinance() {
       return { month: MONTHS[mi], income: inc, expense: exp, profit: inc - exp };
     });
   }, [transactions, currentYear]);
+
+  // Finance-audit (2026-09-16), F14 tuzatish: jadval qatorlari `currentYear`
+  // bo'yicha filtrlangan, lekin pastdagi "Jami" qatori `totalIncome`/
+  // `totalExpense` (BARCHA yillar jami)ni ko'rsatardi — ikkalasi mos
+  // kelmasdi (masalan 2025-yilni tanlab, 2026-yilni ham qo'shib ko'rsatgan
+  // jami). Endi footer ham xuddi shu `monthlySummary`dan (bir xil yil
+  // scope'i) hisoblanadi.
+  const yearlyTotals = useMemo(() => {
+    const income = monthlySummary.reduce((a, m) => a + m.income, 0);
+    const expense = monthlySummary.reduce((a, m) => a + m.expense, 0);
+    return { income, expense, profit: income - expense };
+  }, [monthlySummary]);
 
   return (
     <div className="space-y-5">
@@ -1206,10 +1226,10 @@ export default function CrmFinance() {
               </tbody>
               <tfoot>
                 <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-t-2 border-zinc-200 dark:border-zinc-700">
-                  <td className="px-5 py-3 text-[10px] font-black text-zinc-500 uppercase">Jami</td>
-                  <td className="px-5 py-3 text-right text-sm font-black text-emerald-600">{formatCompact(totalIncome)} so'm</td>
-                  <td className="px-5 py-3 text-right text-sm font-black text-rose-600">{formatCompact(totalExpense)} so'm</td>
-                  <td className="px-5 py-3 text-right text-sm font-black text-blue-600">{formatCompact(balance)} so'm</td>
+                  <td className="px-5 py-3 text-[10px] font-black text-zinc-500 uppercase">Jami ({currentYear})</td>
+                  <td className="px-5 py-3 text-right text-sm font-black text-emerald-600">{formatCompact(yearlyTotals.income)} so'm</td>
+                  <td className="px-5 py-3 text-right text-sm font-black text-rose-600">{formatCompact(yearlyTotals.expense)} so'm</td>
+                  <td className="px-5 py-3 text-right text-sm font-black text-blue-600">{formatCompact(yearlyTotals.profit)} so'm</td>
                   <td></td>
                 </tr>
               </tfoot>

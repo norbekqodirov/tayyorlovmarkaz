@@ -217,7 +217,7 @@ router.get('/payments', portalAuth, async (req: any, res) => {
         if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
         const studentId = resolved.id;
 
-        const [unpaid, recent] = await Promise.all([
+        const [unpaid, recent, unpaidTotal] = await Promise.all([
             prisma.payment.findMany({
                 where: { studentId, status: { in: ['pending', 'overdue'] }, deletedAt: null },
                 orderBy: { dueDate: 'asc' },
@@ -228,9 +228,19 @@ router.get('/payments', portalAuth, async (req: any, res) => {
                 orderBy: { date: 'desc' },
                 take: 10,
             }),
+            // Finance-audit (2026-09-16), F15 tuzatish: `totalUnpaid` ilgari
+            // `unpaid` ro'yxatidan (yuqorida `take:10` bilan cheklangan)
+            // hisoblanardi — 10 tadan ortiq to'lanmagan yozuvi bor o'quvchida
+            // ota-onaga ko'rsatilgan "jami qarz" haqiqiydan kam chiqardi. Endi
+            // ro'yxat (ko'rsatish uchun, hali 10 bilan cheklangan) va jami
+            // (hech qanday limitsiz) mustaqil hisoblanadi.
+            prisma.payment.aggregate({
+                where: { studentId, status: { in: ['pending', 'overdue'] }, deletedAt: null },
+                _sum: { amount: true },
+            }),
         ]);
 
-        const totalUnpaid = unpaid.reduce((sum, p) => sum + p.amount, 0);
+        const totalUnpaid = unpaidTotal._sum.amount || 0;
 
         // Shu oy uchun davomat asosida hisoblangan to'lov (real vaqtda, Payment
         // yozuvidan mustaqil — 3 kundan ortiq qoldirilgan darslar uchun avtomatik

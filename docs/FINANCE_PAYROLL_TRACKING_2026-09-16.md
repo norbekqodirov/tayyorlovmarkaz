@@ -12,7 +12,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | **P1 — hisob ishonchliligi (asosiy)** | F01, F02, F04, F05, F06 (qisman), F12 (qisman), F13, O01, O02, O07 | ✅ | `6937e01`, `f7ce72d`, (shu partiya) |
 | P2 — invoice net/allocation | F02, F03, F09-adjacent | ⬜ | — |
 | **P3 — provider qattiqlashtirish** | F07, F08, F09 | ✅ | (shu partiyada) |
-| P4 — hisobot/pagination to'g'irlash | F14, F15, F16, F20 | ⬜ | — |
+| **P4 — hisobot to'g'irlash (F20 bundan mustasno)** | F14, F15, F16 | ✅ | (shu partiyada) |
 | P5 — chegirma/kategoriya | F17, F18 | ⬜ | — |
 | P6 — byudjet | F19 | ⬜ | — |
 | P7 — UX/idempotency | F21, F22 (qisman) | ⬜ | — |
@@ -39,9 +39,9 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | F11 | P1 | ⬜ | Oylik billing charge yaratish/yakunlash yagona oqimi yo'q — P10. |
 | F12 | P1 | 🟡 | `/finance/billing-settings` va `/finance/transactions` validatsiyasi allaqachon bor edi (oldingi audit, F0). Bu safar `/finance/transactions`ga `type` validatsiyasi, `/finance/expenses` POST/PATCH'ga musbat-summa tekshiruvi, `POST /finance/transactions`da studentId mavjudligi tekshiruvi qo'shildi. To'liq domen-sxema validatsiyasi (invoice/budget uchun ham) hali qolgan. |
 | F13 | P1 | ✅ | `server/routes/salary.ts` barcha 8 route'iga `requirePermission('finance')` qo'shildi — endi `/finance/*` bilan bir xil talab (ADMIN/SUPER_ADMIN FULL_ACCESS_ROLES orqali baribir o'tadi). — `server/routes/salary.ts` |
-| F14 | P2 | ⬜ | Jadval footer'i barcha yillar jamini oladi — P4. |
-| F15 | P2 | ⬜ | `reports/students`/`portal` limitlangan payment sonidan hisoblaydi — P4. |
-| F16 | P2 | ⬜ | Debtors hosil qilish qoidasi izchil emas — P4. |
+| F14 | P2 | ✅ | "Oylik" jadvalining "Jami" qatori endi `monthlySummary` (tanlangan `currentYear` bo'yicha filtrlangan) dan hisoblanadi, avvalgi barcha-yillar `totalIncome/Expense` o'rniga. — `src/pages/crm/finance/CrmFinance.tsx` |
+| F15 | P2 | ✅ | `reports/students`: `totalPaid`/`totalDebt` endi butun jadval bo'yicha `groupBy` agregatsiyasidan (avval faqat so'nggi 5 to'lovdan). `portal/payments`: `totalUnpaid` endi limitsiz `aggregate`dan (avval ko'rsatiladigan 10 taning yig'indisi edi). Jonli tekshirildi: 8 ta paid+2 ta overdue yozuvli test o'quvchida `totalPaid=800000` (avval 500000 bo'lardi), `totalDebt=100000` to'g'ri chiqdi. — `server/routes/reports.ts`, `server/routes/portal.ts` |
+| F16 | P2 | ✅ | Debtors qoidasi (`CrmFinance.tsx` va Dashboard `DebtorsTable.tsx`, ikkalasi ham) endi FAQAT `balance < 0`ga tayanadi — stale `paymentStatus==='Qarzdorlik'` mustaqil shart sifatida olib tashlandi (musbat balansli o'quvchi endi "qarzdor" ro'yxatida noto'g'ri chiqmaydi). — `src/pages/crm/finance/CrmFinance.tsx`, `src/components/dashboard/widgets/DebtorsTable.tsx` |
 | F17 | P2 | ⬜ | Promo-kod finance'ga ulanmagan — P5. |
 | F18 | P2 | ⬜ | Kategoriya nom sifatida saqlanadi (ID yo'q) — P5. |
 | F19 | P2 | ⬜ | Budget reja/fakt/davr almashish yo'q — P6. |

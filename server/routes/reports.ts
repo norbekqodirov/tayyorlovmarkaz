@@ -199,10 +199,6 @@ router.get('/students', requireAuth, requireMinRole('MANAGER'), requirePermissio
                 enrollments: {
                     include: { group: { include: { course: true } } },
                 },
-                payments: {
-                    orderBy: { date: 'desc' },
-                    take: 5,
-                },
                 _count: {
                     select: {
                         attendanceRecords: true,
@@ -213,9 +209,27 @@ router.get('/students', requireAuth, requireMinRole('MANAGER'), requirePermissio
             orderBy: { createdAt: 'desc' },
         });
 
+        // Finance-audit (2026-09-16), F15 tuzatish: ilgari `payments: {take:5}`
+        // orqali FAQAT so'nggi 5 ta to'lovdan totalPaid/totalDebt hisoblanardi
+        // — 5 tadan ortiq to'lovi bor o'quvchida jami kamroq ko'rsatilardi
+        // (ba'zan eski, hali "overdue" bo'lgan qarz ham 5 tadan tashqarida
+        // qolib, umuman hisobga kirmasdi). Endi butun jadval bo'yicha bitta
+        // `groupBy` agregatsiyasi — pagination'dan mustaqil, aniq jami.
+        const paymentSums = await prisma.payment.groupBy({
+            by: ['studentId', 'status'],
+            _sum: { amount: true },
+        });
+        const paidByStudent = new Map<string, number>();
+        const debtByStudent = new Map<string, number>();
+        for (const row of paymentSums) {
+            const sum = row._sum.amount || 0;
+            if (row.status === 'paid') paidByStudent.set(row.studentId, (paidByStudent.get(row.studentId) || 0) + sum);
+            if (row.status === 'overdue') debtByStudent.set(row.studentId, (debtByStudent.get(row.studentId) || 0) + sum);
+        }
+
         const enriched = students.map(s => {
-            const totalPaid = s.payments.filter(p => p.status === 'paid').reduce((a, p) => a + p.amount, 0);
-            const totalDebt = s.payments.filter(p => p.status === 'overdue').reduce((a, p) => a + p.amount, 0);
+            const totalPaid = paidByStudent.get(s.id) || 0;
+            const totalDebt = debtByStudent.get(s.id) || 0;
             const activeGroups = s.enrollments.filter(e => e.group?.status === 'active');
 
             return {
