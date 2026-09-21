@@ -13,6 +13,7 @@ import { requirePermission, requireAnyPermission } from '../middleware/authorize
 import { todayDateStr } from '../utils/timezone.js';
 import { calculateTeacherPayroll, PayrollBasis } from '../services/teacherPayroll.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
+import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
@@ -297,7 +298,17 @@ router.post('/:id/approve', canManageMoney, async (req, res) => {
         if (!result.applied) {
             return res.status(400).json({ message: "Faqat 'draft' holatidagi yozuv tasdiqlanishi mumkin" });
         }
-        res.json({ ...result.updated, remaining: remainingOf(result.updated) });
+
+        // F22 tuzatish: tasdiqlash (summa muzlashi) real moliyaviy hodisa —
+        // markazlashgan Audit Jurnali'ga yoziladi.
+        const approver = (req as any).user;
+        await logAudit({
+            userId: approver?.id, userName: approver?.name || 'system',
+            action: 'update', resource: 'teacherPayroll', resourceId: req.params.id,
+            after: { status: result.updated!.status, accruedAmount: result.updated!.accruedAmount, advanceApplied: result.updated!.advanceApplied },
+        });
+
+        res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -363,6 +374,14 @@ router.post('/:id/pay', canManageMoney, async (req, res) => {
         if (!result.applied) {
             return res.status(409).json({ message: "Boshqa so'rov shu vaqtda to'lov qildi — qoldiqni yangilab qayta urinib ko'ring" });
         }
+
+        // F22 tuzatish: real naqd/bank to'lov — Audit Jurnali'ga yoziladi.
+        const payer = (req as any).user;
+        await logAudit({
+            userId: payer?.id, userName: payer?.name || 'system',
+            action: 'update', resource: 'teacherPayroll', resourceId: req.params.id,
+            after: { paidAmount: numAmount, method: method || 'Bank', newStatus: result.updated!.status },
+        });
 
         res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {

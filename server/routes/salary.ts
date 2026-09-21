@@ -241,6 +241,14 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, a
         invalidate(NS.ANALYTICS);
         emitToAdmins('salary:paid', result.updated);
 
+        // F22 tuzatish: real naqd/bank to'lov — Audit Jurnali'ga yoziladi.
+        const payer = (req as any).user;
+        await logAudit({
+            userId: payer?.id, userName: payer?.name || 'system',
+            action: 'update', resource: 'salary', resourceId: req.params.id,
+            after: { paidAmount: requestedAmount, method: req.body.method || 'Bank', newStatus: result.updated!.paid ? 'paid' : 'partial' },
+        });
+
         res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
         res.status(500).json({ error: err.message });

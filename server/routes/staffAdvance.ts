@@ -12,6 +12,7 @@ import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
+import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
@@ -104,6 +105,14 @@ router.post('/', async (req, res) => {
                 },
             });
             return advance;
+        });
+
+        // F22 tuzatish: avans berish real xarajat — Audit Jurnali'ga yoziladi.
+        const giver = (req as any).user;
+        await logAudit({
+            userId: giver?.id, userName: giver?.name || 'system',
+            action: 'create', resource: 'staffAdvance', resourceId: result.id,
+            after: { personType, personId, personName, amount: numAmount, method: method || 'Naqd' },
         });
 
         res.status(201).json(result);

@@ -9,6 +9,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { getBillingSettings, calculateStudentMonthlyDue, calculateTeacherMonthlyRevenue } from '../services/billing.js';
+import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
@@ -256,6 +257,20 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
             });
 
             if (!result.invoice) return res.status(404).json({ error: 'Invoice topilmadi' });
+
+            // F22 tuzatish (2026-09-16 audit): "Asosiy moliyaviy yo'llarning
+            // auditi izchil emas" — invoice "to'landi" qilish real pul
+            // hodisasi, lekin markazlashgan Audit Jurnali'da umuman
+            // ko'rinmasdi. Faqat HAQIQATAN qo'llangan (applied=true)
+            // holatda yoziladi — idempotent qayta so'rovlar uchun emas.
+            if (result.applied) {
+                const user = (req as any).user;
+                await logAudit({
+                    userId: user?.id, userName: user?.name || 'system',
+                    action: 'update', resource: 'invoice', resourceId: result.invoice.id,
+                    after: { status: 'paid', amount: result.invoice.amount },
+                });
+            }
             return res.json(result.invoice);
         }
 
