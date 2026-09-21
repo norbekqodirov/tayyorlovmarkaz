@@ -15,7 +15,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | **P4 — hisobot to'g'irlash (F20 bundan mustasno)** | F14, F15, F16 | ✅ | (shu partiyada) |
 | **P19 — F17, promo-kod atomar qo'llash** | F17 | ✅ | (shu partiyada) |
 | P5 — kategoriya | F18 | ⬜ | — |
-| P6 — byudjet | F19 | ⬜ | — |
+| **P21 — F19, byudjet reja/fakt** | F19 | ✅ | (shu partiyada) |
 | P7 — UX/idempotency | F21, F22 (qisman) | ⬜ | — |
 | **P14 — dizayn namunasidan (oylik-ish-varaqasi.html) O05/O12** | O05, O12 | ✅ | (shu partiyada) |
 | **P15 — payroll UI ishonchliligi** | O06, O09, O11 | ✅ | (shu partiyada) |
@@ -49,7 +49,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | F16 | P2 | ✅ | Debtors qoidasi (`CrmFinance.tsx` va Dashboard `DebtorsTable.tsx`, ikkalasi ham) endi FAQAT `balance < 0`ga tayanadi — stale `paymentStatus==='Qarzdorlik'` mustaqil shart sifatida olib tashlandi (musbat balansli o'quvchi endi "qarzdor" ro'yxatida noto'g'ri chiqmaydi). — `src/pages/crm/finance/CrmFinance.tsx`, `src/components/dashboard/widgets/DebtorsTable.tsx` |
 | F17 | P2 | ✅ | Yangi `POST /discounts/apply` — validatsiya + `usedCount`ni ATOMAR oshirish + `DiscountApplication` audit yozuvi (yangi jadval, additive). Invoice yaratish formasiga "Promo-kod" maydoni qo'shildi. `maxUses` endi haqiqatan ishlaydi — curl bilan tasdiqlandi (1-chaqiruv muvaffaqiyatli, 2-chaqiruv "chegara tugagan" bilan rad etildi). **Ma'lum cheklov:** promo qo'llash va invoice yaratish alohida ikkita chaqiruv — agar foydalanuvchi promo qo'llagandan keyin formani bekor qilsa, kod "ishlatilgan" bo'lib qoladi (to'liq atomar birlashtirish keyingi ish). — `prisma/schema.prisma`, `server/routes/discounts.ts`, `src/pages/crm/finance/CrmFinance.tsx` |
 | F18 | P2 | ⬜ | Kategoriya nom sifatida saqlanadi (ID yo'q) — P5. |
-| F19 | P2 | ⬜ | Budget reja/fakt/davr almashish yo'q — P6. |
+| F19 | P2 | ✅ | `GET /finance/budget` endi har bir kategoriya uchun HAQIQIY xarajat Transaction'laridan (type='expense') jonli "fakt" (actual/remaining/usedPercent) hisoblaydi — avval `Budget.actual` ustuni hech qachon yozilmasdi (doim 0). UI'da reja inputi ostida sarflangan/qoldiq va rang-kodli progress-chiziq (yashil/sariq 80%+/qizil 100%+) qo'shildi. curl bilan tasdiqlandi (1000000 reja, 700000 xarajat → 300000 qoldiq, 70%). Davr (oy/yil) almashtirish allaqachon mavjud edi (`budgetPeriod`). — `server/routes/finance.ts`, `src/pages/crm/finance/CrmFinance.tsx` |
 | F20 | P2 | ⬜ | Finance to'liq ro'yxat yuklaydi, server pagination yo'q — P4/P7. |
 | F21 | P2 | 🟡 | Tranzaksiya/Invoice yaratish va Invoice'ni "to'landi" belgilash endi "band" (saqlanmoqda) holati bilan himoyalangan — ikki marta bosish ikkita yozuv yaratolmaydi, xato endi jim yutilmasdan ko'rsatiladi. Xarajat/Byudjet allaqachon to'g'ri himoyalangan edi. To'liq query-invalidation (masalan boshqa tab'larni ham avtomatik yangilash) hali umumiy emas — qolgan qism kelgusi ish. — `src/pages/crm/finance/CrmFinance.tsx` |
 | F22 | P2 | 🟡 | `Expense.createdById` endi to'ldiriladi (F04 bilan birga). To'liq audit trail (kim/nima/qachon/sabab har bir moliyaviy yo'lda) hali umumiy emas — P7/kelajak. |

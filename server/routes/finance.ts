@@ -546,13 +546,43 @@ router.delete('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePe
 // ─── BUDGET ───────────────────────────────────────────────────────────────────
 
 // GET /api/finance/budget?month=&year=
+// Finance-audit (2026-09-16), F19 tuzatish: `Budget.actual` ustuni HECH
+// QAYERDA yozilmasdi (doim 0) — "reja/fakt" solishtirish imkonsiz edi.
+// Endi har bir kategoriya uchun "fakt" (actual) shu oy/yil uchun HAQIQIY
+// xarajat Transaction'laridan (type='expense') JONLI hisoblanadi — qo'lda
+// alohida saqlanadigan, eskirishi mumkin bo'lgan son emas.
 router.get('/budget', requireAuth, requirePermission('finance'), async (req, res) => {
     try {
         const todayParts = todayDateStr().split('-');
         const year = Number(req.query.year) || Number(todayParts[0]);
         const month = Number(req.query.month) || Number(todayParts[1]);
-        const budgets = await prisma.budget.findMany({ where: { year, month } });
-        res.json({ year, month, budgets });
+        const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+
+        const [budgets, actuals] = await Promise.all([
+            prisma.budget.findMany({ where: { year, month } }),
+            prisma.transaction.groupBy({
+                by: ['category'],
+                where: { type: 'expense', date: { startsWith: monthStr } },
+                _sum: { amount: true },
+            }),
+        ]);
+        const actualByCategory = new Map(actuals.map(a => [a.category, a._sum.amount || 0]));
+
+        // Reja kiritilmagan, lekin shu oy real xarajati bo'lgan kategoriyalar
+        // ham ko'rinishi kerak (aks holda "fakt" borligi butunlay yashirin qolardi).
+        const categories = new Set([...budgets.map(b => b.category), ...actualByCategory.keys()]);
+        const merged = Array.from(categories).map(category => {
+            const b = budgets.find(x => x.category === category);
+            const actual = actualByCategory.get(category) || 0;
+            const planned = b?.planned || 0;
+            return {
+                id: b?.id,
+                month, year, category, planned, actual,
+                remaining: planned - actual,
+                usedPercent: planned > 0 ? Math.round((actual / planned) * 100) : (actual > 0 ? 100 : 0),
+            };
+        });
+        res.json({ year, month, budgets: merged });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

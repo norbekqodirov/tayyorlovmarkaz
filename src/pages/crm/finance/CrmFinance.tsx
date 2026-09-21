@@ -75,6 +75,11 @@ interface BudgetEntry {
   planned: number;
   month: number;
   year: number;
+  // F19 tuzatish (2026-09-16 audit): server endi haqiqiy xarajat
+  // Transaction'laridan jonli hisoblangan "fakt"ni ham qaytaradi.
+  actual?: number;
+  remaining?: number;
+  usedPercent?: number;
 }
 const tashkentToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
 const emptyExpense = () => ({ category: '' as ExpenseCategory, amount: 0, date: tashkentToday(), description: '', receipt: '' });
@@ -141,6 +146,9 @@ export default function CrmFinance() {
     return { year, month };
   });
   const [budgetAmounts, setBudgetAmounts] = useState<Partial<Record<ExpenseCategory, number>>>({});
+  // F19 tuzatish: reja (planned, tahrirlanadigan) dan ALOHIDA — server
+  // hisoblagan "fakt" (actual/remaining/usedPercent), faqat o'qish uchun.
+  const [budgetActuals, setBudgetActuals] = useState<Partial<Record<ExpenseCategory, { actual: number; remaining: number; usedPercent: number }>>>({});
   const [budgetLoading, setBudgetLoading] = useState(true);
   const [budgetError, setBudgetError] = useState(false);
   const [budgetReload, setBudgetReload] = useState(0);
@@ -175,8 +183,13 @@ export default function CrmFinance() {
     }).then(res => {
       if (!controller.signal.aborted) {
         const amounts: Partial<Record<ExpenseCategory, number>> = {};
-        res.data.budgets.forEach(entry => { amounts[entry.category] = entry.planned; });
+        const actuals: Partial<Record<ExpenseCategory, { actual: number; remaining: number; usedPercent: number }>> = {};
+        res.data.budgets.forEach(entry => {
+          amounts[entry.category] = entry.planned;
+          actuals[entry.category] = { actual: entry.actual || 0, remaining: entry.remaining ?? entry.planned, usedPercent: entry.usedPercent || 0 };
+        });
         setBudgetAmounts(amounts);
+        setBudgetActuals(actuals);
       }
     }).catch(() => {
       if (!controller.signal.aborted) setBudgetError(true);
@@ -228,6 +241,19 @@ export default function CrmFinance() {
     try {
       await api.post('/finance/budget', { ...budgetPeriod, category, planned });
       showToast(`${categoryLabel(category, 'expense')} byudjeti saqlandi`, 'success');
+      // F19 tuzatish: `planned` o'zgargani "qoldiq"/"foiz"ga ham ta'sir
+      // qiladi — sahifani qayta yuklamasdan mos ravishda yangilanadi.
+      setBudgetActuals(prev => {
+        const current = prev[category] || { actual: 0, remaining: planned, usedPercent: 0 };
+        return {
+          ...prev,
+          [category]: {
+            actual: current.actual,
+            remaining: planned - current.actual,
+            usedPercent: planned > 0 ? Math.round((current.actual / planned) * 100) : (current.actual > 0 ? 100 : 0),
+          },
+        };
+      });
     } catch { showToast('Byudjetni saqlashda xatolik yuz berdi', 'error'); }
     finally { setBudgetSaving(null); }
   };
@@ -732,16 +758,43 @@ export default function CrmFinance() {
               <p className="text-sm text-rose-600">Byudjetni yuklab bo'lmadi.</p>
               <Button variant="secondary" onClick={() => setBudgetReload(value => value + 1)}>Qayta urinish</Button>
             </div> : <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {[...new Set([...activeCategoryNames('expense'), ...Object.keys(budgetAmounts)])].map(category => <div key={category} className="p-5 flex flex-col sm:flex-row sm:items-end gap-3">
-                <div className="flex-1">
-                  <MoneyInput label={categoryLabel(category, 'expense')} value={budgetAmounts[category] ?? 0} disabled={!canManage || budgetSaving !== null}
-                    onChange={planned => setBudgetAmounts(value => ({ ...value, [category]: planned }))} />
-                </div>
-                {canManage && (
-                  <Button disabled={budgetSaving !== null} isLoading={budgetSaving === category} onClick={() => saveBudget(category)}
-                    aria-label={`${categoryLabel(category, 'expense')} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
-                )}
-              </div>)}
+              {[...new Set([...activeCategoryNames('expense'), ...Object.keys(budgetAmounts), ...Object.keys(budgetActuals)])].map(category => {
+                const planned = budgetAmounts[category] ?? 0;
+                const fact = budgetActuals[category];
+                const usedPercent = fact?.usedPercent ?? 0;
+                const overBudget = planned > 0 && (fact?.actual ?? 0) > planned;
+                return (
+                  <div key={category} className="p-5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                      <div className="flex-1">
+                        <MoneyInput label={categoryLabel(category, 'expense')} value={planned} disabled={!canManage || budgetSaving !== null}
+                          onChange={v => setBudgetAmounts(value => ({ ...value, [category]: v }))} />
+                      </div>
+                      {canManage && (
+                        <Button disabled={budgetSaving !== null} isLoading={budgetSaving === category} onClick={() => saveBudget(category)}
+                          aria-label={`${categoryLabel(category, 'expense')} byudjetini saqlash`} leftIcon={<Check size={14} />}>Saqlash</Button>
+                      )}
+                    </div>
+                    {/* F19 tuzatish: reja/fakt/qoldiq — real xarajat Transaction'laridan hisoblangan */}
+                    {fact && (fact.actual > 0 || planned > 0) && (
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-zinc-500">Sarflangan: <b className={overBudget ? 'text-rose-600' : 'text-slate-700 dark:text-zinc-300'}>{formatMoney(fact.actual)}</b></span>
+                          <span className={`font-bold ${overBudget ? 'text-rose-600' : fact.remaining < 0 ? 'text-rose-600' : 'text-zinc-500'}`}>
+                            {overBudget ? "Rejadan oshgan" : `Qoldiq: ${formatMoney(fact.remaining)}`}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${usedPercent >= 100 ? 'bg-rose-500' : usedPercent >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(100, usedPercent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>}
         </div>
       )}
