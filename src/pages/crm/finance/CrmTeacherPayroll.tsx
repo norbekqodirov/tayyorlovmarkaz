@@ -283,13 +283,21 @@ export default function CrmTeacherPayroll() {
     if (!payroll) return;
     setBusy(true);
     try {
-      const res = await api.post(`/finance/teacher-payroll/${payroll.id}/approve`);
+      // O08 tuzatish: ekranda ko'rinib turgan summa yuboriladi — agar orada
+      // boshqa foydalanuvchi qayta hisoblab ulgurgan bo'lsa, backend 409
+      // bilan rad etadi (pastda ushlanadi) va HR sahifani yangilashi so'raladi.
+      const res = await api.post(`/finance/teacher-payroll/${payroll.id}/approve`, { expectedAmount: payroll.accruedAmount });
       setPayroll(res.data);
       showToast('Tasdiqlandi', 'success');
       void loadTeacherDetail();
       refreshTeacherPayrollList();
     } catch (e: any) {
-      showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
+      if (e?.response?.status === 409) {
+        showToast(e.response.data?.message || "Davr qayta hisoblangan — yangilanmoqda", 'error');
+        void loadTeacherDetail();
+      } else {
+        showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
+      }
     } finally { setBusy(false); }
   };
 
@@ -334,11 +342,21 @@ export default function CrmTeacherPayroll() {
     if (!selectedStaffId) return;
     setStaffDetailLoading(true);
     try {
+      // O10 tuzatish (2026-09-16 audit): ilgari `from`/`to` yuborilmasdi —
+      // server so'nggi 200 yozuvni (barcha oylar bo'yicha) qaytarardi, so'ng
+      // BU YERDA oy bo'yicha filtrlanardi. Xodim har kuni belgi qo'ysa, 200
+      // yozuv ~6-7 oyga to'g'ri keladi — undan ESKIROQ oy tanlansa, aslida
+      // ma'lumot bor bo'lsa ham, ro'yxat "bo'sh" ko'rinardi (chunki eski
+      // yozuvlar 200 tadan tashqarida qolib, hech qachon so'ralmagan edi).
+      // Endi server'ga to'g'ridan-to'g'ri shu oyning sana oralig'i yuboriladi.
+      const lastDay = new Date(year, month, 0).getDate();
+      const from = `${monthStr}-01`;
+      const to = `${monthStr}-${String(lastDay).padStart(2, '0')}`;
       const [attRes, salRes] = await Promise.all([
-        api.get('/salary/attendance', { params: { staffId: selectedStaffId } }),
+        api.get('/salary/attendance', { params: { staffId: selectedStaffId, from, to } }),
         api.get(`/salary/staff/${selectedStaffId}`),
       ]);
-      setStaffAttendance((attRes.data || []).filter((r: any) => r.date.startsWith(monthStr)));
+      setStaffAttendance(attRes.data || []);
       setStaffSalaries(prev => {
         const others = prev.filter(s => s.staffId !== selectedStaffId);
         const thisMonth = (salRes.data || []).find((s: any) => s.month === monthStr);

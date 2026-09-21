@@ -245,6 +245,21 @@ router.post('/:id/approve', canManageMoney, async (req, res) => {
         const draft = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
         if (!draft) return res.status(404).json({ message: 'Topilmadi' });
 
+        // O08 tuzatish (2026-09-16 audit): HR bir summani ko'rib turgan
+        // paytda (masalan sahifa ochilgandan beri) boshqa foydalanuvchi
+        // "Qayta hisoblash" bosib, tasdiqlanmagan draftni YANGI summaga
+        // o'zgartirgan bo'lishi mumkin — HR keyin "Tasdiqlash"ni bossa,
+        // aslida hech qachon ko'rmagan (yangilangan) summani tasdiqlab
+        // qo'yadi. `expectedAmount` frontend HR ekranida ko'rgan summani
+        // yuboradi; agar draft'ning joriy holati bilan mos kelmasa,
+        // tasdiqlash rad etiladi va sahifani yangilash so'raladi.
+        const { expectedAmount } = req.body as { expectedAmount?: number };
+        if (expectedAmount !== undefined && Math.round(expectedAmount) !== Math.round(draft.accruedAmount)) {
+            return res.status(409).json({
+                message: `Bu davr allaqachon qayta hisoblangan — ko'rgan summangiz (${expectedAmount}) joriy hisobdan (${draft.accruedAmount}) farq qiladi. Sahifani yangilab, qayta ko'rib chiqing.`,
+            });
+        }
+
         // O02 tuzatish: draft yaratishda tekshirilgan bo'lsa ham, orada boshqa
         // usul bo'yicha alohida draft tasdiqlangan/to'langan bo'lib qolishi
         // mumkin (poyga holati) — tasdiqlashdan oldin YANA tekshiriladi.
