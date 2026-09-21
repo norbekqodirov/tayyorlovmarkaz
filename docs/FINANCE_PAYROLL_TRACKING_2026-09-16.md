@@ -13,7 +13,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | P2 — invoice net/allocation | F02, F03, F09-adjacent | ⬜ | — |
 | **P3 — provider qattiqlashtirish** | F07, F08, F09 | ✅ | (shu partiyada) |
 | **P4 — hisobot to'g'irlash (F20 bundan mustasno)** | F14, F15, F16 | ✅ | (shu partiyada) |
-| P5 — chegirma/kategoriya | F17, F18 | ⬜ | — |
+| **P19 — F17, promo-kod atomar qo'llash** | F17 | ✅ | (shu partiyada) |
+| P5 — kategoriya | F18 | ⬜ | — |
 | P6 — byudjet | F19 | ⬜ | — |
 | P7 — UX/idempotency | F21, F22 (qisman) | ⬜ | — |
 | **P14 — dizayn namunasidan (oylik-ish-varaqasi.html) O05/O12** | O05, O12 | ✅ | (shu partiyada) |
@@ -46,7 +47,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | F14 | P2 | ✅ | "Oylik" jadvalining "Jami" qatori endi `monthlySummary` (tanlangan `currentYear` bo'yicha filtrlangan) dan hisoblanadi, avvalgi barcha-yillar `totalIncome/Expense` o'rniga. — `src/pages/crm/finance/CrmFinance.tsx` |
 | F15 | P2 | ✅ | `reports/students`: `totalPaid`/`totalDebt` endi butun jadval bo'yicha `groupBy` agregatsiyasidan (avval faqat so'nggi 5 to'lovdan). `portal/payments`: `totalUnpaid` endi limitsiz `aggregate`dan (avval ko'rsatiladigan 10 taning yig'indisi edi). Jonli tekshirildi: 8 ta paid+2 ta overdue yozuvli test o'quvchida `totalPaid=800000` (avval 500000 bo'lardi), `totalDebt=100000` to'g'ri chiqdi. — `server/routes/reports.ts`, `server/routes/portal.ts` |
 | F16 | P2 | ✅ | Debtors qoidasi (`CrmFinance.tsx` va Dashboard `DebtorsTable.tsx`, ikkalasi ham) endi FAQAT `balance < 0`ga tayanadi — stale `paymentStatus==='Qarzdorlik'` mustaqil shart sifatida olib tashlandi (musbat balansli o'quvchi endi "qarzdor" ro'yxatida noto'g'ri chiqmaydi). — `src/pages/crm/finance/CrmFinance.tsx`, `src/components/dashboard/widgets/DebtorsTable.tsx` |
-| F17 | P2 | ⬜ | Promo-kod finance'ga ulanmagan — P5. |
+| F17 | P2 | ✅ | Yangi `POST /discounts/apply` — validatsiya + `usedCount`ni ATOMAR oshirish + `DiscountApplication` audit yozuvi (yangi jadval, additive). Invoice yaratish formasiga "Promo-kod" maydoni qo'shildi. `maxUses` endi haqiqatan ishlaydi — curl bilan tasdiqlandi (1-chaqiruv muvaffaqiyatli, 2-chaqiruv "chegara tugagan" bilan rad etildi). **Ma'lum cheklov:** promo qo'llash va invoice yaratish alohida ikkita chaqiruv — agar foydalanuvchi promo qo'llagandan keyin formani bekor qilsa, kod "ishlatilgan" bo'lib qoladi (to'liq atomar birlashtirish keyingi ish). — `prisma/schema.prisma`, `server/routes/discounts.ts`, `src/pages/crm/finance/CrmFinance.tsx` |
 | F18 | P2 | ⬜ | Kategoriya nom sifatida saqlanadi (ID yo'q) — P5. |
 | F19 | P2 | ⬜ | Budget reja/fakt/davr almashish yo'q — P6. |
 | F20 | P2 | ⬜ | Finance to'liq ro'yxat yuklaydi, server pagination yo'q — P4/P7. |

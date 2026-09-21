@@ -244,6 +244,32 @@ export default function CrmFinance() {
   const [invoiceLinks, setInvoiceLinks] = useState<{ payme: string; click: string; amount: number } | null>(null);
   const [invoiceLinksLoading, setInvoiceLinksLoading] = useState(false);
 
+  // F17 tuzatish (2026-09-16 audit): promo-kod tekshirish API'si mavjud
+  // edi, lekin uni HECH QAYERDA haqiqatan QO'LLAYDIGAN (usedCount oshiradigan)
+  // oqim yo'q edi — shuning uchun `maxUses` cheklovi amalda hech qachon
+  // ishlamasdi. Endi invoice yaratishda promo-kod kiritish mumkin.
+  const [promoCode, setPromoCode] = useState('');
+  const [promoApplying, setPromoApplying] = useState(false);
+  const [promoApplied, setPromoApplied] = useState<{ code: string; discountAmount: number } | null>(null);
+
+  const applyPromoCode = async () => {
+    if (!promoCode || !invoiceForm.amount) return;
+    setPromoApplying(true);
+    try {
+      const res = await api.post('/discounts/apply', {
+        code: promoCode, amount: Number(invoiceForm.amount), studentId: invoiceForm.studentId || undefined,
+      });
+      const equivalentPercent = Number(invoiceForm.amount) > 0
+        ? Math.round((res.data.discountAmount / Number(invoiceForm.amount)) * 10000) / 100
+        : 0;
+      setInvoiceForm(f => ({ ...f, discount: String(equivalentPercent) }));
+      setPromoApplied({ code: promoCode.toUpperCase(), discountAmount: res.data.discountAmount });
+      showToast(`Promo-kod qo'llandi: -${formatMoney(res.data.discountAmount)}`, 'success');
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || "Promo-kodni qo'llab bo'lmadi", 'error');
+    } finally { setPromoApplying(false); }
+  };
+
   const fetchInvoices = useCallback(async () => {
     setInvoicesLoading(true);
     try {
@@ -273,6 +299,7 @@ export default function CrmFinance() {
       showToast("Invoice yaratildi", 'success');
       setIsInvoiceModalOpen(false);
       setInvoiceForm({ studentId: '', amount: '', discount: '0', tax: '0', dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], method: 'Naqd', description: '' });
+      setPromoCode(''); setPromoApplied(null);
       fetchInvoices();
     } catch { showToast("Xatolik yuz berdi", 'error'); }
   };
@@ -952,7 +979,7 @@ export default function CrmFinance() {
       )}
 
       {/* Invoice yaratish modali */}
-      <Modal isOpen={canManage && isInvoiceModalOpen} onClose={() => setIsInvoiceModalOpen(false)} title="Yangi Invoice Yaratish">
+      <Modal isOpen={canManage && isInvoiceModalOpen} onClose={() => { setIsInvoiceModalOpen(false); setPromoCode(''); setPromoApplied(null); }} title="Yangi Invoice Yaratish">
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Talaba</label>
@@ -992,7 +1019,7 @@ export default function CrmFinance() {
               <input
                 type="number" placeholder="0" min="0" max="100"
                 value={invoiceForm.discount}
-                onChange={e => setInvoiceForm(f => ({ ...f, discount: e.target.value }))}
+                onChange={e => { setInvoiceForm(f => ({ ...f, discount: e.target.value })); setPromoApplied(null); }}
                 className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
               />
             </div>
@@ -1005,6 +1032,29 @@ export default function CrmFinance() {
                 className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Promo-kod (ixtiyoriy)</label>
+            <div className="flex gap-2">
+              <input
+                placeholder="MASALAN: YOZGI10"
+                value={promoCode}
+                onChange={e => { setPromoCode(e.target.value); setPromoApplied(null); }}
+                disabled={!!promoApplied}
+                className="flex-1 px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white disabled:opacity-60 uppercase"
+              />
+              <Button
+                variant="secondary" onClick={applyPromoCode}
+                disabled={!promoCode || !invoiceForm.amount || promoApplying || !!promoApplied}
+              >
+                {promoApplied ? "Qo'llandi" : "Qo'llash"}
+              </Button>
+            </div>
+            {promoApplied && (
+              <p className="text-[11px] text-emerald-600 font-bold mt-1">
+                "{promoApplied.code}" qo'llandi — -{formatMoney(promoApplied.discountAmount)}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Tavsif</label>
@@ -1034,7 +1084,7 @@ export default function CrmFinance() {
             </div>
           )}
           <div className="flex gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setIsInvoiceModalOpen(false)} className="flex-1">Bekor</Button>
+            <Button variant="secondary" onClick={() => { setIsInvoiceModalOpen(false); setPromoCode(''); setPromoApplied(null); }} className="flex-1">Bekor</Button>
             <Button onClick={handleCreateInvoice} className="flex-1" disabled={!invoiceForm.studentId || !invoiceForm.amount}>
               Invoice Yaratish
             </Button>

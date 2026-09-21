@@ -1472,8 +1472,29 @@ model Discount {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  applications DiscountApplication[]
+
   @@index([code])
   @@index([isActive])
+}
+
+// Finance-audit (2026-09-16), F17: `/discounts/validate` promo-kodni
+// tekshirardi, lekin HECH QAYERDA `usedCount`ni oshiradigan yoki qo'llash
+// hodisasini yozadigan FAOL yo'l yo'q edi — `maxUses` cheklovi amalda hech
+// qachon ishlamas edi. Bu jadval har bir haqiqiy qo'llashni (kim, qachon,
+// qaysi invoice/o'quvchiga, qancha summaga) yozadi — `/discounts/apply`
+// shu yozuvni `Discount.usedCount`ni ATOMAR oshirish bilan bir vaqtda yaratadi.
+model DiscountApplication {
+  id          String   @id @default(uuid())
+  discountId  String
+  discount    Discount @relation(fields: [discountId], references: [id])
+  studentId   String?
+  invoiceId   String?
+  amount      Float    // haqiqiy chegirma summasi (so'mda, tur percent/fixed'dan qat'i nazar)
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([discountId])
 }
 
 // ============================================

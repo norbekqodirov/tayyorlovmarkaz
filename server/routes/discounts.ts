@@ -102,6 +102,74 @@ router.post('/validate', requireAuth, requirePermission('discounts'), async (req
     }
 });
 
+// POST /api/discounts/apply — F17 tuzatish (2026-09-16 audit): `/validate`
+// hech qanday holatni yozmaydi (faqat oldindan ko'rsatish uchun) — chegirma
+// HAQIQATAN qo'llanganda ("Yakuniy ko'rinishni tekshirish" bosqichidan
+// keyin, invoice/to'lov yaratilishidan OLDIN) shu endpoint chaqiriladi.
+// `usedCount` oshishi va DiscountApplication yozuvi BITTA atomar amal —
+// `maxUses` cheklovi endi haqiqatan ishlaydi (parallel so'rovlar bir xil
+// oxirgi joyni ikkalasi ham egallab ololmaydi).
+router.post('/apply', requireAuth, requireMinRole('MANAGER'), requirePermission('discounts'), async (req, res) => {
+    try {
+        const { code, amount, studentId, invoiceId } = req.body as { code: string; amount: number; studentId?: string; invoiceId?: string };
+        if (!code) return res.status(400).json({ message: 'code kerak' });
+
+        const discount = await prisma.discount.findUnique({ where: { code: code.toUpperCase() } });
+        if (!discount) return res.status(404).json({ valid: false, message: 'Promo-kod topilmadi' });
+        if (!discount.isActive) return res.status(400).json({ valid: false, message: 'Promo-kod faol emas' });
+
+        const now = todayDateStr();
+        if (discount.validFrom && discount.validFrom > now) {
+            return res.status(400).json({ valid: false, message: 'Promo-kod hali amal qilmaydi' });
+        }
+        if (discount.validTo && discount.validTo < now) {
+            return res.status(400).json({ valid: false, message: 'Promo-kod muddati tugagan' });
+        }
+        const totalAmount = Number(amount) || 0;
+        if (discount.minAmount && totalAmount < discount.minAmount) {
+            return res.status(400).json({ valid: false, message: `Minimal miqdor: ${discount.minAmount.toLocaleString()} so'm` });
+        }
+
+        let discountAmount = discount.type === 'percent' ? totalAmount * (discount.value / 100) : discount.value;
+        discountAmount = Math.round(Math.min(discountAmount, totalAmount));
+
+        const result = await prisma.$transaction(async (tx) => {
+            // Guard: maxUses yo'q bo'lsa cheksiz; bo'lsa faqat hali limitdan
+            // oshmagan holatda oshiriladi (poyga holatisiz — updateMany shart
+            // bilan, count===0 bo'lsa boshqa so'rov limitni allaqachon to'ldirgan).
+            const where: any = { id: discount.id };
+            if (discount.maxUses !== null) where.usedCount = { lt: discount.maxUses };
+            const { count } = await tx.discount.updateMany({ where, data: { usedCount: { increment: 1 } } });
+            if (count === 0) return { applied: false };
+
+            const application = await tx.discountApplication.create({
+                data: {
+                    discountId: discount.id,
+                    studentId: studentId || null,
+                    invoiceId: invoiceId || null,
+                    amount: discountAmount,
+                    createdById: (req as any).user?.id || null,
+                },
+            });
+            return { applied: true, application };
+        });
+
+        if (!result.applied) {
+            return res.status(400).json({ valid: false, message: "Promo-kod ishlatish chegarasi tugagan" });
+        }
+
+        res.json({
+            valid: true,
+            discount,
+            discountAmount,
+            finalAmount: Math.round(totalAmount - discountAmount),
+            applicationId: result.application!.id,
+        });
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // PATCH /api/discounts/:id
 router.patch('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('discounts'), async (req, res) => {
     try {
