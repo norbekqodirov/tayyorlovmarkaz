@@ -102,11 +102,14 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 3. **11-bo'lim (ruxsat matritsasi):** `payroll.calculate/approve/pay/refund/close/export` kabi granular kalitlarni DB Role/Permission tizimiga qachon qo'shish — hozircha hammasi bitta `finance` kalitiga tayanadi.
 4. **P10 (billing snapshot/allocation) va P12 (kassa/reconciliation):** bular alohida, ko'p kunlik ishlar — davom etishdan oldin ustuvorlikni tasdiqlash foydali (audit hujjatining o'zi ham R3/R4 sifatida keyinga qoldirgan).
 
-## Schema o'zgarishlari (production'ga alohida, tasdiqlangan qadam kerak)
+## Schema o'zgarishlari — 2026-09-21'da production'ga qo'llanildi ✅
 
-- **`Payment.sourceType String?` / `Payment.sourceId String?`** (F07, P3) — additive, nullable, mavjud yozuvlarga ta'sir qilmaydi. Lokal PostgreSQL'ga `npx prisma db push` bilan qo'llanildi va tekshirildi. **Production'da hali qo'llanilmagan** — CLAUDE.md protokoliga muvofiq, productionga deploy qilinganda bu FAQAT foydalanuvchi tomonidan alohida, aniq tasdiqlangan qadam sifatida qo'llanishi kerak (production SQLite'da mos ustunlarni qo'shish).
-- **P13 (2026-09-17) — Payroll-avans:** yangi `StaffAdvance` va `StaffAdvanceApplication` jadvallari; `TeacherPayroll.advanceApplied Float @default(0)`; `Salary.paidAmount Float @default(0)` va `Salary.advanceApplied Float @default(0)`. Barchasi additive (yangi jadval/nullable-defaultli ustun), mavjud yozuvlarga ta'sir qilmaydi. Lokalda `npx prisma db push` bilan qo'llanildi va to'liq tekshirildi (pastga q.). **Production'da hali qo'llanilmagan.**
-- Yangi `Permission` DB yozuvi: `payroll_review` (`scripts/seed_payroll_review_permission.ts` orqali idempotent qo'shildi — bu skript schema emas, ma'lumot seed'i, lekin productionga o'tkazishda ham xuddi shunday bir martalik skript sifatida ishga tushirilishi kerak).
+**Muhim voqea (2026-09-21):** kod deploy qilingandan keyin (`08f8453`) `prisma generate` yangi sxemaga mos client yaratdi, lekin production SQLite bazasi hali eski holatda edi — bu **`Payment`/`TeacherPayroll`/`Salary` so'rovlarining darhol xato bera boshlashiga** olib keldi ("column does not exist"). Foydalanuvchi o'zi SSH orqali `npx prisma db push --accept-data-loss` + `pm2 restart`ni ishga tushirdi (avval `prod.db` zaxiralab) — barcha uchala model qayta tekshirilib, xato yo'qligi tasdiqlandi. **Saboq:** additive bo'lsa ham, schema-bog'liq kod deploy qilinishi bilan bir vaqtda schema ham qo'llanilishi kerak — ular orasida vaqt oralig'i qoldirilsa, MAVJUD (yangi emas) modellar ham buziladi, chunki Prisma `select` ko'rsatilmagan so'rovlarda barcha sxema maydonlarini so'raydi.
+
+- **`Payment.sourceType String?` / `Payment.sourceId String?`** (F07, P3) — ✅ production'da qo'llanildi va tasdiqlandi.
+- **P13 — Payroll-avans:** `StaffAdvance`, `StaffAdvanceApplication`, `TeacherPayroll.advanceApplied`, `Salary.paidAmount`/`advanceApplied` — ✅ production'da qo'llanildi va tasdiqlandi (`STAFFADVANCE_OK`, `TEACHERPAYROLL_OK`).
+- **F17 — `DiscountApplication`** — ✅ production'da qo'llanildi va tasdiqlandi (`DISCOUNTAPP_OK`).
+- **Qolgan yagona ochiq qadam:** `Permission` DB yozuvi `payroll_review` hali production'da seed qilinmagan (`scripts/seed_payroll_review_permission.ts` — ma'lumot seed'i, schema emas, lekin baribir foydalanuvchi o'zi ishga tushirishi kerak bo'lgan yozish amali). Shoshilinch emas — ADMIN/SUPER_ADMIN rol-darajasida to'liq kirishga ega, `finance` ruxsatiga ega har bir foydalanuvchi ham hozirgidek to'liq ishlayveradi; faqat "faqat payroll_review, finance'siz" alohida rol kerak bo'lgandagina zarur. Qачон qulay bo'lsa: `ssh tayyorlovmarkaz@46.8.194.26` → `cd /home/tayyorlovmarkaz/tayyorlovmarkaz` → `npx tsx scripts/seed_payroll_review_permission.ts`.
 
 ## Tekshiruv usuli (P1 uchun bajarilgan)
 
