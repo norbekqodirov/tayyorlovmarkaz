@@ -18,7 +18,7 @@
  *   lekin UI'da albatta "taxminiy" deb belgilanishi kerak bo'lgan holat.
  */
 import prisma from '../db.js';
-import { getBillingSettings, calculateStudentMonthlyDue } from './billing.js';
+import { getBillingSettings, calculateStudentMonthlyDue, calculateStudentCashAllocation, StudentCashAllocation } from './billing.js';
 
 export type PayrollBasis = 'accrual' | 'cash';
 
@@ -123,35 +123,48 @@ export async function calculateTeacherCashCollection(teacherId: string, year: nu
 
     const groups = await prisma.group.findMany({
         where: { teacherId },
-        include: { enrollments: { select: { studentId: true } } },
+        include: { enrollments: { include: { student: { select: { id: true, name: true } } } } },
     });
 
-    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-
-    // Har bir o'quvchi FAQAT BIR MARTA hisoblanadi (shu teacher doirasida) —
-    // bir nechta guruhda bo'lsa ham to'lovi ikki marta qo'shilmasin.
-    const studentIds = Array.from(new Set(groups.flatMap(g => g.enrollments.map(e => e.studentId))));
-    const payments = studentIds.length
-        ? await prisma.payment.findMany({
-            where: { studentId: { in: studentIds }, status: 'paid', date: { startsWith: monthStr } },
-            select: { studentId: true, amount: true },
-        })
-        : [];
-    const paidByStudent = new Map<string, number>();
-    for (const p of payments) {
-        paidByStudent.set(p.studentId, (paidByStudent.get(p.studentId) || 0) + p.amount);
-    }
-
-    const groupBreakdown: TeacherPayrollGroupBreakdown[] = groups.map(g => ({
-        groupId: g.id,
-        groupName: g.name,
-        studentCount: g.enrollments.length,
-        // Taxminiy: guruhga proporsional emas, o'quvchining shu oydagi UMUMIY
-        // to'lovi shu yerda ko'rsatiladi (aniq allocation yo'qligi sabab).
-        revenue: g.enrollments.reduce((sum, e) => sum + (paidByStudent.get(e.studentId) || 0), 0),
+    // O03/O04 tuzatish (2026-09-16 audit): ilgari har bir o'quvchining
+    // UMUMIY (barcha guruh/teacher bo'yicha) to'lovi HAR bir guruhga TO'LIQ
+    // qo'shilardi — bitta o'quvchi ikki teacher'ning guruhida bo'lsa, bitta
+    // pul ikkalasida ham (mustaqil) hisoblanardi. Endi har o'quvchining shu
+    // oydagi "eligible" (qarzdan oshmagan) puli calculateStudentCashAllocation()
+    // orqali BARCHA guruhlaridagi ulushiga proporsional taqsimlanadi — bu
+    // yerda faqat shu teacher'ning guruhlariga tegishli ulush olinadi.
+    // Har bir noyob o'quvchi uchun BIR MARTA hisoblanadi (bir nechta shu
+    // teacher guruhida bo'lsa ham allocation qayta so'ralmaydi).
+    const uniqueStudentIds = Array.from(new Set(groups.flatMap(g => g.enrollments.map(e => e.studentId))));
+    const allocations = new Map<string, StudentCashAllocation>();
+    await Promise.all(uniqueStudentIds.map(async (sid) => {
+        allocations.set(sid, await calculateStudentCashAllocation(sid, year, month, settings));
     }));
 
-    const revenue = Array.from(paidByStudent.values()).reduce((sum, v) => sum + v, 0);
+    const groupBreakdown: TeacherPayrollGroupBreakdown[] = groups.map(g => {
+        const studentRows: TeacherPayrollStudentRow[] = g.enrollments.map(e => {
+            const alloc = allocations.get(e.studentId);
+            const groupAlloc = alloc?.byGroup.find(b => b.groupId === g.id);
+            return {
+                studentId: e.studentId,
+                studentName: e.student.name,
+                absences: 0, // Cash bazasida davomat emas — allocated ulush ko'rsatiladi.
+                basePrice: alloc?.dueTotal ?? 0, // Kontekst uchun: o'quvchining shu oydagi JAMI (barcha guruh) qarzi.
+                discountApplied: false,
+                discount: 0,
+                finalPrice: groupAlloc?.allocated ?? 0,
+            };
+        });
+        return {
+            groupId: g.id,
+            groupName: g.name,
+            studentCount: g.enrollments.length,
+            revenue: studentRows.reduce((sum, s) => sum + s.finalPrice, 0),
+            students: studentRows,
+        };
+    });
+
+    const revenue = groupBreakdown.reduce((sum, g) => sum + g.revenue, 0);
 
     return {
         teacherId,
@@ -162,7 +175,7 @@ export async function calculateTeacherCashCollection(teacherId: string, year: nu
         revenue,
         salary: Math.round(revenue * (salaryPercent / 100)),
         groups: groupBreakdown,
-        note: "Taxminiy — hozircha to'lovlar aniq kurs/guruhga bog'lanmagan (invoice allocation hali yo'q). O'quvchi bir nechta o'qituvchining guruhida bo'lsa, bitta to'lov ikkalasida ham ko'rinishi mumkin.",
+        note: "O'quvchining shu oyda to'lagan puli barcha guruhlaridagi hisoblangan narx ulushiga proporsional taqsimlangan (aniq invoice-qatoriga bog'langan allocation hali yo'q) — bitta to'lov endi ikki o'qituvchida to'liq holda qayta hisoblanmaydi.",
     };
 }
 

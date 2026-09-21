@@ -20,7 +20,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | **P15 — payroll UI ishonchliligi** | O06, O09, O11 | ✅ | (shu partiyada) |
 | P8 — payroll UI ishonchliligi (qolgani) | O08 | ⬜ | — |
 | **P16 — dizayn namunasidan O13/O14 (tabel matritsasi, qidiruv/filtr)** | O13, O14 | ✅ | (shu partiyada) |
-| P9 — payroll UI kengaytirish (qolgani) | O03, O04, O10 | ⬜ | — |
+| **P17 — cash allocation proporsional taqsimot (O03/O04)** | O03, O04 | ✅ | (shu partiyada) |
+| P9 — payroll UI kengaytirish (qolgani) | O10 | ⬜ | — |
 | P10 — billing snapshot/allocation (katta) | F10, F11, W14-W20 ruhida | ⬜ | Katta — alohida reja kerak |
 | **P13 — Payroll-avans + berish tartibi tizimi (2026-09-17, foydalanuvchi so'rovi)** | Yangi `StaffAdvance`, Salary qisman to'lov, `payroll_review` ruxsati | ✅ | (shu partiyada) |
 | P11 — RBAC granular payroll ruxsatlari (approve/pay ajratish) | 11-bo'lim (payroll.calculate/approve/pay/...) | 🟡 | P13'da qisman bajarildi (pastga q.) |
@@ -59,8 +60,8 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 |---|---|---|---|
 | O01 | P1 | ✅ | Yangi tor endpoint `GET /finance/teacher-payroll/teachers-list` (MANAGER+finance) — `CrmTeacherPayroll.tsx` endi `/auth/users` (ADMIN+) o'rniga shuni chaqiradi, MANAGER uchun ro'yxat endi bo'sh qolmaydi. — `server/routes/teacherPayroll.ts`, `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 | O02 | P1 | ✅ | Draft yaratish (`POST /`) va tasdiqlash (`POST /:id/approve`) endi boshqa basis (accrual/cash) allaqachon tasdiqlangan/to'langan bo'lsa bloklaydi — bitta davr uchun ikkita mustaqil to'lanadigan majburiyat endi yaratilmaydi. — `server/routes/teacherPayroll.ts` |
-| O03 | P1 | ⬜ | Cash allocation yo'q — katta, P10 (Receipt/PaymentAllocation modeli kerak). |
-| O04 | P1 | ⬜ | Guruh yig'indisi va header mos emas (O03 bilan bog'liq) — P10. |
+| O03 | P1 | ✅ | Yangi `calculateStudentCashAllocation()` (billing.ts) — o'quvchining shu oydagi ELIGIBLE (qarzdan oshmagan) puli barcha guruhlaridagi hisoblangan narx nisbatiga proporsional taqsimlanadi. To'liq (invoice-line) allocation emas, lekin double-counting xatosi yopildi. Jonli tekshirildi: 2 ustoz, 1 umumiy o'quvchi, 700000 to'lov, 1000000 jami qarz (600000+400000) → Teacher A 420000, Teacher B 280000 (yig'indi = aynan to'langan summa, avval ikkalasi ham 700000 ko'rsatardi). — `server/services/billing.ts`, `server/services/teacherPayroll.ts` |
+| O04 | P1 | ✅ | Guruh yig'indisi endi header (jami revenue)ga to'g'ri mos keladi — O03 bilan bir xil tuzatish orqali. |
 | O05 | P1 | ✅ | Tasdiqlangan/to'langan payroll uchun UI endi `sourceSnapshot`dan (muzlatilgan, tasdiqlash paytidagi holat) ko'rsatadi, live preview'dan emas — 🔒 "Saqlangan hisob" belgisi bilan. Joriy davomat/narx asosida qayta hisoblansa natija farq qilishi mumkinligi alohida ogohlantirishda ko'rsatiladi (tasdiqlangan raqamning o'zi o'zgarmaydi). Brauzerda tasdiqlangan. — `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 | O06 | P1 | ✅ | Staff formda endi "dirty" (saqlanmagan o'zgarish) kuzatiladi — dirty paytida to'lov summasi/tugmasi butunlay yashirinadi, dizayn namunasidagi bilan bir xil ogohlantirish ko'rsatiladi ("Saqlanmagan o'zgarishlar — to'lovdan oldin saqlang"). Brauzerda tasdiqlangan: Bonus o'zgartirilganda Jami darhol yangilanadi, to'lov tugmasi yo'qoladi, Saqlash bosilgandan keyin qayta paydo bo'ladi TO'G'RI (yangi) summa bilan. — `src/pages/crm/finance/CrmTeacherPayroll.tsx` |
 | O07 | P1 | ✅ | `POST /salary` endi `paid`ni request body'dan umuman olmaydi — yaratilgan/yangilangan yozuv har doim `paid:false, paidAt:null` bilan boshlanadi. "To'landi" holatiga faqat `PUT /:id/pay` orqali (xarajat yozuvi bilan atomar) o'tiladi. Joriy UI hech qachon `paid` yubormagani uchun xatti-harakat o'zgarmadi, faqat API-darajasidagi teshik yopildi. — `server/routes/salary.ts` |

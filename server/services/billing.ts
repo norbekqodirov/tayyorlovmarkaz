@@ -122,6 +122,47 @@ export async function calculateStudentMonthlyDue(
     };
 }
 
+export interface StudentCashAllocation {
+    studentId: string;
+    dueTotal: number;
+    totalPaid: number;
+    /** min(totalPaid, dueTotal) — ortiqcha to'lov/avans shu oy uchun "tushum" sifatida hisoblanmaydi. */
+    eligibleCash: number;
+    byGroup: { groupId: string; allocated: number }[];
+}
+
+// O03/O04 tuzatish (2026-09-16 audit): "bir nechta o'qituvchining guruhida
+// bo'lgan o'quvchining BUTUN to'lovi har ustozga to'liq kirardi" — bitta pul
+// bir necha teacher hisobida (mustaqil) ko'rinib, jamlanganda haqiqiy
+// tushumdan ko'p chiqardi. Endi shu oy uchun ELIGIBLE (haqiqiy qarzdan
+// oshmagan) naqd summa, o'quvchining BARCHA guruhlaridagi hisoblangan
+// narx (finalPrice) nisbatiga PROPORSIONAL taqsimlanadi — guruhlar
+// bo'yicha yig'indi hech qachon o'quvchining eligible summasidan oshmaydi,
+// shuning uchun turli teacher'lar orasida bir xil pul ikki marta
+// hisoblanmaydi. Bu hali ANIQ (invoice-line) allocation emas — muayyan
+// biznes qarori bilan almashtirilishi mumkin bo'lgan qoidaviy taxmin,
+// lekin double-counting xatosini yopadi.
+export async function calculateStudentCashAllocation(
+    studentId: string,
+    year: number,
+    month: number,
+    settings?: BillingSettings,
+): Promise<StudentCashAllocation> {
+    const due = await calculateStudentMonthlyDue(studentId, year, month, settings);
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    const payments = await prisma.payment.findMany({
+        where: { studentId, status: 'paid', date: { startsWith: monthStr } },
+        select: { amount: true },
+    });
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    const eligibleCash = Math.min(totalPaid, due.total);
+    const byGroup = due.byGroup.map(g => ({
+        groupId: g.groupId,
+        allocated: due.total > 0 ? Math.round(eligibleCash * (g.finalPrice / due.total)) : 0,
+    }));
+    return { studentId, dueTotal: due.total, totalPaid, eligibleCash, byGroup };
+}
+
 /**
  * Bitta o'qituvchining shu oydagi haqiqiy (davomat chegirmasidan keyingi) daromadi
  * va shundan hisoblangan oyligi — CrmTeachers.tsx payroll'da ishlatiladi.
