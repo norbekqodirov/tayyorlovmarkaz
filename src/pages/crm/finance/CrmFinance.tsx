@@ -284,8 +284,12 @@ export default function CrmFinance() {
     if (activeTab === 'invoices') fetchInvoices();
   }, [activeTab, fetchInvoices]);
 
+  // F21 tuzatish: ilgari bu yerda ham "band" holati yo'q edi — ikki marta
+  // bosilsa ikkita invoice yaratilishi mumkin edi.
+  const [invoiceSaving, setInvoiceSaving] = useState(false);
   const handleCreateInvoice = async () => {
-    if (!canManage || !invoiceForm.studentId || !invoiceForm.amount) return;
+    if (!canManage || !invoiceForm.studentId || !invoiceForm.amount || invoiceSaving) return;
+    setInvoiceSaving(true);
     try {
       await api.post('/finance/invoices', {
         studentId: invoiceForm.studentId,
@@ -301,16 +305,30 @@ export default function CrmFinance() {
       setInvoiceForm({ studentId: '', amount: '', discount: '0', tax: '0', dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], method: 'Naqd', description: '' });
       setPromoCode(''); setPromoApplied(null);
       fetchInvoices();
-    } catch { showToast("Xatolik yuz berdi", 'error'); }
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || "Xatolik yuz berdi", 'error');
+    } finally {
+      setInvoiceSaving(false);
+    }
   };
 
+  // F21 tuzatish: backend bu amalni allaqachon atomar/idempotent qiladi
+  // (ikkinchi so'rov Payment/Transaction'ni qayta yaratmaydi), lekin
+  // frontend tugmasi ikki marta bosilganda ikkita ortiqcha so'rov
+  // yubormasligi uchun ham "band" holati qo'shildi.
+  const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const handleMarkInvoicePaid = async (invoiceId: string) => {
-    if (!canManage) return;
+    if (!canManage || markingPaidId) return;
+    setMarkingPaidId(invoiceId);
     try {
       await api.patch(`/finance/invoices/${invoiceId}`, { status: 'paid' });
       showToast("Invoice to'landi deb belgilandi", 'success');
       fetchInvoices();
-    } catch { showToast("Xatolik yuz berdi", 'error'); }
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || "Xatolik yuz berdi", 'error');
+    } finally {
+      setMarkingPaidId(null);
+    }
   };
 
   const handleGetInvoiceLinks = async (invoice: Invoice) => {
@@ -362,25 +380,37 @@ export default function CrmFinance() {
     staffName: ''
   });
 
+  // F21 tuzatish (2026-09-16 audit): ilgari bu amalda HECH QANDAY "band"
+  // holati yo'q edi — ikki marta tez bosilsa (yoki tarmoq sekin javob
+  // bersa-yu foydalanuvchi qayta bossa) ikkita Transaction/balans
+  // o'zgarishi yaratilishi mumkin edi. Xato ham hech qanday xabarsiz
+  // yutilardi. Endi `txSaving` bilan tugma bloklanadi va xato ko'rsatiladi.
+  const [txSaving, setTxSaving] = useState(false);
   const handleSave = async () => {
-    if (!canManage || !form.amount || !form.category || categoriesLoading || categoriesError) return;
+    if (!canManage || !form.amount || !form.category || categoriesLoading || categoriesError || txSaving) return;
     const newTransaction = { ...form, amount: Number(form.amount) };
-
-    // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
-    // bitta server so'rovi (POST /finance/transactions) Transaction'ni va
-    // (kirim + o'quvchi bo'lsa) balansni bitta atomar tranzaksiyada
-    // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
-    // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
-    // ustidan yozilishi mumkin edi).
-    await api.post('/finance/transactions', newTransaction);
-    await Promise.all([refetchTransactions(), refetchStudents()]);
-    showToast("Tranzaksiya qo'shildi", 'success');
-    setIsModalOpen(false);
-    setForm({
-      type: 'income', amount: 0, category: '',
-      description: '', date: new Date().toISOString().split('T')[0],
-      method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
-    });
+    setTxSaving(true);
+    try {
+      // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
+      // bitta server so'rovi (POST /finance/transactions) Transaction'ni va
+      // (kirim + o'quvchi bo'lsa) balansni bitta atomar tranzaksiyada
+      // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
+      // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
+      // ustidan yozilishi mumkin edi).
+      await api.post('/finance/transactions', newTransaction);
+      await Promise.all([refetchTransactions(), refetchStudents()]);
+      showToast("Tranzaksiya qo'shildi", 'success');
+      setIsModalOpen(false);
+      setForm({
+        type: 'income', amount: 0, category: '',
+        description: '', date: new Date().toISOString().split('T')[0],
+        method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
+      });
+    } catch (e: any) {
+      showToast(e?.response?.data?.error || "Tranzaksiya qo'shishda xatolik yuz berdi", 'error');
+    } finally {
+      setTxSaving(false);
+    }
   };
 
   const confirmDelete = async () => {
@@ -951,7 +981,8 @@ export default function CrmFinance() {
                                 {canManage && (
                                   <button
                                     onClick={() => handleMarkInvoicePaid(inv.id)}
-                                    className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                                    disabled={!!markingPaidId}
+                                    className="p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 rounded-lg text-[10px] font-bold flex items-center gap-1 disabled:opacity-50"
                                     title="To'landi deb belgilash"
                                   >
                                     <CheckCircle2 size={13} />
@@ -1085,8 +1116,8 @@ export default function CrmFinance() {
           )}
           <div className="flex gap-2 pt-2">
             <Button variant="secondary" onClick={() => { setIsInvoiceModalOpen(false); setPromoCode(''); setPromoApplied(null); }} className="flex-1">Bekor</Button>
-            <Button onClick={handleCreateInvoice} className="flex-1" disabled={!invoiceForm.studentId || !invoiceForm.amount}>
-              Invoice Yaratish
+            <Button onClick={handleCreateInvoice} className="flex-1" disabled={!invoiceForm.studentId || !invoiceForm.amount || invoiceSaving}>
+              {invoiceSaving ? 'Yaratilmoqda...' : 'Invoice Yaratish'}
             </Button>
           </div>
         </div>
@@ -1422,7 +1453,7 @@ export default function CrmFinance() {
 
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Bekor qilish</Button>
-            <Button disabled={!form.category || categoriesLoading || !!categoriesError} onClick={handleSave} leftIcon={<Check size={14} />}>Saqlash</Button>
+            <Button disabled={!form.category || categoriesLoading || !!categoriesError || txSaving} onClick={handleSave} leftIcon={<Check size={14} />}>{txSaving ? 'Saqlanmoqda...' : 'Saqlash'}</Button>
           </div>
         </div>
       </Modal>

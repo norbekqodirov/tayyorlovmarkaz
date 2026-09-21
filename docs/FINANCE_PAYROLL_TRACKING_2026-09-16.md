@@ -51,7 +51,7 @@ Holat belgilari: ✅ bajarildi va jonli tekshirildi · 🟡 qisman/qo'lda-qaror 
 | F18 | P2 | ⬜ | Kategoriya nom sifatida saqlanadi (ID yo'q) — P5. |
 | F19 | P2 | ⬜ | Budget reja/fakt/davr almashish yo'q — P6. |
 | F20 | P2 | ⬜ | Finance to'liq ro'yxat yuklaydi, server pagination yo'q — P4/P7. |
-| F21 | P2 | ⬜ | Idempotency/pending holat/query invalidation yo'q — P7. |
+| F21 | P2 | 🟡 | Tranzaksiya/Invoice yaratish va Invoice'ni "to'landi" belgilash endi "band" (saqlanmoqda) holati bilan himoyalangan — ikki marta bosish ikkita yozuv yaratolmaydi, xato endi jim yutilmasdan ko'rsatiladi. Xarajat/Byudjet allaqachon to'g'ri himoyalangan edi. To'liq query-invalidation (masalan boshqa tab'larni ham avtomatik yangilash) hali umumiy emas — qolgan qism kelgusi ish. — `src/pages/crm/finance/CrmFinance.tsx` |
 | F22 | P2 | 🟡 | `Expense.createdById` endi to'ldiriladi (F04 bilan birga). To'liq audit trail (kim/nima/qachon/sabab har bir moliyaviy yo'lda) hali umumiy emas — P7/kelajak. |
 
 ## O01–O14 (Oylik/Payroll UI)
