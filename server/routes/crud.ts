@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../db.js';
 import { requireAuth, requireRole, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
-import { withAudit } from '../middleware/audit.js';
+import { withAudit, logAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { resolveRoleAssignment } from '../services/roleAssignment.js';
 
@@ -826,6 +826,44 @@ router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
     }
 });
 
+// Moliya-audit (2026-09-22, foydalanuvchi so'rovi): "berilgan oylik/avansni
+// kirim-chiqimdan o'chirsam, hali ham berilgan hisobda turibdi" — Transaction
+// o'chirilganda, uni yaratgan Salary/TeacherPayroll/StaffAdvance yozuvi
+// ilgari HECH QACHON qaytarilmasdi (faqat kirim+studentId balansi qaytardi).
+// Bitta avans bir nechta oylikka QISMAN qo'llanilgan bo'lishi mumkin
+// (StaffAdvanceApplication) — shuning uchun avansni o'chirishdan oldin,
+// undan foydalanilgan HAR BIR oylik/maosh yozuvidan ham `advanceApplied`
+// ORQAGA qaytariladi (aks holda o'sha yozuvlar "avans bilan to'langan" deb
+// noto'g'ri ko'rsatib qolardi, garchi avansning o'zi endi mavjud bo'lmasa ham).
+async function reverseStaffAdvance(txClient: any, advanceId: string) {
+    const applications = await txClient.staffAdvanceApplication.findMany({ where: { advanceId } });
+    for (const app of applications) {
+        if (app.appliedToType === 'salary') {
+            const salary = await txClient.salary.findUnique({ where: { id: app.appliedToId } });
+            if (salary) {
+                const newAdvanceApplied = Math.max(0, salary.advanceApplied - app.amount);
+                const stillFullyPaid = (salary.paidAmount + newAdvanceApplied) >= salary.total;
+                await txClient.salary.update({
+                    where: { id: salary.id },
+                    data: { advanceApplied: newAdvanceApplied, paid: stillFullyPaid, paidAt: stillFullyPaid ? salary.paidAt : null },
+                });
+            }
+        } else if (app.appliedToType === 'teacher_payroll') {
+            const payroll = await txClient.teacherPayroll.findUnique({ where: { id: app.appliedToId } });
+            if (payroll) {
+                const newAdvanceApplied = Math.max(0, payroll.advanceApplied - app.amount);
+                const stillFullyPaid = (payroll.paidAmount + newAdvanceApplied) >= payroll.accruedAmount;
+                await txClient.teacherPayroll.update({
+                    where: { id: payroll.id },
+                    data: { advanceApplied: newAdvanceApplied, status: stillFullyPaid ? 'paid' : 'approved' },
+                });
+            }
+        }
+    }
+    await txClient.staffAdvanceApplication.deleteMany({ where: { advanceId } });
+    await txClient.staffAdvance.deleteMany({ where: { id: advanceId } });
+}
+
 // ─── DELETE /:collection/:id with Cascade Cleanup ─────────────────────────────
 router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
     const { collection, id } = req.params;
@@ -862,16 +900,29 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
             });
         }
         // `transaction` esa CrmFinance.tsx'ning "Tranzaksiyalar" ro'yxatida
-        // haqiqatan o'chiriladigan mavjud funksiya — buni butunlay yopish
-        // o'rniga, "income"+studentId bo'lgan yozuv o'chirilganda CREATE
-        // vaqtida oshirilgan Student.balance endi ATOMAR ravishda ORQAGA
-        // QAYTARILADI (ilgari umuman qaytarilmasdi).
+        // haqiqatan o'chiriladigan mavjud funksiya. Moliya-audit (2026-09-22,
+        // foydalanuvchi so'rovi — "berilgan oylik/avansni o'chirsam hisobda
+        // qolib ketyapti"): endi HAR BIR `sourceType` uchun to'liq, atomar
+        // qaytarish/tozalash bajariladi — "income"+studentId balansi (eski
+        // xatti-harakat) dan tashqari, Payment/Expense/Salary/TeacherPayroll/
+        // StaffAdvance ham mos ravishda qaytariladi/o'chiriladi. `invoice` va
+        // `online_transaction` manbali yozuvlar esa (Invoice.ning o'zi kabi)
+        // to'g'ridan-to'g'ri o'chirilmaydi — bular tashqi/rasmiy to'lov
+        // hodisalari, haqiqiy qaytarish uchun alohida refund jarayoni kerak.
         if (modelName === 'transaction') {
-            const tx = await prisma.transaction.findUnique({ where: { id }, select: { type: true, amount: true, studentId: true } });
+            const tx = await prisma.transaction.findUnique({ where: { id } });
             if (!tx) return res.status(404).json({ message: 'Topilmadi' });
+
+            if (tx.sourceType === 'invoice') {
+                return res.status(400).json({ message: "Bu tranzaksiya to'langan invoice'ga bog'liq — to'langan invoice'ni o'chirib bo'lmagani kabi, bu yozuvni ham shu yo'l orqali o'chirib bo'lmaydi." });
+            }
+            if (tx.sourceType === 'online_transaction') {
+                return res.status(400).json({ message: "Bu tranzaksiya Payme/Click orqali tasdiqlangan to'lovga bog'liq — faqat to'lov tizimining o'zi orqali (refund) bekor qilinishi mumkin." });
+            }
+
             const student = tx.studentId ? await prisma.student.findUnique({ where: { id: tx.studentId }, select: { id: true } }) : null;
             await prisma.$transaction(async (txClient) => {
-                if (tx.type === 'income' && student) {
+                if (tx.type === 'income' && student && (!tx.sourceType || tx.sourceType === 'manual_payment')) {
                     const updated = await txClient.student.update({
                         where: { id: student.id },
                         data: { balance: { decrement: tx.amount } },
@@ -881,8 +932,48 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
                         data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
                     });
                 }
+                if (tx.sourceType === 'manual_payment' && tx.sourceId) {
+                    await txClient.payment.deleteMany({ where: { id: tx.sourceId } });
+                }
+                if (tx.sourceType === 'expense' && tx.sourceId) {
+                    await txClient.expense.deleteMany({ where: { id: tx.sourceId } });
+                }
+                if (tx.sourceType === 'salary' && tx.sourceId) {
+                    const salary = await txClient.salary.findUnique({ where: { id: tx.sourceId } });
+                    if (salary) {
+                        const newPaidAmount = Math.max(0, salary.paidAmount - tx.amount);
+                        const stillFullyPaid = (newPaidAmount + salary.advanceApplied) >= salary.total;
+                        await txClient.salary.update({
+                            where: { id: salary.id },
+                            data: { paidAmount: newPaidAmount, paid: stillFullyPaid, paidAt: stillFullyPaid ? salary.paidAt : null },
+                        });
+                    }
+                }
+                if (tx.sourceType === 'teacher_payroll' && tx.sourceId) {
+                    const payroll = await txClient.teacherPayroll.findUnique({ where: { id: tx.sourceId } });
+                    if (payroll) {
+                        const newPaidAmount = Math.max(0, payroll.paidAmount - tx.amount);
+                        const stillFullyPaid = (newPaidAmount + payroll.advanceApplied) >= payroll.accruedAmount;
+                        await txClient.teacherPayroll.update({
+                            where: { id: payroll.id },
+                            data: { paidAmount: newPaidAmount, status: stillFullyPaid ? 'paid' : 'approved' },
+                        });
+                    }
+                }
+                if (tx.sourceType === 'staff_advance' && tx.sourceId) {
+                    await reverseStaffAdvance(txClient, tx.sourceId);
+                }
                 await txClient.transaction.delete({ where: { id } });
             });
+
+            // F22 uslubi: pul-harakatini qaytarish ham audit qilinadi.
+            const remover = (req as any).user;
+            await logAudit({
+                userId: remover?.id, userName: remover?.name || 'system',
+                action: 'delete', resource: 'transaction', resourceId: id,
+                before: { type: tx.type, amount: tx.amount, category: tx.category, sourceType: tx.sourceType, sourceId: tx.sourceId },
+            });
+
             return res.json({ success: true });
         }
 

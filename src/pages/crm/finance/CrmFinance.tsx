@@ -412,28 +412,102 @@ export default function CrmFinance() {
   // o'zgarishi yaratilishi mumkin edi. Xato ham hech qanday xabarsiz
   // yutilardi. Endi `txSaving` bilan tugma bloklanadi va xato ko'rsatiladi.
   const [txSaving, setTxSaving] = useState(false);
+
+  // Moliya-audit (2026-09-22, foydalanuvchi so'rovi): "oddiy kirim-chiqim"
+  // formasida "Oylik" kategoriyasi + xodim tanlangan edi, lekin bu FAQAT
+  // yorliqli (bog'lanishsiz) Transaction yaratardi — Payroll/Salary
+  // sahifasidagi "qancha to'lanmagan" summasi bundan o'zgarmasdi (aynan shu
+  // turdagi nomuvofiqlikning teskarisi). Endi shu yerdan tanlangan xodim
+  // uchun HAQIQIY to'lanmagan davr(lar) yuklab olinadi va Saqlash bosilganda
+  // umumiy `/finance/transactions` o'rniga aynan shu davrni to'laydigan
+  // mavjud (avans-qoplash/qisman-to'lov/audit bilan) endpoint chaqiriladi.
+  const isPayrollPaymentForm = form.type === 'expense' && form.category === 'Oylik' && !!form.staffId;
+  const [payrollOptions, setPayrollOptions] = useState<Array<{ id: string; label: string; remaining: number; kind: 'salary' | 'teacher_payroll' }>>([]);
+  const [payrollOptionsLoading, setPayrollOptionsLoading] = useState(false);
+  const [selectedPayrollId, setSelectedPayrollId] = useState('');
+
+  useEffect(() => {
+    if (!isPayrollPaymentForm) {
+      setPayrollOptions([]);
+      setSelectedPayrollId('');
+      return;
+    }
+    const isTeacher = teachers.some((t: any) => t.id.toString() === form.staffId);
+    let cancelled = false;
+    setPayrollOptionsLoading(true);
+    setSelectedPayrollId('');
+    (async () => {
+      try {
+        if (isTeacher) {
+          const res = await api.get(`/finance/teacher-payroll?teacherId=${form.staffId}`);
+          const opts = (res.data || [])
+            .filter((r: any) => r.status !== 'draft' && r.remaining > 0)
+            .map((r: any) => ({
+              id: r.id, kind: 'teacher_payroll' as const, remaining: r.remaining,
+              label: `${r.month} (${r.basis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'}) — qoldiq ${formatNumber(r.remaining)}`,
+            }));
+          if (!cancelled) setPayrollOptions(opts);
+        } else {
+          const res = await api.get(`/salary/staff/${form.staffId}`);
+          const opts = (res.data || [])
+            .filter((r: any) => r.remaining > 0)
+            .map((r: any) => ({ id: r.id, kind: 'salary' as const, remaining: r.remaining, label: `${r.month} — qoldiq ${formatNumber(r.remaining)}` }));
+          if (!cancelled) setPayrollOptions(opts);
+        }
+      } catch {
+        if (!cancelled) setPayrollOptions([]);
+      } finally {
+        if (!cancelled) setPayrollOptionsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isPayrollPaymentForm, form.staffId, teachers]);
+
   const handleSave = async () => {
     if (!canManage || !form.amount || !form.category || categoriesLoading || categoriesError || txSaving) return;
-    const newTransaction = { ...form, amount: Number(form.amount) };
+    if (isPayrollPaymentForm && !selectedPayrollId) {
+      showToast("Iltimos, qaysi davr uchun to'lov qilinayotganini tanlang", 'error');
+      return;
+    }
     setTxSaving(true);
     try {
-      // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
-      // bitta server so'rovi (POST /finance/transactions) Transaction'ni va
-      // (kirim + o'quvchi bo'lsa) balansni bitta atomar tranzaksiyada
-      // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
-      // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
-      // ustidan yozilishi mumkin edi).
-      await api.post('/finance/transactions', newTransaction);
+      if (isPayrollPaymentForm) {
+        const opt = payrollOptions.find(o => o.id === selectedPayrollId);
+        if (!opt) throw new Error('Davr topilmadi');
+        if (Number(form.amount) > opt.remaining) {
+          showToast(`Qoldiqdan (${formatNumber(opt.remaining)}) ortiq summa to'lanmaydi`, 'error');
+          setTxSaving(false);
+          return;
+        }
+        // Umumiy Transaction yozuvi o'rniga, mavjud (qisman to'lov/avans-
+        // qoplash/audit logikasi bor) payroll endpoint chaqiriladi — natijada
+        // yaratiladigan Transaction shu yerdan avtomatik bog'langan holda keladi.
+        if (opt.kind === 'teacher_payroll') {
+          await api.post(`/finance/teacher-payroll/${opt.id}/pay`, { amount: Number(form.amount), method: form.method });
+        } else {
+          await api.put(`/salary/${opt.id}/pay`, { amount: Number(form.amount), method: form.method });
+        }
+      } else {
+        const newTransaction = { ...form, amount: Number(form.amount) };
+        // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
+        // bitta server so'rovi (POST /finance/transactions) Transaction'ni va
+        // (kirim + o'quvchi bo'lsa) balansni bitta atomar tranzaksiyada
+        // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
+        // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
+        // ustidan yozilishi mumkin edi).
+        await api.post('/finance/transactions', newTransaction);
+      }
       await Promise.all([refetchTransactions(), refetchStudents()]);
-      showToast("Tranzaksiya qo'shildi", 'success');
+      showToast(isPayrollPaymentForm ? "Oylik to'lovi qayd etildi" : "Tranzaksiya qo'shildi", 'success');
       setIsModalOpen(false);
       setForm({
         type: 'income', amount: 0, category: '',
         description: '', date: new Date().toISOString().split('T')[0],
         method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
       });
+      setSelectedPayrollId('');
     } catch (e: any) {
-      showToast(e?.response?.data?.error || "Tranzaksiya qo'shishda xatolik yuz berdi", 'error');
+      showToast(e?.response?.data?.message || e?.response?.data?.error || (isPayrollPaymentForm ? "To'lovni qayd etishda xatolik" : "Tranzaksiya qo'shishda xatolik yuz berdi"), 'error');
     } finally {
       setTxSaving(false);
     }
@@ -1484,6 +1558,23 @@ export default function CrmFinance() {
             </div>
           )}
 
+          {isPayrollPaymentForm && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Qaysi davr uchun</label>
+              <select value={selectedPayrollId} onChange={e => {
+                const opt = payrollOptions.find(o => o.id === e.target.value);
+                setSelectedPayrollId(e.target.value);
+                if (opt) setForm(f => ({ ...f, amount: opt.remaining }));
+              }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">{payrollOptionsLoading ? 'Yuklanmoqda...' : (payrollOptions.length ? 'Davrni tanlang' : "To'lanadigan oylik topilmadi")}</option>
+                {payrollOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+              {!payrollOptionsLoading && payrollOptions.length === 0 && (
+                <p className="text-sm text-zinc-500">Bu xodim uchun hozircha tasdiqlangan, to'lanmagan oylik yo'q — avval Xodimlar Oyligi sahifasida hisoblab/tasdiqlang.</p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Tavsif</label>
             <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
@@ -1506,7 +1597,7 @@ export default function CrmFinance() {
 
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Bekor qilish</Button>
-            <Button disabled={!form.category || categoriesLoading || !!categoriesError || txSaving} onClick={handleSave} leftIcon={<Check size={14} />}>{txSaving ? 'Saqlanmoqda...' : 'Saqlash'}</Button>
+            <Button disabled={!form.category || categoriesLoading || !!categoriesError || txSaving || (isPayrollPaymentForm && !selectedPayrollId)} onClick={handleSave} leftIcon={<Check size={14} />}>{txSaving ? 'Saqlanmoqda...' : 'Saqlash'}</Button>
           </div>
         </div>
       </Modal>
