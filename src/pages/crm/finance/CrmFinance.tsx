@@ -4,7 +4,7 @@ import {
   Search, CreditCard, Wallet,
   X, Calendar, FileText, User, Trash2, AlertTriangle,
   CheckCircle2, BarChart3, PieChart as PieChartIcon, Filter, Check, Send,
-  Copy, ExternalLink, Receipt, Clock, XCircle, ChevronDown
+  Copy, ExternalLink, Receipt, Clock, XCircle, ChevronDown, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -104,6 +104,19 @@ function formatCompact(v: number): string {
   return formatNumber(v);
 }
 
+// Moliya-audit (2026-09-22, foydalanuvchi so'rovi): "Oylik" va "Avans"
+// server tomonida (salary.ts/teacherPayroll.ts/staffAdvance.ts) YOZUVCHI
+// tomondan ham qattiq ishlatiladigan, tizim uchun MUHIM kategoriya nomlari —
+// bular oddiy foydalanuvchi-boshqaradigan `TransactionCategory` ro'yxatiga
+// bog'liq bo'lmasligi kerak (production'da hali birorta ham faol chiqim
+// kategoriyasi yaratilmagan bo'lsa ham, oylik/avans funksiyasi ishlashi
+// shart). Shuning uchun bular categoryOptions()'da har doim, alohida
+// ko'rsatiladi — TransactionCategory ro'yxatidan mustaqil.
+const RESERVED_EXPENSE_CATEGORIES: { name: string; label: string }[] = [
+  { name: 'Oylik', label: "Oylik maosh (xodim/o'qituvchi)" },
+  { name: 'Avans', label: "Avans (xodim/o'qituvchiga oldindan)" },
+];
+
 export default function CrmFinance() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const { data: transactions = [], deleteDocument, refetch: refetchTransactions } = useFirestore<Transaction>('finance');
@@ -114,14 +127,21 @@ export default function CrmFinance() {
   const { data: categories, loading: categoriesLoading, error: categoriesError, refetch: reloadCategories } = useFirestore<TransactionCategory>('transactionCategories');
   const activeCategoryNames = (type: TransactionCategory['type']) => [...new Set(categories.filter(category => category.type === type && category.isActive).map(category => category.name))];
   const categoryLabel = (name: string, type: TransactionCategory['type']) => {
+    const reserved = type === 'expense' ? RESERVED_EXPENSE_CATEGORIES.find(r => r.name === name) : undefined;
+    if (reserved) return reserved.label;
     const label = type === 'expense' ? (EXPENSE_LABELS[name as keyof typeof EXPENSE_LABELS] ?? name) : name;
     return !categoriesLoading && !categoriesError && !activeCategoryNames(type).includes(name) ? label + ' (Nofaol)' : label;
   };
-  const categoryOptions = (type: TransactionCategory['type'], selected: string) => <>
-    <option value="">{categoriesLoading ? 'Kategoriyalar yuklanmoqda...' : 'Kategoriya tanlang'}</option>
-    {selected && !activeCategoryNames(type).includes(selected) && <option value={selected}>{categoryLabel(selected, type)}</option>}
-    {activeCategoryNames(type).map(name => <option key={name} value={name}>{name}</option>)}
-  </>;
+  const categoryOptions = (type: TransactionCategory['type'], selected: string) => {
+    const active = activeCategoryNames(type);
+    const reserved = type === 'expense' ? RESERVED_EXPENSE_CATEGORIES.filter(r => !active.includes(r.name)) : [];
+    return <>
+      <option value="">{categoriesLoading ? 'Kategoriyalar yuklanmoqda...' : 'Kategoriya tanlang'}</option>
+      {selected && !active.includes(selected) && !reserved.some(r => r.name === selected) && <option value={selected}>{categoryLabel(selected, type)}</option>}
+      {reserved.map(r => <option key={r.name} value={r.name}>{r.label}</option>)}
+      {active.map(name => <option key={name} value={name}>{name}</option>)}
+    </>;
+  };
   const categoryStatus = categoriesError ? <div role="alert" className="text-sm text-rose-600">Kategoriyalar yuklanmadi. <Button type="button" variant="secondary" onClick={reloadCategories}>Qayta urinish</Button></div> : null;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -421,57 +441,87 @@ export default function CrmFinance() {
   // uchun HAQIQIY to'lanmagan davr(lar) yuklab olinadi va Saqlash bosilganda
   // umumiy `/finance/transactions` o'rniga aynan shu davrni to'laydigan
   // mavjud (avans-qoplash/qisman-to'lov/audit bilan) endpoint chaqiriladi.
-  const isPayrollPaymentForm = form.type === 'expense' && form.category === 'Oylik' && !!form.staffId;
-  const [payrollOptions, setPayrollOptions] = useState<Array<{ id: string; label: string; remaining: number; kind: 'salary' | 'teacher_payroll' }>>([]);
-  const [payrollOptionsLoading, setPayrollOptionsLoading] = useState(false);
+  // "Avans" kategoriyasi esa (davrga bog'liq emas) `POST /finance/advances`ga
+  // yo'naltiriladi — ikkalasi ham xodim tanlanganda uning SO'NGGI hisoblangan
+  // oyligi va qoplanmagan avans qoldig'ini ma'lumot sifatida ko'rsatadi.
+  const isOylikOrAvansForm = form.type === 'expense' && (form.category === 'Oylik' || form.category === 'Avans') && !!form.staffId;
+  const isOylikForm = isOylikOrAvansForm && form.category === 'Oylik';
+  const isAvansForm = isOylikOrAvansForm && form.category === 'Avans';
+  const [personKind, setPersonKind] = useState<'teacher' | 'staff' | null>(null);
+  const [personPayrollRows, setPersonPayrollRows] = useState<any[]>([]);
+  const [personOutstandingAdvance, setPersonOutstandingAdvance] = useState(0);
+  const [personInfoLoading, setPersonInfoLoading] = useState(false);
   const [selectedPayrollId, setSelectedPayrollId] = useState('');
 
   useEffect(() => {
-    if (!isPayrollPaymentForm) {
-      setPayrollOptions([]);
+    if (!isOylikOrAvansForm) {
+      setPersonPayrollRows([]);
+      setPersonKind(null);
+      setPersonOutstandingAdvance(0);
       setSelectedPayrollId('');
       return;
     }
     const isTeacher = teachers.some((t: any) => t.id.toString() === form.staffId);
+    setPersonKind(isTeacher ? 'teacher' : 'staff');
     let cancelled = false;
-    setPayrollOptionsLoading(true);
+    setPersonInfoLoading(true);
     setSelectedPayrollId('');
     (async () => {
       try {
-        if (isTeacher) {
-          const res = await api.get(`/finance/teacher-payroll?teacherId=${form.staffId}`);
-          const opts = (res.data || [])
-            .filter((r: any) => r.status !== 'draft' && r.remaining > 0)
-            .map((r: any) => ({
-              id: r.id, kind: 'teacher_payroll' as const, remaining: r.remaining,
-              label: `${r.month} (${r.basis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'}) — qoldiq ${formatNumber(r.remaining)}`,
-            }));
-          if (!cancelled) setPayrollOptions(opts);
-        } else {
-          const res = await api.get(`/salary/staff/${form.staffId}`);
-          const opts = (res.data || [])
-            .filter((r: any) => r.remaining > 0)
-            .map((r: any) => ({ id: r.id, kind: 'salary' as const, remaining: r.remaining, label: `${r.month} — qoldiq ${formatNumber(r.remaining)}` }));
-          if (!cancelled) setPayrollOptions(opts);
+        const [rowsRes, advRes] = await Promise.all([
+          isTeacher ? api.get(`/finance/teacher-payroll?teacherId=${form.staffId}`) : api.get(`/salary/staff/${form.staffId}`),
+          api.get('/finance/advances/outstanding', { params: { personType: isTeacher ? 'teacher' : 'staff', personId: form.staffId } }),
+        ]);
+        if (!cancelled) {
+          setPersonPayrollRows(rowsRes.data || []);
+          setPersonOutstandingAdvance(advRes.data?.outstanding || 0);
         }
       } catch {
-        if (!cancelled) setPayrollOptions([]);
+        if (!cancelled) { setPersonPayrollRows([]); setPersonOutstandingAdvance(0); }
       } finally {
-        if (!cancelled) setPayrollOptionsLoading(false);
+        if (!cancelled) setPersonInfoLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [isPayrollPaymentForm, form.staffId, teachers]);
+  }, [isOylikOrAvansForm, form.staffId, teachers]);
+
+  // "Oylik" uchun to'lash mumkin bo'lgan (tasdiqlangan/qoldig'i bor) davrlar.
+  const payrollOptions = useMemo(() => {
+    if (personKind === 'teacher') {
+      return personPayrollRows
+        .filter((r: any) => r.status !== 'draft' && r.remaining > 0)
+        .map((r: any) => ({
+          id: r.id, kind: 'teacher_payroll' as const, remaining: r.remaining,
+          label: `${r.month} (${r.basis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'}) — qoldiq ${formatNumber(r.remaining)}`,
+        }));
+    }
+    if (personKind === 'staff') {
+      return personPayrollRows
+        .filter((r: any) => r.remaining > 0)
+        .map((r: any) => ({ id: r.id, kind: 'salary' as const, remaining: r.remaining, label: `${r.month} — qoldiq ${formatNumber(r.remaining)}` }));
+    }
+    return [];
+  }, [personPayrollRows, personKind]);
+
+  // Ma'lumot sifatida ko'rsatiladigan ENG SO'NGGI davr — statusdan qat'i
+  // nazar (hatto hali tasdiqlanmagan/draft bo'lsa ham, "hisoblangan oylik
+  // qancha" ma'lum bo'lishi uchun). Ikkala endpoint ham serverda `month desc`
+  // bo'yicha saralangani uchun birinchi element eng so'nggisi.
+  const latestPersonPayroll = personPayrollRows[0] || null;
 
   const handleSave = async () => {
     if (!canManage || !form.amount || !form.category || categoriesLoading || categoriesError || txSaving) return;
-    if (isPayrollPaymentForm && !selectedPayrollId) {
+    if (isOylikForm && !selectedPayrollId) {
       showToast("Iltimos, qaysi davr uchun to'lov qilinayotganini tanlang", 'error');
+      return;
+    }
+    if (isAvansForm && !form.staffId) {
+      showToast("Iltimos, xodim yoki o'qituvchini tanlang", 'error');
       return;
     }
     setTxSaving(true);
     try {
-      if (isPayrollPaymentForm) {
+      if (isOylikForm) {
         const opt = payrollOptions.find(o => o.id === selectedPayrollId);
         if (!opt) throw new Error('Davr topilmadi');
         if (Number(form.amount) > opt.remaining) {
@@ -487,6 +537,13 @@ export default function CrmFinance() {
         } else {
           await api.put(`/salary/${opt.id}/pay`, { amount: Number(form.amount), method: form.method });
         }
+      } else if (isAvansForm) {
+        // Avans davrga bog'lanmaydi — mavjud staffAdvance.ts yo'li orqali
+        // (FIFO qoplash keyingi oylik tasdiqlash/to'lov paytida avtomatik).
+        await api.post('/finance/advances', {
+          personType: personKind, personId: form.staffId, amount: Number(form.amount),
+          method: form.method, date: form.date, notes: form.description || undefined,
+        });
       } else {
         const newTransaction = { ...form, amount: Number(form.amount) };
         // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
@@ -498,7 +555,7 @@ export default function CrmFinance() {
         await api.post('/finance/transactions', newTransaction);
       }
       await Promise.all([refetchTransactions(), refetchStudents()]);
-      showToast(isPayrollPaymentForm ? "Oylik to'lovi qayd etildi" : "Tranzaksiya qo'shildi", 'success');
+      showToast(isOylikForm ? "Oylik to'lovi qayd etildi" : isAvansForm ? 'Avans berildi' : "Tranzaksiya qo'shildi", 'success');
       setIsModalOpen(false);
       setForm({
         type: 'income', amount: 0, category: '',
@@ -507,7 +564,7 @@ export default function CrmFinance() {
       });
       setSelectedPayrollId('');
     } catch (e: any) {
-      showToast(e?.response?.data?.message || e?.response?.data?.error || (isPayrollPaymentForm ? "To'lovni qayd etishda xatolik" : "Tranzaksiya qo'shishda xatolik yuz berdi"), 'error');
+      showToast(e?.response?.data?.message || e?.response?.data?.error || (isOylikOrAvansForm ? "Qayd etishda xatolik" : "Tranzaksiya qo'shishda xatolik yuz berdi"), 'error');
     } finally {
       setTxSaving(false);
     }
@@ -1543,13 +1600,13 @@ export default function CrmFinance() {
             </div>
           )}
 
-          {form.type === 'expense' && form.category === 'Oylik' && (
+          {form.type === 'expense' && (form.category === 'Oylik' || form.category === 'Avans') && (
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Xodim / O'qituvchi</label>
               <select value={form.staffId} onChange={e => {
                 const all = [...staff, ...teachers];
                 const m = all.find(x => x.id.toString() === e.target.value);
-                setForm({ ...form, staffId: e.target.value, staffName: m?.name || '', description: m ? `${m.name} — ish haqi` : '' });
+                setForm({ ...form, staffId: e.target.value, staffName: m?.name || '', description: m ? `${m.name} — ${form.category === 'Avans' ? 'avans' : 'ish haqi'}` : '' });
               }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">Tanlang...</option>
                 <optgroup label="O'qituvchilar">{teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>
@@ -1558,7 +1615,35 @@ export default function CrmFinance() {
             </div>
           )}
 
-          {isPayrollPaymentForm && (
+          {/* Tanlangan shaxsning so'nggi hisoblangan oyligi + qoplanmagan
+              avans qoldig'i — Oylik va Avans ikkalasi uchun ham ma'lumot. */}
+          {isOylikOrAvansForm && (
+            <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 space-y-1.5 text-xs">
+              {personInfoLoading ? (
+                <p className="text-zinc-400">Yuklanmoqda...</p>
+              ) : (
+                <>
+                  {latestPersonPayroll ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-zinc-500">So'nggi hisoblangan oylik ({latestPersonPayroll.month})</span>
+                      <span className="font-black text-slate-900 dark:text-white text-right">
+                        {formatNumber(personKind === 'teacher' ? latestPersonPayroll.accruedAmount : latestPersonPayroll.total)} so'm
+                        {latestPersonPayroll.status === 'draft' && <span className="block text-[10px] font-bold text-amber-500">(hali tasdiqlanmagan)</span>}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-zinc-400">Bu xodim uchun hali hisoblangan oylik topilmadi.</p>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-zinc-500">Oldindan berilgan avans (qoplanmagan)</span>
+                    <span className={`font-black ${personOutstandingAdvance > 0 ? 'text-amber-600' : 'text-zinc-400'}`}>{formatNumber(personOutstandingAdvance)} so'm</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {isOylikForm && (
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Qaysi davr uchun</label>
               <select value={selectedPayrollId} onChange={e => {
@@ -1566,13 +1651,20 @@ export default function CrmFinance() {
                 setSelectedPayrollId(e.target.value);
                 if (opt) setForm(f => ({ ...f, amount: opt.remaining }));
               }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">{payrollOptionsLoading ? 'Yuklanmoqda...' : (payrollOptions.length ? 'Davrni tanlang' : "To'lanadigan oylik topilmadi")}</option>
+                <option value="">{personInfoLoading ? 'Yuklanmoqda...' : (payrollOptions.length ? 'Davrni tanlang' : "To'lanadigan oylik topilmadi")}</option>
                 {payrollOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
-              {!payrollOptionsLoading && payrollOptions.length === 0 && (
+              {!personInfoLoading && payrollOptions.length === 0 && (
                 <p className="text-sm text-zinc-500">Bu xodim uchun hozircha tasdiqlangan, to'lanmagan oylik yo'q — avval Xodimlar Oyligi sahifasida hisoblab/tasdiqlang.</p>
               )}
             </div>
+          )}
+
+          {isAvansForm && (
+            <p className="text-[10px] text-zinc-400 flex items-start gap-1.5">
+              <Info size={12} className="shrink-0 mt-0.5" />
+              Avans darhol xarajat sifatida yoziladi va keyingi tasdiqlanadigan/to'lanadigan oylikdan avtomatik ayiriladi — muayyan davrga bog'lanmaydi.
+            </p>
           )}
 
           <div className="space-y-1.5">
@@ -1597,7 +1689,7 @@ export default function CrmFinance() {
 
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <Button variant="ghost" onClick={() => setIsModalOpen(false)}>Bekor qilish</Button>
-            <Button disabled={!form.category || categoriesLoading || !!categoriesError || txSaving || (isPayrollPaymentForm && !selectedPayrollId)} onClick={handleSave} leftIcon={<Check size={14} />}>{txSaving ? 'Saqlanmoqda...' : 'Saqlash'}</Button>
+            <Button disabled={!form.category || categoriesLoading || !!categoriesError || txSaving || (isOylikForm && !selectedPayrollId) || (isAvansForm && !form.staffId)} onClick={handleSave} leftIcon={<Check size={14} />}>{txSaving ? 'Saqlanmoqda...' : 'Saqlash'}</Button>
           </div>
         </div>
       </Modal>

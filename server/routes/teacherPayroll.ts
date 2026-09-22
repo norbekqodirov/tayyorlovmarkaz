@@ -423,15 +423,37 @@ router.get('/:id/payouts', canReview, async (req, res) => {
     }
 });
 
-// DELETE /api/finance/teacher-payroll/:id — faqat DRAFT holatidagi yozuvni olib tashlash
+// DELETE /api/finance/teacher-payroll/:id — Moliya-audit (2026-09-22,
+// foydalanuvchi so'rovi): ilgari FAQAT 'draft' holatidagi yozuvni o'chirish
+// mumkin edi — tasdiqlangan/to'langan (xato yaratilgan yoki test uchun
+// ishlatilgan) yozuvni tozalashning umuman yo'li yo'q edi. Endi har qanday
+// holatdagi yozuv o'chirilishi mumkin, LEKIN to'liq, atomar qaytarish bilan:
+// unga bog'langan har bir to'lov Transaction'i o'chiriladi, va agar shu
+// davrga biror StaffAdvance qisman/to'liq QO'LLANILGAN bo'lsa (advanceApplied),
+// o'sha avansning `remaining`i ORQAGA qaytariladi (aks holda avans "berilgan
+// va sarflangan" bo'lib qolib, hech qayerda ko'rinmay qolardi).
 router.delete('/:id', canManageMoney, async (req, res) => {
     try {
-        const payroll = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id }, select: { status: true } });
+        const payroll = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
         if (!payroll) return res.status(404).json({ message: 'Topilmadi' });
-        if (payroll.status !== 'draft') {
-            return res.status(400).json({ message: "Faqat 'draft' holatidagi yozuvni o'chirish mumkin" });
-        }
-        await prisma.teacherPayroll.delete({ where: { id: req.params.id } });
+
+        await prisma.$transaction(async (tx) => {
+            await tx.transaction.deleteMany({ where: { sourceType: 'teacher_payroll', sourceId: payroll.id } });
+            const applications = await tx.staffAdvanceApplication.findMany({ where: { appliedToType: 'teacher_payroll', appliedToId: payroll.id } });
+            for (const app of applications) {
+                await tx.staffAdvance.update({ where: { id: app.advanceId }, data: { remaining: { increment: app.amount } } });
+            }
+            await tx.staffAdvanceApplication.deleteMany({ where: { appliedToType: 'teacher_payroll', appliedToId: payroll.id } });
+            await tx.teacherPayroll.delete({ where: { id: payroll.id } });
+        });
+
+        const remover = (req as any).user;
+        await logAudit({
+            userId: remover?.id, userName: remover?.name || 'system',
+            action: 'delete', resource: 'teacherPayroll', resourceId: payroll.id,
+            before: { teacherId: payroll.teacherId, month: payroll.month, status: payroll.status, accruedAmount: payroll.accruedAmount, paidAmount: payroll.paidAmount, advanceApplied: payroll.advanceApplied },
+        });
+
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ message: err.message });

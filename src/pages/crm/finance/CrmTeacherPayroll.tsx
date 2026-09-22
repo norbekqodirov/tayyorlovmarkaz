@@ -15,13 +15,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Wallet, Check, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight,
-  History, Info, Users, GraduationCap, Clock, CalendarCheck, Plus, X, HandCoins, Lock,
+  History, Info, Users, GraduationCap, Clock, CalendarCheck, Plus, X, HandCoins, Lock, Trash2,
 } from 'lucide-react';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import { Button } from '../../../components/ui/Button';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 import { formatNumber } from '../../../utils/formatters';
 import { hasAnyPermission } from '../../../utils/roles';
 
@@ -139,6 +140,7 @@ export default function CrmTeacherPayroll() {
   const [outstandingAdvance, setOutstandingAdvance] = useState(0);
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
   const [advanceForm, setAdvanceForm] = useState({ amount: 0, method: 'Naqd', date: new Date().toISOString().split('T')[0], notes: '' });
+  const [deleteRecordConfirm, setDeleteRecordConfirm] = useState(false);
 
   const loadOutstandingAdvance = useCallback(async (personType: 'teacher' | 'staff', personId: string) => {
     try {
@@ -315,6 +317,24 @@ export default function CrmTeacherPayroll() {
     } finally { setBusy(false); }
   };
 
+  // Moliya-audit (2026-09-22, foydalanuvchi so'rovi): xato yaratilgan yoki
+  // test uchun ishlatilgan tasdiqlangan/to'langan davrni ham butunlay
+  // tozalash — backend bog'liq Transaction/StaffAdvanceApplication'larni
+  // ham atomar qaytaradi (server/routes/teacherPayroll.ts).
+  const deletePayroll = async () => {
+    if (!payroll) return;
+    setBusy(true);
+    try {
+      await api.delete(`/finance/teacher-payroll/${payroll.id}`);
+      showToast("Davr yozuvi o'chirildi", 'success');
+      setPayroll(null);
+      void loadTeacherDetail();
+      refreshTeacherPayrollList();
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || 'Xatolik yuz berdi', 'error');
+    } finally { setBusy(false); }
+  };
+
   const selectedTeacher = useMemo(() => teachers.find(t => t.id === selectedTeacherId) || null, [teachers, selectedTeacherId]);
 
   // ─── Staff: list data ─────────────────────────────────────────────────────
@@ -459,6 +479,22 @@ export default function CrmTeacherPayroll() {
     } finally { setBusy(false); }
   };
 
+  // Moliya-audit (2026-09-22, foydalanuvchi so'rovi) — teacherPayroll bilan
+  // bir xil: xato/test uchun yaratilgan hisoblangan/to'langan oylikni ham
+  // butunlay tozalash imkoniyati.
+  const deleteSalary = async () => {
+    const sal = selectedStaffId ? staffSalaryFor(selectedStaffId) : null;
+    if (!sal) return;
+    setBusy(true);
+    try {
+      await api.delete(`/salary/${sal.id}`);
+      showToast('Oylik yozuvi o\'chirildi', 'success');
+      setStaffSalaries(prev => prev.filter(s => s.id !== sal.id));
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || e?.response?.data?.error || 'Xatolik yuz berdi', 'error');
+    } finally { setBusy(false); }
+  };
+
   // ─── Shared month/year nav ────────────────────────────────────────────────
   const shiftMonth = (delta: number) => {
     let m = month + delta, y = year;
@@ -517,6 +553,7 @@ export default function CrmTeacherPayroll() {
             canManageMoney={canManageMoney}
             onBack={() => setSelectedTeacherId(null)}
             onCreateDraft={createDraft} onApprove={approve} onPay={pay}
+            onRequestDelete={() => setDeleteRecordConfirm(true)}
           />
         ) : (
           <TeacherList
@@ -543,11 +580,21 @@ export default function CrmTeacherPayroll() {
             canManageMoney={canManageMoney}
             onBack={() => setSelectedStaffId(null)}
             onSave={saveStaffSalary} onPay={payStaffSalary}
+            onRequestDelete={() => setDeleteRecordConfirm(true)}
           />
         ) : (
           <StaffList staff={staffList} salaryFor={staffSalaryFor} onSelect={setSelectedStaffId} />
         )
       )}
+
+      <ConfirmDialog
+        isOpen={deleteRecordConfirm}
+        title="Davr yozuvini o'chirish"
+        message="Haqiqatan ham bu davr uchun hisoblangan/tasdiqlangan oylik yozuvini butunlay o'chirmoqchimisiz? Bog'liq to'lov(lar) kirim-chiqimdan ham o'chadi, qo'llanilgan avans bo'lsa qoldig'i qaytariladi. Bu amalni bekor qilib bo'lmaydi."
+        confirmText="Ha, butunlay o'chirish"
+        onConfirm={async () => { setDeleteRecordConfirm(false); if (section === 'teachers') await deletePayroll(); else await deleteSalary(); }}
+        onCancel={() => setDeleteRecordConfirm(false)}
+      />
 
       <AdvanceModal
         isOpen={advanceModalOpen}
@@ -763,6 +810,7 @@ function TeacherDetail(props: {
   payMethod: string; setPayMethod: (m: string) => void;
   outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
   onBack: () => void; onCreateDraft: () => void; onApprove: () => void; onPay: () => void;
+  onRequestDelete: () => void;
 }) {
   const {
     teacherName, month, year, basis, setBasis, accrualPreview, cashPreview, activePreview,
@@ -770,7 +818,7 @@ function TeacherDetail(props: {
     payroll, history, payoutEvents, remaining, accrualCashDelta, staffAtt, loading, busy,
     expandedGroupId, setExpandedGroupId, payAmount, setPayAmount, payMethod, setPayMethod,
     outstandingAdvance, onGiveAdvance, canManageMoney,
-    onBack, onCreateDraft, onApprove, onPay,
+    onBack, onCreateDraft, onApprove, onPay, onRequestDelete,
   } = props;
 
   return (
@@ -962,6 +1010,16 @@ function TeacherDetail(props: {
               )}
             </div>
 
+            {/* Moliya-audit (2026-09-22): xato/test uchun yaratilgan davrni
+                butunlay tozalash — statusdan qat'i nazar. */}
+            {payroll && canManageMoney && (
+              <div className="flex justify-end">
+                <button onClick={onRequestDelete} disabled={busy} className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500 hover:text-rose-600 hover:underline disabled:opacity-50">
+                  <Trash2 size={12} /> Bu davr yozuvini butunlay o'chirish
+                </button>
+              </div>
+            )}
+
             {/* O12 tuzatish: har bir to'lov/avans-qoplash hodisasi alohida */}
             {payroll && payroll.status !== 'draft' && <PayoutTimeline events={payoutEvents} />}
           </div>
@@ -1074,7 +1132,7 @@ function StaffDetail({
   staff, salary, attendance, payoutEvents, monthLabel, form, setForm, dirty, loading, busy,
   remaining, payAmount, setPayAmount, payMethod, setPayMethod,
   outstandingAdvance, onGiveAdvance, canManageMoney,
-  onBack, onSave, onPay,
+  onBack, onSave, onPay, onRequestDelete,
 }: {
   staff: StaffPerson | null; salary: SalaryRow | null; attendance: StaffAttendanceRow[]; payoutEvents: PayoutEvent[]; monthLabel: string;
   form: { baseSalary: number; bonus: number; deduction: number; notes: string };
@@ -1084,7 +1142,7 @@ function StaffDetail({
   remaining: number; payAmount: number; setPayAmount: (n: number) => void;
   payMethod: string; setPayMethod: (m: string) => void;
   outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
-  onBack: () => void; onSave: () => void; onPay: () => void;
+  onBack: () => void; onSave: () => void; onPay: () => void; onRequestDelete: () => void;
 }) {
   if (!staff) return null;
   const attSummary = {
@@ -1230,6 +1288,16 @@ function StaffDetail({
                 </div>
               )}
             </div>
+
+            {/* Moliya-audit (2026-09-22): xato/test uchun yaratilgan davrni
+                butunlay tozalash — statusdan qat'i nazar. */}
+            {salary && canManageMoney && (
+              <div className="flex justify-end">
+                <button onClick={onRequestDelete} disabled={busy} className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500 hover:text-rose-600 hover:underline disabled:opacity-50">
+                  <Trash2 size={12} /> Bu davr yozuvini butunlay o'chirish
+                </button>
+              </div>
+            )}
 
             {/* O12 tuzatish: har bir to'lov/avans-qoplash hodisasi alohida */}
             {salary && isLocked && <PayoutTimeline events={payoutEvents} />}

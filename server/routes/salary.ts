@@ -291,15 +291,35 @@ router.get('/:id/payouts', requireAuth, requireMinRole('MANAGER'), canReview, as
 // RF-05 tuzatish: to'langan oylik yozuvini o'chirishga hech qanday cheklov
 // yo'q edi — real xarajat yozuvi (Transaction) qolgan holda payroll yozuvi
 // yo'qolib, tarixiy hisobot manbasiz qolib ketardi.
+// Moliya-audit (2026-09-22, foydalanuvchi so'rovi): ilgari to'langan
+// (paid=true) yozuvni o'chirib bo'lmasdi — xato yaratilgan yoki test uchun
+// ishlatilgan yozuvni tozalashning yo'li yo'q edi. Endi teacherPayroll.ts
+// bilan bir xil naqsh: har qanday holatdagi yozuv o'chiriladi, lekin bog'liq
+// Transaction'lar ham o'chiriladi va qo'llanilgan StaffAdvance(lar)ning
+// `remaining`i orqaga qaytariladi — hech narsa jimgina yo'qolib qolmaydi.
 router.delete('/:id', requireAuth, requireMinRole('MANAGER'), canManageMoney, async (req, res) => {
     try {
-        const salary = await prisma.salary.findUnique({ where: { id: req.params.id }, select: { paid: true } });
+        const salary = await prisma.salary.findUnique({ where: { id: req.params.id } });
         if (!salary) return res.status(404).json({ message: 'Topilmadi' });
-        if (salary.paid) {
-            return res.status(400).json({ message: "To'langan oylik yozuvini o'chirib bo'lmaydi — moliyaviy tarix saqlanishi shart" });
-        }
-        await prisma.salary.delete({ where: { id: req.params.id } });
+
+        await prisma.$transaction(async (tx) => {
+            await tx.transaction.deleteMany({ where: { sourceType: 'salary', sourceId: salary.id } });
+            const applications = await tx.staffAdvanceApplication.findMany({ where: { appliedToType: 'salary', appliedToId: salary.id } });
+            for (const app of applications) {
+                await tx.staffAdvance.update({ where: { id: app.advanceId }, data: { remaining: { increment: app.amount } } });
+            }
+            await tx.staffAdvanceApplication.deleteMany({ where: { appliedToType: 'salary', appliedToId: salary.id } });
+            await tx.salary.delete({ where: { id: salary.id } });
+        });
+
         invalidate(NS.FINANCE);
+        const remover = (req as any).user;
+        await logAudit({
+            userId: remover?.id, userName: remover?.name || 'system',
+            action: 'delete', resource: 'salary', resourceId: salary.id,
+            before: { staffId: salary.staffId, month: salary.month, paid: salary.paid, total: salary.total, paidAmount: salary.paidAmount, advanceApplied: salary.advanceApplied },
+        });
+
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
