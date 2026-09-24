@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Users, Calendar, Clock,
-  DoorOpen, BookOpen, X, Edit2, Trash2, Download,
+  DoorOpen, BookOpen, X, Edit2, Archive, Download,
   ChevronRight, UserPlus, GraduationCap, CheckCircle2,
   AlertCircle, LayoutGrid, List as ListIcon, Settings
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import { exportToExcel } from '../../../utils/export';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import ArchivedRecordsModal from '../../../components/ArchivedRecordsModal';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
@@ -103,6 +104,7 @@ export default function CrmGroups() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const emptyForm: Partial<Group> = {
     name: '',
@@ -284,10 +286,16 @@ export default function CrmGroups() {
     if (!canManage) return;
     const id = deleteConfirm.id;
     setDeleteConfirm({ open: false, id: '' });
-    await deleteDocument(id);
-    const existingSchedule = (schedule || []).find((s: any) => s.groupId === id);
-    if (existingSchedule) await deleteSchedule(existingSchedule.id);
-    showToast('Guruh o\'chirildi', 'success');
+    // IP-01: tarixi bor guruh arxivlanadi (a'zolar, davomat, baholar saqlanadi;
+    // jadval ham saqlanadi — tiklanganda qayta kiritish shart emas). Tarixsiz
+    // yangi guruh o'chirilsa, uning jadvalini server o'zi tozalaydi.
+    try {
+      const result = await deleteDocument(id);
+      showToast(result?.archived === false ? "Guruh o'chirildi (tarixi yo'q edi)" : "Guruh arxivlandi — a'zolar, davomat va baholar saqlandi", 'success');
+      if (result?.archived === false) void refetchSchedule();
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || "Guruhni arxivlab bo'lmadi. Qayta urinib ko'ring.", 'error');
+    }
   };
 
   const openModal = (group: Group | null = null) => {
@@ -366,9 +374,10 @@ export default function CrmGroups() {
       {dependenciesLoading ? <p role="status">Forma ma’lumotlari yuklanmoqda...</p> : dependenciesError ? <ErrorState message="Forma uchun zarur ma’lumotlar yuklanmadi. Yaratish/tahrirlash uchun qayta urinib ko‘ring." onRetry={retryDependencies} /> : null}
       <ConfirmDialog
         isOpen={canManage && deleteConfirm.open}
-        title="Guruhni o'chirish"
-        message="Haqiqatan ham bu guruhni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
-        confirmText="Ha, o'chirish"
+        title="Guruhni arxivlash"
+        message="Guruh ro'yxatlardan, bugungi darslar va eslatmalardan chiqariladi, oylik hisob keyingi oydan to'xtaydi. A'zolar, davomat, baholar va jadval saqlanadi — «Arxiv» oynasidan tiklash mumkin."
+        confirmText="Arxivlash"
+        type="warning"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
       />
@@ -398,6 +407,13 @@ export default function CrmGroups() {
             </button>
           </div>
           {canManage && <Button
+            variant="secondary"
+            onClick={() => setArchiveOpen(true)}
+            leftIcon={<Archive size={18} />}
+          >
+            Arxiv
+          </Button>}
+          {canManage && <Button
             onClick={() => openModal()}
             leftIcon={<Plus size={18} />}
           >
@@ -405,6 +421,15 @@ export default function CrmGroups() {
           </Button>}
         </div>
       </div>
+
+      <ArchivedRecordsModal
+        isOpen={canManage && archiveOpen}
+        onClose={() => setArchiveOpen(false)}
+        collection="groups"
+        title="Arxivlangan guruhlar"
+        describe={(g) => [g.course?.name, g.teacher?.name].filter(Boolean).join(' · ')}
+        onRestored={() => { void refetchGroups(); }}
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -496,11 +521,12 @@ export default function CrmGroups() {
                         Tahrirlash
                       </Button>
                       <button
-                        aria-label={`${group.name} guruhini o'chirish`}
+                        aria-label={`${group.name} guruhini arxivlash`}
+                        title="Arxivlash"
                         onClick={() => handleDelete(group.id)}
                         className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
                       >
-                        <Trash2 size={14} />
+                        <Archive size={14} />
                       </button>
                     </div>
                   )}
@@ -601,8 +627,8 @@ export default function CrmGroups() {
                       {canManage && <button aria-label={`${group.name} guruhini tahrirlash`} onClick={(e) => { e.stopPropagation(); openModal(group); }} className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 rounded-lg transition-colors border border-blue-100 dark:border-blue-800">
                         <Edit2 size={16} />
                       </button>}
-                      {canManage && <button aria-label={`${group.name} guruhini o'chirish`} onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors border border-rose-100 dark:border-rose-900/40">
-                        <Trash2 size={16} />
+                      {canManage && <button aria-label={`${group.name} guruhini arxivlash`} title="Arxivlash" onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }} className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors border border-rose-100 dark:border-rose-900/40">
+                        <Archive size={16} />
                       </button>}
                     </div>
                   </td>

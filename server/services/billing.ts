@@ -14,6 +14,7 @@
  * - Bitta o'quvchi bir nechta kursda o'qisa, har biri mustaqil hisoblanadi.
  */
 import prisma from '../db.js';
+import { enrollmentActiveInMonthWhere, groupActiveInMonthWhere, monthStartInstant } from '../utils/activeFilters.js';
 
 export interface BillingSettings {
     lessonsPerMonth: number;
@@ -78,8 +79,9 @@ export async function calculateStudentMonthlyDue(
     const s = settings || await getBillingSettings();
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
 
+    // IP-01: arxivlangan o'quvchi/guruh — faqat arxivlangan oyigacha hisoblanadi.
     const enrollments = await prisma.enrollment.findMany({
-        where: { studentId },
+        where: { studentId, ...enrollmentActiveInMonthWhere(year, month) },
         include: { group: { include: { course: { select: { name: true, price: true } } } } },
     });
 
@@ -179,9 +181,10 @@ export async function calculateTeacherMonthlyRevenue(
         select: { salaryPercent: true },
     });
     const salaryPercent = teacher?.salaryPercent ?? settings.teacherSalaryPercent;
+    const monthStart = monthStartInstant(year, month);
     const groups = await prisma.group.findMany({
-        where: { teacherId },
-        include: { enrollments: { select: { studentId: true } } },
+        where: { teacherId, ...groupActiveInMonthWhere(year, month) },
+        include: { enrollments: { where: { student: { OR: [{ deletedAt: null }, { deletedAt: { gte: monthStart } }] } }, select: { studentId: true } } },
     });
 
     const groupSummaries = await Promise.all(groups.map(async (g) => {

@@ -194,7 +194,7 @@ router.get('/today', staffPortalAuth, async (req: any, res) => {
             include: {
                 course: { select: { name: true } },
                 teacher: { select: { id: true, name: true } },
-                _count: { select: { enrollments: true } },
+                _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } },
             },
         }) : [];
         const groupMap = new Map(groupsData.map(g => [g.id, g]));
@@ -252,7 +252,7 @@ router.get('/groups', staffPortalAuth, async (req: any, res) => {
             include: {
                 course: { select: { name: true } },
                 teacher: { select: { name: true } },
-                _count: { select: { enrollments: true } },
+                _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } },
                 schedules: { select: { dayOfWeek: true, startTime: true, endTime: true } },
             },
             orderBy: { createdAt: 'desc' },
@@ -314,7 +314,7 @@ router.get('/groups/:groupId/students', staffPortalAuth, async (req: any, res) =
         }
 
         const enrollments = await prisma.enrollment.findMany({
-            where: { groupId },
+            where: { groupId, student: { deletedAt: null } },
             include: {
                 student: {
                     select: { id: true, name: true, photo: true, phone: true, status: true },
@@ -539,6 +539,7 @@ router.get('/students', staffPortalAuth, async (req: any, res) => {
                     id: true, name: true, photo: true, phone: true,
                     status: true, source: true, createdAt: true,
                     enrollments: {
+                        where: { group: { deletedAt: null } },
                         include: { group: { select: { name: true } } },
                         take: 3,
                     },

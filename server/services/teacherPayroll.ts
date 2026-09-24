@@ -18,6 +18,7 @@
  *   lekin UI'da albatta "taxminiy" deb belgilanishi kerak bo'lgan holat.
  */
 import prisma from '../db.js';
+import { groupActiveInMonthWhere, monthStartInstant } from '../utils/activeFilters.js';
 import { getBillingSettings, calculateStudentMonthlyDue, calculateStudentCashAllocation, StudentCashAllocation } from './billing.js';
 
 export type PayrollBasis = 'accrual' | 'cash';
@@ -66,9 +67,11 @@ export async function calculateTeacherAccrual(teacherId: string, year: number, m
     const teacher = await prisma.user.findUnique({ where: { id: teacherId }, select: { salaryPercent: true } });
     const salaryPercent = teacher?.salaryPercent ?? settings.teacherSalaryPercent;
 
+    // IP-01: arxivlangan guruh/o'quvchi — faqat arxivlangan oyigacha qatnashadi.
+    const monthStart = monthStartInstant(year, month);
     const groups = await prisma.group.findMany({
-        where: { teacherId },
-        include: { enrollments: { include: { student: { select: { id: true, name: true } } } } },
+        where: { teacherId, ...groupActiveInMonthWhere(year, month) },
+        include: { enrollments: { where: { student: { OR: [{ deletedAt: null }, { deletedAt: { gte: monthStart } }] } }, include: { student: { select: { id: true, name: true } } } } },
     });
 
     const groupBreakdown: TeacherPayrollGroupBreakdown[] = await Promise.all(groups.map(async (g) => {
@@ -121,9 +124,11 @@ export async function calculateTeacherCashCollection(teacherId: string, year: nu
     const teacher = await prisma.user.findUnique({ where: { id: teacherId }, select: { salaryPercent: true } });
     const salaryPercent = teacher?.salaryPercent ?? settings.teacherSalaryPercent;
 
+    // IP-01: arxivlangan guruh/o'quvchi — faqat arxivlangan oyigacha qatnashadi.
+    const monthStart = monthStartInstant(year, month);
     const groups = await prisma.group.findMany({
-        where: { teacherId },
-        include: { enrollments: { include: { student: { select: { id: true, name: true } } } } },
+        where: { teacherId, ...groupActiveInMonthWhere(year, month) },
+        include: { enrollments: { where: { student: { OR: [{ deletedAt: null }, { deletedAt: { gte: monthStart } }] } }, include: { student: { select: { id: true, name: true } } } } },
     });
 
     // O03/O04 tuzatish (2026-09-16 audit): ilgari har bir o'quvchining

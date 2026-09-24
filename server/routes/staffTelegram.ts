@@ -300,7 +300,7 @@ router.post('/webhook', async (req, res) => {
                 where,
                 include: {
                     course: { select: { name: true } },
-                    _count: { select: { enrollments: true } },
+                    _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } },
                 },
                 take: 20,
             });

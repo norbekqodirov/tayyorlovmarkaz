@@ -99,7 +99,7 @@ router.post('/', async (req, res) => {
         // edi, bu keyinchalik billing/hisobotlarni buzardi.
         const enrolledIds = new Set(
             (await prisma.enrollment.findMany({
-                where: { groupId, studentId: { in: records.map(r => r.studentId) } },
+                where: { groupId, studentId: { in: records.map(r => r.studentId) }, student: { deletedAt: null } },
                 select: { studentId: true },
             })).map(e => e.studentId),
         );

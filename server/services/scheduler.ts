@@ -173,6 +173,7 @@ async function runAttendanceMonitoring() {
         const adminChatId = await getSetting('telegram_admin_chat_id');
         if (adminChatId) {
             const enrollments = await prisma.enrollment.findMany({
+                where: { student: { deletedAt: null }, group: { deletedAt: null } },
                 select: {
                     studentId: true,
                     groupId: true,

@@ -96,6 +96,7 @@ router.get('/me', portalAuth, async (req: any, res) => {
             where: { id: resolved.id },
             include: {
                 enrollments: {
+                    where: { group: { deletedAt: null } },
                     include: {
                         group: {
                             include: {
@@ -327,7 +328,7 @@ router.get('/schedule', portalAuth, async (req: any, res) => {
         // CrmGroups.tsx/CrmSchedule.tsx to'ldiradi) — Group.schedules (alohida
         // "Schedule" modeli) hech qayerda yozilmaydi, shuning uchun ishlatilmaydi.
         const enrollments = await prisma.enrollment.findMany({
-            where: { studentId },
+            where: { studentId, group: { deletedAt: null } },
             include: {
                 group: {
                     include: {
@@ -392,6 +393,7 @@ router.get('/chat-threads', portalAuth, async (req: any, res) => {
             where: { id: resolved.id },
             include: {
                 enrollments: {
+                    where: { group: { deletedAt: null } },
                     include: { group: { include: { course: { select: { name: true } }, teacher: { select: { id: true, name: true } } } } },
                 },
             },

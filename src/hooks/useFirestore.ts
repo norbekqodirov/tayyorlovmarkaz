@@ -50,9 +50,12 @@ export function useFirestore<T extends Record<string, any>>(collectionName: stri
   };
 
   // ─── Delete (optimistic) ────────────────────────────────────────────────────
-  const deleteDocument = async (id: string): Promise<void> => {
-    await api.delete(`/${collectionName}/${id}`);
+  // IP-01: server o'quvchi/guruh/xodim/kurs uchun `{ archived: true }` qaytarishi
+  // mumkin (tarix saqlangan holda arxivlandi) — chaqiruvchi xabarni shunga moslaydi.
+  const deleteDocument = async (id: string): Promise<{ archived?: boolean; reasons?: string[] } | undefined> => {
+    const res = await api.delete(`/${collectionName}/${id}`);
     setData(prev => prev.filter(d => d.id !== id));
+    return res?.data;
   };
 
   return {

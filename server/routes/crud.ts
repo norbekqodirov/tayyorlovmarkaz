@@ -6,6 +6,8 @@ import { requireAuth, requireRole, requireMinRole, ROLE_LEVEL } from '../middlew
 import { withAudit, logAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { resolveRoleAssignment } from '../services/roleAssignment.js';
+import { archiveOrDelete, restoreArchived, ARCHIVABLE_MODELS, ArchivableModel } from '../services/archive.js';
+import { CURRENT_ENROLLMENT_WHERE } from '../utils/activeFilters.js';
 
 const router = express.Router();
 
@@ -176,7 +178,8 @@ const RELATION_INCLUDES: Record<string, any> = {
     'group': {
         course: { select: { id: true, name: true, price: true, lessonDuration: true, duration: true, tiers: true } },
         teacher: { select: { id: true, name: true } },
-        _count: { select: { enrollments: true } },
+        // IP-01: arxivlangan o'quvchilar guruh to'liqligiga kirmaydi.
+        _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } },
     },
     'course': {
         tiers: { orderBy: { price: 'asc' } },
@@ -403,6 +406,9 @@ async function getPublicTeachersList() {
 // yuklanmaydi (401). Faqat GET uchun; yozish (POST/PUT/DELETE) hamon requireAuth talab qiladi.
 const PUBLIC_READ_COLLECTIONS = new Set(['pageContent', 'gallery', 'news', 'teachers']);
 
+// IP-01: `deletedAt` ustuni arxiv belgisi bo'lgan modellar (generic ro'yxatda filtrlanadi).
+const SOFT_DELETE_MODELS = new Set(['student', 'group', 'staffMember']);
+
 // RBAC qayta qurish — Bosqich 4 (authorize.ts'ni router'larga ulash).
 // Xarita avval ATAYLAB tor qoldirilgan edi: kengroq (students/groups/
 // courses/finance/transactions) qilib sinalganda CrmDashboard.tsx (har bir
@@ -490,6 +496,14 @@ router.post('/enrollments', requireAuth, requireMinRole('MANAGER'), async (req, 
     const { studentId, groupId } = req.body;
     if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
     try {
+        // IP-01: arxivlangan o'quvchi yoki guruhga yangi a'zolik yaratilmaydi.
+        const [student, group] = await Promise.all([
+            prisma.student.findUnique({ where: { id: studentId }, select: { deletedAt: true } }),
+            prisma.group.findUnique({ where: { id: groupId }, select: { deletedAt: true } }),
+        ]);
+        if (!student || !group) return res.status(404).json({ message: "O'quvchi yoki guruh topilmadi" });
+        if (student.deletedAt) return res.status(400).json({ message: "O'quvchi arxivlangan — avval uni arxivdan tiklang" });
+        if (group.deletedAt) return res.status(400).json({ message: "Guruh arxivlangan — avval uni arxivdan tiklang" });
         // Upsert — ignore if already enrolled
         const existing = await prisma.enrollment.findUnique({ where: { studentId_groupId: { studentId, groupId } } });
         if (existing) return res.json({ id: existing.id, studentId, groupId, alreadyEnrolled: true });
@@ -510,7 +524,7 @@ router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
             return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
         }
         const enrollments = await prisma.enrollment.findMany({
-            where: { groupId: req.params.groupId },
+            where: { groupId: req.params.groupId, student: { deletedAt: null } },
             include: { student: true },
         });
         res.json(enrollments);
@@ -579,6 +593,25 @@ router.use('/:collection', authForCollection, async (req, res, next) => {
     next();
 });
 
+// ─── POST /:collection/:id/restore — IP-01: arxivdan tiklash ─────────────────
+// Yozish darajasi (COLLECTION_WRITE_LEVEL) va modul ruxsati authForCollection
+// orqali allaqachon tekshirilgan (POST metodi).
+router.post('/:collection/:id/restore', async (req, res) => {
+    const modelName = (req as any).modelName;
+    if ((req as any).useFallback || !ARCHIVABLE_MODELS.has(modelName as ArchivableModel)) {
+        return res.status(400).json({ message: "Bu turdagi yozuvni arxivdan tiklab bo'lmaydi" });
+    }
+    try {
+        const ok = await restoreArchived(modelName as ArchivableModel, req.params.id);
+        if (!ok) return res.status(404).json({ message: 'Arxivda topilmadi' });
+        const actor = (req as any).user;
+        await logAudit({ userId: actor?.id, userName: actor?.name || 'system', action: 'restore', resource: modelName, resourceId: req.params.id });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
+});
+
 // ─── GET /:collection ─────────────────────────────────────────────────────────
 router.get('/:collection', async (req, res) => {
     const page = parseInt(req.query.page as string) || 0;
@@ -612,7 +645,14 @@ router.get('/:collection', async (req, res) => {
 
         const modelName = (req as any).modelName;
         const include = RELATION_INCLUDES[modelName];
-        const scopeWhere = (req as any).teacherScopeWhere;
+        // IP-01: arxivlangan o'quvchi/guruh/xodim standart ro'yxatda ko'rinmaydi.
+        // `?archived=1` — faqat arxiv (tiklash oynasi uchun), `?archived=all` — hammasi.
+        let scopeWhere = (req as any).teacherScopeWhere;
+        if (SOFT_DELETE_MODELS.has(modelName)) {
+            const mode = String(req.query.archived || '');
+            const archiveWhere = mode === '1' ? { deletedAt: { not: null } } : mode === 'all' ? undefined : { deletedAt: null };
+            if (archiveWhere) scopeWhere = scopeWhere ? { AND: [scopeWhere, archiveWhere] } : archiveWhere;
+        }
         if (page > 0 && limit > 0) {
             // @ts-ignore
             const [total, data] = await Promise.all([
@@ -988,6 +1028,22 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
             if (!existing || !(await teacherOwnsGroup((existing as any).groupId, requester.id))) {
                 return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
             }
+        }
+
+        // IP-01 (TL-14): o'quvchi/guruh/kurs/xodim — jismoniy o'chirish emas,
+        // arxivlash. Kaskad (Payment, AttendanceRecord, Salary...) endi hech qachon
+        // shu yo'l orqali ishga tushmaydi. Faqat 7 kun ichida yaratilgan va hech
+        // qanday tarixi yo'q yozuv haqiqatan o'chiriladi (services/archive.ts).
+        if (ARCHIVABLE_MODELS.has(modelName as ArchivableModel)) {
+            const result = await archiveOrDelete(modelName as ArchivableModel, id);
+            if (!result) return res.status(404).json({ message: 'Topilmadi' });
+            const actor = (req as any).user;
+            await logAudit({
+                userId: actor?.id, userName: actor?.name || 'system',
+                action: result.archived ? 'archive' : 'delete', resource: modelName, resourceId: id,
+                metadata: { reasons: result.reasons },
+            });
+            return res.json({ success: true, archived: result.archived, reasons: result.reasons });
         }
 
         // Native Prisma models — Faza 0.2: academic/marketing collections are now

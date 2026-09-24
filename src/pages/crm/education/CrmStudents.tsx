@@ -6,12 +6,13 @@ import {
   Plus, Search, Edit2, Trash2, X, Check, Users, DollarSign,
   BookOpen, Phone, Mail, MapPin, Calendar,
   User, GraduationCap,
-  AlertCircle, Download, Send, ExternalLink, Copy, Upload
+  AlertCircle, Download, Send, ExternalLink, Copy, Upload, Archive
 } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import ArchivedRecordsModal from '../../../components/ArchivedRecordsModal';
 import ImportWizard from '../../../components/ImportWizard';
 import Pagination from '../../../components/Pagination';
 import { SkeletonTable } from '../../../components/Skeleton';
@@ -67,6 +68,7 @@ export default function CrmStudents() {
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const itemsPerPage = 20;
@@ -174,14 +176,16 @@ export default function CrmStudents() {
     const id = deleteConfirm.id;
     setDeleteConfirm({ open: false, id: '' });
     try {
-      // Enrollment yozuvlari Student o'chirilganda avtomatik cascade bilan
-      // o'chadi (schema.prisma: Enrollment.student onDelete: Cascade).
-      await deleteDocument(id);
+      // IP-01: server tarixi bor o'quvchini jismonan o'chirmaydi — arxivlaydi
+      // (to'lov, davomat, baholar saqlanadi, "Arxiv" oynasidan tiklanadi).
+      const result = await deleteDocument(id);
       if (selectedStudent?.id === id) setIsDetailOpen(false);
-      showToast("O'quvchi o'chirildi", 'success');
+      showToast(result?.archived === false
+        ? "O'quvchi o'chirildi (tarixi yo'q edi)"
+        : "O'quvchi arxivlandi — to'lov, davomat va baholar saqlandi", 'success');
     } catch (error) {
       console.error("Error deleting student:", error);
-      showToast("O'chirishda xatolik yuz berdi.", 'error');
+      showToast("Arxivlashda xatolik yuz berdi. Qayta urinib ko'ring.", 'error');
     }
   };
 
@@ -205,9 +209,9 @@ export default function CrmStudents() {
     setBulkDeleteConfirm(false);
     setIsBulkDeleting(false);
     if (failCount > 0) {
-      showToast(`${successCount} ta o'quvchi o'chirildi, ${failCount} tasida xatolik yuz berdi`, 'error');
+      showToast(`${successCount} ta o'quvchi arxivlandi, ${failCount} tasida xatolik yuz berdi`, 'error');
     } else {
-      showToast(`${successCount} ta o'quvchi o'chirildi`, 'success');
+      showToast(`${successCount} ta o'quvchi arxivlandi — tarixi saqlandi`, 'success');
     }
   };
 
@@ -286,17 +290,19 @@ export default function CrmStudents() {
       )}
       <ConfirmDialog
         isOpen={canManage && deleteConfirm.open}
-        title="O'quvchini o'chirish"
-        message="Haqiqatan ham bu o'quvchini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
-        confirmText="Ha, o'chirish"
+        title="O'quvchini arxivlash"
+        message="O'quvchi ro'yxatlardan, guruh davomati va xabarlardan chiqariladi. To'lovlar, davomat va baholar o'chmaydi — keyin «Arxiv» oynasidan tiklash mumkin."
+        confirmText="Arxivlash"
+        type="warning"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
       />
       <ConfirmDialog
         isOpen={canManage && bulkDeleteConfirm}
-        title="Tanlangan o'quvchilarni o'chirish"
-        message={`Haqiqatan ham tanlangan ${selectedIds.size} ta o'quvchini o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi.`}
-        confirmText="Ha, o'chirish"
+        title="Tanlangan o'quvchilarni arxivlash"
+        message={`Tanlangan ${selectedIds.size} ta o'quvchi arxivlanadi. Ularning to'lov, davomat va baholari saqlanadi va keyin tiklash mumkin.`}
+        confirmText="Arxivlash"
+        type="warning"
         onConfirm={confirmBulkDelete}
         onCancel={() => setBulkDeleteConfirm(false)}
       />
@@ -344,6 +350,14 @@ export default function CrmStudents() {
             </div>
           </div>
           {canManage && <button
+            onClick={() => setArchiveOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
+            title="Arxivlangan o'quvchilar"
+          >
+            <Archive size={18} />
+            Arxiv
+          </button>}
+          {canManage && <button
             onClick={() => setImportOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
             title="Excel/CSV dan import qilish"
@@ -360,6 +374,15 @@ export default function CrmStudents() {
           </button>}
         </div>
       </div>
+
+      <ArchivedRecordsModal
+        isOpen={canManage && archiveOpen}
+        onClose={() => setArchiveOpen(false)}
+        collection="students"
+        title="Arxivlangan o'quvchilar"
+        describe={(s) => [s.phone, s.group].filter(Boolean).join(' · ')}
+        onRestored={() => { void refetch(); }}
+      />
 
       {/* Excel/CSV Import sehrgari */}
       <AnimatePresence>
@@ -431,8 +454,8 @@ export default function CrmStudents() {
                   onClick={() => setBulkDeleteConfirm(true)}
                   className="px-4 py-2.5 bg-rose-600 text-white rounded-xl text-sm font-black hover:bg-rose-700 transition-colors"
                 >
-                  <Trash2 size={16} className="inline mr-1.5" />
-                  {selectedIds.size} ta o'chirish
+                  <Archive size={16} className="inline mr-1.5" />
+                  {selectedIds.size} tasini arxivlash
                 </button>
               )}
             </div>
@@ -538,8 +561,10 @@ export default function CrmStudents() {
                       {canManage && <button 
                         onClick={(e) => { e.stopPropagation(); handleDelete(student.id); }}
                         className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
+                        title="Arxivlash"
+                        aria-label="Arxivlash"
                       >
-                        <Trash2 size={16} />
+                        <Archive size={16} />
                       </button>}
                     </div>
                   </td>
@@ -725,7 +750,7 @@ export default function CrmStudents() {
                       onClick={() => handleDelete(selectedStudent.id)}
                       className="flex-1 text-sm font-black"
                     >
-                      O'chirish
+                      Arxivlash
                     </Button>}
                   </div>
                 </div>

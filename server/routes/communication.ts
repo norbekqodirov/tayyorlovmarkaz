@@ -96,7 +96,7 @@ router.post('/bulk-messages/send', requireAuth, requireMinRole('MANAGER'), requi
             recipients = students.map(s => ({ name: s.name, chatId: s.parentTelegramId || s.telegramChatId || null }));
         } else if (targetType === 'group' && targetId) {
             const enrollments = await prisma.enrollment.findMany({
-                where: { groupId: targetId },
+                where: { groupId: targetId, student: { deletedAt: null } },
                 include: { student: { select: { name: true, parentTelegramId: true, telegramChatId: true } } },
             });
             recipients = enrollments.map(e => ({ name: e.student.name, chatId: e.student.parentTelegramId || e.student.telegramChatId || null }));

@@ -2,7 +2,7 @@ import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Plus, Search, Edit2, Trash2, BookOpen,
+  Plus, Search, Edit2, Archive, BookOpen,
   Clock, DollarSign, Layers,
   X, CheckCircle2, Users, Download
 } from 'lucide-react';
@@ -54,9 +54,23 @@ const CATEGORIES = [
 const getCategoryStyle = (cat: string) =>
   CATEGORIES.find(c => c.label === cat) || CATEGORIES[CATEGORIES.length - 1];
 
+const COURSE_STATUS_UI: Record<string, 'Faol' | 'Qoralama' | 'Arxiv'> = {
+  Active: 'Faol', active: 'Faol', Faol: 'Faol',
+  Draft: 'Qoralama', Qoralama: 'Qoralama',
+  Archived: 'Arxiv', Arxiv: 'Arxiv',
+};
+function courseStatusToUi(status: string | undefined): 'Faol' | 'Qoralama' | 'Arxiv' {
+  return COURSE_STATUS_UI[status || ''] || 'Faol';
+}
+
 export default function CrmCourses() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
-  const { data: courses = [], loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<Course>('courses');
+  const { data: rawCourses = [], loading, error, refetch, addDocument, updateDocument, deleteDocument } = useFirestore<Course>('courses');
+  // TL-13 / IP-01: server kurs holatini inglizcha saqlaydi (Active/Draft/Archived,
+  // crud.ts COURSE_STATUS_MAP), sahifa esa o'zbekcha nomlar bilan ishlaydi —
+  // ilgari "Faol" filtri va statistikasi bazadagi "Active" bilan hech qachon
+  // mos kelmasdi. O'qishda bir marta moslashtiramiz (yozishda server o'zi aylantiradi).
+  const courses = useMemo(() => (rawCourses || []).map(c => ({ ...c, status: courseStatusToUi((c as any).status) })) as Course[], [rawCourses]);
   const { data: students = [] } = useFirestore<any>('students');
   const { data: groups = [] } = useFirestore<any>('groups');
   const { showToast } = useToast();
@@ -187,10 +201,18 @@ export default function CrmCourses() {
   const confirmDelete = async () => {
     if (!canManage) return;
     try {
-      await deleteDocument(deleteConfirm.id);
-      showToast('Kurs o\'chirildi', 'success');
+      // IP-01: guruhi/sertifikati bor kurs o'chirilmaydi — "Arxiv" holatiga
+      // o'tadi (ilgari kursni o'chirish uning BARCHA guruhlari, davomati va
+      // a'zoliklarini kaskad bilan o'chirardi).
+      const result = await deleteDocument(deleteConfirm.id);
+      if (result?.archived === false) {
+        showToast("Kurs o'chirildi (guruhi yo'q edi)", 'success');
+      } else {
+        showToast("Kurs arxivlandi — guruhlari va tarixi saqlandi", 'success');
+        void refetch();
+      }
     } catch {
-      showToast('O\'chirishda xatolik!', 'error');
+      showToast("Kursni arxivlab bo'lmadi. Qayta urinib ko'ring.", 'error');
     }
     setDeleteConfirm({ open: false, id: '', name: '' });
   };
@@ -236,9 +258,10 @@ export default function CrmCourses() {
     <div className="space-y-6">
       <ConfirmDialog
         isOpen={canManage && deleteConfirm.open}
-        title="Kursni o'chirish"
-        message={`"${deleteConfirm.name}" kursini o'chirmoqchimisiz?`}
-        confirmText="Ha, o'chirish"
+        title="Kursni arxivlash"
+        message={`"${deleteConfirm.name}" kursi «Arxiv» holatiga o'tadi. Guruhlari, a'zoliklar va davomat o'chmaydi. Qayta faollashtirish — kursni tahrirlab holatini «Faol» qilish.`}
+        confirmText="Arxivlash"
+        type="warning"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '', name: '' })}
       />
@@ -359,8 +382,8 @@ export default function CrmCourses() {
                       {canManage && <button onClick={() => openModal(course)} className="p-1.5 bg-white/90 rounded-lg text-zinc-600 hover:text-blue-600 transition-colors">
                         <Edit2 size={14} />
                       </button>}
-                      {canManage && <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 bg-white/90 rounded-lg text-rose-600 transition-colors">
-                        <Trash2 size={14} />
+                      {canManage && <button onClick={() => handleDelete(course.id, course.name)} title="Arxivlash" aria-label={`${course.name} kursini arxivlash`} className="p-1.5 bg-white/90 rounded-lg text-rose-600 transition-colors">
+                        <Archive size={14} />
                       </button>}
                     </div>
                   </div>
@@ -379,7 +402,7 @@ export default function CrmCourses() {
                     {!course.image && (
                       <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                         {canManage && <button onClick={() => openModal(course)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-blue-600 transition-colors"><Edit2 size={14} /></button>}
-                        {canManage && <button onClick={() => handleDelete(course.id, course.name)} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-rose-600 transition-colors"><Trash2 size={14} /></button>}
+                        {canManage && <button onClick={() => handleDelete(course.id, course.name)} title="Arxivlash" aria-label={`${course.name} kursini arxivlash`} className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-rose-600 transition-colors"><Archive size={14} /></button>}
                       </div>
                     )}
                   </div>

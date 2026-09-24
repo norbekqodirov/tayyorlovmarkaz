@@ -129,7 +129,7 @@ router.post('/:id/attendance', async (req, res) => {
         // EDU-01 bilan bir xil naqsh: studentId aynan shu guruhga a'zo ekani tekshiriladi
         const enrolledIds = new Set(
             (await prisma.enrollment.findMany({
-                where: { groupId: session.groupId, studentId: { in: records.map(r => r.studentId) } },
+                where: { groupId: session.groupId, studentId: { in: records.map(r => r.studentId) }, student: { deletedAt: null } },
                 select: { studentId: true },
             })).map(e => e.studentId),
         );

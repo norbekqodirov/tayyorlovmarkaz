@@ -285,7 +285,7 @@ router.post('/broadcast', requireAuth, requirePermission('communication'), async
             chatIds = students.map(s => s.parentTelegramId!).filter(Boolean);
         } else if (targetGroup === 'group_students' && groupId) {
             const enrollments = await prisma.enrollment.findMany({
-                where: { groupId },
+                where: { groupId, student: { deletedAt: null } },
                 include: { student: { select: { telegramChatId: true } } },
             });
             chatIds = enrollments.map(e => e.student?.telegramChatId).filter(Boolean) as string[];

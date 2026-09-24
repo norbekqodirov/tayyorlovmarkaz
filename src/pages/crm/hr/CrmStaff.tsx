@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Mail, Phone, Edit2, Trash2, ShieldCheck, Users, Building2, DollarSign } from 'lucide-react';
+import { Plus, Search, Mail, Phone, Edit2, Archive, ShieldCheck, Users, Building2, DollarSign } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import ArchivedRecordsModal from '../../../components/ArchivedRecordsModal';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
@@ -33,7 +34,8 @@ interface StaffMember {
 
 export default function CrmStaff() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
-  const { data: staff = [], loading, error, addDocument, updateDocument, deleteDocument } = useFirestore<StaffMember>('staff');
+  const { data: staff = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<StaffMember>('staff');
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const { showToast } = useToast();
   const { data: positions, loading: positionsLoading, error: positionsError, refetch: reloadPositions } = useFirestore<Position>('positions');
   const navigate = useNavigate();
@@ -102,8 +104,9 @@ export default function CrmStaff() {
   const confirmDelete = async () => {
     if (!canManage) return;
     try {
-      await deleteDocument(deleteConfirm.id);
-      showToast('Xodim o\'chirildi', 'success');
+      // IP-01: tarixi bor xodim arxivlanadi (oylik, tabel, avanslar saqlanadi).
+      const result = await deleteDocument(deleteConfirm.id);
+      showToast(result?.archived === false ? "Xodim o'chirildi (tarixi yo'q edi)" : "Xodim arxivlandi — oylik va tabel tarixi saqlandi", 'success');
     } catch (error) {
       console.error("Error deleting staff:", error);
       showToast("Xatolik yuz berdi. Iltimos qaytadan urinib ko'ring.", 'error');
@@ -166,9 +169,10 @@ export default function CrmStaff() {
     <div className="space-y-6">
       <ConfirmDialog
         isOpen={canManage && deleteConfirm.open}
-        title="Xodimni o'chirish"
-        message="Haqiqatan ham ushbu xodimni o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi."
-        confirmText="Ha, o'chirish"
+        title="Xodimni arxivlash"
+        message="Xodim ro'yxatdan chiqariladi va holati «Ishdan bo'shagan» bo'ladi. Oyliklar, tabel va avanslar saqlanadi — «Arxiv» oynasidan tiklash mumkin. Tizimga kirish (login) alohida, Foydalanuvchilar bo'limida o'chiriladi."
+        confirmText="Arxivlash"
+        type="warning"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
       />
@@ -178,11 +182,24 @@ export default function CrmStaff() {
           <p className="text-zinc-500 text-sm font-medium">O'quv markazi jamoasini boshqarish va nazorat qilish</p>
         </div>
         {canManage && (
-          <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
-            Yangi Xodim
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="secondary" onClick={() => setArchiveOpen(true)} leftIcon={<Archive size={18} />}>
+              Arxiv
+            </Button>
+            <Button onClick={() => openModal()} leftIcon={<Plus size={20} />}>
+              Yangi Xodim
+            </Button>
+          </div>
         )}
       </div>
+      <ArchivedRecordsModal
+        isOpen={canManage && archiveOpen}
+        onClose={() => setArchiveOpen(false)}
+        collection="staff"
+        title="Arxivlangan xodimlar"
+        describe={(s) => [s.role, s.phone].filter(Boolean).join(' · ')}
+        onRestored={() => { void refetch(); }}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard variant="gradient" color="blue" label="Jami Xodimlar" value={safeStaff.length} sub="Ro'yxatda" icon={<Users size={17} strokeWidth={2.5} />} />
@@ -274,8 +291,10 @@ export default function CrmStaff() {
                         <button
                           onClick={() => handleDelete(member.id)}
                           className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-rose-600 rounded-lg transition-colors"
+                          title="Arxivlash"
+                          aria-label="Arxivlash"
                         >
-                          <Trash2 size={16} />
+                          <Archive size={16} />
                         </button>
                       </div>
                     )}
