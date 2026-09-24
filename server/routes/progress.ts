@@ -1,13 +1,28 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
 // GET /api/progress/:studentId
-router.get('/:studentId', requireAuth, async (req, res) => {
+// IP-03 (TL-15): ilgari har qanday login (jumladan o'qituvchi) istalgan
+// o'quvchining telefoni, davomati va baholarini ID bilan olardi. Endi
+// `students` ruxsati talab qilinadi; o'qituvchi faqat o'z guruhidagi
+// o'quvchini va faqat o'z guruhlari bo'yicha davomatni ko'radi.
+router.get('/:studentId', requireAuth, requirePermission('students'), async (req, res) => {
     try {
         const { studentId } = req.params;
+        const requester = (req as any).user;
+        let teacherGroupIds: string[] | null = null;
+        if (requester.role === 'TEACHER') {
+            const own = await prisma.enrollment.findMany({
+                where: { studentId, group: { teacherId: requester.id } },
+                select: { groupId: true },
+            });
+            if (!own.length) return res.status(403).json({ message: "Bu o'quvchi sizning guruhingizda emas" });
+            teacherGroupIds = own.map(e => e.groupId);
+        }
 
         const student = await prisma.student.findFirst({
             where: { id: studentId, deletedAt: null },
@@ -32,7 +47,7 @@ router.get('/:studentId', requireAuth, async (req, res) => {
         if (!student) return res.status(404).json({ message: "O'quvchi topilmadi" });
 
         const attendanceRecords = await prisma.attendanceRecord.findMany({
-            where: { studentId },
+            where: { studentId, ...(teacherGroupIds ? { groupId: { in: teacherGroupIds } } : {}) },
             orderBy: { date: 'asc' },
         });
 
@@ -44,7 +59,7 @@ router.get('/:studentId', requireAuth, async (req, res) => {
         const attendanceRate = totalClasses > 0 ? Math.round((presentCount / totalClasses) * 100) : 0;
 
         const assessments = await prisma.assessment.findMany({
-            where: { studentId },
+            where: { studentId, ...(teacherGroupIds ? { groupId: { in: teacherGroupIds } } : {}) },
             include: { group: { select: { name: true } } },
             orderBy: { date: 'asc' },
         });
@@ -60,7 +75,8 @@ router.get('/:studentId', requireAuth, async (req, res) => {
             orderBy: { startedAt: 'desc' },
         });
 
-        const payments = await prisma.payment.findMany({
+        // O'qituvchi o'quvchining to'lovlarini ko'rmaydi (OQ-13 tavsiyasi).
+        const payments = teacherGroupIds ? [] : await prisma.payment.findMany({
             where: { studentId, deletedAt: null },
             orderBy: { date: 'asc' },
         });

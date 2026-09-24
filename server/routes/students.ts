@@ -17,7 +17,11 @@ const router = express.Router();
 // invoice'lar, davomat tarixi jumladan) ko'ra olardi, o'ziga tegishli
 // guruhdan qat'i nazar. Endi TEACHER faqat o'z guruhidagi o'quvchini
 // ko'ra oladi; MANAGER+ cheklovsiz (mavjud xatti-harakat saqlanadi).
-router.get('/:id', requireAuth, async (req, res) => {
+// IP-03 (RX-04): `students` ruxsati talab qilinadi. O'qituvchi uchun javob
+// toraytiriladi — faqat o'z guruhlari a'zoligi, davomati va baholari; to'lov,
+// invoice va balans umuman qaytarilmaydi (OQ-13 tavsiyasi). Ilgari ikki
+// guruhli o'quvchining boshqa guruhdagi baholari va to'lovlari ham chiqardi.
+router.get('/:id', requireAuth, requirePermission('students'), async (req, res) => {
     try {
         const requester = (req as any).user;
         const student = await prisma.student.findUnique({
@@ -46,8 +50,17 @@ router.get('/:id', requireAuth, async (req, res) => {
         if (!student) return res.status(404).json({ error: 'Talaba topilmadi' });
 
         if (requester.role === 'TEACHER') {
-            const owns = student.enrollments.some((e: any) => e.group?.teacherId === requester.id);
-            if (!owns) return res.status(403).json({ error: "Bu o'quvchiga tegishli emassiz" });
+            const ownGroupIds = new Set(student.enrollments.filter((e: any) => e.group?.teacherId === requester.id).map((e: any) => e.groupId));
+            if (!ownGroupIds.size) return res.status(403).json({ error: "Bu o'quvchiga tegishli emassiz" });
+            const { payments: _p, invoices: _i, balance: _b, paymentStatus: _ps, ...rest } = student as any;
+            return res.json({
+                ...rest,
+                enrollments: student.enrollments.filter((e: any) => ownGroupIds.has(e.groupId)),
+                attendanceRecords: student.attendanceRecords.filter((a: any) => ownGroupIds.has(a.groupId)),
+                assessments: student.assessments.filter((a: any) => a.groupId && ownGroupIds.has(a.groupId)),
+                payments: [],
+                invoices: [],
+            });
         }
 
         res.json(student);

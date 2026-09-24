@@ -74,7 +74,10 @@ const LeadFormModal: React.FC<Props> = ({
               onChange={e => onChange({ stage: e.target.value as Lead['stage'] })}
               className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
             >
-              {STAGES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {/* IP-03: "O'qishni boshladi" faqat konversiya oynasi orqali (guruh
+                  tanlanadi), "Rad etildi" — sabab bilan, lid kartasidagi tugma
+                  orqali. Tahrir formasida faqat joriy holat sifatida ko'rinadi. */}
+              {STAGES.filter(s => (s.id !== 'won' && s.id !== 'lost') || s.id === editingLead.stage).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="space-y-1.5 flex flex-col gap-1.5">

@@ -47,6 +47,14 @@ function parseCsv(v: unknown): string[] | undefined {
     return v.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+// IP-03 (RX-06): MANAGER faqat o'ziga biriktirilgan yoki hali hech kimga
+// biriktirilmagan lid bilan ishlay oladi. Ilgari bu qoida faqat GET /:id va
+// PUT'da bor edi — o'chirish, tiklash, qayta biriktirish, faoliyat yozish va
+// konversiya boshqa menejerning lidi uchun ham ochiq edi.
+function managerBlocked(requester: any, lead: { assignedToId: string | null }): boolean {
+    return requester?.role === 'MANAGER' && !!lead.assignedToId && lead.assignedToId !== requester.id;
+}
+
 // ─── GET /api/leads — filtr/qidiruv/sahifalash ─────────────────────────────────
 router.get('/', async (req, res) => {
     try {
@@ -323,6 +331,15 @@ router.put('/:id', withAudit('lead'), async (req, res) => {
         for (const f of EDITABLE_FIELDS) {
             if (req.body[f] !== undefined) data[f] = req.body[f];
         }
+        // IP-03 (LD-02): "O'qishni boshladi" (won) faqat konversiya orqali —
+        // aks holda lid o'quvchi va a'zoliksiz "yutilgan" bo'lib, ROI va
+        // konversiya hisobotlarini buzardi.
+        if (data.stage === 'won' && existing.stage !== 'won') {
+            return res.status(400).json({ message: "\"O'qishni boshladi\" holatiga faqat \"O'quvchiga aylantirish\" orqali o'tiladi (guruh tanlanadi)" });
+        }
+        if (data.stage === 'lost' && existing.stage !== 'lost' && !String(data.lostReason ?? existing.lostReason ?? '').trim()) {
+            return res.status(400).json({ message: 'Rad etish sababini tanlang' });
+        }
         if (data.nextFollowUpAt) data.nextFollowUpAt = new Date(data.nextFollowUpAt);
 
         // Bosqich o'zgarsa — vaqt belgisi va (lost bo'lsa) lostAt qo'yiladi.
@@ -343,6 +360,11 @@ router.put('/:id', withAudit('lead'), async (req, res) => {
 // ─── DELETE /api/leads/:id — soft (hard faqat ADMIN, ?hard=1) ─────────────────
 router.delete('/:id', withAudit('lead'), async (req, res) => {
     try {
+        const target = await prisma.lead.findUnique({ where: { id: req.params.id }, select: { assignedToId: true } });
+        if (!target) return res.status(404).json({ message: 'Topilmadi' });
+        if (managerBlocked((req as any).user, target)) {
+            return res.status(403).json({ message: "Bu lid boshqa menejerga biriktirilgan" });
+        }
         if (req.query.hard === '1') {
             const requester = (req as any).user;
             if ((ROLE_LEVEL[requester.role] || 0) < ROLE_LEVEL.ADMIN) {
@@ -363,6 +385,11 @@ router.delete('/:id', withAudit('lead'), async (req, res) => {
 // ─── POST /api/leads/:id/restore ───────────────────────────────────────────────
 router.post('/:id/restore', async (req, res) => {
     try {
+        const target = await prisma.lead.findUnique({ where: { id: req.params.id }, select: { assignedToId: true } });
+        if (!target) return res.status(404).json({ message: 'Topilmadi' });
+        if (managerBlocked((req as any).user, target)) {
+            return res.status(403).json({ message: "Bu lid boshqa menejerga biriktirilgan" });
+        }
         const lead = await prisma.lead.update({ where: { id: req.params.id }, data: { deletedAt: null }, select: LEAD_SELECT });
         try { emitToAdmins('lead:updated', { id: lead.id }); } catch { /* jim */ }
         res.json(lead);
@@ -375,6 +402,11 @@ router.post('/:id/restore', async (req, res) => {
 router.post('/:id/assign', async (req, res) => {
     try {
         const { userId } = req.body as { userId: string | null };
+        const target = await prisma.lead.findUnique({ where: { id: req.params.id }, select: { assignedToId: true } });
+        if (!target) return res.status(404).json({ message: 'Topilmadi' });
+        if (managerBlocked((req as any).user, target)) {
+            return res.status(403).json({ message: "Boshqa menejerning lidini qayta biriktirish faqat rahbar uchun" });
+        }
         const lead = await prisma.lead.update({
             where: { id: req.params.id },
             data: { assignedToId: userId || null, assignedAt: userId ? new Date() : null },
@@ -414,6 +446,9 @@ router.post('/:id/activities', async (req, res) => {
         if (!lead || lead.deletedAt) return res.status(404).json({ message: 'Topilmadi' });
 
         const user = (req as any).user;
+        if (managerBlocked(user, lead)) {
+            return res.status(403).json({ message: "Bu lid boshqa menejerga biriktirilgan" });
+        }
         const now = new Date();
 
         const activity = await prisma.leadActivity.create({
@@ -461,9 +496,37 @@ router.post('/:id/convert', async (req, res) => {
 
         const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
         if (!lead || lead.deletedAt) return res.status(404).json({ message: 'Topilmadi' });
+        if (managerBlocked((req as any).user, lead)) {
+            return res.status(403).json({ message: "Bu lid boshqa menejerga biriktirilgan" });
+        }
         if (lead.stage === 'lost') return res.status(400).json({ message: "Rad etilgan lidni o'quvchiga aylantirib bo'lmaydi" });
 
+        // IP-03 (LD-01): idempotent — lid allaqachon o'quvchiga aylangan bo'lsa
+        // (ikki marta bosish, tarmoq qayta yuborishi) yangi o'quvchi YARATILMAYDI,
+        // oldingi natija qaytariladi.
+        if (lead.studentId) {
+            const [student, current] = await Promise.all([
+                prisma.student.findUnique({ where: { id: lead.studentId } }),
+                prisma.lead.findUnique({ where: { id: lead.id }, select: LEAD_SELECT }),
+            ]);
+            return res.status(200).json({ student, lead: current, alreadyConverted: true });
+        }
+
+        const group = await prisma.group.findUnique({
+            where: { id: groupId },
+            select: { id: true, deletedAt: true, maxSize: true, _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } } },
+        });
+        if (!group || group.deletedAt) return res.status(400).json({ message: "Guruh topilmadi yoki arxivlangan" });
+        if (group.maxSize > 0 && group._count.enrollments >= group.maxSize) {
+            return res.status(409).json({ message: "Guruhda bo'sh o'rin qolmagan — boshqa guruhni tanlang" });
+        }
+
         const result = await prisma.$transaction(async (tx) => {
+            // Poyga holatidan himoya: shu lid parallel so'rovda allaqachon
+            // aylantirilgan bo'lsa (studentId o'rnatilgan), bu tranzaksiya
+            // hech narsa yaratmaydi.
+            const claimed = await tx.lead.updateMany({ where: { id: lead.id, studentId: null }, data: { stageChangedAt: new Date() } });
+            if (claimed.count === 0) return null;
             const student = await tx.student.create({
                 data: {
                     name: lead.name, phone: lead.phone, email: lead.email,
@@ -480,6 +543,11 @@ router.post('/:id/convert', async (req, res) => {
             return { student, lead: updatedLead };
         });
 
+        if (!result) {
+            const current = await prisma.lead.findUnique({ where: { id: lead.id }, select: LEAD_SELECT });
+            const student = current?.studentId ? await prisma.student.findUnique({ where: { id: current.studentId } }) : null;
+            return res.status(200).json({ student, lead: current, alreadyConverted: true });
+        }
         try { emitToAdmins('lead:updated', { id: result.lead.id }); } catch { /* jim */ }
         res.status(201).json(result);
     } catch (err: any) {

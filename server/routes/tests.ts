@@ -8,6 +8,52 @@ import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
+// IP-03 (TL-11): ilgari test yaratish/tahrirlash `data: req.body` bilan
+// ixtiyoriy maydonni (createdBy, deletedAt, status...) yozardi va `tests`
+// ruxsatli istalgan o'qituvchi BOSHQA o'qituvchining testini tahrirlashi,
+// o'chirishi, nashr qilishi va javoblarini baholashi mumkin edi.
+// Endi: maydonlar whitelist'i va o'qituvchi uchun egalik (muallif yoki
+// test biriktirilgan guruhning o'qituvchisi). MANAGER+ — hammasi.
+const TEST_FIELDS = ['title', 'description', 'courseId', 'groupId', 'duration', 'totalScore', 'passingScore',
+    'shuffleQuestions', 'shuffleOptions', 'showResults', 'scheduledStart', 'scheduledEnd', 'status'] as const;
+const TEST_STATUSES = new Set(['draft', 'published', 'archived']);
+
+function pickTestFields(body: any) {
+    const data: any = {};
+    for (const f of TEST_FIELDS) if (body?.[f] !== undefined) data[f] = body[f];
+    for (const n of ['duration', 'totalScore', 'passingScore']) if (data[n] !== undefined) data[n] = Number(data[n]) || 0;
+    if (data.status !== undefined && !TEST_STATUSES.has(data.status)) delete data.status;
+    if (data.courseId === '') data.courseId = null;
+    if (data.groupId === '') data.groupId = null;
+    return data;
+}
+
+async function teacherOwnsTest(user: any, testId: string | undefined | null): Promise<boolean> {
+    if (!testId) return false;
+    if (user?.role !== 'TEACHER') return true;
+    const t = await prisma.test.findUnique({ where: { id: testId }, select: { createdBy: true, group: { select: { teacherId: true } } } });
+    return !!t && (t.createdBy === user.id || t.group?.teacherId === user.id);
+}
+
+function ownTest(resolveTestId: (req: express.Request) => Promise<string | null | undefined>) {
+    return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        try {
+            const testId = await resolveTestId(req);
+            if (!testId) return res.status(404).json({ message: 'Topilmadi' });
+            if (!(await teacherOwnsTest((req as any).user, testId))) {
+                return res.status(403).json({ message: "Bu test sizga tegishli emas" });
+            }
+            next();
+        } catch (err: any) {
+            res.status(500).json({ message: err.message });
+        }
+    };
+}
+const byIdParam = ownTest(async req => req.params.id);
+const byTestIdParam = ownTest(async req => req.params.testId);
+const byQuestion = ownTest(async req => (await prisma.question.findUnique({ where: { id: req.params.id }, select: { testId: true } }))?.testId);
+const byAnswer = ownTest(async req => (await prisma.answer.findUnique({ where: { id: req.params.id }, select: { submission: { select: { testId: true } } } }))?.submission?.testId);
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 router.get('/', requireAuth, requirePermission('tests'), async (req, res) => {
@@ -66,7 +112,7 @@ router.get('/submissions', requireAuth, requirePermission('tests'), async (req, 
     }
 });
 
-router.get('/:id', requireAuth, requirePermission('tests'), async (req, res) => {
+router.get('/:id', requireAuth, requirePermission('tests'), byIdParam, async (req, res) => {
     try {
         const test = await prisma.test.findUnique({
             where: { id: req.params.id },
@@ -86,11 +132,14 @@ router.get('/:id', requireAuth, requirePermission('tests'), async (req, res) => 
 router.post('/', requireAuth, requirePermission('tests'), async (req, res) => {
     try {
         const user = (req as any).user;
+        const data = pickTestFields(req.body);
+        if (!String(data.title || '').trim()) return res.status(400).json({ message: 'Test nomini kiriting' });
+        if (user?.role === 'TEACHER' && data.groupId) {
+            const g = await prisma.group.findUnique({ where: { id: data.groupId }, select: { teacherId: true } });
+            if (!g || g.teacherId !== user.id) return res.status(403).json({ message: 'Bu guruh sizga tegishli emas' });
+        }
         const test = await prisma.test.create({
-            data: {
-                ...req.body,
-                createdBy: user?.id,
-            },
+            data: { ...data, title: String(data.title).trim(), createdBy: user?.id },
         });
         await logAudit({
             userId: user?.id, userName: user?.name || 'system',
@@ -102,16 +151,22 @@ router.post('/', requireAuth, requirePermission('tests'), async (req, res) => {
     }
 });
 
-router.put('/:id', requireAuth, requirePermission('tests'), async (req, res) => {
+router.put('/:id', requireAuth, requirePermission('tests'), byIdParam, async (req, res) => {
     try {
-        const test = await prisma.test.update({ where: { id: req.params.id }, data: req.body });
+        const user = (req as any).user;
+        const data = pickTestFields(req.body);
+        if (user?.role === 'TEACHER' && data.groupId) {
+            const g = await prisma.group.findUnique({ where: { id: data.groupId }, select: { teacherId: true } });
+            if (!g || g.teacherId !== user.id) return res.status(403).json({ message: 'Bu guruh sizga tegishli emas' });
+        }
+        const test = await prisma.test.update({ where: { id: req.params.id }, data });
         res.json(test);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
 });
 
-router.delete('/:id', requireAuth, requirePermission('tests'), async (req, res) => {
+router.delete('/:id', requireAuth, requirePermission('tests'), byIdParam, async (req, res) => {
     try {
         await prisma.test.update({ where: { id: req.params.id }, data: { deletedAt: new Date() } });
         res.json({ success: true });
@@ -120,7 +175,7 @@ router.delete('/:id', requireAuth, requirePermission('tests'), async (req, res) 
     }
 });
 
-router.post('/:id/publish', requireAuth, requirePermission('tests'), async (req, res) => {
+router.post('/:id/publish', requireAuth, requirePermission('tests'), byIdParam, async (req, res) => {
     try {
         const test = await prisma.test.update({
             where: { id: req.params.id },
@@ -135,7 +190,7 @@ router.post('/:id/publish', requireAuth, requirePermission('tests'), async (req,
 
 // ─── Questions ────────────────────────────────────────────────────────────────
 
-router.get('/:testId/questions', requireAuth, requirePermission('tests'), async (req, res) => {
+router.get('/:testId/questions', requireAuth, requirePermission('tests'), byTestIdParam, async (req, res) => {
     try {
         const questions = await prisma.question.findMany({
             where: { testId: req.params.testId },
@@ -147,7 +202,7 @@ router.get('/:testId/questions', requireAuth, requirePermission('tests'), async 
     }
 });
 
-router.post('/:testId/questions', requireAuth, requirePermission('tests'), async (req, res) => {
+router.post('/:testId/questions', requireAuth, requirePermission('tests'), byTestIdParam, async (req, res) => {
     try {
         const { type, text, options, correctAnswer, score, order, imageUrl, explanation } = req.body;
         const question = await prisma.question.create({
@@ -169,7 +224,7 @@ router.post('/:testId/questions', requireAuth, requirePermission('tests'), async
     }
 });
 
-router.post('/:testId/questions/bulk', requireAuth, requirePermission('tests'), async (req, res) => {
+router.post('/:testId/questions/bulk', requireAuth, requirePermission('tests'), byTestIdParam, async (req, res) => {
     try {
         const { questions } = req.body;
         if (!Array.isArray(questions)) return res.status(400).json({ message: 'questions massiv bo\'lishi kerak' });
@@ -197,10 +252,13 @@ router.post('/:testId/questions/bulk', requireAuth, requirePermission('tests'), 
     }
 });
 
-router.put('/questions/:id', requireAuth, requirePermission('tests'), async (req, res) => {
+router.put('/questions/:id', requireAuth, requirePermission('tests'), byQuestion, async (req, res) => {
     try {
-        const { options, ...rest } = req.body;
-        const data: any = { ...rest };
+        const { options } = req.body;
+        const data: any = {};
+        for (const f of ['type', 'text', 'correctAnswer', 'imageUrl', 'explanation']) if (req.body[f] !== undefined) data[f] = req.body[f];
+        if (req.body.score !== undefined) data.score = Number(req.body.score) || 1;
+        if (req.body.order !== undefined) data.order = Number(req.body.order) || 0;
         if (options !== undefined) {
             data.options = typeof options === 'string' ? options : JSON.stringify(options);
         }
@@ -211,7 +269,7 @@ router.put('/questions/:id', requireAuth, requirePermission('tests'), async (req
     }
 });
 
-router.delete('/questions/:id', requireAuth, requirePermission('tests'), async (req, res) => {
+router.delete('/questions/:id', requireAuth, requirePermission('tests'), byQuestion, async (req, res) => {
     try {
         await prisma.question.delete({ where: { id: req.params.id } });
         res.json({ success: true });
@@ -333,7 +391,7 @@ router.post('/submissions/:id/submit', requireAuth, requirePermission('tests'), 
     }
 });
 
-router.post('/answers/:id/grade', requireAuth, requirePermission('tests'), async (req, res) => {
+router.post('/answers/:id/grade', requireAuth, requirePermission('tests'), byAnswer, async (req, res) => {
     try {
         const { score, feedback, isCorrect } = req.body;
         const answer = await prisma.answer.update({
@@ -367,7 +425,7 @@ router.post('/answers/:id/grade', requireAuth, requirePermission('tests'), async
     }
 });
 
-router.get('/:id/results', requireAuth, requirePermission('tests'), async (req, res) => {
+router.get('/:id/results', requireAuth, requirePermission('tests'), byIdParam, async (req, res) => {
     try {
         const submissions = await prisma.testSubmission.findMany({
             where: { testId: req.params.id },

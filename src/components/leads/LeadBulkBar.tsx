@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { X, Trash2, UserPlus, ArrowRightLeft } from 'lucide-react';
 import api from '../../api/client';
-import { STAGES } from './types';
+import { STAGES, LOST_REASONS } from './types';
 
 interface Props {
   selectedIds: string[];
@@ -19,6 +19,8 @@ interface Props {
 export default function LeadBulkBar({ selectedIds, onClear, onDone, showToast }: Props) {
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
+  // "Rad etildi" bosqichiga o'tkazishda sabab majburiy (bitta lid oqimidagi kabi).
+  const [pendingLost, setPendingLost] = useState(false);
 
   useEffect(() => {
     api.get('/leads/assignable-users').then(res => setManagers(res.data || [])).catch(() => {});
@@ -49,7 +51,13 @@ export default function LeadBulkBar({ selectedIds, onClear, onDone, showToast }:
           <select
             disabled={busy}
             defaultValue=""
-            onChange={e => { if (e.target.value) runBulk('status', { stage: e.target.value }, 'Bosqich yangilandi'); }}
+            onChange={e => {
+              const stage = e.target.value;
+              if (!stage) return;
+              if (stage === 'lost') { setPendingLost(true); e.target.value = ''; return; }
+              setPendingLost(false);
+              runBulk('status', { stage }, 'Bosqich yangilandi');
+            }}
             className="bg-white/10 hover:bg-white/20 transition-colors rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none"
           >
             <option value="" disabled>Bosqich...</option>
@@ -60,6 +68,21 @@ export default function LeadBulkBar({ selectedIds, onClear, onDone, showToast }:
             {STAGES.filter(s => s.id !== 'won').map(s => <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>)}
           </select>
         </div>
+
+        {pendingLost && (
+          <div className="flex items-center gap-1.5">
+            <select
+              disabled={busy}
+              defaultValue=""
+              aria-label="Rad etish sababi"
+              onChange={e => { if (e.target.value) { setPendingLost(false); runBulk('status', { stage: 'lost', lostReason: e.target.value }, 'Rad etildi'); } }}
+              className="bg-rose-500/20 hover:bg-rose-500/30 transition-colors rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none"
+            >
+              <option value="" disabled>Rad etish sababi...</option>
+              {LOST_REASONS.map(r => <option key={r} value={r} className="text-slate-900">{r}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5">
           <UserPlus size={14} className="text-zinc-400" />

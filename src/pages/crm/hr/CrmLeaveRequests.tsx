@@ -19,6 +19,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   pending:  { label: 'Kutilmoqda', color: 'text-amber-600',  bg: 'bg-amber-50 dark:bg-amber-500/10' },
   approved: { label: 'Tasdiqlangan', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
   rejected: { label: 'Rad etilgan', color: 'text-rose-600',   bg: 'bg-rose-50 dark:bg-rose-500/10' },
+  cancelled: { label: 'Bekor qilingan', color: 'text-zinc-500', bg: 'bg-zinc-100 dark:bg-zinc-800' },
 };
 
 interface StaffOption {

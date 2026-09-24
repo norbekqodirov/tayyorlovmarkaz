@@ -365,6 +365,30 @@ router.post('/attendance', staffPortalAuth, async (req: any, res) => {
             }
         }
 
+        // IP-03 (TL-08): CRM yo'lidagi (studentAttendance.ts, EDU-01) bilan bir
+        // xil tekshiruvlar — ilgari Telegram orqali guruhga a'zo bo'lmagan
+        // o'quvchiga yoki noto'g'ri holat qiymati bilan yozuv yaratish mumkin edi.
+        const VALID = new Set(['present', 'absent', 'late', 'excused']);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return res.status(400).json({ error: "Sana YYYY-MM-DD formatida bo'lishi kerak" });
+        }
+        if (date > todayDateStr()) {
+            return res.status(400).json({ error: "Kelajak sanasiga davomat belgilab bo'lmaydi" });
+        }
+        const badStatus = records.find(r => !VALID.has(r.status));
+        if (badStatus) {
+            return res.status(400).json({ error: `Noto'g'ri holat: ${badStatus.status}` });
+        }
+        const enrolledIds = new Set(
+            (await prisma.enrollment.findMany({
+                where: { groupId, studentId: { in: records.map(r => r.studentId) }, student: { deletedAt: null } },
+                select: { studentId: true },
+            })).map(e => e.studentId),
+        );
+        if (records.some(r => !enrolledIds.has(r.studentId))) {
+            return res.status(400).json({ error: "Ro'yxatdagi ayrim o'quvchilar bu guruhga a'zo emas" });
+        }
+
         // Upsert attendance records
         const results = await Promise.all(
             records.map(r =>

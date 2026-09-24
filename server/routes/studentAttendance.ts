@@ -21,6 +21,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -85,6 +86,13 @@ router.post('/', async (req, res) => {
             if (!VALID_STATUSES.has(r.status)) {
                 return res.status(400).json({ message: `Noto'g'ri holat: ${r.status}` });
             }
+        }
+        // IP-03/IP-10: sana formati va kelajak sanasi (Toshkent vaqti bo'yicha)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return res.status(400).json({ message: "Sana YYYY-MM-DD formatida bo'lishi kerak" });
+        }
+        if (date > todayDateStr()) {
+            return res.status(400).json({ message: "Kelajak sanasiga davomat belgilab bo'lmaydi" });
         }
 
         const requester = (req as any).user;

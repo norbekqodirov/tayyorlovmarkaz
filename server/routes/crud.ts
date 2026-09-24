@@ -726,6 +726,12 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
         if ((req as any).modelName === 'payment') {
             return res.status(400).json({ message: "To'lov yozuvini bu yo'l orqali yaratib bo'lmaydi — /api/finance/transactions yoki tegishli to'lov oqimidan foydalaning" });
         }
+        // IP-03 (ML-07): `finance`/`transactions` generic POST'i Transaction'ni
+        // Payment/balans/audit'siz yaratardi — maxsus moliyaviy oqimni chetlab
+        // o'tish yo'li. Hech bir sahifa bu yo'lni ishlatmaydi.
+        if ((req as any).modelName === 'transaction') {
+            return res.status(400).json({ message: "Kirim/chiqim faqat Moliya bo'limi orqali kiritiladi (/api/finance/transactions)" });
+        }
 
         if (!(req as any).useFallback) {
             const validationError = validateInput((req as any).modelName, req.body);

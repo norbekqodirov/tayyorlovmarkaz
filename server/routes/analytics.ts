@@ -1,6 +1,16 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
+
+// IP-03 (RX-01): bu fayldagi barcha hisobotlar markaz miqyosidagi moliya va
+// shaxsiy ma'lumot (qarzdorlar telefonlari, tushum, xarajat) qaytaradi. Ilgari
+// 8 ta endpoint faqat `requireAuth` bilan ochiq edi — o'qituvchi tokeni ham
+// ularni o'qiy olardi. Endi: BI sahifasi ishlatadiganlari — `bi` ruxsati,
+// qolgan (hozircha UI'da ishlatilmaydigan) hisobotlar — `reports` ruxsati;
+// hammasi MANAGER+ (ADMIN/SUPER_ADMIN har doim o'tadi).
+const biAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('bi')];
+const reportsAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('reports')];
 import { todayDateStr, monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 
 const router = express.Router();
@@ -34,7 +44,7 @@ async function getAttendanceDocs(): Promise<any[]> {
 // shuning uchun bu cheklov ularga ta'sir qilmaydi (tekshirildi).
 
 // GET /api/analytics/dashboard — aggregated dashboard stats
-router.get('/dashboard', requireAuth, requireMinRole('MANAGER'), async (_req, res) => {
+router.get('/dashboard', ...biAccess, async (_req, res) => {
     try {
         const [students, leads, transactions, groups, teachers, attendance] = await Promise.all([
             prisma.student.findMany(),
@@ -127,7 +137,7 @@ router.get('/dashboard', requireAuth, requireMinRole('MANAGER'), async (_req, re
 });
 
 // GET /api/analytics/monthly — monthly breakdown for charts
-router.get('/monthly', requireAuth, requireMinRole('MANAGER'), async (_req, res) => {
+router.get('/monthly', ...biAccess, async (_req, res) => {
     try {
         const [students, transactions, leads] = await Promise.all([
             prisma.student.findMany(),
@@ -176,7 +186,7 @@ router.get('/monthly', requireAuth, requireMinRole('MANAGER'), async (_req, res)
 });
 
 // GET /api/analytics/debtors — students with overdue payments
-router.get('/debtors', requireAuth, requireMinRole('MANAGER'), async (_req, res) => {
+router.get('/debtors', ...biAccess, async (_req, res) => {
     try {
         const students = await prisma.student.findMany();
         const debtors = students
@@ -201,7 +211,7 @@ router.get('/debtors', requireAuth, requireMinRole('MANAGER'), async (_req, res)
 });
 
 // GET /api/analytics/lead-sources — lead source breakdown
-router.get('/lead-sources', requireAuth, async (_req, res) => {
+router.get('/lead-sources', ...biAccess, async (_req, res) => {
     try {
         const leads = await prisma.lead.findMany();
         const sources: Record<string, number> = {};
@@ -222,7 +232,7 @@ router.get('/lead-sources', requireAuth, async (_req, res) => {
 // ─── FAZA 1.1 HISOBOTLAR ──────────────────────────────────────────────────────
 
 // GET /api/analytics/reports/manager-summary?from=&to=
-router.get('/reports/manager-summary', requireAuth, async (req, res) => {
+router.get('/reports/manager-summary', ...biAccess, async (req, res) => {
     try {
         const from = req.query.from ? new Date(req.query.from as string) : tashkentMidnightInstant(monthRangeStr(0).start);
         const to = req.query.to ? new Date(req.query.to as string) : new Date();
@@ -276,7 +286,7 @@ router.get('/reports/manager-summary', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/reports/income-ledger?month=&year=
-router.get('/reports/income-ledger', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/reports/income-ledger', ...reportsAccess, async (req, res) => {
     try {
         const todayParts = todayDateStr().split('-');
         const year = Number(req.query.year) || Number(todayParts[0]);
@@ -313,7 +323,7 @@ router.get('/reports/income-ledger', requireAuth, requireMinRole('MANAGER'), asy
 });
 
 // GET /api/analytics/reports/debtors
-router.get('/reports/debtors', requireAuth, async (req, res) => {
+router.get('/reports/debtors', ...reportsAccess, async (req, res) => {
     try {
         const overdueOnly = req.query.overdueOnly === 'true';
         const students = await prisma.student.findMany({
@@ -341,7 +351,7 @@ router.get('/reports/debtors', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/reports/group-profitability
-router.get('/reports/group-profitability', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/reports/group-profitability', ...reportsAccess, async (req, res) => {
     try {
         const groups = await prisma.group.findMany({
             include: {
@@ -379,7 +389,7 @@ router.get('/reports/group-profitability', requireAuth, requireMinRole('MANAGER'
 // SEC-04 tuzatish: ilgari faqat requireAuth bor edi — istalgan login qilgan
 // TEACHER butun xodimlar/o'qituvchilar ro'yxatidagi asosiy maoshlarni
 // ko'ra olardi. Maosh ma'lumoti HR-maxfiy, MANAGER+ talab qilinadi.
-router.get('/reports/salary-sheet', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
+router.get('/reports/salary-sheet', ...reportsAccess, async (req, res) => {
     try {
         const todayParts = todayDateStr().split('-');
         const year = Number(req.query.year) || Number(todayParts[0]);
@@ -410,7 +420,7 @@ router.get('/reports/salary-sheet', requireAuth, requireMinRole('MANAGER'), asyn
 });
 
 // GET /api/analytics/reports/attendance-journal?groupId=&from=&to=
-router.get('/reports/attendance-journal', requireAuth, async (req, res) => {
+router.get('/reports/attendance-journal', ...reportsAccess, async (req, res) => {
     try {
         const { groupId, from, to } = req.query as Record<string, string>;
         const where: any = {};
@@ -438,7 +448,7 @@ router.get('/reports/attendance-journal', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/reports/student-ltv
-router.get('/reports/student-ltv', requireAuth, async (req, res) => {
+router.get('/reports/student-ltv', ...reportsAccess, async (req, res) => {
     try {
         const students = await prisma.student.findMany({
             include: { payments: true },
@@ -462,7 +472,7 @@ router.get('/reports/student-ltv', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/reports/payment-methods
-router.get('/reports/payment-methods', requireAuth, async (req, res) => {
+router.get('/reports/payment-methods', ...reportsAccess, async (req, res) => {
     try {
         const transactions = await prisma.transaction.findMany({ where: { type: 'income' } });
         const methods: Record<string, { count: number; total: number }> = {};
@@ -479,7 +489,7 @@ router.get('/reports/payment-methods', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/reports/expense-breakdown?month=&year=
-router.get('/reports/expense-breakdown', requireAuth, async (req, res) => {
+router.get('/reports/expense-breakdown', ...reportsAccess, async (req, res) => {
     try {
         const todayParts = todayDateStr().split('-');
         const year = Number(req.query.year) || Number(todayParts[0]);
@@ -522,7 +532,7 @@ router.get('/reports/expense-breakdown', requireAuth, async (req, res) => {
 });
 
 // GET /api/analytics/teacher-performance — teacher KPIs
-router.get('/teacher-performance', requireAuth, async (_req, res) => {
+router.get('/teacher-performance', ...biAccess, async (_req, res) => {
     try {
         const [users, students, groups, enrollments, attendance] = await Promise.all([
             prisma.user.findMany({ where: { role: 'TEACHER' } }),
