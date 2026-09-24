@@ -6,7 +6,8 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { withAudit } from '../middleware/audit.js';
+import { withAudit, logAudit } from '../middleware/audit.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
@@ -55,16 +56,17 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 });
 
-// PUT /api/students/:id — update student
-// MANAGER+ talab qilinadi (crud.ts'ning COLLECTION_WRITE_LEVEL.students=2 siyosati
-// bilan mos) — bu maxsus router crud.ts'dan OLDIN mount qilingani uchun o'sha
-// tekshiruvni chetlab o'tar edi. 'balance' whitelist'da yo'q edi — CrmStudents.tsx'da
-// balans maydoni tahrirlansa jimgina saqlanmasdi; endi qo'shildi va withAudit orqali
-// har bir o'zgarish (balans jumladan) audit jurnaliga yoziladi.
-router.put('/:id', requireAuth, requireMinRole('MANAGER'), withAudit('student'), async (req, res) => {
+// PUT /api/students/:id — o'quvchining SHAXSIY ma'lumotlarini yangilash.
+// MANAGER+ va `students` ruxsati (RX-03). IP-02 (ML-03): `balance` va
+// `paymentStatus` bu yerda ATAYLAB qabul qilinmaydi — ilgari tahrirlash
+// formasi butun formData'ni (jumladan oynani ochgan paytdagi eski balansni)
+// qayta yuborardi va shu orada kassir kiritgan to'lov balansdan "yo'qolardi";
+// guruh almashtirilganda esa balans `-narx` bilan ustidan yozilardi. Balans
+// endi faqat to'lov oqimlari va pastdagi sababli tuzatish orqali o'zgaradi.
+router.put('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('students'), withAudit('student'), async (req, res) => {
     try {
         const allowed = ['name', 'phone', 'email', 'address', 'birthDate', 'parentName', 'parentPhone',
-            'source', 'status', 'notes', 'photo', 'course', 'group', 'paymentStatus', 'joinedDate', 'balance'];
+            'source', 'status', 'notes', 'photo', 'course', 'group', 'joinedDate'];
         const data: Record<string, any> = {};
         for (const key of allowed) {
             if (req.body[key] !== undefined) data[key] = req.body[key];
@@ -73,6 +75,51 @@ router.put('/:id', requireAuth, requireMinRole('MANAGER'), withAudit('student'),
         res.json(student);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/students/:id/balance-adjustments — IP-02: balansni SABABLI tuzatish.
+// Boshlang'ich qoldiq (eski qarz/avans) yoki qo'lda tuzatish uchun yagona yo'l:
+// atomar `increment` (poyga holatisiz), sabab majburiy, oldingi/keyingi qiymat
+// audit jurnaliga yoziladi. Kassaga pul yozuvi YARATMAYDI — bu to'lov emas.
+// Hisob tizimi (IP-11) joriy qilingach, bu "opening_balance/adjustment" hisobiga
+// aylanadi.
+router.post('/:id/balance-adjustments', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+    try {
+        const amount = Number(req.body?.amount);
+        const reason = String(req.body?.reason || '').trim();
+        if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount === 0) {
+            return res.status(400).json({ message: "Summa noldan farqli butun son bo'lishi kerak (qarz uchun manfiy, avans uchun musbat)" });
+        }
+        if (Math.abs(amount) > 1_000_000_000) {
+            return res.status(400).json({ message: "Summa juda katta — tekshirib qayta kiriting" });
+        }
+        if (reason.length < 3) {
+            return res.status(400).json({ message: "Tuzatish sababini yozing (kamida 3 belgi)" });
+        }
+        const existing = await prisma.student.findUnique({ where: { id: req.params.id }, select: { id: true, balance: true } });
+        if (!existing) return res.status(404).json({ message: "O'quvchi topilmadi" });
+
+        const updated = await prisma.$transaction(async (tx) => {
+            const s = await tx.student.update({ where: { id: existing.id }, data: { balance: { increment: amount } } });
+            return tx.student.update({
+                where: { id: existing.id },
+                data: { paymentStatus: (s.balance ?? 0) < 0 ? 'Qarzdorlik' : 'Tolov qilingan' },
+                select: { id: true, balance: true, paymentStatus: true },
+            });
+        });
+
+        const actor = (req as any).user;
+        await logAudit({
+            userId: actor?.id, userName: actor?.name || 'system',
+            action: 'balance_adjustment', resource: 'student', resourceId: existing.id,
+            before: { balance: existing.balance ?? 0 },
+            after: { balance: updated.balance },
+            metadata: { amount, reason },
+        });
+        res.json(updated);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
     }
 });
 

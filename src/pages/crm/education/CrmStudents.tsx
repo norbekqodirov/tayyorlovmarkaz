@@ -1,4 +1,4 @@
-import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { getCurrentRoleLevel, ROLE_LEVEL, hasAnyPermission } from '../../../utils/roles';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -13,6 +13,7 @@ import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import ArchivedRecordsModal from '../../../components/ArchivedRecordsModal';
+import BalanceAdjustModal from '../../../components/BalanceAdjustModal';
 import ImportWizard from '../../../components/ImportWizard';
 import Pagination from '../../../components/Pagination';
 import { SkeletonTable } from '../../../components/Skeleton';
@@ -69,6 +70,9 @@ export default function CrmStudents() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  // IP-02: balans faqat sababli tuzatish orqali (Moliya ruxsati bilan)
+  const canAdjustBalance = hasAnyPermission('finance');
+  const [balanceTarget, setBalanceTarget] = useState<{ id: string; name: string; balance?: number | null } | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const itemsPerPage = 20;
@@ -129,8 +133,13 @@ export default function CrmStudents() {
     }
 
     try {
+      // IP-02 (ML-03): balans va to'lov holati profil formasi orqali YUBORILMAYDI —
+      // ilgari oynani ochgan paytdagi eski balans qayta yozilib, shu orada
+      // kiritilgan to'lov "yo'qolardi". Balans — faqat to'lov oqimlari va
+      // "Balansni tuzatish" (sababli, audit qilinadigan) orqali.
+      const { balance: _balance, paymentStatus: _paymentStatus, ...profileFields } = formData as any;
       const studentData = {
-        ...formData,
+        ...profileFields,
         name: formData.name!.trim(),
         phone: formData.phone!.trim(),
         email: formData.email ? formData.email.trim() : '',
@@ -375,6 +384,16 @@ export default function CrmStudents() {
         </div>
       </div>
 
+      <BalanceAdjustModal
+        isOpen={!!balanceTarget}
+        onClose={() => setBalanceTarget(null)}
+        student={balanceTarget}
+        onDone={(newBalance) => {
+          if (balanceTarget && formData.id === balanceTarget.id) setFormData(f => ({ ...f, balance: newBalance }));
+          if (balanceTarget && selectedStudent?.id === balanceTarget.id) setSelectedStudent(s => s ? { ...s, balance: newBalance } : s);
+          void refetch();
+        }}
+      />
       <ArchivedRecordsModal
         isOpen={canManage && archiveOpen}
         onClose={() => setArchiveOpen(false)}
@@ -634,6 +653,12 @@ export default function CrmStudents() {
                     <p className={`text-lg font-black ${selectedStudent.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                       {formatNumber(selectedStudent.balance)}
                     </p>
+                    {canAdjustBalance && (
+                      <button type="button" onClick={() => setBalanceTarget({ id: selectedStudent.id, name: selectedStudent.name, balance: selectedStudent.balance })}
+                        className="mt-1 text-[11px] font-bold text-blue-600 hover:underline">
+                        Balansni tuzatish
+                      </button>
+                    )}
                   </div>
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Holat</p>
@@ -857,12 +882,12 @@ export default function CrmStudents() {
                     onChange={(e) => {
                       const g = groupOptions.find((g: any) => g.id === e.target.value);
                       setSelectedGroupId(e.target.value);
-                      const price = g?.price ?? g?.course?.price;
+                      // IP-02: guruh tanlash endi balansni `-narx` bilan ustidan
+                      // yozmaydi (to'lov/avans tarixini o'chirib yuborardi).
                       setFormData({
                         ...formData,
                         group: g?.name || '',
                         course: g?.course?.name || '',
-                        balance: price ? -price : (formData.balance || 0),
                       });
                     }}
                     className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
@@ -876,7 +901,7 @@ export default function CrmStudents() {
                   </select>
                   <p className="text-[10px] text-zinc-400">Kurs guruh orqali avtomatik aniqlanadi</p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div className="space-y-1.5 flex flex-col gap-1.5">
                     <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>
                     <select 
@@ -890,18 +915,6 @@ export default function CrmStudents() {
                       <option value="Bitiruvchi">Bitiruvchi</option>
                     </select>
                   </div>
-                  <div className="space-y-1.5 flex flex-col gap-1.5">
-                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">To'lov Holati</label>
-                    <select 
-                      value={formData.paymentStatus}
-                      onChange={(e) => setFormData({...formData, paymentStatus: e.target.value as any})}
-                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium"
-                    >
-                      <option value="Tolov qilingan">To'lov qilingan</option>
-                      <option value="Qarzdorlik">Qarzdorlik</option>
-                      <option value="Kutilmoqda">Kutilmoqda</option>
-                    </select>
-                  </div>
                 </div>
               </div>
             </div>
@@ -910,12 +923,23 @@ export default function CrmStudents() {
             <div className="space-y-4">
               <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Moliya va Eslatmalar</h4>
               <div className="space-y-3">
-                <Input 
-                  type="number"
-                  label="Balans (UZS)"
-                  value={formData.balance}
-                  onChange={(e) => setFormData({...formData, balance: Number(e.target.value)})}
-                />
+                {formData.id ? (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-3">
+                    <div>
+                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Balans</p>
+                      <p className={`text-base font-black tabular-nums ${(formData.balance || 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{formatNumber(formData.balance || 0)} so'm</p>
+                    </div>
+                    {canAdjustBalance && (
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setBalanceTarget({ id: formData.id!, name: formData.name || '', balance: formData.balance })}>
+                        Balansni tuzatish
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-3">
+                    Eski qarz yoki oldindan to'langan avans bo'lsa, o'quvchini saqlagandan keyin uning kartasidagi «Balansni tuzatish» orqali sabab bilan kiriting.
+                  </p>
+                )}
                 <div className="space-y-1.5 flex flex-col gap-1.5">
                   <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Eslatma</label>
                   <textarea 
