@@ -3,6 +3,7 @@ import prisma from '../db.js';
 import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { can } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
+import { normalizeStudentStatus } from '../utils/studentStatus.js';
 
 const router = express.Router();
 
@@ -55,8 +56,8 @@ router.post('/:collection', requireAuth, requireMinRole('MANAGER'), async (req, 
                 updated = (await prisma.student.updateMany({ where: { id: { in: ids }, deletedAt: null }, data: { deletedAt: new Date() } })).count;
             } else if (action === 'restore') {
                 updated = (await prisma.student.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null } })).count;
-            } else if (action === 'status' && typeof data?.status === 'string' && STUDENT_STATUSES.has(data.status)) {
-                updated = (await prisma.student.updateMany({ where: { id: { in: ids } }, data: { status: data.status } })).count;
+            } else if (action === 'status' && typeof data?.status === 'string' && STUDENT_STATUSES.has(normalizeStudentStatus(data.status) || '')) {
+                updated = (await prisma.student.updateMany({ where: { id: { in: ids } }, data: { status: normalizeStudentStatus(data.status) } })).count;
             } else {
                 return res.status(400).json({ message: "O'quvchilar uchun faqat arxivlash, tiklash va holatni o'zgartirish mumkin" });
             }

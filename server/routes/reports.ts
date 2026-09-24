@@ -315,15 +315,19 @@ router.get('/teachers', requireAuth, requireMinRole('MANAGER'), requirePermissio
 // 2026-09-07'gacha butunlay ishlamas edi, Codex audit paytida aniqladi).
 router.get('/executive', requireAuth, requireMinRole('ADMIN'), requirePermission('reports'), async (_req, res) => {
     try {
-        const now = new Date();
-        const currentMonth = now.getMonth(); // 0-indeksli
+        // IP-04 (ML-18/HB-05): oy Toshkent vaqti bo'yicha, arxivlanganlar
+        // chiqarilgan, qarzdor — faqat manfiy balans.
+        const todayStr = todayDateStr();
+        const currentYear = Number(todayStr.slice(0, 4));
+        const currentMonth = Number(todayStr.slice(5, 7)) - 1; // 0-indeksli
         const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-        const currentYear = now.getFullYear();
+        const curKey = todayStr.slice(0, 7);
+        const prevKey = monthRangeStr(-1).start.slice(0, 7);
 
         const [students, transactions, leads, groups] = await Promise.all([
-            prisma.student.findMany({ select: { status: true, balance: true, paymentStatus: true } }),
+            prisma.student.findMany({ where: { deletedAt: null }, select: { status: true, balance: true, paymentStatus: true } }),
             prisma.transaction.findMany({ where: { type: 'income' }, select: { amount: true, date: true } }),
-            prisma.lead.findMany({ select: { stage: true } }),
+            prisma.lead.findMany({ where: { deletedAt: null }, select: { stage: true } }),
             prisma.group.findMany({
                 where: { status: 'active' },
                 select: { course: { select: { name: true } } },
@@ -331,12 +335,12 @@ router.get('/executive', requireAuth, requireMinRole('ADMIN'), requirePermission
         ]);
 
         const activeStudents = students.filter(s => s.status === 'Faol' || s.status === 'active');
-        const overduePayments = students.filter(s => (Number(s.balance) || 0) < 0 || s.paymentStatus === 'Qarzdorlik').length;
+        const overduePayments = students.filter(s => (Number(s.balance) || 0) < 0).length;
 
         const sumIncome = (rows: typeof transactions) => rows.reduce((a, t) => a + (Number(t.amount) || 0), 0);
-        const thisMonthIncome = sumIncome(transactions.filter(t => t.date && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear));
-        const prevMonthIncome = sumIncome(transactions.filter(t => t.date && new Date(t.date).getMonth() === prevMonth && new Date(t.date).getFullYear() === (currentMonth === 0 ? currentYear - 1 : currentYear)));
-        const yearToDateIncome = sumIncome(transactions.filter(t => t.date && new Date(t.date).getFullYear() === currentYear));
+        const thisMonthIncome = sumIncome(transactions.filter(t => t.date?.startsWith(curKey)));
+        const prevMonthIncome = sumIncome(transactions.filter(t => t.date?.startsWith(prevKey)));
+        const yearToDateIncome = sumIncome(transactions.filter(t => t.date?.startsWith(String(currentYear))));
         const growthPct = prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : (thisMonthIncome > 0 ? 100 : 0);
 
         const totalLeads = leads.length;

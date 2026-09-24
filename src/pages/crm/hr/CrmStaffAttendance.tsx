@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import {
   Users, CheckCircle2, Clock, XCircle, AlertCircle,
   RefreshCw, Calendar, ChevronLeft, ChevronRight,
@@ -148,7 +149,7 @@ function EditModal({ row, isOpen, onClose, onSave }: {
 
 export default function CrmStaffAttendance() {
   const { showToast } = useToast();
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => toTashkentDate());
   const [data, setData] = useState<{ summary: DaySummary; rows: AttRow[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -198,7 +199,7 @@ export default function CrmStaffAttendance() {
 
   // Auto-refresh bugungi kun uchun har 60 soniyada
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toTashkentDate();
     if (date !== today || view !== 'day') return;
     const timer = setInterval(() => loadDay(date, true), 60_000);
     return () => clearInterval(timer);
@@ -207,7 +208,7 @@ export default function CrmStaffAttendance() {
   const changeDate = (delta: number) => {
     const d = new Date(date);
     d.setDate(d.getDate() + delta);
-    setDate(d.toISOString().split('T')[0]);
+    setDate(toTashkentDate(d));
   };
 
   const handleEdit = async (row: AttRow, formData: any) => {
@@ -235,7 +236,7 @@ export default function CrmStaffAttendance() {
   };
 
   const filtered = data?.rows.filter(r => filter === 'all' || r.status === filter) ?? [];
-  const today = new Date().toISOString().split('T')[0];
+  const today = toTashkentDate();
   const isToday = date === today;
 
   // ─── Month view ────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { getCurrentRoleLevel, ROLE_LEVEL, hasAnyPermission } from '../../../utils/roles';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,7 +22,7 @@ import { EmptyState, ErrorState } from '../../../components/States';
 import { Input } from '../../../components/ui/Input';
 import { PhoneInput } from '../../../components/ui/PhoneInput';
 import { Badge } from '../../../components/ui/Badge';
-import { studentStatusBadge, paymentStatusBadge } from '../../../utils/statusBadge';
+import { studentStatusBadge, paymentStatusBadge, studentStatusToUi } from '../../../utils/statusBadge';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
@@ -50,7 +51,11 @@ interface Student {
 export default function CrmStudents() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
   const navigate = useNavigate();
-  const { data: students = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
+  const { data: rawStudents = [], loading, error, addDocument, updateDocument, deleteDocument, refetch } = useFirestore<Omit<Student, 'id'>>('students');
+  // IP-04 (TL-13): bazada holat kanonik (active/frozen/left/graduated) — sahifa
+  // o'zbekcha nomlar bilan ishlaydi. Ilgari "Faol" filtri/statistikasi bazadagi
+  // 'active' bilan mos kelmasdi va tahrir formasi holatni noto'g'ri ko'rsatardi.
+  const students = useMemo(() => (rawStudents || []).map((s: any) => ({ ...s, status: studentStatusToUi(s.status) })), [rawStudents]) as typeof rawStudents;
   const { data: groups = [], loading: groupsLoading, error: groupsError, refetch: refetchGroups } = useFirestore<any>('groups');
   const { courses: liveCourses, groups: liveGroups } = useCrmData();
   const courseOptions = liveCourses.length > 0 ? liveCourses : [];
@@ -90,7 +95,7 @@ export default function CrmStudents() {
     paymentStatus: 'Kutilmoqda',
     balance: 0,
     status: 'Faol',
-    joinedDate: new Date().toISOString().split('T')[0],
+    joinedDate: toTashkentDate(),
     notes: ''
   });
 
@@ -247,7 +252,7 @@ export default function CrmStudents() {
         paymentStatus: 'Kutilmoqda',
         balance: 0,
         status: 'Faol',
-        joinedDate: new Date().toISOString().split('T')[0],
+        joinedDate: toTashkentDate(),
         notes: ''
       });
       setSelectedGroupId('');

@@ -12,28 +12,9 @@ import { requirePermission } from '../middleware/authorize.js';
 const biAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('bi')];
 const reportsAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('reports')];
 import { todayDateStr, monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
+import { getBillingSettings, calculateStudentMonthlyDue } from '../services/billing.js';
 
 const router = express.Router();
-
-// Helper: get all GenericDocuments for a collection (kept for fallback generic models)
-async function getGenericDocs(collection: string): Promise<any[]> {
-    const docs = await prisma.genericDocument.findMany({ where: { collection } });
-    return docs.map((d: any) => {
-        try { return { id: d.id, ...JSON.parse(d.data), createdAt: d.createdAt, updatedAt: d.updatedAt }; }
-        catch { return { id: d.id }; }
-    });
-}
-
-// Helper: attendance now lives in the native `Attendance` table (Faza 0.2 migration),
-// not GenericDocument — `records` is stored as a JSON string and must be parsed back.
-async function getAttendanceDocs(): Promise<any[]> {
-    const rows = await prisma.attendance.findMany();
-    return rows.map((a: any) => {
-        let records: any[] = [];
-        try { records = JSON.parse(a.records || '[]'); } catch { records = []; }
-        return { id: a.id, groupId: a.groupId, date: a.date, records, createdAt: a.createdAt, updatedAt: a.updatedAt };
-    });
-}
 
 // RS-03 tuzatish: bu fayldagi keng moliyaviy/boshqaruv hisobotlari (dashboard,
 // monthly, debtors, income-ledger, group-profitability) ilgari faqat
@@ -43,58 +24,58 @@ async function getAttendanceDocs(): Promise<any[]> {
 // DebtorsTable) bu yerdan emas, /api/students'dan client-side hisoblaydi,
 // shuning uchun bu cheklov ularga ta'sir qilmaydi (tekshirildi).
 
+// IP-04 (HB-01…HB-05): hisobot formulalari umumiy qoidalarga keltirildi —
+//  - arxivlangan o'quvchi/guruh/lidlar statistikaga kirmaydi;
+//  - oylar "YYYY-MM" (Toshkent) bo'yicha solishtiriladi, yil ham hisobga olinadi;
+//  - qarzdor = faqat manfiy balans (to'lov holati matni emas; TR:F16 bilan bir xil);
+//  - chiqim faqat Transaction'dan (Expense uning juft yozuvi — qayta qo'shilmaydi);
+//  - davomat — haqiqiy AttendanceRecord jadvalidan (eski Attendance JSON emas).
+function monthKeyOfDateStr(d: string | null | undefined): string | null {
+    return d && /^\d{4}-\d{2}/.test(d) ? d.slice(0, 7) : null;
+}
+function monthKeyOfInstant(d: Date | null | undefined): string | null {
+    return d ? todayDateStr(d).slice(0, 7) : null;
+}
+function studentJoinMonth(s: { joinedDate?: string | null; createdAt: Date }): string | null {
+    return monthKeyOfDateStr(s.joinedDate) ?? monthKeyOfInstant(s.createdAt);
+}
+
 // GET /api/analytics/dashboard — aggregated dashboard stats
 router.get('/dashboard', ...biAccess, async (_req, res) => {
     try {
-        const [students, leads, transactions, groups, teachers, attendance] = await Promise.all([
-            prisma.student.findMany(),
-            prisma.lead.findMany(),
-            prisma.transaction.findMany(),
-            prisma.group.findMany(),
-            prisma.user.findMany({ where: { role: 'TEACHER' } }),
-            getAttendanceDocs(),
+        const today = todayDateStr();
+        const curKey = today.slice(0, 7);
+        const prevKey = monthRangeStr(-1).start.slice(0, 7);
+        const [students, leads, transactions, groups, teachers, todayAttendance] = await Promise.all([
+            prisma.student.findMany({ where: { deletedAt: null } }),
+            prisma.lead.findMany({ where: { deletedAt: null } }),
+            prisma.transaction.findMany({ select: { type: true, amount: true, date: true } }),
+            prisma.group.findMany({ where: { deletedAt: null } }),
+            prisma.user.count({ where: { role: 'TEACHER', isActive: true } }),
+            prisma.attendanceRecord.findMany({ where: { date: today }, select: { status: true } }),
         ]);
 
-        const today = todayDateStr();
-        const currentMonth = Number(today.slice(5, 7)) - 1; // 0-indeksli, getMonth() bilan mos
-        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+        const sum = (rows: { amount: number }[]) => rows.reduce((a, t) => a + (Number(t.amount) || 0), 0);
+        const thisMonthIncome = sum(transactions.filter(t => t.type === 'income' && monthKeyOfDateStr(t.date) === curKey));
+        const prevMonthIncome = sum(transactions.filter(t => t.type === 'income' && monthKeyOfDateStr(t.date) === prevKey));
+        const totalIncome = sum(transactions.filter(t => t.type === 'income'));
+        const totalExpense = sum(transactions.filter(t => t.type === 'expense'));
 
-        // Revenue
-        const thisMonthIncome = transactions
-            .filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === currentMonth)
-            .reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
-        const prevMonthIncome = transactions
-            .filter(t => t.type === 'income' && t.date && new Date(t.date).getMonth() === prevMonth)
-            .reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
-        const totalIncome = transactions.filter(t => t.type === 'income').reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
-        const totalExpense = transactions.filter(t => t.type === 'expense').reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
+        const activeStudents = students.filter(s => s.status === 'active' || s.status === 'Faol');
+        const debtors = students.filter(s => (Number(s.balance) || 0) < 0);
+        const totalDebt = debtors.reduce((a, s) => a + Math.abs(Number(s.balance) || 0), 0);
 
-        // Students
-        const activeStudents = students.filter(s => s.status === 'Faol' || s.status === 'active');
-        const debtors = students.filter(s => (Number(s.balance) || 0) < 0 || s.paymentStatus === 'Qarzdorlik');
-        const totalDebt = debtors.reduce((a: number, s: any) => a + Math.abs(Number(s.balance) || 0), 0);
-
-        // Leads
-        const thisMonthLeads = leads.filter(l => {
-            const d = new Date(l.createdAt || l.date || 0);
-            return d.getMonth() === currentMonth;
-        });
+        const thisMonthLeads = leads.filter(l => monthKeyOfInstant(l.createdAt) === curKey);
         const wonLeads = leads.filter(l => l.stage === 'won').length;
 
-        // Attendance today
-        const todayAtt = attendance.find((a: any) => a.date === today);
-        const todayRecords = todayAtt?.records || [];
-        const todayPresent = todayRecords.filter((r: any) => r.status === 'present').length;
-        const todayTotal = todayRecords.length;
+        const marked = todayAttendance.filter(r => r.status !== 'excused');
+        const todayPresent = marked.filter(r => r.status === 'present' || r.status === 'late').length;
 
         res.json({
             students: {
                 total: students.length,
                 active: activeStudents.length,
-                new_this_month: students.filter(s => {
-                    const d = new Date(s.joinedDate || s.createdAt || 0);
-                    return d.getMonth() === currentMonth;
-                }).length,
+                new_this_month: students.filter(s => studentJoinMonth(s) === curKey).length,
                 debtors: debtors.length,
                 total_debt: totalDebt,
             },
@@ -121,13 +102,13 @@ router.get('/dashboard', ...biAccess, async (_req, res) => {
             },
             groups: {
                 total: groups.length,
-                active: groups.filter(g => g.status === 'Faol' || g.status === 'active').length,
+                active: groups.filter(g => g.status === 'active' || g.status === 'Faol').length,
             },
-            teachers: { total: teachers.length },
+            teachers: { total: teachers },
             attendance: {
                 today_present: todayPresent,
-                today_total: todayTotal,
-                today_rate: todayTotal > 0 ? Math.round((todayPresent / todayTotal) * 100) : 0,
+                today_total: marked.length,
+                today_rate: marked.length > 0 ? Math.round((todayPresent / marked.length) * 100) : 0,
             }
         });
     } catch (err: any) {
@@ -136,45 +117,29 @@ router.get('/dashboard', ...biAccess, async (_req, res) => {
     }
 });
 
-// GET /api/analytics/monthly — monthly breakdown for charts
+// GET /api/analytics/monthly — monthly breakdown for charts (joriy Toshkent yili)
 router.get('/monthly', ...biAccess, async (_req, res) => {
     try {
+        const year = todayDateStr().slice(0, 4);
         const [students, transactions, leads] = await Promise.all([
-            prisma.student.findMany(),
-            prisma.transaction.findMany(),
-            prisma.lead.findMany(),
+            prisma.student.findMany({ where: { deletedAt: null }, select: { joinedDate: true, createdAt: true } }),
+            prisma.transaction.findMany({ where: { date: { startsWith: year } }, select: { type: true, amount: true, date: true } }),
+            prisma.lead.findMany({ where: { deletedAt: null }, select: { createdAt: true } }),
         ]);
 
         const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
-        // Yil tekshiruvisiz faqat oy (getMonth()) solishtirilsa, o'tgan yillardagi
-        // yozuvlar ham shu yilning oyiga qo'shilib ketardi (masalan 2025-yanvar
-        // 2026-yanvar bilan bir ustunga tushardi) — grafik noto'g'ri ko'rsatardi.
-        const currentYear = new Date().getFullYear();
-
         const monthly = Array.from({ length: 12 }, (_, mi) => {
-            const income = transactions
-                .filter(t => t.type === 'income' && t.date && new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === mi)
-                .reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
-            const expense = transactions
-                .filter(t => t.type === 'expense' && t.date && new Date(t.date).getFullYear() === currentYear && new Date(t.date).getMonth() === mi)
-                .reduce((a: number, t: any) => a + (Number(t.amount) || 0), 0);
-            const newStudents = students.filter(s => {
-                const d = new Date(s.joinedDate || s.createdAt || 0);
-                return d.getFullYear() === currentYear && d.getMonth() === mi;
-            }).length;
-            const newLeads = leads.filter(l => {
-                const d = new Date(l.createdAt || l.date || 0);
-                return d.getFullYear() === currentYear && d.getMonth() === mi;
-            }).length;
-
+            const key = `${year}-${String(mi + 1).padStart(2, '0')}`;
+            const income = transactions.filter(t => t.type === 'income' && monthKeyOfDateStr(t.date) === key).reduce((a, t) => a + (Number(t.amount) || 0), 0);
+            const expense = transactions.filter(t => t.type === 'expense' && monthKeyOfDateStr(t.date) === key).reduce((a, t) => a + (Number(t.amount) || 0), 0);
             return {
                 month: MONTHS[mi],
                 month_index: mi,
                 income,
                 expense,
                 profit: income - expense,
-                new_students: newStudents,
-                new_leads: newLeads,
+                new_students: students.filter(s => studentJoinMonth(s) === key).length,
+                new_leads: leads.filter(l => monthKeyOfInstant(l.createdAt) === key).length,
             };
         });
 
@@ -185,12 +150,11 @@ router.get('/monthly', ...biAccess, async (_req, res) => {
     }
 });
 
-// GET /api/analytics/debtors — students with overdue payments
+// GET /api/analytics/debtors — manfiy balansli o'quvchilar
 router.get('/debtors', ...biAccess, async (_req, res) => {
     try {
-        const students = await prisma.student.findMany();
+        const students = await prisma.student.findMany({ where: { deletedAt: null, balance: { lt: 0 } } });
         const debtors = students
-            .filter(s => (Number(s.balance) || 0) < 0 || s.paymentStatus === 'Qarzdorlik')
             .map(s => ({
                 id: s.id,
                 name: s.name,
@@ -244,17 +208,18 @@ router.get('/reports/manager-summary', ...biAccess, async (req, res) => {
         const prevFromStr = todayDateStr(prevFrom);
         const prevToStr = todayDateStr(prevTo);
 
-        const [txCur, txPrev, students, groups, leads, expenses] = await Promise.all([
+        const [txCur, txPrev, students, groups, leads] = await Promise.all([
             prisma.transaction.findMany({ where: { date: { gte: fromStr, lte: toStr } } }),
             prisma.transaction.findMany({ where: { date: { gte: prevFromStr, lte: prevToStr } } }),
-            prisma.student.findMany(),
-            prisma.group.findMany({ include: { enrollments: true } }),
-            prisma.lead.findMany({ where: { createdAt: { gte: from, lte: to } } }),
-            prisma.expense.findMany({ where: { date: { gte: fromStr, lte: toStr } } }),
+            prisma.student.findMany({ where: { deletedAt: null } }),
+            prisma.group.findMany({ where: { deletedAt: null }, include: { enrollments: { where: { student: { deletedAt: null } } } } }),
+            prisma.lead.findMany({ where: { createdAt: { gte: from, lte: to }, deletedAt: null } }),
         ]);
 
         const income = txCur.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-        const expense = txCur.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0) + expenses.reduce((s, e) => s + e.amount, 0);
+        // HB-01: Expense yozuvi o'zining juft Transaction'iga ega (finance.ts) —
+        // ikkalasini qo'shish har xarajatni ikki marta sanardi.
+        const expense = txCur.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
         const prevIncome = txPrev.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
         const prevExpense = txPrev.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
@@ -266,8 +231,9 @@ router.get('/reports/manager-summary', ...biAccess, async (req, res) => {
         const wonLeads = leads.filter(l => l.stage === 'won').length;
         const conversion = leads.length > 0 ? Math.round((wonLeads / leads.length) * 100) : 0;
 
-        const groupFillRate = groups.length > 0
-            ? Math.round((groups.reduce((s, g) => s + g.enrollments.length, 0) / groups.reduce((s, g) => s + g.maxSize, 0)) * 100)
+        const capacity = groups.reduce((s, g) => s + g.maxSize, 0);
+        const groupFillRate = capacity > 0
+            ? Math.round((groups.reduce((s, g) => s + g.enrollments.length, 0) / capacity) * 100)
             : 0;
 
         res.json({
@@ -327,12 +293,12 @@ router.get('/reports/debtors', ...reportsAccess, async (req, res) => {
     try {
         const overdueOnly = req.query.overdueOnly === 'true';
         const students = await prisma.student.findMany({
-            include: { payments: { orderBy: { date: 'desc' }, take: 1 } },
+            where: { deletedAt: null, balance: { lt: 0 } },
+            include: { payments: { where: { status: 'paid', deletedAt: null }, orderBy: { date: 'desc' }, take: 1 } },
         });
+        void overdueOnly; // qarzdor — faqat manfiy balans (TR:F16 qoidasi)
 
         const debtors = students
-            .filter(s => overdueOnly ? (s.balance || 0) < 0 : true)
-            .filter(s => (s.balance || 0) < 0 || s.paymentStatus === 'Qarzdorlik')
             .map(s => ({
                 id: s.id, name: s.name, phone: s.phone,
                 group: s.group, course: s.course,
@@ -354,16 +320,37 @@ router.get('/reports/debtors', ...reportsAccess, async (req, res) => {
 router.get('/reports/group-profitability', ...reportsAccess, async (req, res) => {
     try {
         const groups = await prisma.group.findMany({
+            where: { deletedAt: null },
             include: {
                 course: true,
-                enrollments: { include: { student: { select: { id: true, name: true, balance: true, paymentStatus: true } } } },
+                enrollments: { where: { student: { deletedAt: null } }, include: { student: { select: { id: true, name: true, balance: true, paymentStatus: true } } } },
                 teacher: { select: { id: true, name: true } },
             },
         });
 
+        // HB-03: kutilgan oylik tushum endi guruh narxi (Group.price, bo'lmasa
+        // Course.price) va davomat chegirmasi bilan — billing.ts bilan bir xil
+        // formula (ilgari kurs narxi × o'quvchi soni edi).
+        const [ty, tm] = todayDateStr().split('-').map(Number);
+        const settings = await getBillingSettings();
+        const dueCache = new Map<string, Awaited<ReturnType<typeof calculateStudentMonthlyDue>>>();
+        const dueOf = async (studentId: string) => {
+            if (!dueCache.has(studentId)) dueCache.set(studentId, await calculateStudentMonthlyDue(studentId, ty, tm, settings));
+            return dueCache.get(studentId)!;
+        };
+        const expectedByGroup = new Map<string, number>();
+        for (const g of groups) {
+            let sum = 0;
+            for (const e of g.enrollments) {
+                const due = await dueOf(e.studentId);
+                sum += due.byGroup.find(b => b.groupId === g.id)?.finalPrice || 0;
+            }
+            expectedByGroup.set(g.id, sum);
+        }
+
         const data = groups.map(g => {
             const studentCount = g.enrollments.length;
-            const expectedMonthly = (g.course?.price || 0) * studentCount;
+            const expectedMonthly = expectedByGroup.get(g.id) || 0;
             const debtors = g.enrollments.filter(e => (e.student?.balance || 0) < 0).length;
             const fillRate = g.maxSize > 0 ? Math.round((studentCount / g.maxSize) * 100) : 0;
             return {
@@ -395,21 +382,30 @@ router.get('/reports/salary-sheet', ...reportsAccess, async (req, res) => {
         const year = Number(req.query.year) || Number(todayParts[0]);
         const month = Number(req.query.month) || Number(todayParts[1]);
 
-        const [staff, teachers] = await Promise.all([
-            prisma.staffMember.findMany({ where: { status: { in: ['Faol', 'active'] } } }),
-            prisma.user.findMany({ where: { role: 'TEACHER' } }),
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+        const [staff, teachers, salaries, payrolls] = await Promise.all([
+            prisma.staffMember.findMany({ where: { status: { in: ['Faol', 'active'] }, deletedAt: null } }),
+            prisma.user.findMany({ where: { role: 'TEACHER', isActive: true } }),
+            prisma.salary.findMany({ where: { month: monthKey } }),
+            prisma.teacherPayroll.findMany({ where: { month: monthKey, status: { in: ['approved', 'paid'] } } }),
         ]);
+        // HB-03: o'qituvchi uchun tasdiqlangan oylik hisob (ilgari doim 0),
+        // xodim uchun shu oyning Salary yozuvi (bo'lmasa shartnomadagi oylik).
+        const salaryByStaff = new Map(salaries.map(s => [s.staffId, s]));
+        const payrollByTeacher = new Map(payrolls.map(p => [p.teacherId, p]));
 
         const sheet = [
             ...staff.map(s => ({
                 id: s.id, name: s.name, role: s.role,
-                baseSalary: s.salary, department: s.department,
+                baseSalary: salaryByStaff.get(s.id)?.total ?? s.salary, department: s.department,
                 type: 'staff',
+                source: salaryByStaff.has(s.id) ? 'salary' : 'contract',
             })),
             ...teachers.map(t => ({
                 id: t.id, name: t.name, role: 'O\'qituvchi',
-                baseSalary: 0, department: 'Ta\'lim',
+                baseSalary: payrollByTeacher.get(t.id)?.accruedAmount ?? 0, department: 'Ta\'lim',
                 type: 'teacher',
+                source: payrollByTeacher.has(t.id) ? 'teacher_payroll' : 'not_calculated',
             })),
         ];
 
@@ -450,9 +446,10 @@ router.get('/reports/attendance-journal', ...reportsAccess, async (req, res) => 
 // GET /api/analytics/reports/student-ltv
 router.get('/reports/student-ltv', ...reportsAccess, async (req, res) => {
     try {
+        // HB-04: faqat haqiqatan to'langan (refund/pending emas), o'chirilmagan to'lovlar.
         const students = await prisma.student.findMany({
-            include: { payments: true },
-            where: { status: { in: ['active', 'graduated', 'Faol', 'Yakunlagan'] } },
+            include: { payments: { where: { status: 'paid', deletedAt: null } } },
+            where: { deletedAt: null, status: { in: ['active', 'graduated', 'Faol', 'Yakunlagan'] } },
         });
 
         const withLtv = students.map(s => {
@@ -498,9 +495,9 @@ router.get('/reports/expense-breakdown', ...reportsAccess, async (req, res) => {
         const fromStr = `${year}-${pad(month)}-01`;
         const toStr = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
 
-        const [txExpenses, expenses, budgets] = await Promise.all([
+        // HB-01: faqat Transaction — Expense yozuvlari o'z juft Transaction'iga ega.
+        const [txExpenses, budgets] = await Promise.all([
             prisma.transaction.findMany({ where: { type: 'expense', date: { gte: fromStr, lte: toStr } } }),
-            prisma.expense.findMany({ where: { date: { gte: fromStr, lte: toStr } } }),
             prisma.budget.findMany({ where: { year, month } }),
         ]);
 
@@ -509,11 +506,6 @@ router.get('/reports/expense-breakdown', ...reportsAccess, async (req, res) => {
             const cat = t.category || 'Boshqa';
             if (!byCategory[cat]) byCategory[cat] = { actual: 0, planned: 0 };
             byCategory[cat].actual += t.amount;
-        }
-        for (const e of expenses) {
-            const cat = e.category || 'Boshqa';
-            if (!byCategory[cat]) byCategory[cat] = { actual: 0, planned: 0 };
-            byCategory[cat].actual += e.amount;
         }
         for (const b of budgets) {
             if (!byCategory[b.category]) byCategory[b.category] = { actual: 0, planned: 0 };
@@ -534,26 +526,24 @@ router.get('/reports/expense-breakdown', ...reportsAccess, async (req, res) => {
 // GET /api/analytics/teacher-performance — teacher KPIs
 router.get('/teacher-performance', ...biAccess, async (_req, res) => {
     try {
-        const [users, students, groups, enrollments, attendance] = await Promise.all([
-            prisma.user.findMany({ where: { role: 'TEACHER' } }),
-            prisma.student.findMany(),
-            prisma.group.findMany(),
-            prisma.enrollment.findMany(),
-            getAttendanceDocs(),
+        // HB-02 (FA:EDU-03): davomat endi haqiqiy AttendanceRecord jadvalidan
+        // (eski Attendance JSON 2026-09-13'dan beri yozilmaydi — foiz 0 yoki
+        // eskirgan chiqardi). Oxirgi 90 kun, sababli qoldirishlar hisobga kirmaydi.
+        const since = todayDateStr(new Date(Date.now() - 90 * 24 * 3600 * 1000));
+        const [users, groups, enrollments, attendance] = await Promise.all([
+            prisma.user.findMany({ where: { role: 'TEACHER', isActive: true } }),
+            prisma.group.findMany({ where: { deletedAt: null } }),
+            prisma.enrollment.findMany({ where: { student: { deletedAt: null } }, select: { groupId: true } }),
+            prisma.attendanceRecord.groupBy({ by: ['groupId', 'status'], where: { date: { gte: since } }, _count: { _all: true } }),
         ]);
 
         const data = users.map((teacher: any) => {
-            const teacherGroups = groups.filter((g: any) => g.teacherId === teacher.id || g.teacher === teacher.name);
-            const studentCount = teacherGroups.reduce((a: number, g: any) => {
-                const groupEnrollments = enrollments.filter(e => e.groupId === g.id);
-                return a + groupEnrollments.length;
-            }, 0);
-
-            // Attendance rate for this teacher's students
-            const groupIds = teacherGroups.map((g: any) => g.id);
-            const attRecords = attendance.filter((a: any) => groupIds.includes(a.groupId));
-            const totalRec = attRecords.flatMap((a: any) => a.records || []).length;
-            const presentRec = attRecords.flatMap((a: any) => a.records || []).filter((r: any) => r.status === 'present').length;
+            const teacherGroups = groups.filter((g: any) => g.teacherId === teacher.id);
+            const groupIds = new Set(teacherGroups.map((g: any) => g.id));
+            const studentCount = enrollments.filter(e => groupIds.has(e.groupId)).length;
+            const rows = attendance.filter(a => groupIds.has(a.groupId) && a.status !== 'excused');
+            const totalRec = rows.reduce((s, a) => s + a._count._all, 0);
+            const presentRec = rows.filter(a => a.status === 'present' || a.status === 'late').reduce((s, a) => s + a._count._all, 0);
             const attRate = totalRec > 0 ? Math.round((presentRec / totalRec) * 100) : 0;
 
             return {

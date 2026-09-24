@@ -44,6 +44,8 @@ interface StudentDetail {
   attendance: { total: number; present: number; absent: number; late: number; rate: number };
   grades: any[];
   payments: any[];
+  /** O'qituvchi uchun moliya yopiq (server balans/to'lovni qaytarmaydi). */
+  financeHidden?: boolean;
   certificates: any[];
   trend: Array<{ date: string; attendance: number; grades: number }>;
   group?: any;
@@ -87,9 +89,13 @@ export default function CrmStudentDetail() {
       // /journal?studentId= (a dead collection nothing ever writes to), so
       // this page's attendance rate, GPA and grade list were silently always
       // zero/empty regardless of the student's real record.
-      const [studRes, paymentsRes, certsRes] = await Promise.allSettled([
+      // IP-04 (TL-06): to'lovlar endi `/students/:id` javobidagi o'quvchining
+      // O'Z Payment yozuvlaridan olinadi. Ilgari `/finance?studentId=` butun
+      // markaz tranzaksiyalarini yuklardi (generic GET query filtrni
+      // e'tiborsiz qoldiradi) va ruxsat yo'q/xato bo'lsa "To'lovlar tarixi
+      // bo'sh" deb noto'g'ri ko'rsatardi.
+      const [studRes, certsRes] = await Promise.allSettled([
         api.get(`/students/${id}`),
-        api.get(`/finance?studentId=${id}`).catch(() => ({ data: [] })),
         api.get(`/certificates?studentId=${id}`).catch(() => ({ data: { data: [] } })),
       ]);
 
@@ -117,11 +123,14 @@ export default function CrmStudentDetail() {
         comment: g.notes,
       }));
 
-      // Process payments
-      const paymentsRaw = paymentsRes.status === 'fulfilled' ? (paymentsRes.value.data || []) : [];
-      const payments = Array.isArray(paymentsRaw)
-        ? paymentsRaw.filter((p: any) => p.studentId === id)
-        : [];
+      // Process payments — o'qituvchi uchun server moliyani qaytarmaydi
+      // (`balance` yo'q) — bu holat "ruxsat yo'q" sifatida ko'rsatiladi.
+      const financeHidden = student.balance === undefined;
+      const payments = (Array.isArray(student.payments) ? student.payments : []).map((p: any) => ({
+        ...p,
+        type: p.status === 'refunded' ? 'refund' : 'income',
+        category: p.status === 'refunded' ? "Qaytarilgan to'lov" : (p.notes || "Kurs to'lovi"),
+      }));
 
       // Process certificates
       const certsRaw = certsRes.status === 'fulfilled'
@@ -161,6 +170,7 @@ export default function CrmStudentDetail() {
         attendance: { total, present, absent, late, rate },
         grades,
         payments,
+        financeHidden,
         certificates: certsRaw,
         trend,
         group: student.group,
@@ -297,7 +307,9 @@ export default function CrmStudentDetail() {
         <TabPanel value="attendance" className="mt-5"><AttendanceTab attendance={data.attendance} trend={data.trend} /></TabPanel>
         <TabPanel value="statistics" className="mt-5"><StatisticsTab data={data} analytics={analytics} /></TabPanel>
         <TabPanel value="analytics" className="mt-5"><AnalyticsTab data={data} analytics={analytics} /></TabPanel>
-        <TabPanel value="payments" className="mt-5"><PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} /></TabPanel>
+        <TabPanel value="payments" className="mt-5">{data.financeHidden
+          ? <EmptyState icon={<Wallet size={24} />} title="Moliyaviy ma'lumot yopiq" message="To'lovlar va balansni ko'rish uchun «Moliya» ruxsati kerak." />
+          : <PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} />}</TabPanel>
         <TabPanel value="tests" className="mt-5"><TestsTab studentId={id!} /></TabPanel>
         <TabPanel value="certificates" className="mt-5"><CertificatesTab certificates={data.certificates} /></TabPanel>
       </Tabs>
@@ -342,7 +354,9 @@ function OverviewTab({ student, attendance, analytics }: any) {
         <StatCard label="Davomat" value={`${attendance.rate}%`} icon={CheckCircle2} color="emerald" />
         <StatCard label="GPA" value={analytics?.gpa.toFixed(2) || '—'} icon={Award} color="blue" />
         <StatCard label="O'rtacha baho" value={analytics ? `${analytics.avgGrade.toFixed(0)}` : '—'} icon={BarChart2} color="violet" />
-        <StatCard label="Balans" value={formatMoney(student.balance || 0)} icon={Wallet} color={(student.balance || 0) < 0 ? 'rose' : 'green'} />
+        {student.balance !== undefined
+          ? <StatCard label="Balans" value={formatMoney(student.balance || 0)} icon={Wallet} color={(student.balance || 0) < 0 ? 'rose' : 'green'} />
+          : <StatCard label="Guruhlar" value={(student.enrollments || []).length} icon={Users} color="blue" />}
       </div>
 
       {/* Notes */}

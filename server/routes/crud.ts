@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { resolveRoleAssignment } from '../services/roleAssignment.js';
 import { archiveOrDelete, restoreArchived, ARCHIVABLE_MODELS, ArchivableModel } from '../services/archive.js';
 import { CURRENT_ENROLLMENT_WHERE } from '../utils/activeFilters.js';
+import { normalizeStudentStatus } from '../utils/studentStatus.js';
 
 const router = express.Router();
 
@@ -212,19 +213,14 @@ const COURSE_STATUS_MAP: Record<string, string> = {
     'Arxiv': 'Archived', 'Archived': 'Archived',
 };
 
-const STUDENT_STATUS_MAP: Record<string, string> = {
-    'Faol': 'active', 'active': 'active',
-    'Muzlatilgan': 'graduated', 'graduated': 'graduated',
-    'Tark etgan': 'left', 'left': 'left',
-    'Bitiruvchi': 'graduated',
-};
 
 function normalizeData(modelName: string, data: any): any {
     if (modelName === 'course' && data.status) {
         data.status = COURSE_STATUS_MAP[data.status] || data.status;
     }
     if (modelName === 'student' && data.status) {
-        data.status = STUDENT_STATUS_MAP[data.status] || data.status;
+        // IP-04 (TL-13): "Muzlatilgan" endi 'frozen' (ilgari xato ravishda 'graduated').
+        data.status = normalizeStudentStatus(data.status);
     }
     // Number coercions
     if (modelName === 'course') {
@@ -380,21 +376,30 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
 // fallback doim bo'sh qaytaradi va ommaviy sayt, qidiruv, dashboard, BI ustozlar
 // ro'yxatini hech qachon ko'rmaydi. Shu yerda User'dan jonli, xavfsiz (parol/
 // telefon/emailsiz) proyeksiya hisoblab qaytaramiz.
+// IP-04 (SY-01): CRM ustoz ma'lumotlarini User.subject/experience/bio
+// ustunlariga yozadi (CrmTeachers.tsx) — ilgari bu ro'yxat eski
+// `permissions` ichidagi `meta` obyektidan o'qirdi va saytdagi kartalarda
+// fan/tajriba/tavsif bo'sh chiqardi. Nofaol (ishdan ketgan) ustozlar
+// ommaviy saytda ko'rsatilmaydi. Eski yozuvlar uchun meta zaxira sifatida.
 async function getPublicTeachersList() {
-    const users = await prisma.user.findMany({ where: { role: 'TEACHER' }, orderBy: { createdAt: 'desc' } });
+    const users = await prisma.user.findMany({
+        where: { role: 'TEACHER', isActive: true },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, name: true, avatar: true, subject: true, experience: true, bio: true, permissions: true },
+    });
     return users.map((u: any) => {
         let meta: any = {};
         try {
             const perms = JSON.parse(u.permissions || '[]');
-            const metaObj = perms.find((p: any) => p.meta);
+            const metaObj = Array.isArray(perms) ? perms.find((p: any) => p && typeof p === 'object' && p.meta) : null;
             if (metaObj) meta = metaObj.meta;
         } catch { /* ignore */ }
         return {
             id: u.id,
             name: u.name,
-            role: meta.subject || '',
-            exp: meta.exp || '',
-            desc: meta.desc || '',
+            role: u.subject || meta.subject || '',
+            exp: u.experience || meta.exp || '',
+            desc: u.bio || meta.desc || '',
             img: u.avatar || '',
         };
     });

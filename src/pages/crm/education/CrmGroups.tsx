@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Users, Calendar, Clock,
@@ -112,7 +113,7 @@ export default function CrmGroups() {
     teacherId: '',
     status: 'active',
     maxSize: 15,
-    startDate: new Date().toISOString().split('T')[0],
+    startDate: toTashkentDate(),
     endDate: '',
     price: undefined,
   };

@@ -1,4 +1,5 @@
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -48,8 +49,8 @@ export default function CrmMarketing() {
 
   const [campForm, setCampForm] = useState<Partial<Campaign>>({
     name: '', platform: 'Instagram', budget: 0, spent: 0, leads: 0, status: 'Faol',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    startDate: toTashkentDate(),
+    endDate: toTashkentDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
   });
 
   // ─── Haqiqiy marketing analitikasi (Faza 5) ───────────────────────────────────
@@ -220,7 +221,7 @@ export default function CrmMarketing() {
 
             <div className="flex justify-between items-center mb-2">
                <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">Faol Kampaniyalar</h2>
-               {canManage && <Button onClick={() => { setEditingCamp(null); setCampForm({name:'', platform: 'Instagram', budget:0, spent:0, leads:0, status:'Faol', startDate: new Date().toISOString().split('T')[0], endDate: ''}); setIsCampModal(true); }} leftIcon={<Plus size={18}/>}>
+               {canManage && <Button onClick={() => { setEditingCamp(null); setCampForm({name:'', platform: 'Instagram', budget:0, spent:0, leads:0, status:'Faol', startDate: toTashkentDate(), endDate: ''}); setIsCampModal(true); }} leftIcon={<Plus size={18}/>}>
                   Yangi Kampaniya
                </Button>}
             </div>

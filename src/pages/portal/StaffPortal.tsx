@@ -4,6 +4,7 @@
  * Auth: JWT token (bot /start havola) yoki Staff Bot initData.
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { toTashkentDate } from '../../utils/tashkentDate';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Calendar, Users, CheckSquare, BarChart2, User,
@@ -450,7 +451,7 @@ function GroupsTab({ initData, role, onSelectGroup }: {
 function AttendanceTab({ initData }: { initData: string; role: string }) {
     const [groups, setGroups] = useState<Group[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-    const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(() => toTashkentDate());
     const [students, setStudents] = useState<Student[]>([]);
     const [statuses, setStatuses] = useState<Record<string, AttStatus>>({});
     const [existingRecords, setExistingRecords] = useState<Record<string, AttStatus>>({});

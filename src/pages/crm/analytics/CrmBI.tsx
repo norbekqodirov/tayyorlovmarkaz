@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -101,13 +102,13 @@ export default function CrmAdvancedBI() {
     const now = new Date();
     if (period === 'week') {
       const from = new Date(now); from.setDate(now.getDate() - 7);
-      return { from: from.toISOString().split('T')[0], to: now.toISOString().split('T')[0] };
+      return { from: toTashkentDate(from), to: toTashkentDate(now) };
     }
     if (period === 'month') {
-      return { from: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, to: now.toISOString().split('T')[0] };
+      return { from: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, to: toTashkentDate(now) };
     }
     if (period === 'year') {
-      return { from: `${now.getFullYear()}-01-01`, to: now.toISOString().split('T')[0] };
+      return { from: `${now.getFullYear()}-01-01`, to: toTashkentDate(now) };
     }
     return { from: customFrom || '', to: customTo || '' };
   };

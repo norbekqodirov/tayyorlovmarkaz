@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { Plus, Edit2, Trash2, Image as ImageIcon, FileText, X } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
 import { useToast } from '../../../components/Toast';
@@ -78,7 +79,7 @@ export default function CrmContent() {
       setGalleryForm({ url: item.url || '', title: item.title || '', date: item.date || '' });
     } else {
       setEditingItem(null);
-      setGalleryForm({ url: '', title: '', date: new Date().toISOString().split('T')[0] });
+      setGalleryForm({ url: '', title: '', date: toTashkentDate() });
     }
     setIsGalleryModalOpen(true);
   };
@@ -120,7 +121,7 @@ export default function CrmContent() {
           content,
           imageUrl,
           status: newsForm.status,
-          date: new Date().toISOString().split('T')[0],
+          date: toTashkentDate(),
           author: "Admin",
         });
         showToast("Yangilik qo'shildi", 'success');
@@ -155,7 +156,7 @@ export default function CrmContent() {
         await addGallery({
           url,
           title,
-          date: galleryForm.date || new Date().toISOString().split('T')[0],
+          date: galleryForm.date || toTashkentDate(),
         });
         showToast("Rasm qo'shildi", 'success');
       }

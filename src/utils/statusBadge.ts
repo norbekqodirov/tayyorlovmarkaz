@@ -9,8 +9,20 @@ export type StatusBadgeInfo = { label: string; color: BadgeColor };
 // = emerald, kutilayotgan/qoralama = amber, qarz/rad etilgan = rose,
 // arxivlangan/tugallangan/noma'lum = slate.
 
+// IP-04 (TL-13): bazada kanonik qiymat (active/frozen/left/graduated),
+// interfeysda o'zbekcha nom. Eski yozuvlardagi o'zbekcha qiymatlar ham tushuniladi.
+export const STUDENT_STATUS_UI: Record<string, 'Faol' | 'Muzlatilgan' | 'Tark etgan' | 'Bitiruvchi'> = {
+  active: 'Faol', Faol: 'Faol',
+  frozen: 'Muzlatilgan', Muzlatilgan: 'Muzlatilgan',
+  left: 'Tark etgan', 'Tark etgan': 'Tark etgan',
+  graduated: 'Bitiruvchi', Bitiruvchi: 'Bitiruvchi',
+};
+export function studentStatusToUi(status: string | undefined): 'Faol' | 'Muzlatilgan' | 'Tark etgan' | 'Bitiruvchi' {
+  return STUDENT_STATUS_UI[status || ''] || 'Faol';
+}
+
 export function studentStatusBadge(status: string | undefined): StatusBadgeInfo {
-  switch (status) {
+  switch (STUDENT_STATUS_UI[status || ''] || status) {
     case 'Faol': return { label: 'Faol', color: 'blue' };
     case 'Muzlatilgan': return { label: 'Muzlatilgan', color: 'amber' };
     case 'Bitiruvchi': return { label: 'Bitiruvchi', color: 'violet' };

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, X, User, Users, Star, Award, Mail, Phone, Lock, ChevronRight, Calculator, BookOpen, TrendingUp, Download, Calendar, Percent } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -49,7 +50,7 @@ export default function CrmTeachers() {
   const { courses: courseList } = useCrmData();
 
   const [formData, setFormData] = useState<Partial<Teacher>>({
-    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40, joinedDate: new Date().toISOString().split('T')[0], isActive: true
+    name: '', email: '', phone: '', password: '', role: '', exp: '', desc: '', img: '', salaryPercent: 40, joinedDate: toTashkentDate(), isActive: true
   });
 
   // O'qituvchining haqiqiy (davomat chegirmasidan keyingi) daromadi va oyligi —
@@ -86,7 +87,7 @@ export default function CrmTeachers() {
         desc: u.bio || '',
         img: u.avatar || '',
         salaryPercent: u.salaryPercent ?? 40,
-        joinedDate: u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : '',
+        joinedDate: u.createdAt ? toTashkentDate(new Date(u.createdAt)) : '',
         isActive: u.isActive !== undefined ? u.isActive : true
       }));
       setTeachers(mapped);
@@ -180,7 +181,7 @@ export default function CrmTeachers() {
         ...teacher,
         password: '',
         salaryPercent: teacher.salaryPercent ?? 40,
-        joinedDate: teacher.joinedDate || new Date().toISOString().split('T')[0],
+        joinedDate: teacher.joinedDate || toTashkentDate(),
         isActive: teacher.isActive !== undefined ? teacher.isActive : true
       });
     } else {
@@ -194,7 +195,7 @@ export default function CrmTeachers() {
         desc: '',
         img: '',
         salaryPercent: 40,
-        joinedDate: new Date().toISOString().split('T')[0],
+        joinedDate: toTashkentDate(),
         isActive: true
       });
     }

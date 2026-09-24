@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { Plus, Tag, Copy, Trash2, Edit2, CheckCircle2, XCircle, Percent, DollarSign } from 'lucide-react';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
@@ -95,7 +96,7 @@ export default function CrmDiscounts() {
   };
 
   const isExpired = (item: any) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toTashkentDate();
     return item.validTo && item.validTo < today;
   };
 

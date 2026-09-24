@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
 import { validateInitData } from '../services/telegramService.js';
-import { addDaysDateStr } from '../utils/timezone.js';
+import { addDaysDateStr, todayDateStr } from '../utils/timezone.js';
 import { calculateStudentMonthlyDue } from '../services/billing.js';
 import { MANAGER_KEY, teacherKey, studentKey, notifyStaffOfParentMessage } from './parentChat.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
@@ -246,8 +246,9 @@ router.get('/payments', portalAuth, async (req: any, res) => {
         // Shu oy uchun davomat asosida hisoblangan to'lov (real vaqtda, Payment
         // yozuvidan mustaqil — 3 kundan ortiq qoldirilgan darslar uchun avtomatik
         // chegirma bilan). Ota-onaga "bu oy qancha to'lash kerak" ko'rsatish uchun.
-        const now = new Date();
-        const monthlyDue = await calculateStudentMonthlyDue(studentId, now.getFullYear(), now.getMonth() + 1);
+        // ML-18: joriy oy Toshkent vaqti bo'yicha.
+        const [ty, tm] = todayDateStr().split('-').map(Number);
+        const monthlyDue = await calculateStudentMonthlyDue(studentId, ty, tm);
 
         res.json({
             unpaid: unpaid.map(p => ({

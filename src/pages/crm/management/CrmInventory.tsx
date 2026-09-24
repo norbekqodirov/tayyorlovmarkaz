@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import {
   Plus, Search, Edit2, Trash2, Package,
   MapPin, DollarSign, CheckCircle2, AlertCircle,
@@ -49,7 +50,7 @@ export default function CrmInventory() {
     name: '',
     category: 'Texnika',
     location: 'Reception',
-    purchaseDate: new Date().toISOString().split('T')[0],
+    purchaseDate: toTashkentDate(),
     price: 0,
     quantity: 1,
     condition: 'Yaxshi',
@@ -131,7 +132,7 @@ export default function CrmInventory() {
         name: '',
         category: 'Texnika',
         location: 'Reception',
-        purchaseDate: new Date().toISOString().split('T')[0],
+        purchaseDate: toTashkentDate(),
         price: 0,
         quantity: 1,
         condition: 'Yaxshi',

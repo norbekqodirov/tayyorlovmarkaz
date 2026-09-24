@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Mail, Phone, Edit2, Archive, ShieldCheck, Users, Building2, DollarSign } from 'lucide-react';
 import { useFirestore } from '../../../hooks/useFirestore';
@@ -54,7 +55,7 @@ export default function CrmStaff() {
     salary: 0,
     department: 'Ma\'muriyat',
     status: 'Faol',
-    joinedDate: new Date().toISOString().split('T')[0],
+    joinedDate: toTashkentDate(),
     address: '',
     passport: '',
     education: '',
@@ -131,7 +132,7 @@ export default function CrmStaff() {
         salary: 0,
         department: 'Ma\'muriyat',
         status: 'Faol',
-        joinedDate: new Date().toISOString().split('T')[0],
+        joinedDate: toTashkentDate(),
         address: '',
         passport: '',
         education: '',

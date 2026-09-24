@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import {
   DollarSign, TrendingUp, TrendingDown, Download, Plus,
   Search, CreditCard, Wallet,
@@ -284,7 +285,7 @@ export default function CrmFinance() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({
     studentId: '', amount: '', discount: '0', tax: '0',
-    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    dueDate: toTashkentDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
     method: 'Naqd', description: '',
   });
   const [invoiceLinks, setInvoiceLinks] = useState<{ payme: string; click: string; amount: number } | null>(null);
@@ -348,7 +349,7 @@ export default function CrmFinance() {
       });
       showToast("Invoice yaratildi", 'success');
       setIsInvoiceModalOpen(false);
-      setInvoiceForm({ studentId: '', amount: '', discount: '0', tax: '0', dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], method: 'Naqd', description: '' });
+      setInvoiceForm({ studentId: '', amount: '', discount: '0', tax: '0', dueDate: toTashkentDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), method: 'Naqd', description: '' });
       setPromoCode(''); setPromoApplied(null);
       fetchInvoices();
     } catch (e: any) {
@@ -418,7 +419,7 @@ export default function CrmFinance() {
     amount: 0,
     category: '',
     description: '',
-    date: new Date().toISOString().split('T')[0],
+    date: toTashkentDate(),
     method: 'Karta',
     studentId: '',
     studentName: '',
@@ -559,7 +560,7 @@ export default function CrmFinance() {
       setIsModalOpen(false);
       setForm({
         type: 'income', amount: 0, category: '',
-        description: '', date: new Date().toISOString().split('T')[0],
+        description: '', date: toTashkentDate(),
         method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
       });
       setSelectedPayrollId('');
@@ -1129,7 +1130,7 @@ export default function CrmFinance() {
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   {invoices.map(inv => {
-                    const isOverdue = inv.status === 'pending' && inv.dueDate < new Date().toISOString().split('T')[0];
+                    const isOverdue = inv.status === 'pending' && inv.dueDate < toTashkentDate();
                     const statusColors: Record<string, string> = {
                       pending: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400',
                       paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400',

@@ -12,6 +12,7 @@
  * /salary va /salary/attendance endpointlari ustida qurilgan.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { useSearchParams } from 'react-router-dom';
 import {
   Wallet, Check, Loader2, AlertTriangle, ChevronDown, ChevronLeft, ChevronRight,
@@ -139,7 +140,7 @@ export default function CrmTeacherPayroll() {
   const canManageMoney = hasAnyPermission('finance');
   const [outstandingAdvance, setOutstandingAdvance] = useState(0);
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
-  const [advanceForm, setAdvanceForm] = useState({ amount: 0, method: 'Naqd', date: new Date().toISOString().split('T')[0], notes: '' });
+  const [advanceForm, setAdvanceForm] = useState({ amount: 0, method: 'Naqd', date: toTashkentDate(), notes: '' });
   const [deleteRecordConfirm, setDeleteRecordConfirm] = useState(false);
 
   const loadOutstandingAdvance = useCallback(async (personType: 'teacher' | 'staff', personId: string) => {
@@ -160,7 +161,7 @@ export default function CrmTeacherPayroll() {
       await api.post('/finance/advances', { personType, personId, ...advanceForm });
       showToast('Avans berildi', 'success');
       setAdvanceModalOpen(false);
-      setAdvanceForm({ amount: 0, method: 'Naqd', date: new Date().toISOString().split('T')[0], notes: '' });
+      setAdvanceForm({ amount: 0, method: 'Naqd', date: toTashkentDate(), notes: '' });
       void loadOutstandingAdvance(personType, personId);
       if (personType === 'teacher') void loadTeacherDetail(); else void loadStaffDetail();
     } catch (e: any) {

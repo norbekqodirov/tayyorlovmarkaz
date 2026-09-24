@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { CalendarCheck, Clock, CheckCircle2, XCircle, User, Plus } from 'lucide-react';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
@@ -46,8 +47,8 @@ export default function CrmLeaveRequests() {
   const [form, setForm] = useState({
     staffId: '',
     type: 'annual',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0],
+    startDate: toTashkentDate(),
+    endDate: toTashkentDate(),
     reason: '',
   });
 
@@ -91,8 +92,8 @@ export default function CrmLeaveRequests() {
     setForm({
       staffId: '',
       type: 'annual',
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0],
+      startDate: toTashkentDate(),
+      endDate: toTashkentDate(),
       reason: '',
     });
     setFormError(null);

@@ -8,6 +8,7 @@ import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { withAudit, logAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
+import { normalizeStudentStatus } from '../utils/studentStatus.js';
 
 const router = express.Router();
 
@@ -84,6 +85,8 @@ router.put('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('st
         for (const key of allowed) {
             if (req.body[key] !== undefined) data[key] = req.body[key];
         }
+        // IP-04 (TL-13): holat har doim kanonik qiymatda saqlanadi.
+        if (data.status !== undefined) data.status = normalizeStudentStatus(data.status);
         const student = await prisma.student.update({ where: { id: req.params.id }, data });
         res.json(student);
     } catch (err: any) {

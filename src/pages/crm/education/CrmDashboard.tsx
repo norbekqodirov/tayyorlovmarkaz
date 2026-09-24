@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GraduationCap, Wallet, TrendingUp, Layers,
@@ -69,7 +70,7 @@ export default function CrmDashboard() {
   // ── Computed analytics ───────────────────────────────────────────────
   const currentMonth = new Date().getMonth();
   const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-  const today = new Date().toISOString().split('T')[0];
+  const today = toTashkentDate();
 
   const revenueData = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
@@ -127,7 +128,9 @@ export default function CrmDashboard() {
     const todayTotal = todayRecords.length;
     const todayAttendanceRate = todayTotal > 0 ? Math.round((todayPresent / todayTotal) * 100) : 0;
 
-    const debtors = students.filter((s: any) => (s.balance || 0) < 0 || s.paymentStatus === 'Qarzdorlik');
+    // IP-04 (ML-02 oraliq): qarzdor — faqat manfiy balans (Moliya sahifasi va
+    // DebtorsTable bilan bir xil qoida; qo'lda yoziladigan to'lov holati matni emas).
+    const debtors = students.filter((s: any) => (s.balance || 0) < 0);
     const debtTotal = debtors.reduce((a: number, s: any) => a + Math.abs(s.balance || 0), 0);
 
     const monthLeads = leads.filter((l: any) => {

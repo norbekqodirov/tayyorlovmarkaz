@@ -77,9 +77,10 @@ router.put('/billing-settings', requireAuth, requireMinRole('ADMIN'), requirePer
 // GET /api/finance/monthly-due/:studentId?year=&month=
 router.get('/monthly-due/:studentId', requireAuth, requirePermission('finance'), async (req, res) => {
     try {
-        const now = new Date();
-        const year = Number(req.query.year) || now.getFullYear();
-        const month = Number(req.query.month) || now.getMonth() + 1;
+        // ML-18: standart oy — Toshkent vaqti bo'yicha (server TZ emas).
+        const [ty, tm] = todayDateStr().split('-').map(Number);
+        const year = Number(req.query.year) || ty;
+        const month = Number(req.query.month) || tm;
         const due = await calculateStudentMonthlyDue(req.params.studentId, year, month);
         res.json(due);
     } catch (err: any) {
@@ -92,9 +93,9 @@ router.get('/monthly-due/:studentId', requireAuth, requirePermission('finance'),
 // shundan hisoblangan oyligi — naiv "narx * o'quvchilar soni" o'rniga.
 router.get('/teacher-monthly-revenue/:teacherId', requireAuth, requirePermission('finance'), async (req, res) => {
     try {
-        const now = new Date();
-        const year = Number(req.query.year) || now.getFullYear();
-        const month = Number(req.query.month) || now.getMonth() + 1;
+        const [ty, tm] = todayDateStr().split('-').map(Number);
+        const year = Number(req.query.year) || ty;
+        const month = Number(req.query.month) || tm;
         const result = await calculateTeacherMonthlyRevenue(req.params.teacherId, year, month);
         res.json(result);
     } catch (err: any) {

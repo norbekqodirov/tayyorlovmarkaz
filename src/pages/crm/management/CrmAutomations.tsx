@@ -273,6 +273,15 @@ export default function CrmAutomations() {
                   {wf.description && (
                     <p className="text-xs text-zinc-500 mt-2 sm:ml-13">{wf.description}</p>
                   )}
+                  {/* IP-04 (AL-02): bu job "kutilayotgan/muddati o'tgan" to'lov
+                      yozuvlarini qidiradi, lekin tizim hozircha bunday yozuv
+                      yaratmaydi — oylik hisoblar (IP-11/IP-13) joriy qilinguncha
+                      yoqilsa ham xabar yubormaydi. */}
+                  {wf.trigger === 'daily_payment_reminder' && (
+                    <p role="note" className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 mt-2 sm:ml-13">
+                      Diqqat: to'lov eslatmalari oylik hisob tizimi (qarzlar guruh va oy bo'yicha) ishga tushgandan keyin ishlaydi. Hozir yoqilsa ham xabar yuborilmaydi.
+                    </p>
+                  )}
                 </div>
 
                 {/* Logs */}

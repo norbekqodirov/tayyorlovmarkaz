@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { toTashkentDate } from '../../../utils/tashkentDate';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, User, Mail, Phone, Briefcase, DollarSign, Edit2, Trash2,
@@ -114,13 +115,13 @@ export default function CrmStaffDetail() {
     } else {
       setSubFormData({});
       if (type === 'attendance') {
-        setSubFormData({ date: new Date().toISOString().split('T')[0], status: 'present', checkIn: '09:00', checkOut: '18:00' });
+        setSubFormData({ date: toTashkentDate(), status: 'present', checkIn: '09:00', checkOut: '18:00' });
       } else if (type === 'salary') {
         setSubFormData({ month: new Date().toISOString().slice(0, 7), baseSalary: member?.salary || 0, bonus: 0, deduction: 0, notes: '' });
       } else if (type === 'tasks') {
-        setSubFormData({ title: '', completed: false, priority: 'Medium', deadline: new Date().toISOString().split('T')[0] });
+        setSubFormData({ title: '', completed: false, priority: 'Medium', deadline: toTashkentDate() });
       } else if (type === 'reviews') {
-        setSubFormData({ date: new Date().toISOString().split('T')[0], reviewer: 'Admin', feedback: '', rating: 5 });
+        setSubFormData({ date: toTashkentDate(), reviewer: 'Admin', feedback: '', rating: 5 });
       } else if (type === 'docs') {
         setSubFormData({ name: '', type: 'Passport nusxasi' });
       }
@@ -222,7 +223,7 @@ export default function CrmStaffDetail() {
           : await api.post('/performanceReviews', { ...subFormData, staffId: member.id });
         saved = res.data;
       } else {
-        const payload = { ...subFormData, uploadDate: subFormData.uploadDate || new Date().toISOString().split('T')[0] };
+        const payload = { ...subFormData, uploadDate: subFormData.uploadDate || toTashkentDate() };
         const res = editingRow
           ? await api.put(`/staffDocuments/${editingRow.id}`, payload)
           : await api.post('/staffDocuments', { ...payload, staffId: member.id });
