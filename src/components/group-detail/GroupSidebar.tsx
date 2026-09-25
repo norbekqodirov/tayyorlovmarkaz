@@ -8,6 +8,7 @@ import { Button } from '../ui/Button';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Download, User, Search, UserPlus, Trash2, Loader2 } from 'lucide-react';
 import { formatNumber } from '../../utils/formatters';
+import { studentStatusToUi } from '../../utils/statusBadge';
 
 interface Props {
   canManage: boolean;
@@ -125,8 +126,10 @@ const GroupSidebar: React.FC<Props> = ({
         ) : (
           groupStudents.map((s: any, idx) => {
             let colorClass = 'bg-slate-800 dark:bg-white';
-            if (s.paymentStatus === 'Qarzdor' || s.paymentStatus === 'Qarzdorlik') colorClass = 'bg-rose-500';
-            else if (s.status === 'left') colorClass = 'bg-amber-400';
+            // HB-01: qarzdorlik — balans < 0 (balans yashirin bo'lsa saqlangan holat)
+            const isDebtor = typeof s.balance === 'number' ? s.balance < 0 : (s.paymentStatus === 'Qarzdor' || s.paymentStatus === 'Qarzdorlik');
+            if (isDebtor) colorClass = 'bg-rose-500';
+            else if (studentStatusToUi(s.status) === 'Tark etgan') colorClass = 'bg-amber-400';
             return (
               <div key={s.id} className="flex items-center justify-between p-2 rounded-xl hover:bg-zinc-50 dark:hover:bg-white/5 transition-colors group">
                 <div className="flex min-w-0 items-center gap-2">

@@ -98,14 +98,16 @@ export default function CrmCourses() {
   // Har biri alohida narxga ega — guruh yaratishda shundan tanlanadi.
   const [tiers, setTiers] = useState<CourseTier[]>([]);
 
-  // Per course student count (from students collection)
+  // Kurs bo'yicha o'quvchilar soni — guruhlardagi haqiqiy a'zoliklardan
+  // (Enrollment, arxivlanganlarsiz). Ilgari eski `Student.course` matn
+  // maydonidan sanalardi — guruhga yozilish orqali qo'shilganlar ko'rinmasdi.
   const studentCountByCourse = useMemo(() => {
     const map: Record<string, number> = {};
-    (students || []).forEach((s: any) => {
-      if (s.course) map[s.course] = (map[s.course] || 0) + 1;
+    (groups || []).forEach((g: any) => {
+      if (g.courseId) map[g.courseId] = (map[g.courseId] || 0) + (g._count?.enrollments || 0);
     });
     return map;
-  }, [students]);
+  }, [groups]);
 
   // Overall stats
   const stats = useMemo(() => ({
@@ -360,7 +362,7 @@ export default function CrmCourses() {
           {filteredCourses.map(course => {
             const catStyle = getCategoryStyle(course.category);
             const catBadge = courseCategoryBadge(course.category);
-            const studentCount = studentCountByCourse[course.name] || 0;
+            const studentCount = studentCountByCourse[course.id] || 0;
             const statusInfo = courseStatusBadge(course.status);
             return (
               <motion.div

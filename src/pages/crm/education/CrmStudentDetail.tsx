@@ -26,6 +26,7 @@ import {
 import { EmptyState, ErrorState } from '../../../components/States';
 import { SkeletonStatCard } from '../../../components/Skeleton';
 import { Tabs, TabsList, Tab, TabPanel } from '../../../components/ui/Tabs';
+import { studentStatusToUi } from '../../../utils/statusBadge';
 
 function LoadingState({ label }: { label?: string }) {
   return (
@@ -243,7 +244,7 @@ export default function CrmStudentDetail() {
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{student.name}</h1>
           <p className="text-xs text-zinc-400 mt-0.5 font-medium">
-            ID: {student.id?.slice(0, 8).toUpperCase()} · {student.status || 'Faol'}
+            ID: {student.id?.slice(0, 8).toUpperCase()} · {studentStatusToUi(student.status)}
           </p>
         </div>
       </div>
@@ -346,7 +347,7 @@ function OverviewTab({ student, attendance, analytics }: any) {
         <InfoRow label="Kurs" value={student.course || '—'} />
         <InfoRow label="Guruh" value={student.group || '—'} />
         <InfoRow label="A'zo bo'lgan" value={student.joinedDate ? formatDate(student.joinedDate) : '—'} />
-        <InfoRow label="Status" value={student.status || 'Faol'} valueClassName="text-blue-600 font-bold" />
+        <InfoRow label="Status" value={studentStatusToUi(student.status)} valueClassName="text-blue-600 font-bold" />
       </InfoCard>
 
       {/* Quick stats */}

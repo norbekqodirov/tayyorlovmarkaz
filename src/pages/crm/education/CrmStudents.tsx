@@ -55,7 +55,13 @@ export default function CrmStudents() {
   // IP-04 (TL-13): bazada holat kanonik (active/frozen/left/graduated) — sahifa
   // o'zbekcha nomlar bilan ishlaydi. Ilgari "Faol" filtri/statistikasi bazadagi
   // 'active' bilan mos kelmasdi va tahrir formasi holatni noto'g'ri ko'rsatardi.
-  const students = useMemo(() => (rawStudents || []).map((s: any) => ({ ...s, status: studentStatusToUi(s.status) })), [rawStudents]) as typeof rawStudents;
+  // HB-01: qarzdorlik manbai — balans (< 0). Saqlangan paymentStatus ba'zi
+  // oqimlarda (to'g'ridan-to'g'ri balans o'zgarishi) eskirib qolishi mumkin.
+  const students = useMemo(() => (rawStudents || []).map((s: any) => ({
+    ...s,
+    status: studentStatusToUi(s.status),
+    paymentStatus: (s.balance ?? 0) < 0 ? 'Qarzdorlik' : s.paymentStatus === 'Qarzdorlik' ? 'Tolov qilingan' : s.paymentStatus,
+  })), [rawStudents]) as typeof rawStudents;
   const { data: groups = [], loading: groupsLoading, error: groupsError, refetch: refetchGroups } = useFirestore<any>('groups');
   const { courses: liveCourses, groups: liveGroups } = useCrmData();
   const courseOptions = liveCourses.length > 0 ? liveCourses : [];
@@ -389,16 +395,6 @@ export default function CrmStudents() {
         </div>
       </div>
 
-      <BalanceAdjustModal
-        isOpen={!!balanceTarget}
-        onClose={() => setBalanceTarget(null)}
-        student={balanceTarget}
-        onDone={(newBalance) => {
-          if (balanceTarget && formData.id === balanceTarget.id) setFormData(f => ({ ...f, balance: newBalance }));
-          if (balanceTarget && selectedStudent?.id === balanceTarget.id) setSelectedStudent(s => s ? { ...s, balance: newBalance } : s);
-          void refetch();
-        }}
-      />
       <ArchivedRecordsModal
         isOpen={canManage && archiveOpen}
         onClose={() => setArchiveOpen(false)}
@@ -964,6 +960,17 @@ export default function CrmStudents() {
           </div>
         </div>
       </Modal>
+      {/* Tahrirlash oynasidan ochiladi — uning ustida ko'rinishi uchun DOM'da undan keyin turadi (bir xil z-index) */}
+      <BalanceAdjustModal
+        isOpen={!!balanceTarget}
+        onClose={() => setBalanceTarget(null)}
+        student={balanceTarget}
+        onDone={(newBalance) => {
+          if (balanceTarget && formData.id === balanceTarget.id) setFormData(f => ({ ...f, balance: newBalance }));
+          if (balanceTarget && selectedStudent?.id === balanceTarget.id) setSelectedStudent(s => s ? { ...s, balance: newBalance } : s);
+          void refetch();
+        }}
+      />
     </div>
   );
 }

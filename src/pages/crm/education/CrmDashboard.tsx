@@ -22,6 +22,7 @@ import { RecentLeads } from '../../../components/dashboard/widgets/RecentLeads';
 import { TopStudents } from '../../../components/dashboard/widgets/TopStudents';
 import { TasksWidget } from '../../../components/dashboard/widgets/TasksWidget';
 import { QuickLinks } from '../../../components/dashboard/widgets/QuickLinks';
+import { studentStatusToUi } from '../../../utils/statusBadge';
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────
 export default function CrmDashboard() {
@@ -108,7 +109,7 @@ export default function CrmDashboard() {
     const prevMonthIncome = transactions.filter((t: any) => t.type === 'income' && t.date && new Date(t.date).getMonth() === prevMonth).reduce((a: number, t: any) => a + (t.amount || 0), 0);
     const monthRevenueGrowth = prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : 0;
 
-    const activeStudents = students.filter((s: any) => s.status === 'Faol' || s.status === 'active');
+    const activeStudents = students.filter((s: any) => studentStatusToUi(s.status) === 'Faol');
     const prevMonthStudents = students.filter((s: any) => {
       if (!s.joinedDate) return false;
       return new Date(s.joinedDate).getMonth() === prevMonth;
@@ -145,7 +146,7 @@ export default function CrmDashboard() {
     return {
       studentsTotal: students.length,
       studentsActive: activeStudents.length,
-      studentsLeft: students.filter((s: any) => s.status === 'Tark etgan').length,
+      studentsLeft: students.filter((s: any) => studentStatusToUi(s.status) === 'Tark etgan').length,
       studentsGrowth,
       groupsTotal: groups.length,
       groupsActive: groups.filter((g: any) => g.status === 'Faol' || g.status === 'active').length,

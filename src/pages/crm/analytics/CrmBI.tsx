@@ -19,6 +19,7 @@ import api from '../../../api/client';
 import { formatNumber } from '../../../utils/formatters';
 import { StatCard, type StatCardProps } from '../../../components/ui/StatCard';
 import { ErrorState } from '../../../components/States';
+import { studentStatusToUi } from '../../../utils/statusBadge';
 
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 const COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
@@ -197,7 +198,7 @@ export default function CrmAdvancedBI() {
       const mi = (currentMonth - periodNum + 1 + i + 12) % 12;
       const n = students.filter((s: any) => s.joinedDate && new Date(s.joinedDate).getMonth() === mi).length;
       cumulative += n;
-      const left = students.filter((s: any) => s.status === 'Tark etgan' || s.status === 'left').length;
+      const left = students.filter((s: any) => studentStatusToUi(s.status) === 'Tark etgan').length;
       return { name: MONTHS[mi], yangi: n, jami: cumulative || students.length, chiqdi: left };
     });
   }, [students, currentMonth, periodNum]);
@@ -268,9 +269,9 @@ export default function CrmAdvancedBI() {
   const totalIncome = safeNum(ad?.revenue?.total_income) || transactions.filter((t: any) => t.type === 'income').reduce((a: number, t: any) => a + safeNum(t.amount), 0);
   const totalExpense = safeNum(ad?.revenue?.total_expense) || transactions.filter((t: any) => t.type === 'expense').reduce((a: number, t: any) => a + safeNum(t.amount), 0);
   const thisMonthIncome = safeNum(ad?.revenue?.this_month) || transactions.filter((t: any) => t.type === 'income' && t.date && new Date(t.date).getMonth() === currentMonth).reduce((a: number, t: any) => a + safeNum(t.amount), 0);
-  const debtorCount = safeNum(ad?.students?.debtors) || students.filter((s: any) => safeNum(s.balance) < 0 || s.paymentStatus === 'Qarzdorlik').length;
+  const debtorCount = safeNum(ad?.students?.debtors) || students.filter((s: any) => safeNum(s.balance) < 0).length;
   const totalStudentsCount = safeNum(ad?.students?.total) || students.length;
-  const activeStudents = safeNum(ad?.students?.active) || students.filter((s: any) => s.status === 'Faol' || s.status === 'active').length;
+  const activeStudents = safeNum(ad?.students?.active) || students.filter((s: any) => studentStatusToUi(s.status) === 'Faol').length;
   const wonLeads = safeNum(ad?.leads?.won) || leads.filter((l: any) => l.stage === 'won').length;
   const totalLeads = safeNum(ad?.leads?.total) || leads.length;
   const convRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
@@ -279,7 +280,7 @@ export default function CrmAdvancedBI() {
   const LTV = totalPayingStudents > 0 ? Math.round(totalIncome / totalPayingStudents) : 0;
 
   let expectedNextMonthRevenue = 0;
-  students.filter((s: any) => s.status === 'Faol' || s.status === 'active').forEach((s: any) => {
+  students.filter((s: any) => studentStatusToUi(s.status) === 'Faol').forEach((s: any) => {
     const sGroup = groups.find((g: any) => g.name === s.group);
     expectedNextMonthRevenue += sGroup ? safeNum(sGroup.price) : 400000;
   });
@@ -644,10 +645,10 @@ export default function CrmAdvancedBI() {
           <div className="lg:col-span-2 bg-white dark:bg-[#0f172a] rounded-2xl border border-zinc-200/80 dark:border-white/5 p-4 sm:p-5 shadow-sm">
             <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4">O'quvchilar Holati</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-              <StatCard variant="minimal" color="emerald" label="Faol" value={`${students.filter((s: any) => s.status === 'Faol' || s.status === 'active').length} ta`} sub="O'qishni davom ettirmoqda" icon={<GraduationCap size={18} />} size="sm" />
+              <StatCard variant="minimal" color="emerald" label="Faol" value={`${students.filter((s: any) => studentStatusToUi(s.status) === 'Faol').length} ta`} sub="O'qishni davom ettirmoqda" icon={<GraduationCap size={18} />} size="sm" />
               <StatCard variant="minimal" color="blue" label="To'lov qilgan" value={`${students.filter((s: any) => s.paymentStatus === 'Tolov qilingan' || safeNum(s.balance) >= 0).length} ta`} sub="Balans to'liq" icon={<CheckCircle2 size={18} />} size="sm" />
-              <StatCard variant="minimal" color="rose" label="Qarzdor" value={`${students.filter((s: any) => s.paymentStatus === 'Qarzdorlik' || safeNum(s.balance) < 0).length} ta`} sub="Qarzdorlik mavjud" icon={<AlertTriangle size={18} />} size="sm" />
-              <StatCard variant="minimal" color="amber" label="Muzlatilgan" value={`${students.filter((s: any) => s.status === 'Muzlatilgan').length} ta`} sub="Vaqtincha to'xtatilgan" icon={<Activity size={18} />} size="sm" />
+              <StatCard variant="minimal" color="rose" label="Qarzdor" value={`${students.filter((s: any) => safeNum(s.balance) < 0).length} ta`} sub="Qarzdorlik mavjud" icon={<AlertTriangle size={18} />} size="sm" />
+              <StatCard variant="minimal" color="amber" label="Muzlatilgan" value={`${students.filter((s: any) => studentStatusToUi(s.status) === 'Muzlatilgan').length} ta`} sub="Vaqtincha to'xtatilgan" icon={<Activity size={18} />} size="sm" />
             </div>
           </div>
         </div>
