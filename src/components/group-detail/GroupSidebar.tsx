@@ -135,7 +135,14 @@ const GroupSidebar: React.FC<Props> = ({
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="text-xs font-black text-zinc-400 w-4 text-right">{idx + 1}</span>
                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${colorClass}`} />
-                  <span className="min-w-0 break-words text-xs font-bold text-slate-800 dark:text-zinc-200">{s.name}</span>
+                  <span className="min-w-0 flex flex-col">
+                    <span className="break-words text-xs font-bold text-slate-800 dark:text-zinc-200">{s.name}</span>
+                    {s._period?.startDate && (
+                      <span className="text-[10px] text-zinc-400 tabular-nums">
+                        {s._period.startDate} dan{s._period.pauses?.length ? ` · pauza ${s._period.pauses[0].fromDate}–${s._period.pauses[0].toDate}` : ''}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <span className="text-[10px] font-bold text-zinc-500">{s.phone?.replace('+998', '').trim()}</span>

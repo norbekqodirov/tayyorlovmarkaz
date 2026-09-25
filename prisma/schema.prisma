@@ -145,7 +145,13 @@ model Student {
   updatedAt        DateTime @updatedAt
 
   branchId         String?
+  // IP-09 (TQ-D): o'quvchi kodi (S-000001) va qidiruv/dublikat uchun normallashgan telefon (oxirgi 9 raqam).
+  // `code` noyobligini ilova ta'minlaydi (server/services/studentIdentity.ts — atomar hisoblagich):
+  // mavjud jadvalga unique qo'shish production'da `db push`ni --accept-data-loss'siz to'xtatardi (J.6).
+  code             String?
+  phoneNorm        String?
   enrollments       Enrollment[]
+  enrollmentPeriods EnrollmentPeriod[]
   payments          Payment[]
   attendanceRecords AttendanceRecord[]
   assessments       Assessment[]
@@ -158,6 +164,9 @@ model Student {
   testSubmissions   TestSubmission[]
   leads             Lead[]
   lessonAttendance  LessonAttendance[]
+
+  @@index([code])
+  @@index([phoneNorm])
 }
 
 // ============================================
@@ -226,8 +235,14 @@ model Group {
   notes             GroupStudentNote[]
   tests             Test[]
   lessonSessions    LessonSession[]
+  enrollmentPeriods  EnrollmentPeriod[]
+  tariffVersions     TariffVersion[]
+  teacherAssignments GroupTeacherAssignment[]
 }
 
+// Enrollment — o'quvchining guruhdagi JORIY a'zoligi (kesh). A'zolik tarixi
+// va sanalari — EnrollmentPeriod (IP-09); davr tugaganda Enrollment qatori
+// o'chiriladi, davr esa tarix sifatida qoladi.
 model Enrollment {
   id        String   @id @default(uuid())
   studentId String
@@ -239,6 +254,100 @@ model Enrollment {
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId])
+}
+
+// ============================================
+// A'ZOLIK DAVRLARI VA TARIXLAR (IP-09)
+// docs/ADR_HISOB_QOIDALARI.md, server/services/enrollment.ts
+// Sanalar — "YYYY-MM-DD" (Toshkent), pul — butun so'm (Int)
+// ============================================
+
+model EnrollmentPeriod {
+  id             String   @id @default(uuid())
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId        String
+  group          Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  startDate      String   // birinchi billable kun (OQ-02: shu kungi dars hisoblanadi)
+  endDate        String?  // oxirgi kun; null — davom etmoqda
+  status         String   @default("active") // active | ended
+  endReason      String?  // left | transfer | graduated | admin_fix | unknown
+  startSource    String   @default("manual") // manual | lead_convert | import | transfer | legacy_api | backfill_attendance | backfill_created
+  endSource      String?  // manual | transfer | legacy_api | backfill_attendance
+  transferFromId String?  // oldingi davr (transfer)
+  note           String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  pauses EnrollmentPause[]
+
+  @@index([studentId])
+  @@index([groupId, status])
+}
+
+model EnrollmentPause {
+  id          String           @id @default(uuid())
+  periodId    String
+  period      EnrollmentPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  fromDate    String
+  toDate      String           // OQ-06: 7–60 kun, doim chegaralangan
+  reason      String
+  status      String           @default("active") // active | cancelled
+  createdById String?
+  createdAt   DateTime         @default(now())
+
+  @@index([periodId])
+}
+
+// Guruh tarifi tarixi (OQ-01). Group.price — joriy versiyaning keshi.
+model TariffVersion {
+  id                String   @id @default(uuid())
+  groupId           String
+  group             Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  monthlyPrice      Int
+  lessonsPerPackage Int      @default(12)
+  pricingMode       String   @default("fixed_package") // fixed_package
+  effectiveFrom     String
+  effectiveTo       String?
+  source            String   @default("manual") // manual | legacy_edit | group_create | backfill
+  createdById       String?
+  createdAt         DateTime @default(now())
+
+  @@index([groupId, effectiveFrom])
+}
+
+// Guruh ustozi tarixi (OQ-11). Group.teacherId — joriy tayinlashning keshi.
+// teacherId ataylab FK emas: foydalanuvchi o'chirilsa ham tarix saqlanadi.
+model GroupTeacherAssignment {
+  id          String   @id @default(uuid())
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  teacherId   String
+  fromDate    String
+  toDate      String?
+  role        String   @default("primary") // primary | substitute
+  source      String   @default("manual")
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([groupId, fromDate])
+  @@index([teacherId])
+}
+
+// Ustoz foizi tarixi (TQ-B). User.salaryPercent — joriy stavkaning keshi.
+model TeacherRate {
+  id            String   @id @default(uuid())
+  teacherId     String
+  rateBp        Int      // 4000 = 40,00%
+  basis         String   @default("accrual")
+  effectiveFrom String
+  effectiveTo   String?
+  source        String   @default("manual")
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([teacherId, effectiveFrom])
 }
 
 // ============================================

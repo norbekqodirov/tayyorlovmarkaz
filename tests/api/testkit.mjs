@@ -65,9 +65,12 @@ export async function api(method, path, token, body, headers = {}) {
 
 // Teskari tartibda o'chirish (bog'liqlarini avval). Kaskadlar o'z-o'zidan.
 export async function cleanup() {
-  const order = ['auditLog', 'paymentAllocation', 'transaction', 'payment', 'attendanceRecord', 'enrollment', 'salary', 'staffAdvance', 'groupSchedule', 'group', 'courseTier', 'course', 'leaveRequest', 'student', 'staffMember', 'lead', 'test', 'user'];
+  const order = ['auditLog', 'paymentAllocation', 'transaction', 'payment', 'attendanceRecord', 'enrollmentPause', 'enrollmentPeriod', 'tariffVersion', 'groupTeacherAssignment', 'teacherRate', 'enrollment', 'salary', 'staffAdvance', 'groupSchedule', 'group', 'courseTier', 'course', 'leaveRequest', 'lead', 'student', 'staffMember', 'test', 'user'];
   const byModel = {};
   for (const c of created) (byModel[c.model] ||= []).push(c.id);
+  // IP-09: FK'siz tarix yozuvlari (ustoz foizi) — test foydalanuvchilariga bog'liq
+  if (byModel.user?.length) await prisma.teacherRate.deleteMany({ where: { teacherId: { in: byModel.user } } }).catch(() => {});
+  if (byModel.user?.length) await prisma.groupTeacherAssignment.deleteMany({ where: { teacherId: { in: byModel.user } } }).catch(() => {});
   for (const m of order) {
     const ids = byModel[m];
     if (!ids || !prisma[m]) continue;

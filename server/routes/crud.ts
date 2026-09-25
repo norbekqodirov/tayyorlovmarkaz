@@ -9,6 +9,8 @@ import { resolveRoleAssignment } from '../services/roleAssignment.js';
 import { archiveOrDelete, restoreArchived, ARCHIVABLE_MODELS, ArchivableModel } from '../services/archive.js';
 import { CURRENT_ENROLLMENT_WHERE } from '../utils/activeFilters.js';
 import { normalizeStudentStatus } from '../utils/studentStatus.js';
+import { recordGroupCreate, recordLegacyGroupEdit, safeHistory } from '../services/groupHistory.js';
+import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 
 const router = express.Router();
 
@@ -482,42 +484,11 @@ function authForCollection(req: express.Request, res: express.Response, next: ex
     });
 }
 
-// ─── Special: Enroll student into group ───────────────────────────────────────
-// MUHIM: bu uchta /enrollments* route generic /:collection va /:collection/:id
-// route'laridan OLDIN turishi SHART. Express bir xil method+router uchun
-// route'larni ro'yxatdan o'tish tartibida moslashtiradi — /:collection ham
-// /enrollments'ga (bitta segment) to'g'ri keladi, shuning uchun agar u birinchi
-// bo'lsa, quyidagi maxsus handler'lar HECH QACHON chaqirilmaydi (2026-09-07'da
-// aniqlangan va tasdiqlangan real bug — POST /api/enrollments 200 qaytarardi,
-// lekin haqiqiy Enrollment o'rniga GenericDocument yozardi).
-// SEC-04 tuzatish: uchala /enrollments* route ilgari faqat `requireAuth`
-// bilan ochiq edi — generic /:collection middleware'ini chetlab o'tgani
-// uchun COLLECTION_WRITE_LEVEL.enrollments=2 (MANAGER+) HECH QACHON
-// tekshirilmasdi. Har qanday login qilgan TEACHER istalgan o'quvchini
-// istalgan guruhga qo'sha/chiqara olardi — frontend esa (CrmGroupDetail.tsx
-// canManage) bu tugmalarni allaqachon faqat MANAGER+'ga ko'rsatadi, ya'ni
-// bu faqat backend-tomon yopiq bo'lmagan ruxsat edi.
-router.post('/enrollments', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
-    const { studentId, groupId } = req.body;
-    if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
-    try {
-        // IP-01: arxivlangan o'quvchi yoki guruhga yangi a'zolik yaratilmaydi.
-        const [student, group] = await Promise.all([
-            prisma.student.findUnique({ where: { id: studentId }, select: { deletedAt: true } }),
-            prisma.group.findUnique({ where: { id: groupId }, select: { deletedAt: true } }),
-        ]);
-        if (!student || !group) return res.status(404).json({ message: "O'quvchi yoki guruh topilmadi" });
-        if (student.deletedAt) return res.status(400).json({ message: "O'quvchi arxivlangan — avval uni arxivdan tiklang" });
-        if (group.deletedAt) return res.status(400).json({ message: "Guruh arxivlangan — avval uni arxivdan tiklang" });
-        // Upsert — ignore if already enrolled
-        const existing = await prisma.enrollment.findUnique({ where: { studentId_groupId: { studentId, groupId } } });
-        if (existing) return res.json({ id: existing.id, studentId, groupId, alreadyEnrolled: true });
-        const enrollment = await prisma.enrollment.create({ data: { studentId, groupId } });
-        res.json(enrollment);
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
+// ─── A'zolik yo'llari ───────────────────────────────────────────────────────
+// IP-09: POST /enrollments, GET /enrollments/group/:groupId va DELETE
+// /enrollments/remove server/routes/enrollments.ts ga ko'chirildi (a'zolik
+// davrlari xizmati orqali). U index.ts'da /api/enrollments sifatida crud'dan
+// OLDIN ulanadi — generic /:collection bu yo'llarni soyalay olmaydi.
 
 // RX-04: ustoz o'quvchi moliyasini (balans, to'lov holati) ko'rmaydi —
 // GET /students/:id proyeksiyasi (students.ts) bilan bir xil qoida ro'yxatlarda ham.
@@ -533,38 +504,6 @@ function projectRowForRequester(modelName: string, row: any, requester: any) {
     if (modelName === 'student') return hideStudentFinance(row);
     return row;
 }
-
-// ─── Special: Get enrollments for a group ─────────────────────────────────────
-// SEC-04 tuzatish: TEACHER endi faqat O'Z guruhining a'zolar ro'yxatini
-// ko'ra oladi — ilgari guruhga tegishlilik umuman tekshirilmasdi.
-router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
-    try {
-        const requester = (req as any).user;
-        if (requester.role === 'TEACHER' && !(await teacherOwnsGroup(req.params.groupId, requester.id))) {
-            return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
-        }
-        const enrollments = await prisma.enrollment.findMany({
-            where: { groupId: req.params.groupId, student: { deletedAt: null } },
-            include: { student: true },
-        });
-        res.json(requester.role === 'TEACHER'
-            ? enrollments.map(e => ({ ...e, student: hideStudentFinance(e.student) }))
-            : enrollments);
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
-
-// ─── Special: Remove student from group ───────────────────────────────────────
-router.delete('/enrollments/remove', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
-    const { studentId, groupId } = req.body;
-    try {
-        await prisma.enrollment.delete({ where: { studentId_groupId: { studentId, groupId } } });
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
 
 // ─── Collection Middleware ────────────────────────────────────────────────────
 router.use('/:collection', authForCollection, async (req, res, next) => {
@@ -795,6 +734,9 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
             // @ts-ignore
             finalData = await prisma[modelName].create({ data: req.body, ...(include && { include }) });
             finalData = parseJsonFields(modelName, finalData);
+            // IP-09: yangi guruh — boshlang'ich tarif/ustoz tarixi; yangi o'quvchi — kod va phoneNorm
+            if (modelName === 'group') await safeHistory('group_create', () => recordGroupCreate(finalData, (req as any).user?.id));
+            if (modelName === 'student') await ensureStudentIdentitySafe(prisma, finalData.id);
         }
 
         // ─── Staff → login (User) hisobi ──────────────────────────────
@@ -886,8 +828,13 @@ router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
             }
         }
 
+        // IP-09: guruh narxi/ustozi o'zgarsa — sana bilan tarix versiyasi (QT-21)
+        const groupBefore = modelName === 'group' && ('price' in req.body || 'teacherId' in req.body)
+            ? await prisma.group.findUnique({ where: { id: req.params.id }, select: { id: true, price: true, teacherId: true, startDate: true, courseId: true, createdAt: true } })
+            : null;
         // @ts-ignore
         const data = await prisma[modelName].update({ where: { id: req.params.id }, data: req.body, ...(include && { include }) });
+        if (groupBefore) await safeHistory('legacy_group_edit', () => recordLegacyGroupEdit(groupBefore, { price: (data as any).price ?? null, teacherId: (data as any).teacherId ?? null }, requester?.id));
         res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });

@@ -32,6 +32,10 @@ export function scanRoutes(routesDir = path.resolve('server/routes')): RouteInfo
         for (const m of src.matchAll(/router\.use\(([\s\S]*?)\);/g)) {
             useCalls.push({ index: m.index ?? 0, text: m[1] });
         }
+        // `const canManage = [requireAuth, requireMinRole(...), ...]` — `...canManage` ochiladi
+        const arrays = new Map<string, string>();
+        for (const m of src.matchAll(/const\s+(\w+)\s*=\s*\[([\s\S]*?)\];/g)) arrays.set(m[1], m[2]);
+        const expand = (text: string) => text.replace(/\.\.\.(\w+)/g, (all, name) => arrays.has(name) ? `${all} ${arrays.get(name)}` : all);
         const routeRe = /router\.(get|post|put|patch|delete)\(\s*(['"`])([^'"`]+)\2/g;
         for (const m of src.matchAll(routeRe)) {
             const start = m.index ?? 0;
@@ -40,7 +44,7 @@ export function scanRoutes(routesDir = path.resolve('server/routes')): RouteInfo
             const cut = rest.search(/async\s*\(|\(\s*_?req\b|\(\s*req\s*:|=>\s*\{/);
             const chain = cut > 0 ? rest.slice(0, cut) : rest.slice(0, 200);
             const inherited = useCalls.filter(u => u.index < start).map(u => u.text).join(' ');
-            const all = `${inherited} ${chain}`;
+            const all = expand(`${inherited} ${chain}`);
             const protection: Protection = PERMISSION_RE.test(all) ? 'permission' : AUTH_RE.test(all) ? 'auth-only' : 'public';
             const method = m[1].toUpperCase();
             out.push({ file, method, path: m[3], key: `${file} ${method} ${m[3]}`, protection, guards: all.replace(/\s+/g, ' ').trim().slice(0, 200) });

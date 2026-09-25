@@ -10,7 +10,7 @@ import { isAxiosError } from 'axios';
 import { format } from 'date-fns';
 import { Button } from '../../../components/ui/Button';
 import { Tabs, TabsList, Tab } from '../../../components/ui/Tabs';
-import ConfirmDialog from '../../../components/ConfirmDialog';
+import { AddEnrollmentModal, EndEnrollmentModal } from '../../../components/group-detail/EnrollmentModals';
 
 import { useFirestore } from '../../../hooks/useFirestore';
 import { exportToExcel } from '../../../utils/export';
@@ -67,9 +67,9 @@ export default function CrmGroupDetail() {
   const [addStudentSearch, setAddStudentSearch] = useState('');
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null);
-  const [studentToRemove, setStudentToRemove] = useState<{ id: string; name: string } | null>(null);
-  const [removingStudentId, setRemovingStudentId] = useState<string | null>(null);
-  const removalBusy = useRef(false);
+  // IP-09: yozish/yakunlash sana bilan — oynalar orqali (EnrollmentModals)
+  const [enrollTarget, setEnrollTarget] = useState<{ id: string; name: string } | null>(null);
+  const [studentToRemove, setStudentToRemove] = useState<{ id: string; name: string; period?: { id: string; startDate: string } | null } | null>(null);
 
   const group = groupResult.id === id ? groupResult.data : null;
   // Vaqt/kunlar/xona Group modelida emas, alohida GroupSchedule ("schedule"
@@ -104,7 +104,7 @@ export default function CrmGroupDetail() {
     try {
       const res = await api.get(`/enrollments/group/${id}`);
       if (request !== enrollmentRequest.current) return;
-      setEnrolledStudents((res.data || []).map((e: any) => e.student || { id: e.studentId }));
+      setEnrolledStudents((res.data || []).map((e: any) => e.student ? { ...e.student, _period: e.period ?? null } : { id: e.studentId }));
       setEnrollmentsError(false);
     } catch {
       if (request === enrollmentRequest.current) setEnrollmentsError(true);
@@ -124,7 +124,7 @@ export default function CrmGroupDetail() {
 
   // ─── Enrollment actions ─────────────────────────────────────────────────────
   const handleAddStudent = async (studentId: string) => {
-    if (!canManage || additionBusy.current || removalBusy.current || enrollmentsLoading || enrollmentsError || studentsLoading || studentsError || !group) return;
+    if (!canManage || additionBusy.current || enrollmentsLoading || enrollmentsError || studentsLoading || studentsError || !group) return;
     if (enrolledStudents.some(s => s.id === studentId)) {
       showToast("Bu o'quvchi allaqachon guruhga qo'shilgan", 'error');
       return;
@@ -133,45 +133,10 @@ export default function CrmGroupDetail() {
       showToast("Guruhda bo'sh o'rin qolmagan", 'error');
       return;
     }
-    additionBusy.current = true;
-    const request = enrollmentRequest.current;
-    setAddingStudentId(studentId);
-    try {
-      const res = await api.post('/enrollments', { studentId, groupId: id });
-      if (request !== enrollmentRequest.current) return;
-      const student = students.find(s => s.id === studentId);
-      if (student) setEnrolledStudents(prev => prev.some(s => s.id === studentId) ? prev : [...prev, student]);
-      showToast(res.data?.alreadyEnrolled ? "Bu o'quvchi allaqachon guruhga qo'shilgan" : "O'quvchi guruhga qo'shildi!", res.data?.alreadyEnrolled ? 'info' : 'success');
-      await fetchEnrollments();
-    } catch (err: any) {
-      if (request !== enrollmentRequest.current) return;
-      showToast(err?.response?.data?.message || 'Xatolik yuz berdi', 'error');
-    } finally {
-      additionBusy.current = false;
-      setAddingStudentId(null);
-    }
+    const student = students.find(s => s.id === studentId);
+    if (student) setEnrollTarget({ id: student.id, name: student.name });
   };
 
-  const handleRemoveStudent = async (studentId: string) => {
-    if (!canManage || removalBusy.current || additionBusy.current || enrollmentsLoading || enrollmentsError) return;
-    removalBusy.current = true;
-    const request = enrollmentRequest.current;
-    setRemovingStudentId(studentId);
-    try {
-      await api.delete('/enrollments/remove', { data: { studentId, groupId: id } });
-      if (request !== enrollmentRequest.current) return;
-      setStudentToRemove(null);
-      setEnrolledStudents(prev => prev.filter(s => s.id !== studentId));
-      await fetchEnrollments();
-      showToast("O'quvchi guruhdan o'chirildi", 'success');
-    } catch {
-      if (request !== enrollmentRequest.current) return;
-      showToast('Xatolik yuz berdi', 'error');
-    } finally {
-      removalBusy.current = false;
-      setRemovingStudentId(null);
-    }
-  };
 
   const availableStudents = useMemo(() => {
     const enrolledIds = new Set(enrolledStudents.map((s: any) => s.id));
@@ -297,7 +262,7 @@ export default function CrmGroupDetail() {
       {/* Group information is available to all authorized roles. */}
         <GroupSidebar
           canManage={canManage}
-          removingStudentId={removingStudentId}
+          removingStudentId={null}
           group={groupWithSchedule}
           groupStudents={enrolledStudents}
           enrollmentsLoading={enrollmentsLoading}
@@ -317,18 +282,24 @@ export default function CrmGroupDetail() {
           onAddStudent={handleAddStudent}
           onRemoveStudent={studentId => {
             const student = enrolledStudents.find(s => s.id === studentId);
-            if (canManage && student) setStudentToRemove({ id: studentId, name: student.name });
+            if (canManage && student) setStudentToRemove({ id: studentId, name: student.name, period: student._period ?? null });
           }}
           onShowAddToggle={setShowAddStudent}
           onSearchChange={setAddStudentSearch}
         />
-      <ConfirmDialog
+      <AddEnrollmentModal
+        isOpen={!!enrollTarget}
+        onClose={() => setEnrollTarget(null)}
+        groupId={id || ''}
+        student={enrollTarget}
+        onDone={() => { setShowAddStudent(false); void fetchEnrollments(); }}
+      />
+      <EndEnrollmentModal
         isOpen={!!studentToRemove}
-        title="Guruhdan chiqarish"
-        message={`${studentToRemove?.name || 'O‘quvchi'} ushbu guruhdan chiqarilsinmi?`}
-        confirmText={removingStudentId ? 'Chiqarilmoqda…' : 'Ha, chiqarish'}
-        onConfirm={() => { if (canManage && studentToRemove) void handleRemoveStudent(studentToRemove.id); }}
-        onCancel={() => { if (!removalBusy.current) setStudentToRemove(null); }}
+        onClose={() => setStudentToRemove(null)}
+        groupId={id || ''}
+        student={studentToRemove}
+        onDone={() => { void fetchEnrollments(); }}
       />
 
       {/* Right Content — Tabs */}

@@ -9,6 +9,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { withAudit, logAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { normalizeStudentStatus } from '../utils/studentStatus.js';
+import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 
 const router = express.Router();
 
@@ -88,6 +89,8 @@ router.put('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('st
         // IP-04 (TL-13): holat har doim kanonik qiymatda saqlanadi.
         if (data.status !== undefined) data.status = normalizeStudentStatus(data.status);
         const student = await prisma.student.update({ where: { id: req.params.id }, data });
+        // IP-09: telefon o'zgarsa — phoneNorm (qidiruv/dublikat); kod yo'q bo'lsa — beriladi
+        if (data.phone !== undefined || !(student as any).code) await ensureStudentIdentitySafe(prisma, student.id);
         res.json(student);
     } catch (err: any) {
         res.status(500).json({ error: err.message });

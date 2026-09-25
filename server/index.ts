@@ -7,6 +7,8 @@ import publicRoutes from './routes/public.js';
 import crudRoutes from './routes/crud.js';
 import leadsRoutes from './routes/leads.js';
 import marketingRoutes from './routes/marketing.js';
+import enrollmentsRoutes from './routes/enrollments.js';
+import historyRoutes from './routes/history.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
 import telegramRoutes from './routes/telegram.js';
@@ -176,6 +178,8 @@ app.use('/api/roles', rolesRoutes);
 app.use('/api/attendance-records', studentAttendanceRoutes);
 app.use('/api/lesson-sessions', lessonSessionsRoutes);
 app.use('/api/marketing', marketingRoutes);
+app.use('/api/enrollments', enrollmentsRoutes); // IP-09 — crud.ts'dan OLDIN (generic /:collection soyalamasin)
+app.use('/api/history', historyRoutes);
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────

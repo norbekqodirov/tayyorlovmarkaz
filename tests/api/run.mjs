@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
-const files = fs.readdirSync(dir).filter(f => /^ip\d+\.mjs$/.test(f)).sort();
+const files = fs.readdirSync(dir).filter(f => /^ip\d+(_\w+)?\.mjs$/.test(f)).sort();
 let failed = 0;
 for (const f of files) {
   console.log(`\n── ${f} ──`);

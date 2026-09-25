@@ -4,6 +4,7 @@ import { sendMessage, sendPaymentReminder, sendAttendanceAlert, sendBroadcast, s
 import { todayDateStr, addDaysDateStr, tashkentDayOfWeek, nowTimeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { OPEN_STAGES } from '../constants/leads.js';
 import { createConsistentBackup } from './dbBackup.js';
+import { syncAllHistoryCaches } from './groupHistory.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -695,6 +696,14 @@ export async function startScheduler() {
         // Har kuni 03:30 — izchil baza + fayllar backup'i (IP-05)
         cron.schedule('30 3 * * *', () => {
             runDailyBackup();
+        }, { timezone: 'Asia/Tashkent' });
+
+        // Har kuni 00:05 — kelajak sanali tarif/ustoz/foiz versiyalari kuchga
+        // kirganda Group.price, Group.teacherId, User.salaryPercent keshlari (IP-09)
+        cron.schedule('5 0 * * *', () => {
+            syncAllHistoryCaches()
+                .then(r => { if (r.groups || r.teachers) console.log(`[Scheduler] Tarix keshlari yangilandi: ${r.groups} guruh, ${r.teachers} ustoz`); })
+                .catch(e => console.error('[Scheduler] Tarix keshlari xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
         // Har kuni 08:00 — Staff: dars eslatmasi

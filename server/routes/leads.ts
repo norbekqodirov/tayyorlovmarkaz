@@ -22,6 +22,9 @@ import { withAudit } from '../middleware/audit.js';
 import { createLeadFromIntake, LeadIntakeValidationError } from '../services/leadIntake.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { OPEN_STAGES } from '../constants/leads.js';
+import { enrollInTx, EnrollmentError } from '../services/enrollment.js';
+import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -534,7 +537,8 @@ router.post('/:id/convert', async (req, res) => {
                     joinedDate: new Date().toISOString(),
                 },
             });
-            await tx.enrollment.create({ data: { studentId: student.id, groupId } });
+            // IP-09: a'zolik davri bilan (sig'im guruh qulfi ostida qayta tekshiriladi)
+            await enrollInTx(tx, { studentId: student.id, groupId, startDate: todayDateStr(), source: 'lead_convert' }, (req as any).user?.id);
             const updatedLead = await tx.lead.update({
                 where: { id: lead.id },
                 data: { stage: 'won', studentId: student.id, convertedAt: new Date(), stageChangedAt: new Date() },
@@ -548,9 +552,11 @@ router.post('/:id/convert', async (req, res) => {
             const student = current?.studentId ? await prisma.student.findUnique({ where: { id: current.studentId } }) : null;
             return res.status(200).json({ student, lead: current, alreadyConverted: true });
         }
+        await ensureStudentIdentitySafe(prisma, result.student.id);
         try { emitToAdmins('lead:updated', { id: result.lead.id }); } catch { /* jim */ }
         res.status(201).json(result);
     } catch (err: any) {
+        if (err instanceof EnrollmentError) return res.status(err.status).json({ message: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });
