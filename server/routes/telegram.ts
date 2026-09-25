@@ -20,7 +20,7 @@
 import express from 'express';
 import { handleBotWebhook } from '../bot/index.js';
 import prisma from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
 import {
@@ -115,7 +115,9 @@ router.get('/info', async (_req, res) => {
 
 // ─── Bot holati ───────────────────────────────────────────────────────────────
 
-router.get('/status', requireAuth, async (_req, res) => {
+// IP-06: bot holati/statistikasi/sozlamalari faqat ADMIN sahifasida (CrmTelegram)
+// ishlatiladi — ilgari istalgan login qilgan foydalanuvchiga ochiq edi.
+router.get('/status', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
     try {
         const info = await getBotInfo();
         const messagesToday = await prisma.telegramMessage.count({
@@ -132,7 +134,7 @@ router.get('/status', requireAuth, async (_req, res) => {
 
 // ─── Statistika ───────────────────────────────────────────────────────────────
 
-router.get('/stats', requireAuth, async (_req, res) => {
+router.get('/stats', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
     try {
         const [total, sent, failed, today, byType, studentsWithTelegram, parentsWithTelegram, totalStudents] = await Promise.all([
             prisma.telegramMessage.count(),
@@ -183,7 +185,7 @@ router.get('/messages', requireAuth, requirePermission('communication'), async (
 
 // ─── Sozlamalar olish (FIXED: correct DB key names) ──────────────────────────
 
-router.get('/settings', requireAuth, async (_req, res) => {
+router.get('/settings', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
     try {
         const keys = [
             'telegram_bot_token', 'telegram_admin_chat_id',

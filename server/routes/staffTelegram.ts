@@ -7,7 +7,7 @@ import {
     getStaffWebhookInfo,
     extractPhoneDigits,
 } from '../services/telegramService.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr, tashkentDayOfWeek } from '../utils/timezone.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
@@ -393,7 +393,7 @@ router.post('/webhook', async (req, res) => {
 
 // ─── GET /api/staff-telegram/webhook-info ─────────────────────────────────────
 
-router.get('/webhook-info', requireAuth, async (_req, res) => {
+router.get('/webhook-info', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
     try {
         const info = await getStaffWebhookInfo();
         res.json(info);

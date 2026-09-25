@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import prisma from '../db.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requirePermission } from '../middleware/authorize.js';
 
 const router = express.Router();
 
@@ -947,7 +948,8 @@ router.post('/click', async (req, res) => {
 
 // ─── PAYMENT LINK GENERATOR ──────────────────────────────────────────────────
 
-router.get('/generate-links', requireAuth, async (req, res) => {
+// IP-06: to'lov havolasi Moliya sahifasidan (finance ruxsati) yaratiladi.
+router.get('/generate-links', requireAuth, requirePermission('finance'), async (req, res) => {
     const studentId = req.query.studentId as string;
     const amount = Number(req.query.amount);
 

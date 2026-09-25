@@ -6,7 +6,9 @@ import { requirePermission } from '../middleware/authorize.js';
 const router = express.Router();
 
 // GET /api/announcements
-router.get('/', async (req, res) => {
+// IP-06: ilgari login'siz ochiq edi — ichki (xodimlar/ustozlar uchun) e'lonlar
+// ham istalgan odamga ko'rinardi. Faqat CRM E'lonlar sahifasi ishlatadi.
+router.get('/', requireAuth, requirePermission('communication'), async (req, res) => {
     try {
         const now = new Date();
         const where: any = { deletedAt: null };
