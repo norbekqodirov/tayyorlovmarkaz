@@ -519,6 +519,21 @@ router.post('/enrollments', requireAuth, requireMinRole('MANAGER'), async (req, 
     }
 });
 
+// RX-04: ustoz o'quvchi moliyasini (balans, to'lov holati) ko'rmaydi —
+// GET /students/:id proyeksiyasi (students.ts) bilan bir xil qoida ro'yxatlarda ham.
+const STUDENT_FINANCE_FIELDS = ['balance', 'paymentStatus'];
+function hideStudentFinance<T>(row: T): T {
+    if (!row || typeof row !== 'object') return row;
+    const copy: any = { ...row };
+    for (const f of STUDENT_FINANCE_FIELDS) delete copy[f];
+    return copy;
+}
+function projectRowForRequester(modelName: string, row: any, requester: any) {
+    if (requester?.role !== 'TEACHER') return row;
+    if (modelName === 'student') return hideStudentFinance(row);
+    return row;
+}
+
 // ─── Special: Get enrollments for a group ─────────────────────────────────────
 // SEC-04 tuzatish: TEACHER endi faqat O'Z guruhining a'zolar ro'yxatini
 // ko'ra oladi — ilgari guruhga tegishlilik umuman tekshirilmasdi.
@@ -532,7 +547,9 @@ router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
             where: { groupId: req.params.groupId, student: { deletedAt: null } },
             include: { student: true },
         });
-        res.json(enrollments);
+        res.json(requester.role === 'TEACHER'
+            ? enrollments.map(e => ({ ...e, student: hideStudentFinance(e.student) }))
+            : enrollments);
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }
@@ -666,18 +683,18 @@ router.get('/:collection', async (req, res) => {
                 // @ts-ignore
                 prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit, ...(scopeWhere && { where: scopeWhere }), ...(include && { include }) }),
             ]);
-            return res.json({ data: data.map((row: any) => parseJsonFields(modelName, row)), total, page, limit });
+            return res.json({ data: data.map((row: any) => projectRowForRequester(modelName, parseJsonFields(modelName, row), (req as any).user)), total, page, limit });
         }
 
         try {
             // @ts-ignore
             const data = await prisma[modelName].findMany({ orderBy: { createdAt: 'desc' }, ...(scopeWhere && { where: scopeWhere }), ...(include && { include }) });
-            res.json(data.map((row: any) => parseJsonFields(modelName, row)));
+            res.json(data.map((row: any) => projectRowForRequester(modelName, parseJsonFields(modelName, row), (req as any).user)));
         } catch {
             // Some models don't have createdAt, try without
             // @ts-ignore
             const data = await prisma[modelName].findMany({ ...(scopeWhere && { where: scopeWhere }), ...(include && { include }) });
-            res.json(data.map((row: any) => parseJsonFields(modelName, row)));
+            res.json(data.map((row: any) => projectRowForRequester(modelName, parseJsonFields(modelName, row), (req as any).user)));
         }
     } catch (error) {
         res.status(500).json({ error: String(error) });
@@ -711,7 +728,7 @@ router.get('/:collection/:id', async (req, res) => {
             // @ts-ignore
             : await prisma[modelName].findUnique({ where: { id: req.params.id }, ...(include && { include }) });
         if (!data) return res.status(scopeWhere ? 403 : 404).json({ message: scopeWhere ? "Topilmadi yoki sizga tegishli emas" : 'Topilmadi' });
-        res.json(parseJsonFields(modelName, data));
+        res.json(projectRowForRequester(modelName, parseJsonFields(modelName, data), (req as any).user));
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }

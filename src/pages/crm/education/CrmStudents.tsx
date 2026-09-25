@@ -83,6 +83,9 @@ export default function CrmStudents() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   // IP-02: balans faqat sababli tuzatish orqali (Moliya ruxsati bilan)
   const canAdjustBalance = hasAnyPermission('finance');
+  // RX-04: ustoz (TEACHER) o'quvchi moliyasini ko'rmaydi — server ham balans/to'lov
+  // holatini unga qaytarmaydi; ustunlar va kartochkalar shunga mos yashiriladi.
+  const showFinance = canManage;
   const [balanceTarget, setBalanceTarget] = useState<{ id: string; name: string; balance?: number | null } | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -346,7 +349,7 @@ export default function CrmStudents() {
                   { header: 'Email', key: 'email', width: 25 },
                   { header: 'Guruh', key: 'group', width: 15 },
                   { header: 'Holat', key: 'status', width: 12 },
-                  { header: "To'lov", key: 'paymentStatus', width: 15 },
+                  ...(showFinance ? [{ header: "To'lov", key: 'paymentStatus', width: 15 }] : []),
                 ];
                 exportToExcel(filteredStudents, cols, "Oqquchilar");
                 showToast("Excel fayl yuklab olindi", 'success');
@@ -360,7 +363,7 @@ export default function CrmStudents() {
                   { header: 'Email', key: 'email' },
                   { header: 'Guruh', key: 'group' },
                   { header: 'Holat', key: 'status' },
-                  { header: "To'lov", key: 'paymentStatus' },
+                  ...(showFinance ? [{ header: "To'lov", key: 'paymentStatus' }] : []),
                 ];
                 exportToPDF(filteredStudents, cols, "O'quvchilar ro'yxati", "Oqquchilar");
                 showToast("PDF fayl yuklab olindi", 'success');
@@ -419,8 +422,8 @@ export default function CrmStudents() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard variant="gradient" color="blue" label="Jami O'quvchilar" value={stats.total} sub="Ro'yxatdagi jami" icon={<Users size={17} strokeWidth={2.5} />} />
         <StatCard variant="gradient" color="emerald" label="Faol O'quvchilar" value={stats.active} sub="Hozir o'qiyotgan" icon={<GraduationCap size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="rose" label="Qarzdorlar" value={stats.debtors} sub="To'lov qilmagan" icon={<AlertCircle size={17} strokeWidth={2.5} />} />
-        <StatCard variant="gradient" color="amber" label="Umumiy Balans" value={formatNumber(stats.totalBalance)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />
+        {showFinance && <StatCard variant="gradient" color="rose" label="Qarzdorlar" value={stats.debtors} sub="To'lov qilmagan" icon={<AlertCircle size={17} strokeWidth={2.5} />} />}
+        {showFinance && <StatCard variant="gradient" color="amber" label="Umumiy Balans" value={formatNumber(stats.totalBalance)} sub="so'm" icon={<DollarSign size={17} strokeWidth={2.5} />} />}
       </div>
 
       {/* Filters and Table */}
@@ -459,7 +462,7 @@ export default function CrmStudents() {
                   <option key={c.id} value={c.name}>{c.name}</option>
                 ))}
               </select>
-              <select
+              {showFinance && <select
                 value={filterPayment}
                 onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1); }}
                 className="w-full sm:w-auto px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all dark:text-white"
@@ -468,7 +471,7 @@ export default function CrmStudents() {
                 <option value="Tolov qilingan">To'lov qilingan</option>
                 <option value="Qarzdorlik">Qarzdorlik</option>
                 <option value="Kutilmoqda">Kutilmoqda</option>
-              </select>
+              </select>}
               {canManage && selectedIds.size > 0 && (
                 <button
                   onClick={() => setBulkDeleteConfirm(true)}
@@ -505,8 +508,8 @@ export default function CrmStudents() {
                 </th>
                 <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</th>
                 <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kurs va Guruh</th>
-                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov Holati</th>
-                <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Balans</th>
+                {showFinance && <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov Holati</th>}
+                {showFinance && <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Balans</th>}
                 <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest">Holat</th>
                 <th className="px-4 py-4 text-[10px] font-black text-zinc-500 uppercase tracking-widest text-right">Amallar</th>
               </tr>
@@ -559,14 +562,14 @@ export default function CrmStudents() {
                       <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{student.group}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-4">
+                  {showFinance && <td className="px-4 py-4">
                     {(() => { const b = paymentStatusBadge(student.paymentStatus); return <Badge color={b.color}>{b.label}</Badge>; })()}
-                  </td>
-                  <td className="px-6 py-4">
+                  </td>}
+                  {showFinance && <td className="px-6 py-4">
                     <span className={`text-sm font-black ${student.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                       {formatNumber(student.balance)}
                     </span>
-                  </td>
+                  </td>}
                   <td className="px-4 py-4">
                     {(() => { const b = studentStatusBadge(student.status); return <Badge color={b.color}>{b.label}</Badge>; })()}
                   </td>
@@ -649,7 +652,7 @@ export default function CrmStudents() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
+                  {showFinance && <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Balans</p>
                     <p className={`text-lg font-black ${selectedStudent.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                       {formatNumber(selectedStudent.balance)}
@@ -660,7 +663,7 @@ export default function CrmStudents() {
                         Balansni tuzatish
                       </button>
                     )}
-                  </div>
+                  </div>}
                   <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700">
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Holat</p>
                     <p className="text-lg font-black text-blue-600">{selectedStudent.status}</p>
