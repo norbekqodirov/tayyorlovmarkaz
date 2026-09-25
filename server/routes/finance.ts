@@ -5,6 +5,9 @@
 
 import express from 'express';
 import prisma from '../db.js';
+import { createReceipt, ReceiptError } from '../services/receipts.js';
+import { categoryKind } from '../services/categories.js';
+import { idempotent } from '../middleware/idempotency.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
@@ -372,7 +375,7 @@ router.get('/invoices/:id/payment-links', requireAuth, requirePermission('financ
 // Payment(status='paid') ham yaratiladi — Transaction va Payment shu yerdan
 // boshlab BIR VOQEANING ikki proyeksiyasi (`sourceType`/`sourceId` bilan
 // bog'langan), mustaqil ikki yozuv emas.
-router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), idempotent('finance_transaction'), async (req, res) => {
     try {
         const { type, amount, category, description, date, method, studentId, studentName, staffId, staffName } = req.body;
         if (!type || !category || !date) {
@@ -388,6 +391,24 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
         if (studentId) {
             const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true } });
             if (!student) return res.status(400).json({ error: "Ko'rsatilgan o'quvchi topilmadi" });
+        }
+        // IP-12 (TQ-D, TQ-E): qoida kategoriya TURIga bog'liq, nomga emas.
+        const kind = await categoryKind(prisma, category, type);
+        if (type === 'income' && kind === 'TUITION') {
+            if (!studentId) return res.status(400).json({ error: "Kurs to'lovi uchun o'quvchini tanlang" });
+            try {
+                const requester = (req as any).user;
+                const r = await createReceipt({
+                    studentId, amount: Math.round(numAmount), method, date, note: description, category, source: 'finance_form',
+                }, { id: requester?.id, name: requester?.name });
+                return res.json(r.transaction);
+            } catch (e: any) {
+                if (e instanceof ReceiptError) return res.status(e.status).json({ error: e.message, code: e.code });
+                throw e;
+            }
+        }
+        if (type === 'income' && studentId) {
+            return res.status(400).json({ error: "Bu kirim turi o'quvchi qarziga ta'sir qilmaydi — o'quvchini olib tashlang yoki \"Kurs to'lovi\" kategoriyasini tanlang" });
         }
 
         const result = await prisma.$transaction(async (tx) => {

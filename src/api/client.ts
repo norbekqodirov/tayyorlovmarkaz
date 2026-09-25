@@ -25,4 +25,18 @@ api.interceptors.response.use((response) => response, (error) => {
     return Promise.reject(error);
 });
 
+/**
+ * IP-12: pul komandalari uchun Idempotency-Key. Forma OCHILGANDA bitta kalit
+ * yarating va shu formaning har bir yuborishida ishlating — ikki marta bosish
+ * yoki tarmoq qayta yuborishi ikkinchi to'lov yaratmaydi (server birinchi javobni qaytaradi).
+ */
+export function newIdempotencyKey(): string {
+    try { if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID(); } catch { /* eski brauzer */ }
+    return `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function idempotencyHeaders(key: string) {
+    return { headers: { 'Idempotency-Key': key } };
+}
+
 export default api;

@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
+import { idempotent } from '../middleware/idempotency.js';
 import { invalidate, NS } from '../services/cache.js';
 import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
@@ -156,7 +157,7 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), canReview, async (req, 
 // berilgan (StaffAdvance) qoldig'i avtomatik shu oylikka hisobga olinadi —
 // "hisoblanishi to'lanishi degani emas, lekin avans yo'qolib ketmaydi"
 // talabi shu yerda ham bajariladi.
-router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, async (req, res) => {
+router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, idempotent('salary_pay'), async (req, res) => {
     try {
         const salary = await prisma.salary.findUnique({
             where: { id: req.params.id },

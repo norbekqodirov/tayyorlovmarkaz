@@ -4,6 +4,7 @@
 - IP-09: a'zolik davrlari, tarif, ustoz va foiz tarixi, o'quvchi kodi.
 - IP-10: dars rejasi, bayramlar, yagona davomat xizmati.
 - IP-11: oylik hisob dvigateli (hisoblar, tuzatmalar, takrorlanuvchi chegirmalar, shadow solishtirish).
+- IP-12: kurs to'lovi kvitansiyasi va hisoblarga taqsimot, pul komandalarida idempotency, kategoriya turi (TQ-D/TQ-E), o'quvchi qidiruvi.
 
 **Branch:** `feature/ip09-azolik-davrlari`. Barcha paketlarning sxemasi bitta qadamda qo'llanadi (reja J.2, 3-qadam).
 
@@ -11,7 +12,7 @@
 
 ## 1. Sxema o'zgarishi — faqat qo'shimcha
 
-SQLite uchun `prisma migrate diff` natijasi: 44 ta `ALTER` va `CREATE` operatsiyasi. Hammasi lokal sinovda to'liq qo'llangan.
+SQLite uchun `prisma migrate diff` natijasi: 54 ta `ALTER` va `CREATE` operatsiyasi. Hammasi lokal sinovda to'liq qo'llangan.
 
 ```sql
 -- IP-09
@@ -32,6 +33,11 @@ CREATE TABLE "BillingPeriod" (...);           -- oy holati (open/closing/closed)
 CREATE TABLE "Charge" (...);                  -- hisob: chargeKey unique (yangi jadval)
 CREATE TABLE "ChargeLine" (...);              -- hisob qatorlari
 CREATE TABLE "StudentDiscount" (...);         -- takrorlanuvchi chegirmalar
+-- IP-12
+ALTER TABLE "Payment" ADD COLUMN "receiptNo" / "allocationMode" / "receivedById" / "groupId";
+ALTER TABLE "TransactionCategory" ADD COLUMN "kind" / "isSystem";
+CREATE TABLE "PaymentAllocation" (...);       -- to'lov → hisob taqsimoti
+CREATE TABLE "IdempotencyRecord" (...);       -- takroriy so'rovdan himoya
 CREATE INDEX ... (indekslar)
 ```
 
@@ -96,5 +102,6 @@ Tekshirish navbatidagi holatlar (ketgan-lekin-a'zo, yakunlangan guruhdagi a'zoli
 - **O'quvchi kodi.** Yangi o'quvchilarga `S-000123` ko'rinishidagi kod beriladi. U to'lov qidiruvi (TQ-D) uchun kerak.
 - **Davomat — ustozlarni oldindan ogohlantiring.** Ustoz davomatni faqat oxirgi **3 kun** ichida belgilashi yoki tuzatishi mumkin (OQ-16). Eskiroq sanani administrator sabab yozib tuzatadi, sabab jurnalga tushadi. Kunlar soni `attendance_edit_window_days` sozlamasida o'zgartiriladi.
 - **Davomat qoidalari.** A'zolik boshlanishidan oldingi, pauzadagi va kelajakdagi sanaga davomat yozilmaydi. Bekor qilingan dars kuniga ham yozilmaydi. Telegram Mini App ham aynan shu qoidalar bilan ishlaydi. Har belgilashda kim va qachon belgilagani saqlanadi.
+- **Kurs to'lovi (Moliya → Yangi tranzaksiya).** "Kurs to'lovi" endi faqat o'quvchi tanlanganda saqlanadi (TQ-D). Boshqa kirim turlarida (kitob, forma va h.k.) o'quvchi tanlab bo'lmaydi, chunki ular qarzga ta'sir qilmaydi (TQ-E). Har kurs to'lovi `Q-2026-000123` ko'rinishidagi kvitansiya raqamini oladi. Formani ikki marta bosish yoki internet uzilib qayta yuborish ikkinchi to'lov yaratmaydi. Legacy rejimda to'lov avvalgidek balansni oshiradi. Shadow/live rejimda qo'shimcha ravishda eng eski ochiq hisoblarga taqsimlanadi.
 - **Oylik hisoblar (Moliya → "Oylik hisoblar").** Deploy'dan keyin ham rejim `legacy` bo'lib qoladi. Yangi hisoblar hech narsaga ta'sir qilmaydi, qarz va balans eskicha qoladi. Sinov oyi uchun administrator "Shadow rejimini yoqish"ni bosadi. Shunda har kuni 01:30 da draft hisoblar yangilanadi va "Eski tizim bilan solishtirish" tabida farqlar sababi bilan ko'rinadi. Jonli rejim (`live`) — IP-13/14 dan keyin, izohlanmagan farq 0 bo'lganda (J.7).
 - **Dars rejasi.** Davomat jadvali oy rejasi bo'yicha ko'rsatiladi. Menejer kun sarlavhasini bosib darsni bekor qila oladi: markaz yoki ustoz sababli, kompensatsiya bilan. Darsni boshqa kunga ko'chirish ham shu yerdan. Bekor qilingan kun kulrang va "bekor" belgisi bilan chiqadi.

@@ -11,6 +11,7 @@ import enrollmentsRoutes from './routes/enrollments.js';
 import historyRoutes from './routes/history.js';
 import lessonPlanRoutes from './routes/lessonPlan.js';
 import billingRoutes from './routes/billing.js';
+import receiptsRoutes from './routes/receipts.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
 import telegramRoutes from './routes/telegram.js';
@@ -184,6 +185,7 @@ app.use('/api/enrollments', enrollmentsRoutes); // IP-09 — crud.ts'dan OLDIN (
 app.use('/api/history', historyRoutes);
 app.use('/api/lesson-plan', lessonPlanRoutes); // IP-10
 app.use('/api/billing', billingRoutes); // IP-11
+app.use('/api/receipts', receiptsRoutes); // IP-12
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────

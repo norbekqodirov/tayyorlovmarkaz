@@ -22,7 +22,7 @@ import { Input } from '../../../components/ui/Input';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
 import { Modal } from '../../../components/ui/Modal';
 import { StatCard } from '../../../components/ui/StatCard';
-import api from '../../../api/client';
+import api, { newIdempotencyKey, idempotencyHeaders } from '../../../api/client';
 import type { TransactionCategory } from '../../../types/transactionCategory';
 import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
@@ -433,6 +433,8 @@ export default function CrmFinance() {
   // o'zgarishi yaratilishi mumkin edi. Xato ham hech qanday xabarsiz
   // yutilardi. Endi `txSaving` bilan tugma bloklanadi va xato ko'rsatiladi.
   const [txSaving, setTxSaving] = useState(false);
+  // IP-12: forma ochilganda bitta kalit — takroriy bosish ikkinchi to'lov yaratmaydi
+  const [txKey, setTxKey] = useState(() => newIdempotencyKey());
 
   // Moliya-audit (2026-09-22, foydalanuvchi so'rovi): "oddiy kirim-chiqim"
   // formasida "Oylik" kategoriyasi + xodim tanlangan edi, lekin bu FAQAT
@@ -520,6 +522,10 @@ export default function CrmFinance() {
       showToast("Iltimos, xodim yoki o'qituvchini tanlang", 'error');
       return;
     }
+    if (form.type === 'income' && form.category === "Kurs to'lovi" && !form.studentId) {
+      showToast("Kurs to'lovi uchun o'quvchini tanlang", 'error');
+      return;
+    }
     setTxSaving(true);
     try {
       if (isOylikForm) {
@@ -534,9 +540,9 @@ export default function CrmFinance() {
         // qoplash/audit logikasi bor) payroll endpoint chaqiriladi — natijada
         // yaratiladigan Transaction shu yerdan avtomatik bog'langan holda keladi.
         if (opt.kind === 'teacher_payroll') {
-          await api.post(`/finance/teacher-payroll/${opt.id}/pay`, { amount: Number(form.amount), method: form.method });
+          await api.post(`/finance/teacher-payroll/${opt.id}/pay`, { amount: Number(form.amount), method: form.method }, idempotencyHeaders(txKey));
         } else {
-          await api.put(`/salary/${opt.id}/pay`, { amount: Number(form.amount), method: form.method });
+          await api.put(`/salary/${opt.id}/pay`, { amount: Number(form.amount), method: form.method }, idempotencyHeaders(txKey));
         }
       } else if (isAvansForm) {
         // Avans davrga bog'lanmaydi — mavjud staffAdvance.ts yo'li orqali
@@ -544,7 +550,7 @@ export default function CrmFinance() {
         await api.post('/finance/advances', {
           personType: personKind, personId: form.staffId, amount: Number(form.amount),
           method: form.method, date: form.date, notes: form.description || undefined,
-        });
+        }, idempotencyHeaders(txKey));
       } else {
         const newTransaction = { ...form, amount: Number(form.amount) };
         // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
@@ -553,7 +559,7 @@ export default function CrmFinance() {
         // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
         // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
         // ustidan yozilishi mumkin edi).
-        await api.post('/finance/transactions', newTransaction);
+        await api.post('/finance/transactions', newTransaction, idempotencyHeaders(txKey));
       }
       await Promise.all([refetchTransactions(), refetchStudents()]);
       showToast(isOylikForm ? "Oylik to'lovi qayd etildi" : isAvansForm ? 'Avans berildi' : "Tranzaksiya qo'shildi", 'success');
@@ -564,6 +570,7 @@ export default function CrmFinance() {
         method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
       });
       setSelectedPayrollId('');
+      setTxKey(newIdempotencyKey());
     } catch (e: any) {
       showToast(e?.response?.data?.message || e?.response?.data?.error || (isOylikOrAvansForm ? "Qayd etishda xatolik" : "Tranzaksiya qo'shishda xatolik yuz berdi"), 'error');
     } finally {
@@ -713,7 +720,7 @@ export default function CrmFinance() {
             </div>
           </div>
           {canManage && (
-            <Button onClick={() => setIsModalOpen(true)} leftIcon={<Plus size={16} />}>
+            <Button onClick={() => { setTxKey(newIdempotencyKey()); setIsModalOpen(true); }} leftIcon={<Plus size={16} />}>
               Yangi Tranzaksiya
             </Button>
           )}

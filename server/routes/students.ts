@@ -7,7 +7,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { withAudit, logAudit } from '../middleware/audit.js';
-import { requirePermission } from '../middleware/authorize.js';
+import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
 import { normalizeStudentStatus } from '../utils/studentStatus.js';
 import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 
@@ -23,6 +23,39 @@ const router = express.Router();
 // toraytiriladi — faqat o'z guruhlari a'zoligi, davomati va baholari; to'lov,
 // invoice va balans umuman qaytarilmaydi (OQ-13 tavsiyasi). Ilgari ikki
 // guruhli o'quvchining boshqa guruhdagi baholari va to'lovlari ham chiqardi.
+// ─── GET /api/students/search?q= — TQ-D: ism, telefon yoki kod bo'yicha aniq tanlash ──
+// Kassir/administrator uchun (MANAGER+, "students" yoki "finance"). SQLite'da
+// case-insensitive "contains" yo'q — ro'yxat qisqa proyeksiya bilan olinib,
+// normallashtirilgan holda filtrlanadi.
+const normName = (s: string) => s.toLowerCase().replace(/[ʻʼ‘’`']/g, "'").replace(/\s+/g, ' ').trim();
+router.get('/search', requireAuth, requireMinRole('MANAGER'), requireAnyPermission(['students', 'finance']), async (req, res) => {
+    try {
+        const q = String(req.query.q || '').trim();
+        if (q.length < 2) return res.json([]);
+        const nq = normName(q);
+        const digits = q.replace(/\D/g, '');
+        const codeQ = /^s-?\d+$/i.test(q) ? `S-${q.replace(/\D/g, '').padStart(6, '0')}` : null;
+        const rows = await prisma.student.findMany({
+            where: { deletedAt: null },
+            select: {
+                id: true, name: true, phone: true, parentPhone: true, code: true, phoneNorm: true, status: true,
+                enrollments: { select: { group: { select: { id: true, name: true } } } },
+            },
+        });
+        const matches = rows.filter(s =>
+            (codeQ && s.code === codeQ)
+            || normName(s.name).includes(nq)
+            || (digits.length >= 4 && ((s.phoneNorm || '').includes(digits.slice(-9)) || (s.parentPhone || '').replace(/\D/g, '').includes(digits.slice(-9))))
+            || (s.code || '').toLowerCase() === nq);
+        res.json(matches.slice(0, 20).map(s => ({
+            id: s.id, name: s.name, code: s.code, phone: s.phone, status: s.status,
+            groups: s.enrollments.map(e => e.group),
+        })));
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 router.get('/:id', requireAuth, requirePermission('students'), async (req, res) => {
     try {
         const requester = (req as any).user;

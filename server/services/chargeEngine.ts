@@ -23,6 +23,7 @@ import { monthLessons, monthRange, versionAt, addDays } from '../domain/lessonCa
 import { billableLessonDates, teacherAt } from './lessonPlan.js';
 import { groupScheduleDays } from './enrollment.js';
 import { getBillingSettings, calculateStudentMonthlyDue, type BillingSettings } from './billing.js';
+import { studentPosition } from './receivables.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -362,13 +363,15 @@ export async function studentAccount(studentId: string) {
     const charges = await prisma.charge.findMany({
         where: { studentId, status: { in: ['draft', 'posted'] } },
         orderBy: [{ month: 'desc' }, { createdAt: 'asc' }],
-        include: { lines: true },
+        include: { lines: true, allocations: { where: { reversedAt: null }, select: { id: true, paymentId: true, amount: true, createdAt: true } } },
     });
     const groups = await prisma.group.findMany({ where: { id: { in: [...new Set(charges.map(c => c.groupId).filter(Boolean) as string[])] } }, select: { id: true, name: true } });
     const gName = new Map(groups.map(g => [g.id, g.name]));
     const posted = charges.filter(c => c.status === 'posted');
+    const position = await studentPosition(prisma, studentId);
     return {
         studentId,
+        position: { debt: position.debt, credit: position.credit, balance: position.balance },
         totals: { posted: posted.reduce((a, c) => a + c.net, 0), draft: charges.filter(c => c.status === 'draft').reduce((a, c) => a + c.net, 0) },
         charges: charges.map(c => ({ ...c, groupName: c.groupId ? gName.get(c.groupId) ?? null : null, calc: c.calc ? JSON.parse(c.calc) : null })),
     };

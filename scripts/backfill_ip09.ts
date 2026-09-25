@@ -26,6 +26,7 @@ import { todayDateStr } from '../server/utils/timezone.js';
 import { firstOfMonth, isValidDate } from '../server/domain/lessonCalendar.js';
 import { normalizePhone, formatStudentCode, parseStudentCode } from '../server/services/studentIdentity.js';
 import { getBillingSettings } from '../server/services/billing.js';
+import { guessCategoryKind, SYSTEM_CATEGORIES } from '../server/services/categories.js';
 
 const args = process.argv.slice(2);
 const APPLY = args.includes('--apply');
@@ -141,6 +142,21 @@ async function main() {
         if (u.salaryPercent == null || hasRate.has(u.id)) continue;
         inc('Ustoz foizi versiyasi');
         if (APPLY) await db.teacherRate.create({ data: { teacherId: u.id, rateBp: Math.round(u.salaryPercent * 100), effectiveFrom: RATE_FROM, source: 'backfill' } });
+    }
+
+    // 7. Kategoriya turlari (IP-12, J.3) — nom lug'ati; tizim kategoriyalari bo'lmasa yaratiladi
+    const cats = await db.transactionCategory.findMany({ select: { id: true, name: true, type: true, kind: true } });
+    for (const c of cats) {
+        if (c.kind) continue;
+        const kind = guessCategoryKind(c.name, c.type);
+        inc(`Kategoriya turi: ${kind}`);
+        if (kind === 'OTHER_INCOME' && /to'l|tol/i.test(c.name)) addReview('category_check', c.id, `"${c.name}" — OTHER_INCOME deb belgilandi, kurs to'lovi bo'lsa TUITION qiling`);
+        if (APPLY) await db.transactionCategory.update({ where: { id: c.id }, data: { kind } });
+    }
+    for (const sc of SYSTEM_CATEGORIES) {
+        if (cats.some((c: any) => c.name === sc.name && c.type === sc.type)) continue;
+        inc('Tizim kategoriyasi yaratildi');
+        if (APPLY) await db.transactionCategory.create({ data: { name: sc.name, type: sc.type, kind: sc.kind, isSystem: true } });
     }
 
     // Hisobot

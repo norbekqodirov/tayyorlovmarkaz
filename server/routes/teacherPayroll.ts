@@ -10,6 +10,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
+import { idempotent } from '../middleware/idempotency.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { calculateTeacherPayroll, PayrollBasis } from '../services/teacherPayroll.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
@@ -317,7 +318,7 @@ router.post('/:id/approve', canManageMoney, async (req, res) => {
 // POST /api/finance/teacher-payroll/:id/pay — qisman/to'liq to'lov qayd etish
 // RF-03/RF-04 bilan bir xil atomar naqsh: holat/qoldiq tekshiruvi va
 // Transaction yozuvi BITTA $transaction ichida.
-router.post('/:id/pay', canManageMoney, async (req, res) => {
+router.post('/:id/pay', canManageMoney, idempotent('teacher_payroll_pay'), async (req, res) => {
     try {
         const { amount, method } = req.body as { amount: number; method?: string };
         const numAmount = Number(amount);

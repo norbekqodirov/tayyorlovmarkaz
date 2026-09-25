@@ -11,6 +11,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
+import { idempotent } from '../middleware/idempotency.js';
 import { getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { logAudit } from '../middleware/audit.js';
 
@@ -58,7 +59,7 @@ router.get('/outstanding', async (req, res) => {
 });
 
 // POST /api/finance/advances — avans berish
-router.post('/', async (req, res) => {
+router.post('/', idempotent('staff_advance'), async (req, res) => {
     try {
         const { personType, personId, amount, method, date, notes } = req.body as {
             personType: string; personId: string; amount: number; method?: string; date: string; notes?: string;

@@ -393,6 +393,7 @@ model Charge {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   lines              ChargeLine[]
+  allocations        PaymentAllocation[]
 
   @@index([studentId, month])
   @@index([groupId, month])
@@ -619,6 +620,43 @@ model Payment {
   // bo'lmasa "paid" Payment abadiy noto'g'ri ko'rinib qolardi.
   sourceType String?
   sourceId   String?
+  // IP-12 (TQ-D): kvitansiya — raqam (ilova ketma-ketligi, unique emas), taqsimot rejimi, qabul qilgan
+  receiptNo      String?
+  allocationMode String? // legacy | manual | auto_fifo (null — IP-12 dan oldingi)
+  receivedById   String?
+  groupId        String? // to'lov qaysi guruh uchun (taklif; aniq biriktirish — PaymentAllocation)
+
+  allocations PaymentAllocation[]
+}
+
+// IP-12: to'lovning qaysi hisobni qancha yopgani. Bekor qilish — reversedAt (o'chirilmaydi).
+model PaymentAllocation {
+  id            String    @id @default(uuid())
+  paymentId     String
+  payment       Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  chargeId      String
+  charge        Charge    @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  amount        Int
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  reversedAt    DateTime?
+  reversedById  String?
+  reverseReason String?
+
+  @@index([paymentId])
+  @@index([chargeId])
+}
+
+// IP-12: pul komandalari idempotentligi (Idempotency-Key sarlavhasi) — bir kalit bilan
+// takroriy so'rov bir marta bajariladi, keyingilari saqlangan javobni oladi.
+model IdempotencyRecord {
+  key          String   @id
+  userId       String?
+  route        String
+  requestHash  String
+  statusCode   Int // 0 — bajarilmoqda
+  responseBody String?  @db.Text
+  createdAt    DateTime @default(now())
 }
 
 // ============================================
@@ -800,6 +838,9 @@ model TransactionCategory {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // IP-12 (TQ-E): TUITION | OTHER_INCOME | PAYROLL_PAYOUT | STAFF_ADVANCE | OPERATING_EXPENSE | REFUND | TRANSFER
+  kind      String?
+  isSystem  Boolean?
 
   @@unique([name, type])
 }

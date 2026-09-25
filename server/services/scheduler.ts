@@ -7,6 +7,7 @@ import { createConsistentBackup } from './dbBackup.js';
 import { syncAllHistoryCaches } from './groupHistory.js';
 import { generateAllPlans } from './lessonPlan.js';
 import { dailyRefresh } from './chargeEngine.js';
+import { pruneIdempotencyRecords } from '../middleware/idempotency.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -723,6 +724,11 @@ export async function startScheduler() {
             dailyRefresh()
                 .then(r => { if (r) console.log(`[Scheduler] Hisoblar (${r.month}): +${r.created}, ~${r.updated}, skip ${r.skipped.length}`); })
                 .catch(e => console.error('[Scheduler] Hisob generatsiyasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-12: 30 kundan eski idempotency yozuvlari (har kuni 04:10)
+        cron.schedule('10 4 * * *', () => {
+            pruneIdempotencyRecords().catch(e => console.error('[Scheduler] Idempotency tozalash xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
         // Har kuni 00:05 — kelajak sanali tarif/ustoz/foiz versiyalari kuchga
