@@ -4,6 +4,12 @@ import { sendMessage, sendPaymentReminder, sendAttendanceAlert, sendBroadcast, s
 import { todayDateStr, addDaysDateStr, tashkentDayOfWeek, nowTimeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { OPEN_STAGES } from '../constants/leads.js';
 import { createConsistentBackup } from './dbBackup.js';
+import { syncAllHistoryCaches } from './groupHistory.js';
+import { generateAllPlans } from './lessonPlan.js';
+import { dailyRefresh } from './chargeEngine.js';
+import { pruneIdempotencyRecords } from '../middleware/idempotency.js';
+import { reconcileBalances } from './balanceCache.js';
+import { getLedgerMode } from './ledgerMode.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -695,6 +701,51 @@ export async function startScheduler() {
         // Har kuni 03:30 — izchil baza + fayllar backup'i (IP-05)
         cron.schedule('30 3 * * *', () => {
             runDailyBackup();
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-10: dars rejasi — har oyning 25-sanasida keyingi oy uchun (yozish
+        // preview'i reja bo'yicha ishlashi uchun), 1-sanasida joriy oy uchun
+        // (jadval o'zgargan bo'lsa moslash). Generatsiya idempotent.
+        cron.schedule('15 0 25 * *', () => {
+            const today = todayDateStr();
+            // Date.UTC oyni 0 dan sanaydi — joriy oy raqami aynan keyingi oyning indeksi
+            const next = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 1)).toISOString().slice(0, 7);
+            generateAllPlans(next)
+                .then(r => console.log(`[Scheduler] Keyingi oy dars rejasi: ${r.length} guruh`))
+                .catch(e => console.error('[Scheduler] Dars rejasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+        cron.schedule('20 0 1 * *', () => {
+            generateAllPlans(todayDateStr().slice(0, 7))
+                .then(r => console.log(`[Scheduler] Joriy oy dars rejasi: ${r.length} guruh`))
+                .catch(e => console.error('[Scheduler] Dars rejasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-11: shadow/live rejimda har kuni 01:30 — joriy oy draft hisoblarini
+        // yangilash (legacy rejimda hech narsa qilmaydi). E'lon qilish — qo'lda.
+        cron.schedule('30 1 * * *', () => {
+            dailyRefresh()
+                .then(r => { if (r) console.log(`[Scheduler] Hisoblar (${r.month}): +${r.created}, ~${r.updated}, skip ${r.skipped.length}`); })
+                .catch(e => console.error('[Scheduler] Hisob generatsiyasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-14: har kuni 02:00 — balans keshi va formula solishtiruvi (live — tuzatiladi, shadow — hisobot)
+        cron.schedule('0 2 * * *', () => {
+            getLedgerMode().then(mode => mode === 'legacy' ? null : reconcileBalances({ fix: mode === 'live' }))
+                .then(r => { if (r && r.differences) console.log(`[Scheduler] Balans solishtiruvi (${r.mode}): ${r.differences} farq, ${r.fixed} tuzatildi`); })
+                .catch(e => console.error('[Scheduler] Balans solishtiruvi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-12: 30 kundan eski idempotency yozuvlari (har kuni 04:10)
+        cron.schedule('10 4 * * *', () => {
+            pruneIdempotencyRecords().catch(e => console.error('[Scheduler] Idempotency tozalash xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // Har kuni 00:05 — kelajak sanali tarif/ustoz/foiz versiyalari kuchga
+        // kirganda Group.price, Group.teacherId, User.salaryPercent keshlari (IP-09)
+        cron.schedule('5 0 * * *', () => {
+            syncAllHistoryCaches()
+                .then(r => { if (r.groups || r.teachers) console.log(`[Scheduler] Tarix keshlari yangilandi: ${r.groups} guruh, ${r.teachers} ustoz`); })
+                .catch(e => console.error('[Scheduler] Tarix keshlari xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
         // Har kuni 08:00 — Staff: dars eslatmasi

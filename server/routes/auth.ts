@@ -12,6 +12,7 @@ import { JWT_SECRET } from '../config/jwtSecret.js';
 import { getEffectivePermissions } from '../middleware/authorize.js';
 import { withAudit, logAudit } from '../middleware/audit.js';
 import { resolveRoleAssignment } from '../services/roleAssignment.js';
+import { recordLegacyRateEdit, safeHistory } from '../services/groupHistory.js';
 
 const router = express.Router();
 
@@ -392,6 +393,10 @@ router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
         if (salaryPercent !== undefined) updateData.salaryPercent = salaryPercent;
 
         const user = await prisma.user.update({ where: { id: req.params.id }, data: updateData });
+        // IP-09: foiz o'zgarsa — bugundan yangi TeacherRate versiyasi (tarix saqlanadi)
+        if (salaryPercent !== undefined) {
+            await safeHistory('teacher_rate', () => recordLegacyRateEdit(user.id, (target as any).salaryPercent ?? null, (user as any).salaryPercent ?? null, requester.id));
+        }
         res.json({
             id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role,
             avatar: (user as any).avatar, subject: (user as any).subject,

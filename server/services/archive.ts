@@ -28,7 +28,7 @@ export interface ArchiveResult {
 }
 
 async function studentHistory(id: string): Promise<string[]> {
-    const [payments, invoices, attendance, lessonAtt, assessments, exams, certificates, submissions, transactions, enrollments, notes] = await Promise.all([
+    const [payments, invoices, attendance, lessonAtt, assessments, exams, certificates, submissions, transactions, enrollments, notes, charges, periods] = await Promise.all([
         prisma.payment.count({ where: { studentId: id } }),
         prisma.invoice.count({ where: { studentId: id } }),
         prisma.attendanceRecord.count({ where: { studentId: id } }),
@@ -40,21 +40,24 @@ async function studentHistory(id: string): Promise<string[]> {
         prisma.transaction.count({ where: { studentId: id } }),
         prisma.enrollment.count({ where: { studentId: id } }),
         prisma.groupStudentNote.count({ where: { studentId: id } }),
+        prisma.charge.count({ where: { studentId: id, status: { not: 'void' } } }),
+        prisma.enrollmentPeriod.count({ where: { studentId: id } }),
     ]);
     const r: string[] = [];
+    if (charges) r.push(`${charges} ta hisob (oylik to'lov)`);
     if (payments) r.push(`${payments} ta to'lov`);
     if (invoices) r.push(`${invoices} ta invoice`);
     if (transactions) r.push(`${transactions} ta kassa yozuvi`);
     if (attendance + lessonAtt) r.push(`${attendance + lessonAtt} ta davomat yozuvi`);
     if (assessments + exams + submissions) r.push(`${assessments + exams + submissions} ta baho/imtihon`);
     if (certificates) r.push(`${certificates} ta sertifikat`);
-    if (enrollments) r.push(`${enrollments} ta guruh a'zoligi`);
+    if (enrollments || periods) r.push(`${Math.max(enrollments, periods)} ta guruh a'zoligi`);
     if (notes) r.push(`${notes} ta eslatma`);
     return r;
 }
 
 async function groupHistory(id: string): Promise<string[]> {
-    const [enrollments, attendance, sessions, assessments, exams, groupExams, notes, legacyAtt, tests] = await Promise.all([
+    const [enrollments, attendance, sessions, assessments, exams, groupExams, notes, legacyAtt, tests, charges] = await Promise.all([
         prisma.enrollment.count({ where: { groupId: id } }),
         prisma.attendanceRecord.count({ where: { groupId: id } }),
         prisma.lessonSession.count({ where: { groupId: id } }),
@@ -64,11 +67,13 @@ async function groupHistory(id: string): Promise<string[]> {
         prisma.groupStudentNote.count({ where: { groupId: id } }),
         prisma.attendance.count({ where: { groupId: id } }),
         prisma.test.count({ where: { groupId: id } }),
+        prisma.charge.count({ where: { groupId: id, status: { not: 'void' } } }),
     ]);
     const r: string[] = [];
     if (enrollments) r.push(`${enrollments} ta o'quvchi a'zoligi`);
     if (attendance + legacyAtt) r.push(`${attendance + legacyAtt} ta davomat yozuvi`);
-    if (sessions) r.push(`${sessions} ta qo'shimcha dars`);
+    if (sessions) r.push(`${sessions} ta dars (reja/qo'shimcha)`);
+    if (charges) r.push(`${charges} ta hisob`);
     if (assessments + exams + groupExams) r.push(`${assessments + exams + groupExams} ta baho/imtihon`);
     if (notes) r.push(`${notes} ta eslatma`);
     if (tests) r.push(`${tests} ta test`);

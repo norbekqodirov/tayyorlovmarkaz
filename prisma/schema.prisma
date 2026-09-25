@@ -73,8 +73,45 @@ model TeacherPayroll {
   approvedAt     DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  lines          PayrollLine[]
 
   @@unique([teacherId, month, basis])
+}
+
+// IP-15 (TQ-B): e'lon qilingan hisobdan ustoz maoshi qatori — "bu summa qaysi o'quvchi
+// hisobidan" izi. Bir hisob bir maoshga faqat bir marta kiradi (payrollId+chargeId unique).
+model PayrollLine {
+  id         String         @id @default(uuid())
+  payrollId  String
+  payroll    TeacherPayroll @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  chargeId   String
+  studentId  String
+  groupId    String?
+  baseAmount Int // hisob ustoz bazasi × ulush
+  shareNum   Int // ustoz o'tgan billable darslar
+  shareDen   Int // jami billable darslar
+  rateBp     Int
+  amount     Int
+
+  @@unique([payrollId, chargeId])
+  @@index([chargeId])
+}
+
+// IP-15 (OQ-10): tasdiqlangandan keyingi maosh tuzatmasi — keyingi ochiq oy maoshiga qo'shiladi
+model PayrollAdjustment {
+  id          String   @id @default(uuid())
+  personType  String // teacher | staff
+  personId    String
+  month       String // qaysi oyning maoshiga qo'shiladi
+  amount      Int // ishorali
+  reason      String
+  sourceType  String? // charge_adjustment | refund | manual
+  sourceId    String?
+  appliedToId String? // qaysi TeacherPayroll/Salary'ga kirdi
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([personType, personId, month])
 }
 
 // Payroll-avans tizimi (2026-09-17, foydalanuvchi so'rovi): "oylik
@@ -145,7 +182,15 @@ model Student {
   updatedAt        DateTime @updatedAt
 
   branchId         String?
+  // IP-09 (TQ-D): o'quvchi kodi (S-000001) va qidiruv/dublikat uchun normallashgan telefon (oxirgi 9 raqam).
+  // `code` noyobligini ilova ta'minlaydi (server/services/studentIdentity.ts — atomar hisoblagich):
+  // mavjud jadvalga unique qo'shish production'da `db push`ni --accept-data-loss'siz to'xtatardi (J.6).
+  code             String?
+  phoneNorm        String?
   enrollments       Enrollment[]
+  enrollmentPeriods EnrollmentPeriod[]
+  charges           Charge[]
+  studentDiscounts  StudentDiscount[]
   payments          Payment[]
   attendanceRecords AttendanceRecord[]
   assessments       Assessment[]
@@ -158,6 +203,9 @@ model Student {
   testSubmissions   TestSubmission[]
   leads             Lead[]
   lessonAttendance  LessonAttendance[]
+
+  @@index([code])
+  @@index([phoneNorm])
 }
 
 // ============================================
@@ -226,8 +274,14 @@ model Group {
   notes             GroupStudentNote[]
   tests             Test[]
   lessonSessions    LessonSession[]
+  enrollmentPeriods  EnrollmentPeriod[]
+  tariffVersions     TariffVersion[]
+  teacherAssignments GroupTeacherAssignment[]
 }
 
+// Enrollment — o'quvchining guruhdagi JORIY a'zoligi (kesh). A'zolik tarixi
+// va sanalari — EnrollmentPeriod (IP-09); davr tugaganda Enrollment qatori
+// o'chiriladi, davr esa tarix sifatida qoladi.
 model Enrollment {
   id        String   @id @default(uuid())
   studentId String
@@ -239,6 +293,181 @@ model Enrollment {
   createdAt DateTime @default(now())
 
   @@unique([studentId, groupId])
+}
+
+// ============================================
+// A'ZOLIK DAVRLARI VA TARIXLAR (IP-09)
+// docs/ADR_HISOB_QOIDALARI.md, server/services/enrollment.ts
+// Sanalar — "YYYY-MM-DD" (Toshkent), pul — butun so'm (Int)
+// ============================================
+
+model EnrollmentPeriod {
+  id             String   @id @default(uuid())
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId        String
+  group          Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  startDate      String   // birinchi billable kun (OQ-02: shu kungi dars hisoblanadi)
+  endDate        String?  // oxirgi kun; null — davom etmoqda
+  status         String   @default("active") // active | ended
+  endReason      String?  // left | transfer | graduated | admin_fix | unknown
+  startSource    String   @default("manual") // manual | lead_convert | import | transfer | legacy_api | backfill_attendance | backfill_created
+  endSource      String?  // manual | transfer | legacy_api | backfill_attendance
+  transferFromId String?  // oldingi davr (transfer)
+  note           String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  pauses EnrollmentPause[]
+
+  @@index([studentId])
+  @@index([groupId, status])
+}
+
+model EnrollmentPause {
+  id          String           @id @default(uuid())
+  periodId    String
+  period      EnrollmentPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  fromDate    String
+  toDate      String           // OQ-06: 7–60 kun, doim chegaralangan
+  reason      String
+  status      String           @default("active") // active | cancelled
+  createdById String?
+  createdAt   DateTime         @default(now())
+
+  @@index([periodId])
+}
+
+// Guruh tarifi tarixi (OQ-01). Group.price — joriy versiyaning keshi.
+model TariffVersion {
+  id                String   @id @default(uuid())
+  groupId           String
+  group             Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  monthlyPrice      Int
+  lessonsPerPackage Int      @default(12)
+  pricingMode       String   @default("fixed_package") // fixed_package
+  effectiveFrom     String
+  effectiveTo       String?
+  source            String   @default("manual") // manual | legacy_edit | group_create | backfill
+  createdById       String?
+  createdAt         DateTime @default(now())
+
+  @@index([groupId, effectiveFrom])
+}
+
+// Guruh ustozi tarixi (OQ-11). Group.teacherId — joriy tayinlashning keshi.
+// teacherId ataylab FK emas: foydalanuvchi o'chirilsa ham tarix saqlanadi.
+model GroupTeacherAssignment {
+  id          String   @id @default(uuid())
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  teacherId   String
+  fromDate    String
+  toDate      String?
+  role        String   @default("primary") // primary | substitute
+  source      String   @default("manual")
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([groupId, fromDate])
+  @@index([teacherId])
+}
+
+// Ustoz foizi tarixi (TQ-B). User.salaryPercent — joriy stavkaning keshi.
+model TeacherRate {
+  id            String   @id @default(uuid())
+  teacherId     String
+  rateBp        Int      // 4000 = 40,00%
+  basis         String   @default("accrual")
+  effectiveFrom String
+  effectiveTo   String?
+  source        String   @default("manual")
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([teacherId, effectiveFrom])
+}
+
+// ============================================
+// O'QUVCHI HISOBLARI (IP-11) — docs/ADR_HISOB_QOIDALARI.md, server/services/chargeEngine.ts
+// Hisob (majburiyat) guruh×oy bo'yicha; e'lon qilingani o'zgarmaydi — faqat tuzatma hisobi.
+// ============================================
+
+model BillingPeriod {
+  id           String    @id @default(uuid())
+  month        String    @unique // "2026-11"
+  status       String    @default("open") // open | closing | closed
+  closedAt     DateTime?
+  closedById   String?
+  checklist    String? // JSON natija
+  reopenedAt   DateTime?
+  reopenReason String?
+  createdAt    DateTime  @default(now())
+}
+
+model Charge {
+  id                 String       @id @default(uuid())
+  chargeKey          String       @unique // "T:{periodId}:{YYYY-MM}" | "S:{chargeId}:{n}" | "A:{chargeId}:{uuid}" | "O:{studentId}:{groupId}"
+  studentId          String
+  student            Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId            String?
+  enrollmentPeriodId String?
+  month              String // xizmat oyi
+  type               String // tuition | adjustment | opening_balance | other_fee
+  status             String       @default("draft") // draft | posted | void
+  gross              Int
+  net                Int
+  teacherBase        Int          @default(0) // OQ-05: ustoz maosh bazasi (marketing chegirmalarisiz)
+  dueDate            String?
+  teacherId          String? // asosiy ustoz (ko'rsatish uchun)
+  calc               String?      @db.Text // JSON: P, N, R, F, A, M, tarif/stavka, sanalar, ustoz darslari
+  reversesChargeId   String? // tuzatma qaysi hisobga
+  reason             String?
+  postedAt           DateTime?
+  postedById         String?
+  createdById        String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  lines              ChargeLine[]
+  allocations        PaymentAllocation[]
+
+  @@index([studentId, month])
+  @@index([groupId, month])
+  @@index([status, month])
+  @@index([reversesChargeId])
+}
+
+model ChargeLine {
+  id          String  @id @default(uuid())
+  chargeId    String
+  charge      Charge  @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  kind        String // base | extra_lesson | absence_discount | cancel_credit | promo | sibling | social | manual
+  amount      Int // ishorali: baza musbat, chegirma manfiy
+  description String
+  sourceId    String? // StudentDiscount.id, LessonSession.id va h.k.
+
+  @@index([chargeId])
+}
+
+// Takrorlanuvchi chegirma (aka-uka, ijtimoiy, grant) — hisob generatsiyasida ChargeLine bo'ladi (OQ-05 tartibi)
+model StudentDiscount {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId     String? // null — o'quvchining barcha guruhlariga
+  kind        String // sibling | social | promo | manual
+  percentBp   Int? // 1000 = 10% (qolgan summaga)
+  amount      Int? // yoki qat'iy summa
+  fromMonth   String // "YYYY-MM"
+  toMonth     String? // null — muddatsiz
+  reason      String
+  discountId  String? // promo-kod manbai (Discount)
+  status      String   @default("active") // active | cancelled
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([studentId])
 }
 
 // ============================================
@@ -280,8 +509,22 @@ model AttendanceRecord {
   checkOut  String?
   note      String?
   createdAt DateTime @default(now())
+  // IP-10 (TL-07): kim va qachon belgilagan; kechikkan tuzatish sababi; rejadagi dars
+  markedById String?
+  markedAt   DateTime?
+  editReason String?
+  sessionId  String?
 
   @@unique([studentId, groupId, date])
+}
+
+// IP-10 (OQ-03): markaz bayramlari — rejadagi darslar bu kunlarga yaratilmaydi
+model Holiday {
+  id          String   @id @default(uuid())
+  date        String   @unique // "YYYY-MM-DD"
+  name        String
+  createdById String?
+  createdAt   DateTime @default(now())
 }
 
 // EDU-06: guruh bir kunda bir necha marta o'tilishi mumkin (qo'shimcha/qoplash
@@ -301,8 +544,20 @@ model LessonSession {
   startTime String?  // "14:00" — bir nechta qo'shimcha dars bo'lsa ajratish uchun
   label     String?  // masalan "Qoplash darsi", "2-smena"
   createdAt DateTime @default(now())
+  // IP-10 (TL-09, OQ-03): dars rejasi. Eski yozuvlarda kind = null — ular qo'shimcha darslar.
+  kind              String?  // regular | extra | makeup | trial
+  status            String?  // planned | held | cancelled | moved
+  billable          Boolean? // pullik darsmi (R hisobiga kiradimi)
+  price             Int?     // pullik qo'shimcha dars narxi (extra_lesson qatori)
+  teacherId         String?  // darsni o'tadigan/o'tgan ustoz
+  replacesSessionId String?  // ko'chirilgan yoki qoplanayotgan dars
+  cancelReason      String?  // center | teacher | holiday | other
+  compensate        Boolean? // bekor qilingan va qoplanmagan dars uchun kredit (P/N)
+  createdById       String?
 
   attendance LessonAttendance[]
+
+  @@index([groupId, date])
 }
 
 model LessonAttendance {
@@ -377,6 +632,11 @@ model Transaction {
   // to'ldirilmaydi).
   sourceType  String?
   sourceId    String?
+  // IP-17 (OQ-12): bog'liq yoki yopilgan davrdagi yozuv o'chirilmaydi — bekor qilinadi:
+  // asl yozuv belgilanadi, qarshi yozuv (manfiy summa, sourceType 'reversal') yaratiladi.
+  voidedAt    DateTime?
+  voidedById  String?
+  voidReason  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -402,6 +662,66 @@ model Payment {
   // bo'lmasa "paid" Payment abadiy noto'g'ri ko'rinib qolardi.
   sourceType String?
   sourceId   String?
+  // IP-12 (TQ-D): kvitansiya — raqam (ilova ketma-ketligi, unique emas), taqsimot rejimi, qabul qilgan
+  receiptNo      String?
+  allocationMode String? // legacy | manual | auto_fifo (null — IP-12 dan oldingi)
+  receivedById   String?
+  groupId        String? // to'lov qaysi guruh uchun (taklif; aniq biriktirish — PaymentAllocation)
+  // IP-17 (H.4): kvitansiya bekor qilinishi (status 'void') — o'chirilmaydi, sabab bilan
+  voidedAt   DateTime?
+  voidedById String?
+  voidReason String?
+
+  allocations PaymentAllocation[]
+}
+
+// IP-12: to'lovning qaysi hisobni qancha yopgani. Bekor qilish — reversedAt (o'chirilmaydi).
+model PaymentAllocation {
+  id            String    @id @default(uuid())
+  paymentId     String
+  payment       Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  chargeId      String
+  charge        Charge    @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  amount        Int
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  reversedAt    DateTime?
+  reversedById  String?
+  reverseReason String?
+
+  @@index([paymentId])
+  @@index([chargeId])
+}
+
+// IP-17 (OQ-07): o'quvchiga pul qaytarish — faqat taqsimlanmagan avansdan (rahbar tasdig'i).
+// Kassa chiqimi (Transaction, REFUND) bilan bog'lanadi; bekor qilish — status void (o'chirilmaydi).
+model Refund {
+  id            String   @id @default(uuid())
+  studentId     String
+  paymentId     String? // qaysi kvitansiyaning avansidan (ixtiyoriy)
+  amount        Int
+  method        String   @default("Naqd")
+  date          String
+  reason        String
+  transactionId String?
+  status        String   @default("done") // done | void
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([studentId])
+  @@index([paymentId])
+}
+
+// IP-12: pul komandalari idempotentligi (Idempotency-Key sarlavhasi) — bir kalit bilan
+// takroriy so'rov bir marta bajariladi, keyingilari saqlangan javobni oladi.
+model IdempotencyRecord {
+  key          String   @id
+  userId       String?
+  route        String
+  requestHash  String
+  statusCode   Int // 0 — bajarilmoqda
+  responseBody String?  @db.Text
+  createdAt    DateTime @default(now())
 }
 
 // ============================================
@@ -583,6 +903,9 @@ model TransactionCategory {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // IP-12 (TQ-E): TUITION | OTHER_INCOME | PAYROLL_PAYOUT | STAFF_ADVANCE | OPERATING_EXPENSE | REFUND | TRANSFER
+  kind      String?
+  isSystem  Boolean?
 
   @@unique([name, type])
 }
@@ -1003,6 +1326,9 @@ model Invoice {
   paidAt      DateTime?
   method      String?       // Naqd, Payme, Click, Bank, Karta
   description String?       @db.Text
+  // IP-17 (H.4): holat mashinasi — bekor qilingan invoice qayta ochilmaydi va to'lanmaydi
+  cancelledAt  DateTime?
+  cancelReason String?
   items       InvoiceItem[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

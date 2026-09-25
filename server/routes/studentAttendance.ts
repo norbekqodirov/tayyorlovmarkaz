@@ -21,7 +21,7 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
-import { todayDateStr } from '../utils/timezone.js';
+import { markAttendance, deleteAttendance, AttendanceError } from '../services/attendance.js';
 
 const router = express.Router();
 
@@ -74,59 +74,15 @@ router.get('/month', async (req, res) => {
 });
 
 // ─── POST /api/attendance-records — bir kunlik ommaviy saqlash (upsert) ────
+// IP-10: barcha qoidalar yagona xizmatda (server/services/attendance.ts) —
+// Telegram yo'li (staffPortal.ts) ham aynan shu funksiyani chaqiradi.
 router.post('/', async (req, res) => {
     try {
-        const { groupId, date, records } = req.body as {
-            groupId: string; date: string; records: Array<{ studentId: string; status: string; note?: string }>;
-        };
-        if (!groupId || !date || !records?.length) {
-            return res.status(400).json({ message: 'groupId, date va records talab qilinadi' });
-        }
-        for (const r of records) {
-            if (!VALID_STATUSES.has(r.status)) {
-                return res.status(400).json({ message: `Noto'g'ri holat: ${r.status}` });
-            }
-        }
-        // IP-03/IP-10: sana formati va kelajak sanasi (Toshkent vaqti bo'yicha)
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            return res.status(400).json({ message: "Sana YYYY-MM-DD formatida bo'lishi kerak" });
-        }
-        if (date > todayDateStr()) {
-            return res.status(400).json({ message: "Kelajak sanasiga davomat belgilab bo'lmaydi" });
-        }
-
+        const { groupId, date, records, reason } = req.body || {};
         const requester = (req as any).user;
-        if (!(await ensureGroupAccess(groupId, requester))) {
-            return res.status(403).json({ message: 'Bu guruhga ruxsatingiz yo\'q' });
-        }
-
-        // EDU-01 tuzatish: guruhga ruxsat tekshirilardi, lekin har bir
-        // studentId aynan SHU guruhga a'zo (Enrollment) ekani tekshirilmasdi
-        // — noto'g'ri/eskirgan studentId yuborilsa, boshqa guruhdagi (yoki
-        // umuman guruhsiz) o'quvchi uchun davomat yozuvi yaratilishi mumkin
-        // edi, bu keyinchalik billing/hisobotlarni buzardi.
-        const enrolledIds = new Set(
-            (await prisma.enrollment.findMany({
-                where: { groupId, studentId: { in: records.map(r => r.studentId) }, student: { deletedAt: null } },
-                select: { studentId: true },
-            })).map(e => e.studentId),
-        );
-        const notEnrolled = records.filter(r => !enrolledIds.has(r.studentId));
-        if (notEnrolled.length > 0) {
-            return res.status(400).json({ message: "Quyidagi o'quvchi(lar) bu guruhga a'zo emas" });
-        }
-
-        const results = await Promise.all(
-            records.map(r =>
-                prisma.attendanceRecord.upsert({
-                    where: { studentId_groupId_date: { studentId: r.studentId, groupId, date } },
-                    create: { studentId: r.studentId, groupId, date, status: r.status, note: r.note },
-                    update: { status: r.status, note: r.note },
-                }),
-            ),
-        );
-        res.json({ saved: results.length, date, groupId });
+        res.json(await markAttendance({ groupId, date, records, reason }, { id: requester.id, role: requester.role }));
     } catch (err: any) {
+        if (err instanceof AttendanceError) return res.status(err.status).json({ message: err.message, code: err.code });
         res.status(500).json({ message: err.message });
     }
 });
@@ -136,14 +92,10 @@ router.delete('/:studentId/:groupId/:date', async (req, res) => {
     try {
         const { studentId, groupId, date } = req.params;
         const requester = (req as any).user;
-        if (!(await ensureGroupAccess(groupId, requester))) {
-            return res.status(403).json({ message: 'Bu guruhga ruxsatingiz yo\'q' });
-        }
-        await prisma.attendanceRecord.delete({
-            where: { studentId_groupId_date: { studentId, groupId, date } },
-        }).catch(() => { /* allaqachon yo'q bo'lsa ham jim — idempotent */ });
-        res.json({ success: true });
+        const reason = (req.body?.reason ?? req.query.reason ?? null) as string | null;
+        res.json(await deleteAttendance({ studentId, groupId, date, reason }, { id: requester.id, role: requester.role }));
     } catch (err: any) {
+        if (err instanceof AttendanceError) return res.status(err.status).json({ message: err.message, code: err.code });
         res.status(500).json({ message: err.message });
     }
 });

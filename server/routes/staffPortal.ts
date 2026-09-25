@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../db.js';
+import { markAttendance, AttendanceError } from '../services/attendance.js';
 import { validateStaffInitData } from '../services/telegramService.js';
 import { todayDateStr, nowTimeStr, nowMinutesOfDay, tashkentDayOfWeek, addDaysDateStr } from '../utils/timezone.js';
 import { MANAGER_KEY, teacherKey, studentKey } from './parentChat.js';
@@ -354,63 +355,12 @@ router.post('/attendance', staffPortalAuth, async (req: any, res) => {
             return res.status(400).json({ error: 'groupId, date va records talab qilinadi' });
         }
 
-        // Verify teacher owns this group
-        if (role === 'TEACHER') {
-            const group = await prisma.group.findUnique({
-                where: { id: groupId },
-                select: { teacherId: true },
-            });
-            if (!group || group.teacherId !== userId) {
-                return res.status(403).json({ error: 'Bu guruhga ruxsat yo\'q' });
-            }
-        }
-
-        // IP-03 (TL-08): CRM yo'lidagi (studentAttendance.ts, EDU-01) bilan bir
-        // xil tekshiruvlar — ilgari Telegram orqali guruhga a'zo bo'lmagan
-        // o'quvchiga yoki noto'g'ri holat qiymati bilan yozuv yaratish mumkin edi.
-        const VALID = new Set(['present', 'absent', 'late', 'excused']);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            return res.status(400).json({ error: "Sana YYYY-MM-DD formatida bo'lishi kerak" });
-        }
-        if (date > todayDateStr()) {
-            return res.status(400).json({ error: "Kelajak sanasiga davomat belgilab bo'lmaydi" });
-        }
-        const badStatus = records.find(r => !VALID.has(r.status));
-        if (badStatus) {
-            return res.status(400).json({ error: `Noto'g'ri holat: ${badStatus.status}` });
-        }
-        const enrolledIds = new Set(
-            (await prisma.enrollment.findMany({
-                where: { groupId, studentId: { in: records.map(r => r.studentId) }, student: { deletedAt: null } },
-                select: { studentId: true },
-            })).map(e => e.studentId),
-        );
-        if (records.some(r => !enrolledIds.has(r.studentId))) {
-            return res.status(400).json({ error: "Ro'yxatdagi ayrim o'quvchilar bu guruhga a'zo emas" });
-        }
-
-        // Upsert attendance records
-        const results = await Promise.all(
-            records.map(r =>
-                prisma.attendanceRecord.upsert({
-                    where: { studentId_groupId_date: { studentId: r.studentId, groupId, date } },
-                    create: {
-                        studentId: r.studentId,
-                        groupId,
-                        date,
-                        status: r.status,
-                        note: r.note,
-                    },
-                    update: {
-                        status: r.status,
-                        note: r.note,
-                    },
-                }),
-            ),
-        );
-
-        res.json({ saved: results.length, date, groupId });
+        // IP-10 (TL-08): CRM bilan aynan bir xil xizmat — a'zolik davri, pauza,
+        // bekor qilingan dars, tuzatish oynasi va muallif (markedById) shu yerda.
+        const result = await markAttendance({ groupId, date, records, reason: (req.body as any).reason }, { id: userId, role });
+        res.json({ saved: result.saved, date, groupId, warnings: result.warnings });
     } catch (err: any) {
+        if (err instanceof AttendanceError) return res.status(err.status).json({ error: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });

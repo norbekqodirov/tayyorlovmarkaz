@@ -9,6 +9,9 @@ import { resolveRoleAssignment } from '../services/roleAssignment.js';
 import { archiveOrDelete, restoreArchived, ARCHIVABLE_MODELS, ArchivableModel } from '../services/archive.js';
 import { CURRENT_ENROLLMENT_WHERE } from '../utils/activeFilters.js';
 import { normalizeStudentStatus } from '../utils/studentStatus.js';
+import { recordGroupCreate, recordLegacyGroupEdit, safeHistory } from '../services/groupHistory.js';
+import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
+import { deleteTransaction, ReversalError } from '../services/moneyReversal.js';
 
 const router = express.Router();
 
@@ -482,42 +485,11 @@ function authForCollection(req: express.Request, res: express.Response, next: ex
     });
 }
 
-// ─── Special: Enroll student into group ───────────────────────────────────────
-// MUHIM: bu uchta /enrollments* route generic /:collection va /:collection/:id
-// route'laridan OLDIN turishi SHART. Express bir xil method+router uchun
-// route'larni ro'yxatdan o'tish tartibida moslashtiradi — /:collection ham
-// /enrollments'ga (bitta segment) to'g'ri keladi, shuning uchun agar u birinchi
-// bo'lsa, quyidagi maxsus handler'lar HECH QACHON chaqirilmaydi (2026-09-07'da
-// aniqlangan va tasdiqlangan real bug — POST /api/enrollments 200 qaytarardi,
-// lekin haqiqiy Enrollment o'rniga GenericDocument yozardi).
-// SEC-04 tuzatish: uchala /enrollments* route ilgari faqat `requireAuth`
-// bilan ochiq edi — generic /:collection middleware'ini chetlab o'tgani
-// uchun COLLECTION_WRITE_LEVEL.enrollments=2 (MANAGER+) HECH QACHON
-// tekshirilmasdi. Har qanday login qilgan TEACHER istalgan o'quvchini
-// istalgan guruhga qo'sha/chiqara olardi — frontend esa (CrmGroupDetail.tsx
-// canManage) bu tugmalarni allaqachon faqat MANAGER+'ga ko'rsatadi, ya'ni
-// bu faqat backend-tomon yopiq bo'lmagan ruxsat edi.
-router.post('/enrollments', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
-    const { studentId, groupId } = req.body;
-    if (!studentId || !groupId) return res.status(400).json({ message: "studentId va groupId kiritilishi shart" });
-    try {
-        // IP-01: arxivlangan o'quvchi yoki guruhga yangi a'zolik yaratilmaydi.
-        const [student, group] = await Promise.all([
-            prisma.student.findUnique({ where: { id: studentId }, select: { deletedAt: true } }),
-            prisma.group.findUnique({ where: { id: groupId }, select: { deletedAt: true } }),
-        ]);
-        if (!student || !group) return res.status(404).json({ message: "O'quvchi yoki guruh topilmadi" });
-        if (student.deletedAt) return res.status(400).json({ message: "O'quvchi arxivlangan — avval uni arxivdan tiklang" });
-        if (group.deletedAt) return res.status(400).json({ message: "Guruh arxivlangan — avval uni arxivdan tiklang" });
-        // Upsert — ignore if already enrolled
-        const existing = await prisma.enrollment.findUnique({ where: { studentId_groupId: { studentId, groupId } } });
-        if (existing) return res.json({ id: existing.id, studentId, groupId, alreadyEnrolled: true });
-        const enrollment = await prisma.enrollment.create({ data: { studentId, groupId } });
-        res.json(enrollment);
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
+// ─── A'zolik yo'llari ───────────────────────────────────────────────────────
+// IP-09: POST /enrollments, GET /enrollments/group/:groupId va DELETE
+// /enrollments/remove server/routes/enrollments.ts ga ko'chirildi (a'zolik
+// davrlari xizmati orqali). U index.ts'da /api/enrollments sifatida crud'dan
+// OLDIN ulanadi — generic /:collection bu yo'llarni soyalay olmaydi.
 
 // RX-04: ustoz o'quvchi moliyasini (balans, to'lov holati) ko'rmaydi —
 // GET /students/:id proyeksiyasi (students.ts) bilan bir xil qoida ro'yxatlarda ham.
@@ -533,38 +505,6 @@ function projectRowForRequester(modelName: string, row: any, requester: any) {
     if (modelName === 'student') return hideStudentFinance(row);
     return row;
 }
-
-// ─── Special: Get enrollments for a group ─────────────────────────────────────
-// SEC-04 tuzatish: TEACHER endi faqat O'Z guruhining a'zolar ro'yxatini
-// ko'ra oladi — ilgari guruhga tegishlilik umuman tekshirilmasdi.
-router.get('/enrollments/group/:groupId', requireAuth, async (req, res) => {
-    try {
-        const requester = (req as any).user;
-        if (requester.role === 'TEACHER' && !(await teacherOwnsGroup(req.params.groupId, requester.id))) {
-            return res.status(403).json({ message: 'Bu guruhga tegishli emassiz' });
-        }
-        const enrollments = await prisma.enrollment.findMany({
-            where: { groupId: req.params.groupId, student: { deletedAt: null } },
-            include: { student: true },
-        });
-        res.json(requester.role === 'TEACHER'
-            ? enrollments.map(e => ({ ...e, student: hideStudentFinance(e.student) }))
-            : enrollments);
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
-
-// ─── Special: Remove student from group ───────────────────────────────────────
-router.delete('/enrollments/remove', requireAuth, requireMinRole('MANAGER'), async (req, res) => {
-    const { studentId, groupId } = req.body;
-    try {
-        await prisma.enrollment.delete({ where: { studentId_groupId: { studentId, groupId } } });
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: String(error) });
-    }
-});
 
 // ─── Collection Middleware ────────────────────────────────────────────────────
 router.use('/:collection', authForCollection, async (req, res, next) => {
@@ -795,6 +735,9 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
             // @ts-ignore
             finalData = await prisma[modelName].create({ data: req.body, ...(include && { include }) });
             finalData = parseJsonFields(modelName, finalData);
+            // IP-09: yangi guruh — boshlang'ich tarif/ustoz tarixi; yangi o'quvchi — kod va phoneNorm
+            if (modelName === 'group') await safeHistory('group_create', () => recordGroupCreate(finalData, (req as any).user?.id));
+            if (modelName === 'student') await ensureStudentIdentitySafe(prisma, finalData.id);
         }
 
         // ─── Staff → login (User) hisobi ──────────────────────────────
@@ -886,51 +829,20 @@ router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
             }
         }
 
+        // IP-09: guruh narxi/ustozi o'zgarsa — sana bilan tarix versiyasi (QT-21)
+        const groupBefore = modelName === 'group' && ('price' in req.body || 'teacherId' in req.body)
+            ? await prisma.group.findUnique({ where: { id: req.params.id }, select: { id: true, price: true, teacherId: true, startDate: true, courseId: true, createdAt: true } })
+            : null;
         // @ts-ignore
         const data = await prisma[modelName].update({ where: { id: req.params.id }, data: req.body, ...(include && { include }) });
+        if (groupBefore) await safeHistory('legacy_group_edit', () => recordLegacyGroupEdit(groupBefore, { price: (data as any).price ?? null, teacherId: (data as any).teacherId ?? null }, requester?.id));
         res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });
     }
 });
 
-// Moliya-audit (2026-09-22, foydalanuvchi so'rovi): "berilgan oylik/avansni
-// kirim-chiqimdan o'chirsam, hali ham berilgan hisobda turibdi" — Transaction
-// o'chirilganda, uni yaratgan Salary/TeacherPayroll/StaffAdvance yozuvi
-// ilgari HECH QACHON qaytarilmasdi (faqat kirim+studentId balansi qaytardi).
-// Bitta avans bir nechta oylikka QISMAN qo'llanilgan bo'lishi mumkin
-// (StaffAdvanceApplication) — shuning uchun avansni o'chirishdan oldin,
-// undan foydalanilgan HAR BIR oylik/maosh yozuvidan ham `advanceApplied`
-// ORQAGA qaytariladi (aks holda o'sha yozuvlar "avans bilan to'langan" deb
-// noto'g'ri ko'rsatib qolardi, garchi avansning o'zi endi mavjud bo'lmasa ham).
-async function reverseStaffAdvance(txClient: any, advanceId: string) {
-    const applications = await txClient.staffAdvanceApplication.findMany({ where: { advanceId } });
-    for (const app of applications) {
-        if (app.appliedToType === 'salary') {
-            const salary = await txClient.salary.findUnique({ where: { id: app.appliedToId } });
-            if (salary) {
-                const newAdvanceApplied = Math.max(0, salary.advanceApplied - app.amount);
-                const stillFullyPaid = (salary.paidAmount + newAdvanceApplied) >= salary.total;
-                await txClient.salary.update({
-                    where: { id: salary.id },
-                    data: { advanceApplied: newAdvanceApplied, paid: stillFullyPaid, paidAt: stillFullyPaid ? salary.paidAt : null },
-                });
-            }
-        } else if (app.appliedToType === 'teacher_payroll') {
-            const payroll = await txClient.teacherPayroll.findUnique({ where: { id: app.appliedToId } });
-            if (payroll) {
-                const newAdvanceApplied = Math.max(0, payroll.advanceApplied - app.amount);
-                const stillFullyPaid = (payroll.paidAmount + newAdvanceApplied) >= payroll.accruedAmount;
-                await txClient.teacherPayroll.update({
-                    where: { id: payroll.id },
-                    data: { advanceApplied: newAdvanceApplied, status: stillFullyPaid ? 'paid' : 'approved' },
-                });
-            }
-        }
-    }
-    await txClient.staffAdvanceApplication.deleteMany({ where: { advanceId } });
-    await txClient.staffAdvance.deleteMany({ where: { id: advanceId } });
-}
+// Avans/oylik/maosh to'lovini bekor qilish qoidalari — services/moneyReversal.ts (IP-17, OQ-12).
 
 // ─── DELETE /:collection/:id with Cascade Cleanup ─────────────────────────────
 router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
@@ -967,82 +879,25 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
                 message: "To'lov yozuvini bu yo'l orqali o'chirib bo'lmaydi",
             });
         }
-        // `transaction` esa CrmFinance.tsx'ning "Tranzaksiyalar" ro'yxatida
-        // haqiqatan o'chiriladigan mavjud funksiya. Moliya-audit (2026-09-22,
-        // foydalanuvchi so'rovi — "berilgan oylik/avansni o'chirsam hisobda
-        // qolib ketyapti"): endi HAR BIR `sourceType` uchun to'liq, atomar
-        // qaytarish/tozalash bajariladi — "income"+studentId balansi (eski
-        // xatti-harakat) dan tashqari, Payment/Expense/Salary/TeacherPayroll/
-        // StaffAdvance ham mos ravishda qaytariladi/o'chiriladi. `invoice` va
-        // `online_transaction` manbali yozuvlar esa (Invoice.ning o'zi kabi)
-        // to'g'ridan-to'g'ri o'chirilmaydi — bular tashqi/rasmiy to'lov
-        // hodisalari, haqiqiy qaytarish uchun alohida refund jarayoni kerak.
+        // IP-17 (OQ-12): kassa yozuvi faqat bog'liqliksiz va ochiq oyda bo'lsa jismonan
+        // o'chiriladi (test/xato yozuvlar). Kvitansiya, maosh/oylik to'lovi, avans,
+        // qaytarish yoki yopilgan oy yozuvi — 409 VOID_REQUIRED: UI sabab so'raydi va
+        // POST /api/finance/transactions/:id/void chaqiradi (ta'sir qaytariladi + qarshi
+        // yozuv, tarix saqlanadi). Invoice va Payme/Click yozuvlari — 400 (o'z jarayoni).
         if (modelName === 'transaction') {
-            const tx = await prisma.transaction.findUnique({ where: { id } });
-            if (!tx) return res.status(404).json({ message: 'Topilmadi' });
-
-            if (tx.sourceType === 'invoice') {
-                return res.status(400).json({ message: "Bu tranzaksiya to'langan invoice'ga bog'liq — to'langan invoice'ni o'chirib bo'lmagani kabi, bu yozuvni ham shu yo'l orqali o'chirib bo'lmaydi." });
+            try {
+                const tx = await deleteTransaction(id);
+                const remover = (req as any).user;
+                await logAudit({
+                    userId: remover?.id, userName: remover?.name || 'system',
+                    action: 'delete', resource: 'transaction', resourceId: id,
+                    before: { type: tx.type, amount: tx.amount, category: tx.category, date: tx.date, sourceType: tx.sourceType, sourceId: tx.sourceId },
+                });
+                return res.json({ success: true });
+            } catch (e: any) {
+                if (e instanceof ReversalError) return res.status(e.status).json({ message: e.message, error: e.message, code: e.code });
+                throw e;
             }
-            if (tx.sourceType === 'online_transaction') {
-                return res.status(400).json({ message: "Bu tranzaksiya Payme/Click orqali tasdiqlangan to'lovga bog'liq — faqat to'lov tizimining o'zi orqali (refund) bekor qilinishi mumkin." });
-            }
-
-            const student = tx.studentId ? await prisma.student.findUnique({ where: { id: tx.studentId }, select: { id: true } }) : null;
-            await prisma.$transaction(async (txClient) => {
-                if (tx.type === 'income' && student && (!tx.sourceType || tx.sourceType === 'manual_payment')) {
-                    const updated = await txClient.student.update({
-                        where: { id: student.id },
-                        data: { balance: { decrement: tx.amount } },
-                    });
-                    await txClient.student.update({
-                        where: { id: student.id },
-                        data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
-                    });
-                }
-                if (tx.sourceType === 'manual_payment' && tx.sourceId) {
-                    await txClient.payment.deleteMany({ where: { id: tx.sourceId } });
-                }
-                if (tx.sourceType === 'expense' && tx.sourceId) {
-                    await txClient.expense.deleteMany({ where: { id: tx.sourceId } });
-                }
-                if (tx.sourceType === 'salary' && tx.sourceId) {
-                    const salary = await txClient.salary.findUnique({ where: { id: tx.sourceId } });
-                    if (salary) {
-                        const newPaidAmount = Math.max(0, salary.paidAmount - tx.amount);
-                        const stillFullyPaid = (newPaidAmount + salary.advanceApplied) >= salary.total;
-                        await txClient.salary.update({
-                            where: { id: salary.id },
-                            data: { paidAmount: newPaidAmount, paid: stillFullyPaid, paidAt: stillFullyPaid ? salary.paidAt : null },
-                        });
-                    }
-                }
-                if (tx.sourceType === 'teacher_payroll' && tx.sourceId) {
-                    const payroll = await txClient.teacherPayroll.findUnique({ where: { id: tx.sourceId } });
-                    if (payroll) {
-                        const newPaidAmount = Math.max(0, payroll.paidAmount - tx.amount);
-                        const stillFullyPaid = (newPaidAmount + payroll.advanceApplied) >= payroll.accruedAmount;
-                        await txClient.teacherPayroll.update({
-                            where: { id: payroll.id },
-                            data: { paidAmount: newPaidAmount, status: stillFullyPaid ? 'paid' : 'approved' },
-                        });
-                    }
-                }
-                if (tx.sourceType === 'staff_advance' && tx.sourceId) {
-                    await reverseStaffAdvance(txClient, tx.sourceId);
-                }
-                await txClient.transaction.delete({ where: { id } });
-            });
-
-            // F22 uslubi: pul-harakatini qaytarish ham audit qilinadi.
-            const remover = (req as any).user;
-            await logAudit({
-                userId: remover?.id, userName: remover?.name || 'system',
-                action: 'delete', resource: 'transaction', resourceId: id,
-                before: { type: tx.type, amount: tx.amount, category: tx.category, sourceType: tx.sourceType, sourceId: tx.sourceId },
-            });
-
-            return res.json({ success: true });
         }
 
         // SEC-06 tuzatish: POST/PUT'da TEACHER guruh egaligi tekshirilardi,

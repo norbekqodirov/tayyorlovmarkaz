@@ -6,6 +6,7 @@ import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { can } from '../middleware/authorize.js';
 import { createLeadFromIntake, LeadIntakeValidationError } from '../services/leadIntake.js';
 import { logAudit } from '../middleware/audit.js';
+import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 
 const router = express.Router();
 const MAX_IMPORT_ROWS = 10000;
@@ -226,7 +227,8 @@ router.post('/:collection/confirm', requireAuth, requireMinRole('MANAGER'),
                         skipped++;
                         continue;
                     }
-                    await prisma.student.create({ data: { ...data, status: 'active' } as any });
+                    const created = await prisma.student.create({ data: { ...data, status: 'active' } as any });
+                    await ensureStudentIdentitySafe(prisma, created.id);
                     if (key.length === 9) existingPhones.add(key);
                 } else if (config.model === 'staffMember') {
                     if (data.salary) data.salary = Number(data.salary) || 0;

@@ -43,7 +43,7 @@ const AUTH_ONLY: Record<string, string> = {
     'communication.ts GET /notifications': 'faqat o\'z bildirishnomalari',
     'communication.ts POST /notifications/mark-all-read': 'faqat o\'z bildirishnomalari',
     'communication.ts PATCH /notifications/:id/read': 'faqat o\'z bildirishnomalari',
-    'crud.ts GET /enrollments/group/:groupId': 'handler ichida ustoz guruh egaligi tekshiriladi',
+    'enrollments.ts GET /group/:groupId': 'handler ichida ustoz guruh egaligi tekshiriladi, moliya maydonlari yashiriladi',
     'ical.ts GET /group/:groupId.ics': 'handler ichida ustoz guruh egaligi tekshiriladi',
     'ical.ts GET /teacher/:userId.ics': 'handler ichida ustoz faqat o\'zini ko\'radi',
     'upload.ts POST /': 'fayl yuklash — barcha xodimlar (uy vazifasi, avatar)',

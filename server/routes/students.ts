@@ -7,8 +7,12 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { withAudit, logAudit } from '../middleware/audit.js';
-import { requirePermission } from '../middleware/authorize.js';
+import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
 import { normalizeStudentStatus } from '../utils/studentStatus.js';
+import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
+import { getLedgerMode } from '../services/ledgerMode.js';
+import { syncStudentBalance } from '../services/balanceCache.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -22,6 +26,39 @@ const router = express.Router();
 // toraytiriladi — faqat o'z guruhlari a'zoligi, davomati va baholari; to'lov,
 // invoice va balans umuman qaytarilmaydi (OQ-13 tavsiyasi). Ilgari ikki
 // guruhli o'quvchining boshqa guruhdagi baholari va to'lovlari ham chiqardi.
+// ─── GET /api/students/search?q= — TQ-D: ism, telefon yoki kod bo'yicha aniq tanlash ──
+// Kassir/administrator uchun (MANAGER+, "students" yoki "finance"). SQLite'da
+// case-insensitive "contains" yo'q — ro'yxat qisqa proyeksiya bilan olinib,
+// normallashtirilgan holda filtrlanadi.
+const normName = (s: string) => s.toLowerCase().replace(/[ʻʼ‘’`']/g, "'").replace(/\s+/g, ' ').trim();
+router.get('/search', requireAuth, requireMinRole('MANAGER'), requireAnyPermission(['students', 'finance']), async (req, res) => {
+    try {
+        const q = String(req.query.q || '').trim();
+        if (q.length < 2) return res.json([]);
+        const nq = normName(q);
+        const digits = q.replace(/\D/g, '');
+        const codeQ = /^s-?\d+$/i.test(q) ? `S-${q.replace(/\D/g, '').padStart(6, '0')}` : null;
+        const rows = await prisma.student.findMany({
+            where: { deletedAt: null },
+            select: {
+                id: true, name: true, phone: true, parentPhone: true, code: true, phoneNorm: true, status: true,
+                enrollments: { select: { group: { select: { id: true, name: true } } } },
+            },
+        });
+        const matches = rows.filter(s =>
+            (codeQ && s.code === codeQ)
+            || normName(s.name).includes(nq)
+            || (digits.length >= 4 && ((s.phoneNorm || '').includes(digits.slice(-9)) || (s.parentPhone || '').replace(/\D/g, '').includes(digits.slice(-9))))
+            || (s.code || '').toLowerCase() === nq);
+        res.json(matches.slice(0, 20).map(s => ({
+            id: s.id, name: s.name, code: s.code, phone: s.phone, status: s.status,
+            groups: s.enrollments.map(e => e.group),
+        })));
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 router.get('/:id', requireAuth, requirePermission('students'), async (req, res) => {
     try {
         const requester = (req as any).user;
@@ -88,6 +125,8 @@ router.put('/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('st
         // IP-04 (TL-13): holat har doim kanonik qiymatda saqlanadi.
         if (data.status !== undefined) data.status = normalizeStudentStatus(data.status);
         const student = await prisma.student.update({ where: { id: req.params.id }, data });
+        // IP-09: telefon o'zgarsa — phoneNorm (qidiruv/dublikat); kod yo'q bo'lsa — beriladi
+        if (data.phone !== undefined || !(student as any).code) await ensureStudentIdentitySafe(prisma, student.id);
         res.json(student);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -109,6 +148,33 @@ router.post('/:id/balance-adjustments', requireAuth, requireMinRole('MANAGER'), 
         }
         if (Math.abs(amount) > 1_000_000_000) {
             return res.status(400).json({ message: "Summa juda katta — tekshirib qayta kiriting" });
+        }
+        // IP-14: live rejimda balans — hisoblar va to'lovlardan hosila (kesh). Qarz qo'shish
+        // e'lon qilingan "other_fee" hisobi bo'ladi; avans faqat haqiqiy to'lov (kvitansiya) orqali.
+        if (await getLedgerMode() === 'live') {
+            if (amount > 0) {
+                return res.status(409).json({ message: "Jonli rejimda avans faqat to'lov (kvitansiya) orqali; hisobni kamaytirish — hisob tuzatmasi orqali (Oylik hisoblar)", code: 'LIVE_MODE' });
+            }
+            if (reason.length < 3) return res.status(400).json({ message: "Tuzatish sababini yozing (kamida 3 belgi)" });
+            const student = await prisma.student.findUnique({ where: { id: req.params.id }, select: { id: true, deletedAt: true } });
+            if (!student) return res.status(404).json({ message: "O'quvchi topilmadi" });
+            const actorUser = (req as any).user;
+            const month = todayDateStr().slice(0, 7);
+            const charge = await prisma.$transaction(async tx => {
+                const c = await tx.charge.create({
+                    data: {
+                        chargeKey: `F:${student.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, studentId: student.id, month,
+                        type: 'other_fee', status: 'posted', gross: -amount, net: -amount, teacherBase: 0, reason,
+                        calc: JSON.stringify({ manual: true, via: 'balance_adjustment' }), postedAt: new Date(), postedById: actorUser?.id ?? null, createdById: actorUser?.id ?? null,
+                        lines: { create: [{ kind: 'manual', amount: -amount, description: reason }] },
+                    },
+                });
+                await syncStudentBalance(tx, student.id, 'live');
+                return c;
+            });
+            await logAudit({ userId: actorUser?.id, userName: actorUser?.name || 'system', action: 'balance_adjustment', resource: 'charge', resourceId: charge.id, after: { amount, reason, mode: 'live' } });
+            const s = await prisma.student.findUnique({ where: { id: student.id }, select: { id: true, balance: true, paymentStatus: true } });
+            return res.json(s);
         }
         if (reason.length < 3) {
             return res.status(400).json({ message: "Tuzatish sababini yozing (kamida 3 belgi)" });

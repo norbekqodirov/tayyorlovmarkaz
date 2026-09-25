@@ -10,10 +10,12 @@ import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
+import { idempotent } from '../middleware/idempotency.js';
 import { todayDateStr } from '../utils/timezone.js';
-import { calculateTeacherPayroll, PayrollBasis } from '../services/teacherPayroll.js';
+import { calculateTeacherPayroll, calculateTeacherAccrual, calculateTeacherLedgerAccrual, PayrollBasis, type LedgerPayrollBreakdown } from '../services/teacherPayroll.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { logAudit } from '../middleware/audit.js';
+import { payrollDeleteBlock, releaseAdvanceApplications, isMonthClosed } from '../services/moneyReversal.js';
 
 const router = express.Router();
 
@@ -67,6 +69,43 @@ router.get('/preview', canReview, async (req, res) => {
         }
         const result = await calculateTeacherPayroll(teacherId, Number(year), Number(month), parseBasis(basis));
         res.json(result);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET /api/finance/teacher-payroll/ledger-preview?teacherId=&year=&month= — IP-15 shadow:
+// e'lon qilingan hisoblardan (ledger) va eski formula bo'yicha accrual yonma-yon (yozmaydi).
+router.get('/ledger-preview', canReview, async (req, res) => {
+    try {
+        const { teacherId, year, month } = req.query as Record<string, string>;
+        if (!teacherId || !year || !month) return res.status(400).json({ message: 'teacherId, year va month talab qilinadi' });
+        const [ledger, legacy] = await Promise.all([
+            calculateTeacherLedgerAccrual(teacherId, Number(year), Number(month)),
+            calculateTeacherAccrual(teacherId, Number(year), Number(month)),
+        ]);
+        res.json({ ledger, legacy: { salary: legacy.salary, revenue: legacy.revenue, salaryPercent: legacy.salaryPercent }, diff: ledger.salary - legacy.salary });
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// POST /api/finance/teacher-payroll/adjustments — { teacherId, month, amount, reason } (OQ-10)
+// Tasdiqlangan oy uchun tuzatma keyingi ochiq oy maoshiga qo'shiladi.
+router.post('/adjustments', canManageMoney, async (req, res) => {
+    try {
+        const { teacherId, month, amount, reason } = req.body || {};
+        const amt = Number(amount);
+        if (!teacherId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) return res.status(400).json({ message: 'teacherId va month (YYYY-MM) kerak' });
+        if (!Number.isInteger(amt) || amt === 0 || Math.abs(amt) > 1e8) return res.status(400).json({ message: "Summa noldan farqli butun son bo'lishi kerak" });
+        if (!reason || String(reason).trim().length < 3) return res.status(400).json({ message: 'Sababni yozing' });
+        if (await isMonthClosed(prisma, `${month}-01`)) return res.status(409).json({ message: `${month} oyi yopilgan — tuzatmani keyingi oyga kiriting`, code: 'PERIOD_CLOSED' });
+        const approved = await prisma.teacherPayroll.findFirst({ where: { teacherId, month, status: { not: 'draft' } } });
+        if (approved) return res.status(409).json({ message: `${month} maoshi allaqachon tasdiqlangan — tuzatmani keyingi oyga kiriting`, code: 'APPROVED' });
+        const user = (req as any).user;
+        const adj = await prisma.payrollAdjustment.create({ data: { personType: 'teacher', personId: teacherId, month, amount: amt, reason: String(reason).trim(), sourceType: 'manual', createdById: user?.id ?? null } });
+        await logAudit({ userId: user?.id, userName: user?.name || 'system', action: 'payroll_adjustment', resource: 'payrollAdjustment', resourceId: adj.id, after: adj });
+        res.status(201).json(adj);
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -229,6 +268,14 @@ router.post('/', canReview, async (req, res) => {
             create: data,
             update: data,
         });
+        // IP-15: live rejimda — maosh qatorlari hisoblar bilan bog'lanadi (draft qayta hisoblansa yangilanadi)
+        const ledger = (breakdown as LedgerPayrollBreakdown).source === 'ledger' ? breakdown as LedgerPayrollBreakdown : null;
+        await prisma.payrollLine.deleteMany({ where: { payrollId: payroll.id } });
+        if (ledger?.lines.length) {
+            await prisma.payrollLine.createMany({
+                data: ledger.lines.map(l => ({ payrollId: payroll.id, chargeId: l.chargeId, studentId: l.studentId, groupId: l.groupId, baseAmount: l.baseAmount, shareNum: l.shareNum, shareDen: l.shareDen, rateBp: l.rateBp, amount: l.amount })),
+            });
+        }
         const outstandingAdvance = await getOutstandingAdvanceTotal(prisma, 'teacher', teacherId);
         res.json({ ...payroll, remaining: remainingOf(payroll), outstandingAdvance });
     } catch (err: any) {
@@ -317,7 +364,7 @@ router.post('/:id/approve', canManageMoney, async (req, res) => {
 // POST /api/finance/teacher-payroll/:id/pay — qisman/to'liq to'lov qayd etish
 // RF-03/RF-04 bilan bir xil atomar naqsh: holat/qoldiq tekshiruvi va
 // Transaction yozuvi BITTA $transaction ichida.
-router.post('/:id/pay', canManageMoney, async (req, res) => {
+router.post('/:id/pay', canManageMoney, idempotent('teacher_payroll_pay'), async (req, res) => {
     try {
         const { amount, method } = req.body as { amount: number; method?: string };
         const numAmount = Number(amount);
@@ -398,7 +445,7 @@ router.get('/:id/payouts', canReview, async (req, res) => {
     try {
         const [transactions, advanceApplications] = await Promise.all([
             prisma.transaction.findMany({
-                where: { sourceType: 'teacher_payroll', sourceId: req.params.id },
+                where: { sourceType: 'teacher_payroll', sourceId: req.params.id, voidedAt: null }, // IP-17: bekor qilinganlar — kassa tarixida
                 orderBy: { createdAt: 'desc' },
             }),
             prisma.staffAdvanceApplication.findMany({
@@ -423,6 +470,30 @@ router.get('/:id/payouts', canReview, async (req, res) => {
     }
 });
 
+// POST /api/finance/teacher-payroll/:id/reopen — { reason } (IP-17, H.4): approved → draft,
+// faqat to'lov berilmagan va oy yopilmagan bo'lsa. Qo'llangan avanslar avansga qaytadi.
+router.post('/:id/reopen', canManageMoney, async (req, res) => {
+    try {
+        const reason = String(req.body?.reason || '').trim();
+        if (reason.length < 3) return res.status(400).json({ message: 'Qayta ochish sababini yozing' });
+        const payroll = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
+        if (!payroll) return res.status(404).json({ message: 'Topilmadi' });
+        if (payroll.status === 'draft') return res.status(409).json({ message: 'Maosh allaqachon qoralama holatida', code: 'ALREADY_DRAFT' });
+        const block = await payrollDeleteBlock(prisma, 'teacher_payroll', payroll.id, payroll.month, payroll.paidAmount);
+        if (block) return res.status(block.status).json({ message: block.message, code: block.code });
+        const user = (req as any).user;
+        const released = await prisma.$transaction(async (tx) => {
+            const claimed = await tx.teacherPayroll.updateMany({ where: { id: payroll.id, status: payroll.status, paidAmount: 0 }, data: { status: 'draft', approvedAt: null, advanceApplied: 0, notes: `${payroll.notes ? payroll.notes + '\n' : ''}Qayta ochildi (${todayDateStr()}): ${reason}` } });
+            if (claimed.count !== 1) throw Object.assign(new Error("Maosh holati o'zgargan — sahifani yangilang"), { status: 409 });
+            return releaseAdvanceApplications(tx, 'teacher_payroll', payroll.id);
+        });
+        await logAudit({ userId: user?.id, userName: user?.name || 'system', action: 'payroll_reopen', resource: 'teacherPayroll', resourceId: payroll.id, before: { status: payroll.status, advanceApplied: payroll.advanceApplied }, after: { status: 'draft', reason, releasedAdvance: released } });
+        res.json(await prisma.teacherPayroll.findUnique({ where: { id: payroll.id } }));
+    } catch (err: any) {
+        res.status(err.status || 500).json({ message: err.message });
+    }
+});
+
 // DELETE /api/finance/teacher-payroll/:id — Moliya-audit (2026-09-22,
 // foydalanuvchi so'rovi): ilgari FAQAT 'draft' holatidagi yozuvni o'chirish
 // mumkin edi — tasdiqlangan/to'langan (xato yaratilgan yoki test uchun
@@ -436,14 +507,13 @@ router.delete('/:id', canManageMoney, async (req, res) => {
     try {
         const payroll = await prisma.teacherPayroll.findUnique({ where: { id: req.params.id } });
         if (!payroll) return res.status(404).json({ message: 'Topilmadi' });
+        // IP-17 (OQ-12): to'lov berilgan yoki oyi yopilgan maosh o'chirilmaydi — avval
+        // to'lovlar Tranzaksiyalar'da «Bekor qilish» orqali qaytariladi (kassa izi qoladi).
+        const block = await payrollDeleteBlock(prisma, 'teacher_payroll', payroll.id, payroll.month, payroll.paidAmount);
+        if (block) return res.status(block.status).json({ message: block.message, code: block.code });
 
         await prisma.$transaction(async (tx) => {
-            await tx.transaction.deleteMany({ where: { sourceType: 'teacher_payroll', sourceId: payroll.id } });
-            const applications = await tx.staffAdvanceApplication.findMany({ where: { appliedToType: 'teacher_payroll', appliedToId: payroll.id } });
-            for (const app of applications) {
-                await tx.staffAdvance.update({ where: { id: app.advanceId }, data: { remaining: { increment: app.amount } } });
-            }
-            await tx.staffAdvanceApplication.deleteMany({ where: { appliedToType: 'teacher_payroll', appliedToId: payroll.id } });
+            await releaseAdvanceApplications(tx, 'teacher_payroll', payroll.id);
             await tx.teacherPayroll.delete({ where: { id: payroll.id } });
         });
 
