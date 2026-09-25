@@ -6,6 +6,7 @@
 - IP-11: oylik hisob dvigateli (hisoblar, tuzatmalar, takrorlanuvchi chegirmalar, shadow solishtirish).
 - IP-12: kurs to'lovi kvitansiyasi va hisoblarga taqsimot, pul komandalarida idempotency, kategoriya turi (TQ-D/TQ-E), o'quvchi qidiruvi.
 - IP-13/14 (+IP-16 yadrosi): live rejimda `Student.balance` yangi hisoblardan olinadigan kesh. Payme, Click va invoice to'lovlari taqsimlanadi, bekor qilinsa qaytariladi. Kunlik solishtirish. Bu paketda sxema o'zgarishi yo'q.
+- IP-15: ustoz maoshi live rejimda e'lon qilingan hisoblardan (maosh qatorlari hisobga bog'langan), tuzatmalar keyingi ochiq oy maoshiga.
 
 **Branch:** `feature/ip09-azolik-davrlari`. Barcha paketlarning sxemasi bitta qadamda qo'llanadi (reja J.2, 3-qadam).
 
@@ -13,7 +14,7 @@
 
 ## 1. Sxema o'zgarishi — faqat qo'shimcha
 
-SQLite uchun `prisma migrate diff` natijasi: 54 ta `ALTER` va `CREATE` operatsiyasi. Hammasi lokal sinovda to'liq qo'llangan.
+SQLite uchun `prisma migrate diff` natijasi: 59 ta `ALTER` va `CREATE` operatsiyasi. Hammasi lokal sinovda to'liq qo'llangan.
 
 ```sql
 -- IP-09
@@ -39,6 +40,9 @@ ALTER TABLE "Payment" ADD COLUMN "receiptNo" / "allocationMode" / "receivedById"
 ALTER TABLE "TransactionCategory" ADD COLUMN "kind" / "isSystem";
 CREATE TABLE "PaymentAllocation" (...);       -- to'lov → hisob taqsimoti
 CREATE TABLE "IdempotencyRecord" (...);       -- takroriy so'rovdan himoya
+-- IP-15
+CREATE TABLE "PayrollLine" (...);             -- maosh qatori → hisob (unique yangi jadvalda)
+CREATE TABLE "PayrollAdjustment" (...);       -- maosh tuzatmalari
 CREATE INDEX ... (indekslar)
 ```
 
@@ -105,5 +109,6 @@ Tekshirish navbatidagi holatlar (ketgan-lekin-a'zo, yakunlangan guruhdagi a'zoli
 - **Davomat qoidalari.** A'zolik boshlanishidan oldingi, pauzadagi va kelajakdagi sanaga davomat yozilmaydi. Bekor qilingan dars kuniga ham yozilmaydi. Telegram Mini App ham aynan shu qoidalar bilan ishlaydi. Har belgilashda kim va qachon belgilagani saqlanadi.
 - **Kurs to'lovi (Moliya → Yangi tranzaksiya).** "Kurs to'lovi" endi faqat o'quvchi tanlanganda saqlanadi (TQ-D). Boshqa kirim turlarida (kitob, forma va h.k.) o'quvchi tanlab bo'lmaydi, chunki ular qarzga ta'sir qilmaydi (TQ-E). Har kurs to'lovi `Q-2026-000123` ko'rinishidagi kvitansiya raqamini oladi. Formani ikki marta bosish yoki internet uzilib qayta yuborish ikkinchi to'lov yaratmaydi. Legacy rejimda to'lov avvalgidek balansni oshiradi. Shadow/live rejimda qo'shimcha ravishda eng eski ochiq hisoblarga taqsimlanadi.
 - **Jonli rejim (live) — faqat J.7 shartlari bajarilganda.** Live'da `Student.balance` endi qo'lda o'zgarmaydi: u avans minus qarzga teng va har to'lov, taqsimot va hisobdan keyin qayta hisoblanadi. Shu tufayli dashboard, qarzdorlar, bot va portal avtomatik yangi qarzni ko'rsatadi. "Balansni tuzatish" oynasida qarz qo'shish hisob sifatida yoziladi. Avans esa faqat haqiqiy to'lov bilan kiritiladi. Live'ga o'tishdan oldin boshlang'ich qoldiqlar (IP-25) kiritilgan bo'lishi shart, aks holda eski qarzlar yo'qolgandek ko'rinadi.
+- **Ustoz maoshi (live).** Accrual maosh endi e'lon qilingan hisoblardan olinadi. Har qatorda qaysi o'quvchi hisobidan, ustoz ulushi qancha va stavka qanday ekani ko'rinadi. Oy o'rtasida ustoz almashsa, maosh o'tilgan darslar bo'yicha bo'linadi va takrorlanmaydi. Foiz o'zgarishi keyingi oydan kuchga kiradi. Tasdiqlangan oy o'zgarmaydi: keyin aniqlangan davomat yoki chegirma farqi keyingi ochiq oy maoshiga tuzatma bo'lib tushadi. Shadow'da `/api/finance/teacher-payroll/ledger-preview` eski va yangi hisobni yonma-yon ko'rsatadi.
 - **Oylik hisoblar (Moliya → "Oylik hisoblar").** Deploy'dan keyin ham rejim `legacy` bo'lib qoladi. Yangi hisoblar hech narsaga ta'sir qilmaydi, qarz va balans eskicha qoladi. Sinov oyi uchun administrator "Shadow rejimini yoqish"ni bosadi. Shunda har kuni 01:30 da draft hisoblar yangilanadi va "Eski tizim bilan solishtirish" tabida farqlar sababi bilan ko'rinadi. Jonli rejim (`live`) — IP-13/14 dan keyin, izohlanmagan farq 0 bo'lganda (J.7).
 - **Dars rejasi.** Davomat jadvali oy rejasi bo'yicha ko'rsatiladi. Menejer kun sarlavhasini bosib darsni bekor qila oladi: markaz yoki ustoz sababli, kompensatsiya bilan. Darsni boshqa kunga ko'chirish ham shu yerdan. Bekor qilingan kun kulrang va "bekor" belgisi bilan chiqadi.

@@ -12,7 +12,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
 import { idempotent } from '../middleware/idempotency.js';
 import { todayDateStr } from '../utils/timezone.js';
-import { calculateTeacherPayroll, PayrollBasis } from '../services/teacherPayroll.js';
+import { calculateTeacherPayroll, calculateTeacherAccrual, calculateTeacherLedgerAccrual, PayrollBasis, type LedgerPayrollBreakdown } from '../services/teacherPayroll.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { logAudit } from '../middleware/audit.js';
 
@@ -68,6 +68,42 @@ router.get('/preview', canReview, async (req, res) => {
         }
         const result = await calculateTeacherPayroll(teacherId, Number(year), Number(month), parseBasis(basis));
         res.json(result);
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// GET /api/finance/teacher-payroll/ledger-preview?teacherId=&year=&month= — IP-15 shadow:
+// e'lon qilingan hisoblardan (ledger) va eski formula bo'yicha accrual yonma-yon (yozmaydi).
+router.get('/ledger-preview', canReview, async (req, res) => {
+    try {
+        const { teacherId, year, month } = req.query as Record<string, string>;
+        if (!teacherId || !year || !month) return res.status(400).json({ message: 'teacherId, year va month talab qilinadi' });
+        const [ledger, legacy] = await Promise.all([
+            calculateTeacherLedgerAccrual(teacherId, Number(year), Number(month)),
+            calculateTeacherAccrual(teacherId, Number(year), Number(month)),
+        ]);
+        res.json({ ledger, legacy: { salary: legacy.salary, revenue: legacy.revenue, salaryPercent: legacy.salaryPercent }, diff: ledger.salary - legacy.salary });
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// POST /api/finance/teacher-payroll/adjustments — { teacherId, month, amount, reason } (OQ-10)
+// Tasdiqlangan oy uchun tuzatma keyingi ochiq oy maoshiga qo'shiladi.
+router.post('/adjustments', canManageMoney, async (req, res) => {
+    try {
+        const { teacherId, month, amount, reason } = req.body || {};
+        const amt = Number(amount);
+        if (!teacherId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) return res.status(400).json({ message: 'teacherId va month (YYYY-MM) kerak' });
+        if (!Number.isInteger(amt) || amt === 0 || Math.abs(amt) > 1e8) return res.status(400).json({ message: "Summa noldan farqli butun son bo'lishi kerak" });
+        if (!reason || String(reason).trim().length < 3) return res.status(400).json({ message: 'Sababni yozing' });
+        const approved = await prisma.teacherPayroll.findFirst({ where: { teacherId, month, status: { not: 'draft' } } });
+        if (approved) return res.status(409).json({ message: `${month} maoshi allaqachon tasdiqlangan — tuzatmani keyingi oyga kiriting`, code: 'APPROVED' });
+        const user = (req as any).user;
+        const adj = await prisma.payrollAdjustment.create({ data: { personType: 'teacher', personId: teacherId, month, amount: amt, reason: String(reason).trim(), sourceType: 'manual', createdById: user?.id ?? null } });
+        await logAudit({ userId: user?.id, userName: user?.name || 'system', action: 'payroll_adjustment', resource: 'payrollAdjustment', resourceId: adj.id, after: adj });
+        res.status(201).json(adj);
     } catch (err: any) {
         res.status(500).json({ message: err.message });
     }
@@ -230,6 +266,14 @@ router.post('/', canReview, async (req, res) => {
             create: data,
             update: data,
         });
+        // IP-15: live rejimda — maosh qatorlari hisoblar bilan bog'lanadi (draft qayta hisoblansa yangilanadi)
+        const ledger = (breakdown as LedgerPayrollBreakdown).source === 'ledger' ? breakdown as LedgerPayrollBreakdown : null;
+        await prisma.payrollLine.deleteMany({ where: { payrollId: payroll.id } });
+        if (ledger?.lines.length) {
+            await prisma.payrollLine.createMany({
+                data: ledger.lines.map(l => ({ payrollId: payroll.id, chargeId: l.chargeId, studentId: l.studentId, groupId: l.groupId, baseAmount: l.baseAmount, shareNum: l.shareNum, shareDen: l.shareDen, rateBp: l.rateBp, amount: l.amount })),
+            });
+        }
         const outstandingAdvance = await getOutstandingAdvanceTotal(prisma, 'teacher', teacherId);
         res.json({ ...payroll, remaining: remainingOf(payroll), outstandingAdvance });
     } catch (err: any) {

@@ -20,6 +20,9 @@
 import prisma from '../db.js';
 import { groupActiveInMonthWhere, monthStartInstant } from '../utils/activeFilters.js';
 import { getBillingSettings, calculateStudentMonthlyDue, calculateStudentCashAllocation, StudentCashAllocation } from './billing.js';
+import { getLedgerMode } from './ledgerMode.js';
+import { splitNetByTeachers, salaryFromBase } from '../domain/billingFormula.js';
+import { versionAt } from '../domain/lessonCalendar.js';
 
 export type PayrollBasis = 'accrual' | 'cash';
 
@@ -184,8 +187,102 @@ export async function calculateTeacherCashCollection(teacherId: string, year: nu
     };
 }
 
+// ─── IP-15: e'lon qilingan hisoblardan accrual (ledger) ──────────────────────
+
+export interface LedgerPayrollLine {
+    chargeId: string; chargeType: string; serviceMonth: string;
+    studentId: string; studentName: string; groupId: string | null; groupName: string | null;
+    baseAmount: number; shareNum: number; shareDen: number; rateBp: number; amount: number;
+}
+
+export interface LedgerPayrollBreakdown extends TeacherPayrollBreakdown {
+    source: 'ledger';
+    rateBp: number;
+    lines: LedgerPayrollLine[];
+    manualAdjustments: Array<{ id: string; amount: number; reason: string }>;
+}
+
+/**
+ * TQ-B, IP-15: ustoz maoshi = Σ (hisob ustoz bazasi × ustoz dars ulushi) × stavka
+ * + oyga tushgan tuzatma hisoblari (ulush asl hisobdan, OQ-10) + qo'lda PayrollAdjustment.
+ * Stavka — oy boshida amal qilgan TeacherRate (oy o'rtasidagi o'zgarish keyingi oydan).
+ * Ketgan o'quvchi, yakunlangan guruh — hisob yo'q bo'lgani uchun avtomatik chiqadi.
+ */
+export async function calculateTeacherLedgerAccrual(teacherId: string, year: number, month: number): Promise<LedgerPayrollBreakdown> {
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    const settings = await getBillingSettings();
+    const [teacher, rates] = await Promise.all([
+        prisma.user.findUnique({ where: { id: teacherId }, select: { salaryPercent: true } }),
+        prisma.teacherRate.findMany({ where: { teacherId } }),
+    ]);
+    const rate = versionAt(rates, `${monthStr}-01`);
+    const rateBp = rate ? rate.rateBp : Math.round((teacher?.salaryPercent ?? settings.teacherSalaryPercent) * 100);
+
+    const charges = await prisma.charge.findMany({
+        where: { month: monthStr, status: 'posted', type: { in: ['tuition', 'adjustment'] }, teacherBase: { not: 0 } },
+        select: { id: true, type: true, studentId: true, groupId: true, teacherBase: true, gross: true, calc: true, reversesChargeId: true },
+    });
+    const originals = await prisma.charge.findMany({
+        where: { id: { in: charges.map(c => c.reversesChargeId).filter(Boolean) as string[] } },
+        select: { id: true, calc: true, month: true },
+    });
+    const origMap = new Map(originals.map(o => [o.id, o]));
+    const parse = (s: string | null) => { try { return s ? JSON.parse(s) : {}; } catch { return {}; } };
+
+    const raw: Array<Omit<LedgerPayrollLine, 'studentName' | 'groupName'> & { absences: number; gross: number }> = [];
+    for (const c of charges) {
+        const calc = parse(c.calc);
+        const orig = c.reversesChargeId ? origMap.get(c.reversesChargeId) : null;
+        const lessons: Record<string, number> = (c.type === 'adjustment' ? parse(orig?.calc ?? null).teacherLessons : calc.teacherLessons) || {};
+        if (!lessons[teacherId]) continue;
+        const shares = splitNetByTeachers(c.teacherBase, lessons);
+        const baseAmount = shares[teacherId] ?? 0;
+        if (!baseAmount) continue;
+        raw.push({
+            chargeId: c.id, chargeType: c.type, serviceMonth: c.type === 'adjustment' ? (orig?.month ?? monthStr) : monthStr,
+            studentId: c.studentId, groupId: c.groupId, baseAmount,
+            shareNum: lessons[teacherId], shareDen: Object.values(lessons).reduce((a, b) => a + b, 0),
+            rateBp, amount: salaryFromBase(baseAmount, rateBp),
+            absences: c.type === 'tuition' ? (calc.A ?? 0) : 0, gross: c.gross,
+        });
+    }
+    const [students, groups, manual] = await Promise.all([
+        prisma.student.findMany({ where: { id: { in: [...new Set(raw.map(r => r.studentId))] } }, select: { id: true, name: true } }),
+        prisma.group.findMany({ where: { id: { in: [...new Set(raw.map(r => r.groupId).filter(Boolean) as string[])] } }, select: { id: true, name: true } }),
+        prisma.payrollAdjustment.findMany({ where: { personType: 'teacher', personId: teacherId, month: monthStr }, select: { id: true, amount: true, reason: true } }),
+    ]);
+    const sName = new Map(students.map(s => [s.id, s.name]));
+    const gName = new Map(groups.map(g => [g.id, g.name]));
+    const lines: LedgerPayrollLine[] = raw.map(({ absences: _a, gross: _g, ...l }) => ({ ...l, studentName: sName.get(l.studentId) ?? '—', groupName: l.groupId ? gName.get(l.groupId) ?? null : null }));
+
+    const byGroup = new Map<string, TeacherPayrollGroupBreakdown>();
+    for (const r of raw) {
+        const gid = r.groupId ?? '-';
+        if (!byGroup.has(gid)) byGroup.set(gid, { groupId: gid, groupName: gName.get(gid) ?? '—', studentCount: 0, revenue: 0, students: [] });
+        const g = byGroup.get(gid)!;
+        g.revenue += r.baseAmount;
+        g.students!.push({
+            studentId: r.studentId, studentName: sName.get(r.studentId) ?? '—', absences: r.absences,
+            basePrice: r.gross, discountApplied: r.absences >= settings.absenceThreshold && r.absences > 0,
+            discount: Math.max(0, r.gross - r.baseAmount), finalPrice: r.baseAmount,
+        });
+    }
+    for (const g of byGroup.values()) g.studentCount = new Set(g.students!.map(s => s.studentId)).size;
+    const revenue = lines.reduce((a, l) => a + l.baseAmount, 0);
+    const manualSum = manual.reduce((a, m) => a + m.amount, 0);
+    return {
+        teacherId, year, month, basis: 'accrual', salaryPercent: rateBp / 100,
+        revenue, salary: lines.reduce((a, l) => a + l.amount, 0) + manualSum,
+        groups: [...byGroup.values()],
+        note: `E'lon qilingan hisoblardan (ledger): ${lines.length} qator${manual.length ? `, qo'lda tuzatma ${manualSum}` : ''}. Stavka oy boshidagi — ${(rateBp / 100).toFixed(2)}%.`,
+        source: 'ledger', rateBp, lines, manualAdjustments: manual,
+    };
+}
+
 export async function calculateTeacherPayroll(teacherId: string, year: number, month: number, basis: PayrollBasis): Promise<TeacherPayrollBreakdown> {
-    return basis === 'cash'
-        ? calculateTeacherCashCollection(teacherId, year, month)
+    if (basis === 'cash') return calculateTeacherCashCollection(teacherId, year, month);
+    // IP-15: live rejimda accrual e'lon qilingan hisoblardan; legacy/shadow — eski formula
+    return (await getLedgerMode()) === 'live'
+        ? calculateTeacherLedgerAccrual(teacherId, year, month)
         : calculateTeacherAccrual(teacherId, year, month);
 }

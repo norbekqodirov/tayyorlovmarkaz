@@ -73,8 +73,45 @@ model TeacherPayroll {
   approvedAt     DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  lines          PayrollLine[]
 
   @@unique([teacherId, month, basis])
+}
+
+// IP-15 (TQ-B): e'lon qilingan hisobdan ustoz maoshi qatori — "bu summa qaysi o'quvchi
+// hisobidan" izi. Bir hisob bir maoshga faqat bir marta kiradi (payrollId+chargeId unique).
+model PayrollLine {
+  id         String         @id @default(uuid())
+  payrollId  String
+  payroll    TeacherPayroll @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  chargeId   String
+  studentId  String
+  groupId    String?
+  baseAmount Int // hisob ustoz bazasi × ulush
+  shareNum   Int // ustoz o'tgan billable darslar
+  shareDen   Int // jami billable darslar
+  rateBp     Int
+  amount     Int
+
+  @@unique([payrollId, chargeId])
+  @@index([chargeId])
+}
+
+// IP-15 (OQ-10): tasdiqlangandan keyingi maosh tuzatmasi — keyingi ochiq oy maoshiga qo'shiladi
+model PayrollAdjustment {
+  id          String   @id @default(uuid())
+  personType  String // teacher | staff
+  personId    String
+  month       String // qaysi oyning maoshiga qo'shiladi
+  amount      Int // ishorali
+  reason      String
+  sourceType  String? // charge_adjustment | refund | manual
+  sourceId    String?
+  appliedToId String? // qaysi TeacherPayroll/Salary'ga kirdi
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([personType, personId, month])
 }
 
 // Payroll-avans tizimi (2026-09-17, foydalanuvchi so'rovi): "oylik
