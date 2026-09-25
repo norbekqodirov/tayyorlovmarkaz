@@ -9,7 +9,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
 import {
     BillingError, getLedgerMode, setLedgerMode, generateMonth, postMonth, settleMonth, adjustCharge, voidDraft,
-    studentAccount, shadowReport, refreshMonth, monthSummary,
+    studentAccount, shadowReport, refreshMonth, monthSummary, studentLedger,
 } from '../services/chargeEngine.js';
 import { LedgerModeError } from '../services/ledgerMode.js';
 import { syncAllBalances, reconcileBalances } from '../services/balanceCache.js';
@@ -56,6 +56,12 @@ router.post('/reconcile/fix', requireAuth, requireMinRole('ADMIN'), requirePermi
 
 router.get('/periods', ...canView, async (_req, res) => {
     try { res.json(await prisma.billingPeriod.findMany({ orderBy: { month: 'desc' } })); } catch (err) { sendError(res, err); }
+});
+
+// GET /api/billing/students/:id/ledger — o'quvchi hisob varag'i (qarz, avans, oylar bo'yicha hisoblar)
+router.get('/students/:id/ledger', ...canView, async (req, res) => {
+    try { res.json({ mode: await getLedgerMode(), ...(await studentLedger(req.params.id, { limit: 24 })) }); }
+    catch (err) { sendError(res, err); }
 });
 
 // ─── Oy jadvali (soddalashtirilgan ko'rinish) ────────────────────────────────

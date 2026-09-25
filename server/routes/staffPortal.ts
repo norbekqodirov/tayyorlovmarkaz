@@ -152,7 +152,7 @@ router.get('/me', staffPortalAuth, async (req: any, res) => {
                 prisma.student.count({ where: { status: 'active', deletedAt: null } }),
                 prisma.group.count({ where: { status: 'active', deletedAt: null } }),
                 prisma.attendanceRecord.count({ where: { date: today, status: 'present' } }),
-                prisma.payment.count({ where: { status: { in: ['pending', 'overdue'] }, deletedAt: null } }),
+                prisma.student.count({ where: { deletedAt: null, balance: { lt: 0 } } }),
             ]);
             stats = { studentCount, groupCount, todayPresent, unpaidCount };
         }
@@ -435,11 +435,10 @@ router.get('/stats', staffPortalAuth, async (req: any, res) => {
             prisma.group.count({ where: { status: 'active', deletedAt: null } }),
             prisma.attendanceRecord.count({ where: { date: today, status: 'present' } }),
             prisma.attendanceRecord.count({ where: { date: today, status: 'absent' } }),
-            prisma.payment.count({ where: { status: { in: ['pending', 'overdue'] }, deletedAt: null } }),
-            prisma.payment.aggregate({
-                where: { status: { in: ['pending', 'overdue'] }, deletedAt: null },
-                _sum: { amount: true },
-            }),
+            // Qarzdorlar — CRM "Qarzdorlar" bilan bir xil ta'rif: balans < 0 (jonli rejimda yangi hisoblardan)
+            prisma.student.count({ where: { deletedAt: null, balance: { lt: 0 } } }),
+            prisma.student.aggregate({ where: { deletedAt: null, balance: { lt: 0 } }, _sum: { balance: true } })
+                .then(a => ({ _sum: { amount: Math.abs(a._sum.balance ?? 0) } })),
             prisma.payment.aggregate({
                 where: { status: 'paid', deletedAt: null, date: { gte: firstOfMonth } },
                 _sum: { amount: true },

@@ -671,8 +671,11 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
   const [refundOpen, setRefundOpen] = useState(false);
   const [voidPayment, setVoidPayment] = useState<any>(null);
   const [voidRefundRow, setVoidRefundRow] = useState<any>(null);
+  // Jonli rejim: oylar (hisob davrlari) bo'yicha hisob/to'langan/qarz — "Oylik hisoblar" va ota-ona portali bilan bir xil
+  const [ledger, setLedger] = useState<any>(null);
   useEffect(() => {
     if (studentId) {
+      api.get(`/billing/students/${studentId}/ledger`).then(res => setLedger(res.data)).catch(() => setLedger(null));
       api.get(`/finance/monthly-due/${studentId}`).then(res => setMonthlyDue(res.data)).catch(() => setMonthlyDue(null));
       api.get(`/receipts/refundable/${studentId}`).then(res => setRefundInfo(res.data)).catch(() => setRefundInfo(null));
       api.get(`/receipts/refunds?studentId=${studentId}`).then(res => setRefunds(Array.isArray(res.data) ? res.data : [])).catch(() => setRefunds([]));
@@ -703,8 +706,47 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
     } catch (e: any) { return apiError(e); }
   };
 
+  const live = ledger?.mode === 'live';
+  const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
   return (
     <div className="space-y-4">
+      {live && (
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-black text-slate-900 dark:text-white">Oylik hisoblar</p>
+            <p className="text-xs text-zinc-500">
+              Qarz: <b className={ledger.debt > 0 ? 'text-rose-600' : 'text-emerald-600'}>{formatMoney(ledger.debt)}</b>
+              {ledger.overdueDebt > 0 && <> · muddati o'tgan: <b className="text-rose-600">{formatMoney(ledger.overdueDebt)}</b></>}
+              {ledger.credit > 0 && <> · avans: <b className="text-emerald-600">{formatMoney(ledger.credit)}</b></>}
+            </p>
+          </div>
+          {!ledger.charges?.length ? (
+            <p className="px-5 py-4 text-xs text-zinc-400">Hisob hali yo'q — guruhga yozilgach avtomatik chiqadi.</p>
+          ) : (
+            <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
+              {ledger.charges.map((c: any) => {
+                const st = c.debt <= 0 ? { t: "To'langan", cls: 'text-emerald-600' } : c.overdue ? { t: "Muddati o'tgan", cls: 'text-rose-600' } : c.paid > 0 ? { t: 'Qisman', cls: 'text-amber-600' } : { t: 'Qarz', cls: 'text-amber-600' };
+                return (
+                  <div key={c.chargeId} className="flex items-center justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{c.groupName || (c.type === 'other_fee' ? "Boshqa to'lov" : "Boshlang'ich qoldiq")}</p>
+                      <p className="text-[10px] text-zinc-400 mt-0.5 tabular-nums">
+                        {c.windowFrom ? `${dm(c.windowFrom)}–${dm(c.windowTo)}` : c.month}
+                        {c.lessons != null ? ` · ${c.lessons}/${c.groupLessons} dars` : ''}
+                        {c.debt > 0 && c.dueDate ? ` · muddat ${formatDate(c.dueDate)}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-black tabular-nums text-slate-900 dark:text-white">{formatMoney(c.amount)}</p>
+                      <p className={`text-[10px] font-bold ${st.cls}`}>{st.t}{c.paid > 0 && c.debt > 0 ? ` · qoldi ${formatMoney(c.debt)}` : ''}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       <RefundModal isOpen={refundOpen} onClose={() => setRefundOpen(false)} studentId={studentId} studentName={studentName}
         available={refundInfo?.available ?? 0}
         onDone={() => { setRefundOpen(false); showToast("Qaytarish yozildi", 'success'); onChanged?.(); }} />
@@ -721,7 +763,7 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
           <Button size="sm" variant="secondary" disabled={!refundInfo!.available} onClick={() => setRefundOpen(true)}>Pul qaytarish</Button>
         </div>
       )}
-      {monthlyDue?.byGroup?.length > 0 && (
+      {!live && monthlyDue?.byGroup?.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <p className="text-xs font-black text-slate-900 dark:text-white">Bu oy uchun hisoblangan to'lov ({monthlyDue.month}) — davomat asosida</p>

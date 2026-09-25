@@ -559,10 +559,13 @@ export async function refreshMonth(month: string, actorId?: string | null) {
     return { ...r, posted };
 }
 
-/** Oy bo'yicha o'quvchilar hisobi: hisob, to'langan, qarz (yagona formula — receivables). */
-export async function monthSummary(month: string, opts: { groupId?: string } = {}) {
-    assertMonth(month);
-    const rows = await chargeBalances(prisma, { month, ...(opts.groupId && { groupId: opts.groupId }) });
+/**
+ * Hisob qatorlarini ko'rsatish uchun boyitish (o'quvchi, guruh nomi, davr oynasi, muddat o'tganmi).
+ * CRM "Oylik hisoblar", o'quvchi profili, ota-ona portali va bot — hammasi shu shakldan
+ * (yagona manba: receivables.chargeBalances).
+ */
+async function describeCharges(rows: Awaited<ReturnType<typeof chargeBalances>>) {
+    const today = todayDateStr();
     const [students, groups, calcs] = await Promise.all([
         prisma.student.findMany({ where: { id: { in: [...new Set(rows.map(r => r.studentId))] } }, select: { id: true, name: true, code: true } }),
         prisma.group.findMany({ where: { id: { in: [...new Set(rows.map(r => r.groupId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } }),
@@ -573,14 +576,39 @@ export async function monthSummary(month: string, opts: { groupId?: string } = {
     const cm = new Map(calcs.map(x => { try { return [x.id, JSON.parse(x.calc || '{}')]; } catch { return [x.id, {}]; } }));
     return rows.map(r => {
         const c: any = cm.get(r.id) || {};
+        const range = monthRange(r.month);
         return {
             chargeId: r.id, type: r.type, month: r.month, dueDate: r.dueDate,
             student: sm.get(r.studentId) ?? { id: r.studentId, name: '—', code: null },
             groupId: r.groupId, groupName: r.groupId ? gm.get(r.groupId) ?? '—' : null,
-            windowFrom: c.windowFrom ?? null, windowTo: c.windowTo ?? null, lessons: c.R ?? null, groupLessons: c.F ?? null, fullMonth: c.fullMonth ?? null,
+            windowFrom: c.windowFrom ?? (r.type === 'tuition' ? range.first : null), windowTo: c.windowTo ?? (r.type === 'tuition' ? range.last : null),
+            lessons: c.R ?? null, groupLessons: c.F ?? null, fullMonth: c.fullMonth ?? null,
             amount: r.adjusted, paid: r.allocated, debt: r.debt,
+            overdue: r.debt > 0 && !!r.dueDate && today > r.dueDate,
         };
-    }).sort((a, b) => a.student.name.localeCompare(b.student.name));
+    });
+}
+
+/** Oy bo'yicha o'quvchilar hisobi: hisob, to'langan, qarz (yagona formula — receivables). */
+export async function monthSummary(month: string, opts: { groupId?: string } = {}) {
+    assertMonth(month);
+    const rows = await chargeBalances(prisma, { month, ...(opts.groupId && { groupId: opts.groupId }) });
+    return (await describeCharges(rows)).sort((a, b) => a.student.name.localeCompare(b.student.name));
+}
+
+/**
+ * O'quvchining hisob varag'i: jami qarz, avans, balans va oylar bo'yicha hisoblar
+ * (eng yangisi birinchi). Ota-ona portali, CRM profili va bot shu yerdan oladi.
+ */
+export async function studentLedger(studentId: string, opts: { limit?: number } = {}) {
+    const position = await studentPosition(prisma, studentId);
+    const rows = [...position.charges].sort((a, b) => b.month.localeCompare(a.month) || b.createdAt.getTime() - a.createdAt.getTime());
+    const charges = await describeCharges(opts.limit ? rows.slice(0, opts.limit) : rows);
+    return {
+        debt: position.debt, credit: position.credit, balance: position.balance,
+        overdueDebt: charges.filter(c => c.overdue).reduce((a, c) => a + c.debt, 0),
+        charges: charges.map(({ student: _s, ...c }) => c),
+    };
 }
 
 export { nextMonth, addDays };

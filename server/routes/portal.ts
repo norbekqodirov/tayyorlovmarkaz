@@ -4,6 +4,8 @@ import prisma from '../db.js';
 import { validateInitData } from '../services/telegramService.js';
 import { addDaysDateStr, todayDateStr } from '../utils/timezone.js';
 import { calculateStudentMonthlyDue } from '../services/billing.js';
+import { getLedgerMode } from '../services/ledgerMode.js';
+import { studentLedger } from '../services/chargeEngine.js';
 import { MANAGER_KEY, teacherKey, studentKey, notifyStaffOfParentMessage } from './parentChat.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 
@@ -217,6 +219,27 @@ router.get('/payments', portalAuth, async (req: any, res) => {
         const resolved = await resolvePortalStudent(chatId, requestedId);
         if (!resolved) return res.status(404).json({ error: 'Topilmadi' });
         const studentId = resolved.id;
+
+        // Jonli rejim: CRM bilan bir xil manba — oylik hisoblar, to'lovlar va qarz (receivables)
+        if ((await getLedgerMode()) === 'live') {
+            const [ledger, recentPaid] = await Promise.all([
+                studentLedger(studentId, { limit: 12 }),
+                prisma.payment.findMany({ where: { studentId, status: { in: ['paid', 'refunded'] }, deletedAt: null }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 10 }),
+            ]);
+            return res.json({
+                unpaid: [],
+                recent: recentPaid.map(p => ({ id: p.id, amount: p.amount, date: p.date, method: p.method, month: p.month, receiptNo: p.receiptNo, refunded: p.status === 'refunded' })),
+                totalUnpaid: ledger.debt,
+                ledger: {
+                    debt: ledger.debt, credit: ledger.credit, overdueDebt: ledger.overdueDebt,
+                    charges: ledger.charges.map(c => ({
+                        id: c.chargeId, type: c.type, month: c.month, groupName: c.groupName,
+                        from: c.windowFrom, to: c.windowTo, lessons: c.lessons, groupLessons: c.groupLessons,
+                        amount: c.amount, paid: c.paid, debt: c.debt, dueDate: c.dueDate, overdue: c.overdue,
+                    })),
+                },
+            });
+        }
 
         const [unpaid, recent, unpaidTotal] = await Promise.all([
             prisma.payment.findMany({

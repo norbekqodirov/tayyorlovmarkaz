@@ -10,6 +10,7 @@ import { dailyRefresh } from './chargeEngine.js';
 import { pruneIdempotencyRecords } from '../middleware/idempotency.js';
 import { reconcileBalances } from './balanceCache.js';
 import { getLedgerMode } from './ledgerMode.js';
+import { chargeBalances } from './receivables.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -35,6 +36,48 @@ async function getSetting(key: string): Promise<string | null> {
 }
 
 // ─── JOB 1: To'lov Eslatmalari (har kuni 09:00) ──────────────────────────────
+/**
+ * Jonli rejim: eslatmalar yangi hisoblardan — muddati 3 kun ichida tugaydigan yoki o'tgan,
+ * qarzi bor hisoblar (o'quvchi bo'yicha jamlanadi). Bir o'quvchiga 3 kunda ko'pi bilan bitta
+ * xabar; adminga — bitta umumiy xulosa (har qarzdor uchun alohida emas).
+ */
+export async function runLedgerPaymentReminders(opts: { dryRun?: boolean } = {}) {
+    const today = todayDateStr();
+    const rows = (await chargeBalances(prisma, { dueDate: { lte: addDaysDateStr(3) } })).filter(r => r.debt > 0 && r.dueDate);
+    const byStudent = new Map<string, { debt: number; due: string; overdue: boolean }>();
+    for (const r of rows) {
+        const cur = byStudent.get(r.studentId) ?? { debt: 0, due: r.dueDate!, overdue: false };
+        cur.debt += r.debt;
+        if (r.dueDate! < cur.due) cur.due = r.dueDate!;
+        if (r.dueDate! < today) cur.overdue = true;
+        byStudent.set(r.studentId, cur);
+    }
+    const students = await prisma.student.findMany({
+        where: { id: { in: [...byStudent.keys()] }, deletedAt: null },
+        select: { id: true, name: true, telegramChatId: true, parentTelegramId: true },
+    });
+    const since = new Date(Date.now() - 3 * 24 * 3600e3);
+    let sent = 0, skipped = 0, noChat = 0;
+    for (const st of students) {
+        const info = byStudent.get(st.id)!;
+        const chatId = st.parentTelegramId || st.telegramChatId;
+        if (!chatId) { noChat++; continue; }
+        const recent = await prisma.telegramMessage.count({ where: { chatId, type: 'payment', createdAt: { gte: since } } });
+        if (recent) { skipped++; continue; }
+        if (opts.dryRun) { sent++; continue; }
+        if (await sendPaymentReminder(st.name, info.debt, info.due, chatId, info.overdue)) sent++;
+    }
+    const overdue = [...byStudent.entries()].filter(([id, v]) => v.overdue && students.some(x => x.id === id));
+    if (overdue.length && !opts.dryRun) {
+        const adminChatId = await getSetting('telegram_admin_chat_id');
+        if (adminChatId) {
+            const total = overdue.reduce((a, [, v]) => a + v.debt, 0);
+            await sendMessage(adminChatId, `🔴 <b>Muddati o'tgan to'lovlar</b>\n${overdue.length} ta o'quvchi, jami <b>${total.toLocaleString('uz-UZ')} so'm</b>.\nBatafsil: CRM → Moliya → Oylik hisoblar.`);
+        }
+    }
+    return { students: byStudent.size, overdue: overdue.length, sent, skipped, noChat };
+}
+
 async function runPaymentReminders() {
     const start = Date.now();
     const workflowName = 'daily_payment_reminder';
@@ -49,6 +92,12 @@ async function runPaymentReminders() {
     }
 
     try {
+        if ((await getLedgerMode()) === 'live') {
+            const r = await runLedgerPaymentReminders();
+            await logWorkflow(workflow.id, 'success', { source: 'ledger', ...r }, Date.now() - start);
+            console.log(`[Scheduler] To'lov eslatmalari (hisoblardan): ${r.sent} xabar yuborildi`);
+            return;
+        }
         const todayStr = todayDateStr();
 
         // 3 kun ichida muddati tugaydigan to'lovlar

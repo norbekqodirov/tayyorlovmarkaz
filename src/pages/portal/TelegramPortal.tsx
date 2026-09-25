@@ -29,7 +29,11 @@ interface AttendanceRecord { id: string; date: string; status: string; group: st
 interface AttendanceSummary { present: number; absent: number; late: number; excused: number; total: number; }
 
 interface PaymentItem { id: string; amount: number; dueDate?: string; month?: string; status: string; notes?: string; }
-interface PaidItem { id: string; amount: number; date: string; method: string; month?: string; }
+interface PaidItem { id: string; amount: number; date: string; method: string; month?: string; receiptNo?: string | null; refunded?: boolean; }
+// Jonli rejim: CRM bilan bir xil manba — oylar (hisob davrlari) bo'yicha hisob, to'langan, qarz
+interface LedgerCharge { id: string; type: string; month: string; groupName: string | null; from: string | null; to: string | null; lessons: number | null; groupLessons: number | null; amount: number; paid: number; debt: number; dueDate: string | null; overdue: boolean; }
+interface Ledger { debt: number; credit: number; overdueDebt: number; charges: LedgerCharge[]; }
+const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
 interface MonthlyDueGroup { groupId: string; groupName: string; courseName: string; basePrice: number; absences: number; discountApplied: boolean; discount: number; finalPrice: number; }
 interface MonthlyDue { month: string; total: number; totalBeforeDiscount: number; byGroup: MonthlyDueGroup[]; }
 
@@ -144,15 +148,15 @@ function formatMoney(n: number | null | undefined): string {
     return Math.round(n).toLocaleString('ru-RU').replace(/\u00A0/g, ' ') + " so'm";
 }
 
+// Brauzerlar 'uz-UZ' oy nomlarini bilmaydi ("M09 17") — oy nomlari qo'lda
+const UZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 function formatDate(d: string | null | undefined): string {
     if (!d) return '';
-    try {
-        const date = new Date(d);
-        if (isNaN(date.getTime())) return String(d);
-        return date.toLocaleDateString('uz-UZ', { day: 'numeric', month: 'long' });
-    } catch {
-        return String(d);
-    }
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d));
+    if (m) return `${Number(m[3])}-${UZ_MONTHS[Number(m[2]) - 1] ?? m[2]}`;
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return String(d);
+    return `${date.getDate()}-${UZ_MONTHS[date.getMonth()]}`;
 }
 
 function formatTime(d: string | null | undefined): string {
@@ -206,7 +210,7 @@ export default function TelegramPortal() {
 
     // Tab data & error states
     const [attendance, setAttendance] = useState<{ records: AttendanceRecord[]; summary: AttendanceSummary } | null>(null);
-    const [payments, setPayments] = useState<{ unpaid: PaymentItem[]; recent: PaidItem[]; totalUnpaid: number; monthlyDue?: MonthlyDue } | null>(null);
+    const [payments, setPayments] = useState<{ unpaid: PaymentItem[]; recent: PaidItem[]; totalUnpaid: number; monthlyDue?: MonthlyDue; ledger?: Ledger } | null>(null);
     const [grades, setGrades] = useState<{ assessments: Assessment[]; avgScore: number | null } | null>(null);
     const [schedule, setSchedule] = useState<{ schedule: ScheduleDay[] } | null>(null);
     const [tabLoading, setTabLoading] = useState(false);
@@ -662,6 +666,56 @@ export default function TelegramPortal() {
                                 )}
                                 {!tabLoading && !tabErrors.payments && payments && (
                                     <>
+                                        {payments.ledger && (
+                                            <>
+                                                {/* Portal temasi isDark holati bilan boshqariladi (tizim temasi emas) */}
+                                                <div className={`rounded-2xl border p-4 shadow-sm ${payments.ledger.debt > 0
+                                                    ? (isDark ? 'bg-red-950/40 border-red-900' : 'bg-red-50 border-red-200')
+                                                    : (isDark ? 'bg-emerald-950/40 border-emerald-900' : 'bg-emerald-50 border-emerald-200')}`}>
+                                                    <p className={`text-xs font-bold ${payments.ledger.debt > 0 ? (isDark ? 'text-red-200' : 'text-red-800') : (isDark ? 'text-emerald-200' : 'text-emerald-800')}`}>
+                                                        {payments.ledger.debt > 0 ? 'Jami qarz' : "Qarz yo'q"}
+                                                    </p>
+                                                    {payments.ledger.debt > 0 && <p className={`text-2xl font-black ${isDark ? 'text-red-400' : 'text-red-600'}`}>{formatMoney(payments.ledger.debt)}</p>}
+                                                    {payments.ledger.overdueDebt > 0 && <p className={`text-xs mt-0.5 ${isDark ? 'text-red-400' : 'text-red-600'}`}>shundan muddati o'tgan: {formatMoney(payments.ledger.overdueDebt)}</p>}
+                                                    {payments.ledger.credit > 0 && <p className={`text-xs mt-1 ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>Avans (keyingi hisoblarga): <b>{formatMoney(payments.ledger.credit)}</b></p>}
+                                                </div>
+                                                {payments.ledger.charges.length > 0 && (
+                                                    <section>
+                                                        <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Oylik hisoblar</h2>
+                                                        <div className="space-y-2">
+                                                            {payments.ledger.charges.map(c => {
+                                                                const st = c.debt <= 0 ? { t: "To'langan", cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }
+                                                                    : c.overdue ? { t: "Muddati o'tdi", cls: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
+                                                                    : c.paid > 0 ? { t: 'Qisman', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' }
+                                                                    : { t: 'Kutilmoqda', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
+                                                                return (
+                                                                    <div key={c.id} className={`p-3.5 rounded-xl border ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                                                                        <div className="flex items-start justify-between gap-3">
+                                                                            <div className="min-w-0">
+                                                                                <p className="font-bold text-sm truncate">{c.groupName || (c.type === 'other_fee' ? "Boshqa to'lov" : 'Hisob')}</p>
+                                                                                <p className="text-xs text-zinc-500">
+                                                                                    {c.from ? `${dm(c.from)}–${dm(c.to)}` : c.month}
+                                                                                    {c.lessons != null ? ` · ${c.lessons} dars` : ''}
+                                                                                    {c.debt > 0 && c.dueDate ? ` · ${formatDate(c.dueDate)} gacha` : ''}
+                                                                                </p>
+                                                                            </div>
+                                                                            <div className="text-right flex-shrink-0">
+                                                                                <p className="font-bold text-sm">{formatMoney(c.amount)}</p>
+                                                                                <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${st.cls}`}>{st.t}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        {c.paid > 0 && c.debt > 0 && (
+                                                                            <p className="text-[11px] text-zinc-500 mt-1.5">To'langan {formatMoney(c.paid)} · qoldi <b className="text-red-600 dark:text-red-400">{formatMoney(c.debt)}</b></p>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </section>
+                                                )}
+                                            </>
+                                        )}
+
                                         {payments.monthlyDue && payments.monthlyDue.byGroup.length > 0 && (
                                             <section>
                                                 <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
@@ -694,7 +748,7 @@ export default function TelegramPortal() {
                                             </section>
                                         )}
 
-                                        {payments.totalUnpaid > 0 && (
+                                        {!payments.ledger && payments.totalUnpaid > 0 && (
                                             <div className="rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 shadow-sm">
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
@@ -739,7 +793,7 @@ export default function TelegramPortal() {
                                                             </div>
                                                             <div className="flex-1 min-w-0">
                                                                 <p className="font-bold text-sm">{formatMoney(p.amount)}</p>
-                                                                <p className="text-xs text-zinc-500 truncate">{p.method} {p.month ? `• ${p.month}` : ''}</p>
+                                                                <p className="text-xs text-zinc-500 truncate">{p.method}{p.receiptNo ? ` • ${p.receiptNo}` : ''}{p.month ? ` • ${p.month}` : ''}{p.refunded ? ' • qaytarilgan' : ''}</p>
                                                             </div>
                                                             <p className="text-xs text-zinc-400 font-medium flex-shrink-0">{formatDate(p.date)}</p>
                                                         </div>
@@ -748,7 +802,7 @@ export default function TelegramPortal() {
                                             </section>
                                         )}
 
-                                        {payments.unpaid.length === 0 && payments.recent.length === 0 && (!payments.monthlyDue || payments.monthlyDue.byGroup.length === 0) && (
+                                        {payments.unpaid.length === 0 && payments.recent.length === 0 && (!payments.monthlyDue || payments.monthlyDue.byGroup.length === 0) && !payments.ledger?.charges.length && (
                                             <EmptyState icon={CreditCard} text="Hali to'lovlar mavjud emas" />
                                         )}
                                     </>

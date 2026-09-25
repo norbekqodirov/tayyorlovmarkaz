@@ -13,6 +13,8 @@ const biAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('bi'
 const reportsAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('reports')];
 import { todayDateStr, monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { getBillingSettings, calculateStudentMonthlyDue } from '../services/billing.js';
+import { getLedgerMode } from '../services/ledgerMode.js';
+import { chargeBalances } from '../services/receivables.js';
 
 const router = express.Router();
 
@@ -339,7 +341,13 @@ router.get('/reports/group-profitability', ...reportsAccess, async (req, res) =>
             return dueCache.get(studentId)!;
         };
         const expectedByGroup = new Map<string, number>();
-        for (const g of groups) {
+        if ((await getLedgerMode()) === 'live') {
+            // Jonli rejim: joriy oy e'lon qilingan hisoblari (tuzatmalar bilan) — "Oylik hisoblar" bilan bir xil
+            const month = todayDateStr().slice(0, 7);
+            for (const r of await chargeBalances(prisma, { month, type: 'tuition' })) {
+                if (r.groupId) expectedByGroup.set(r.groupId, (expectedByGroup.get(r.groupId) || 0) + r.adjusted);
+            }
+        } else for (const g of groups) {
             let sum = 0;
             for (const e of g.enrollments) {
                 const due = await dueOf(e.studentId);

@@ -17,6 +17,8 @@
 import { Bot, webhookCallback, InlineKeyboard, Keyboard } from 'grammy';
 import prisma from '../db.js';
 import { monthRangeStr, todayDateStr, tashkentMidnightInstant } from '../utils/timezone.js';
+import { getLedgerMode } from '../services/ledgerMode.js';
+import { studentLedger } from '../services/chargeEngine.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 
@@ -215,6 +217,20 @@ bot.command('balance', async (ctx) => {
     if (lastPayment) {
         text += `📅 Oxirgi to'lov: <b>${lastPayment.date}</b>\n`;
         text += `💰 Miqdor: <b>${new Intl.NumberFormat('uz-UZ').format(lastPayment.amount)} so'm</b> (${lastPayment.method})\n`;
+    }
+
+    // Jonli rejim: qaysi oy/guruh uchun qarz ekani (CRM va portal bilan bir xil manba)
+    if ((await getLedgerMode()) === 'live') {
+        const ledger = await studentLedger(student.id, { limit: 12 });
+        const open = ledger.charges.filter(c => c.debt > 0).slice(0, 6);
+        if (open.length) {
+            text += `\n📋 <b>To'lanmagan hisoblar:</b>\n`;
+            for (const c of open) {
+                const period = c.windowFrom ? `${c.windowFrom.slice(8, 10)}.${c.windowFrom.slice(5, 7)}–${c.windowTo?.slice(8, 10)}.${c.windowTo?.slice(5, 7)}` : c.month;
+                text += `• ${c.groupName || "Boshqa to'lov"} (${period}): <b>${new Intl.NumberFormat('uz-UZ').format(c.debt)} so'm</b>${c.overdue ? ' — muddati o\'tgan' : c.dueDate ? ` — ${c.dueDate} gacha` : ''}\n`;
+            }
+        }
+        if (ledger.credit > 0) text += `\n💚 Avans (keyingi hisoblarga): <b>${new Intl.NumberFormat('uz-UZ').format(ledger.credit)} so'm</b>\n`;
     }
 
     if (balance < 0) {
