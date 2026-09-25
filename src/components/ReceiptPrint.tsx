@@ -10,6 +10,8 @@ interface Transaction {
   student?: { name?: string; phone?: string };
   group?: { name?: string; course?: { name?: string } };
   discountAmount?: number;
+  /** Kvitansiya raqami (Q-2026-000123) */
+  receiptNo?: string | null;
 }
 
 interface Props {
@@ -44,6 +46,11 @@ export function printReceipt(transaction: Transaction, centerName = 'Tayyorlov M
       <div class="center" style="font-size:10px; color:#777;">To'lov Cheki</div>
       <div class="divider"></div>
 
+      ${transaction.receiptNo ? `
+      <div class="row">
+        <span class="label">Kvitansiya:</span>
+        <span class="bold">${transaction.receiptNo}</span>
+      </div>` : ''}
       <div class="row">
         <span class="label">Sana:</span>
         <span>${date}</span>

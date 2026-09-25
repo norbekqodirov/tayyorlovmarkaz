@@ -17,6 +17,8 @@ import { openCharges, paymentUnallocated } from './receivables.js';
 import { applyAllocations, AllocationError, type AllocationInput } from './allocation.js';
 import { syncStudentBalance } from './balanceCache.js';
 import { isMonthClosed } from './moneyReversal.js';
+import { studentPosition as ledgerPosition } from './receivables.js';
+import { sendMessage } from './telegramService.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -62,7 +64,7 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
     const allocationMode = mode === 'legacy' ? 'legacy' : (input.allocations?.length ? 'manual' : 'auto_fifo');
     const wantsAllocation = mode !== 'legacy' && (!!input.allocations?.length || input.auto !== false);
 
-    return prisma.$transaction(async tx => {
+    const result = await prisma.$transaction(async tx => {
         const student = await tx.student.findUnique({ where: { id: input.studentId }, select: { id: true, name: true } });
         if (!student) throw new ReceiptError(404, "O'quvchi topilmadi", 'NO_STUDENT');
         if (input.groupId) {
@@ -95,6 +97,28 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
         const allocatedSum = allocations.reduce((s, a) => s + a.amount, 0);
         return { payment, transaction, allocations, unallocated: amount - allocatedSum, allocationMode };
     });
+    void notifyReceipt(result.payment.id).catch(e => console.error('[receipts] Telegram kvitansiya', e?.message));
+    return result;
+}
+
+/**
+ * IP-19: ota-onaga (yoki o'quvchiga) Telegram orqali kvitansiya — sozlama
+ * `telegram_auto_receipt` yoqilgan bo'lsa. Jonli rejimda qolgan qarz/avans ham.
+ */
+export async function notifyReceipt(paymentId: string) {
+    const flag = await prisma.setting.findUnique({ where: { key: 'telegram_auto_receipt' } });
+    if (flag?.value !== 'true') return false;
+    const p = await prisma.payment.findUnique({ where: { id: paymentId }, include: { student: { select: { name: true, parentTelegramId: true, telegramChatId: true } } } });
+    const chatId = p?.student?.parentTelegramId || p?.student?.telegramChatId;
+    if (!p || !chatId) return false;
+    const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
+    let text = `✅ <b>To'lov qabul qilindi</b>\n\n👤 ${p.student.name}\n💰 <b>${fmt(p.amount)} so'm</b> (${p.method})\n🧾 Kvitansiya: ${p.receiptNo || '—'}\n📅 ${p.date}\n`;
+    if ((await getLedgerMode()) === 'live') {
+        const pos = await ledgerPosition(prisma, p.studentId);
+        text += pos.debt > 0 ? `\nQolgan qarz: <b>${fmt(pos.debt)} so'm</b>` : `\nQarz yo'q ✅`;
+        if (pos.credit > 0) text += `\nAvans (keyingi oylarga): ${fmt(pos.credit)} so'm`;
+    }
+    return sendMessage(chatId, text);
 }
 
 /** Mavjud (yangi rejimdagi) to'lovning taqsimlanmagan qismini hisoblarga biriktirish. */

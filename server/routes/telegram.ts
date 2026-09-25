@@ -189,7 +189,7 @@ router.get('/settings', requireAuth, requireMinRole('ADMIN'), async (_req, res) 
     try {
         const keys = [
             'telegram_bot_token', 'telegram_admin_chat_id',
-            'telegram_auto_attendance', 'telegram_auto_payment', 'telegram_auto_lead',
+            'telegram_auto_attendance', 'telegram_auto_payment', 'telegram_auto_lead', 'telegram_auto_receipt',
             'telegram_mini_app_url', 'staff_bot_token', 'staff_mini_app_url',
         ];
         const settings = await prisma.setting.findMany({ where: { key: { in: keys } } });
@@ -202,6 +202,7 @@ router.get('/settings', requireAuth, requireMinRole('ADMIN'), async (_req, res) 
             autoAttendance: map['telegram_auto_attendance'] === 'true',
             autoPayment: map['telegram_auto_payment'] === 'true',
             autoLead: map['telegram_auto_lead'] === 'true',
+            autoReceipt: map['telegram_auto_receipt'] === 'true',
             miniAppUrl: map['telegram_mini_app_url'] || process.env.TELEGRAM_MINI_APP_URL || '',
             staffMiniAppUrl: map['staff_mini_app_url'] || process.env.STAFF_MINI_APP_URL || '',
         });
@@ -212,7 +213,7 @@ router.get('/settings', requireAuth, requireMinRole('ADMIN'), async (_req, res) 
 
 router.put('/settings', requireAuth, requirePermission('settings'), async (req, res) => {
     try {
-        const { token, adminChatId, autoAttendance, autoPayment, autoLead, staff_bot_token, staffMiniAppUrl } = req.body;
+        const { token, adminChatId, autoAttendance, autoPayment, autoLead, autoReceipt, staff_bot_token, staffMiniAppUrl } = req.body;
 
         const updates = [
             token !== undefined ? { key: 'telegram_bot_token', value: token } : null,
@@ -220,6 +221,7 @@ router.put('/settings', requireAuth, requirePermission('settings'), async (req, 
             autoAttendance !== undefined ? { key: 'telegram_auto_attendance', value: String(autoAttendance) } : null,
             autoPayment !== undefined ? { key: 'telegram_auto_payment', value: String(autoPayment) } : null,
             autoLead !== undefined ? { key: 'telegram_auto_lead', value: String(autoLead) } : null,
+            autoReceipt !== undefined ? { key: 'telegram_auto_receipt', value: String(autoReceipt) } : null,
             staff_bot_token !== undefined ? { key: 'staff_bot_token', value: staff_bot_token } : null,
             staffMiniAppUrl !== undefined ? { key: 'staff_mini_app_url', value: staffMiniAppUrl } : null,
         ].filter(Boolean) as { key: string; value: string }[];

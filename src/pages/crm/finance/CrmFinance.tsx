@@ -485,6 +485,24 @@ export default function CrmFinance() {
   const [tuitionGroupId, setTuitionGroupId] = useState('');
   const [tuitionMonth, setTuitionMonth] = useState(() => toTashkentDate().slice(0, 7));
   const isTuitionForm = form.type === 'income' && isTuitionCategory(form.category);
+  // IP-19: tanlangan o'quvchining ochiq qarzlari va "bu to'lov nimani qoplaydi" taklifi
+  const [tuitionLedger, setTuitionLedger] = useState<any>(null);
+  const [allocPreview, setAllocPreview] = useState<{ plan: any[]; credit: number } | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<{ receiptNo?: string; amount: number; method: string; date: string; studentName: string; groupName?: string } | null>(null);
+  useEffect(() => {
+    setTuitionLedger(null);
+    if (!isTuitionForm || !tuitionStudent) return;
+    api.get(`/billing/students/${tuitionStudent.id}/ledger`).then(r => setTuitionLedger(r.data)).catch(() => setTuitionLedger(null));
+  }, [isTuitionForm, tuitionStudent]);
+  useEffect(() => {
+    setAllocPreview(null);
+    if (!isTuitionForm || !tuitionStudent || !form.amount || tuitionLedger?.mode !== 'live') return;
+    const t = setTimeout(() => {
+      api.get('/receipts/suggest', { params: { studentId: tuitionStudent.id, amount: form.amount, groupId: tuitionGroupId || undefined } })
+        .then(r => setAllocPreview(r.data)).catch(() => setAllocPreview(null));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [isTuitionForm, tuitionStudent, form.amount, tuitionGroupId, tuitionLedger?.mode]);
   const pickTuitionStudent = (st: FoundStudent | null) => {
     setTuitionStudent(st);
     setTuitionGroupId(st && st.groups.length === 1 ? st.groups[0].id : '');
@@ -626,11 +644,18 @@ export default function CrmFinance() {
         // yangilaydi. Ilgari eski balansni o'qib + summa qo'shib alohida
         // yozish klassik poyga holati edi (ikki parallel to'lov bir-birining
         // ustidan yozilishi mumkin edi).
-        await api.post('/finance/transactions', newTransaction, idempotencyHeaders(txKey));
+        const saved = await api.post('/finance/transactions', newTransaction, idempotencyHeaders(txKey));
+        if (isTuitionForm) {
+          // Kassir: tasdiq va chek (oyna yopilmaydi — "Chek chop etish" / "Yangi to'lov")
+          setLastReceipt({
+            receiptNo: saved.data?.receiptNo, amount: Number(form.amount), method: form.method || 'Naqd', date: form.date || toTashkentDate(),
+            studentName: tuitionStudent?.name || form.studentName || '', groupName: tuitionStudent?.groups.find(g => g.id === tuitionGroupId)?.name,
+          });
+        }
       }
       await Promise.all([refetchTransactions(), refetchStudents()]);
       showToast(isOylikForm ? "Oylik to'lovi qayd etildi" : isAvansForm ? 'Avans berildi' : "Tranzaksiya qo'shildi", 'success');
-      setIsModalOpen(false);
+      if (!isTuitionForm) setIsModalOpen(false);
       setForm({
         type: 'income', amount: 0, category: '',
         description: '', date: toTashkentDate(),
@@ -1680,7 +1705,27 @@ export default function CrmFinance() {
         )}
       </AnimatePresence>
 
-      <Modal isOpen={canManage && isModalOpen} onClose={() => setIsModalOpen(false)} title="Yangi Tranzaksiya" width="md">
+      <Modal isOpen={canManage && isModalOpen} onClose={() => { setIsModalOpen(false); setLastReceipt(null); }} title={lastReceipt ? "To'lov qabul qilindi" : 'Yangi Tranzaksiya'} width="md">
+        {lastReceipt ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 p-4 text-center">
+              <CheckCircle2 size={32} className="mx-auto text-emerald-600 mb-2" />
+              <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums">{formatMoney(lastReceipt.amount)}</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{lastReceipt.studentName}</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{lastReceipt.receiptNo ? `Kvitansiya ${lastReceipt.receiptNo} · ` : ''}{lastReceipt.method} · {lastReceipt.date}</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button variant="secondary" className="flex-1" leftIcon={<Receipt size={15} />}
+                onClick={() => printReceipt({ id: lastReceipt.receiptNo || '', receiptNo: lastReceipt.receiptNo, amount: lastReceipt.amount, method: lastReceipt.method, paidAt: lastReceipt.date, student: { name: lastReceipt.studentName }, group: lastReceipt.groupName ? { name: lastReceipt.groupName } : undefined, notes: "Kurs to'lovi" })}>
+                Chek chop etish
+              </Button>
+              <Button variant="secondary" className="flex-1" onClick={() => { setLastReceipt(null); setTxKey(newIdempotencyKey()); setForm(f => ({ ...f, type: 'income', category: "Kurs to'lovi", amount: 0, description: '' })); }}>
+                Yangi to'lov
+              </Button>
+              <Button className="flex-1" onClick={() => { setIsModalOpen(false); setLastReceipt(null); }}>Yopish</Button>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-4">
           <div className="flex gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
             <button onClick={() => setForm({ ...form, type: 'income', category: '', studentId: '', studentName: '', staffId: '', staffName: '' })}
@@ -1729,9 +1774,37 @@ export default function CrmFinance() {
                   </div>
                 </div>
               )}
+              {tuitionStudent && tuitionLedger?.mode === 'live' && (
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 p-3 space-y-1.5 text-xs">
+                  {(() => {
+                    const open = (tuitionLedger.charges || []).filter((c: any) => c.debt > 0);
+                    return open.length ? (
+                      <>
+                        <p className="font-bold text-slate-900 dark:text-white">Ochiq qarzlar: <span className="text-rose-600 tabular-nums">{formatMoney(tuitionLedger.debt)}</span></p>
+                        {open.slice(0, 5).map((c: any) => (
+                          <div key={c.chargeId} className="flex justify-between gap-2 text-zinc-600 dark:text-zinc-400">
+                            <span className="truncate">{c.groupName || "Boshqa to'lov"} · {c.windowFrom ? `${c.windowFrom.slice(8, 10)}.${c.windowFrom.slice(5, 7)}–${c.windowTo?.slice(8, 10)}.${c.windowTo?.slice(5, 7)}` : c.month}{c.overdue ? ' · muddati o\'tgan' : ''}</span>
+                            <span className="tabular-nums font-bold">{formatMoney(c.debt)}</span>
+                          </div>
+                        ))}
+                      </>
+                    ) : <p className="text-emerald-600 font-bold">Qarz yo'q{tuitionLedger.credit > 0 ? ` · avans ${formatMoney(tuitionLedger.credit)}` : ''}</p>;
+                  })()}
+                  {allocPreview && Number(form.amount) > 0 && (
+                    <div className="pt-1.5 mt-1.5 border-t border-zinc-200 dark:border-zinc-700 space-y-1">
+                      <p className="font-bold text-slate-900 dark:text-white">Bu to'lov qoplaydi:</p>
+                      {allocPreview.plan.map((a: any) => {
+                        const ch = (tuitionLedger.charges || []).find((c: any) => c.chargeId === a.chargeId);
+                        return <div key={a.chargeId} className="flex justify-between gap-2 text-zinc-600 dark:text-zinc-400"><span className="truncate">{ch?.groupName || "Hisob"} · {a.month}</span><span className="tabular-nums">{formatMoney(a.amount)}</span></div>;
+                      })}
+                      {allocPreview.credit > 0 && <div className="flex justify-between gap-2 text-emerald-600"><span>Avansga (keyingi oylarga)</span><span className="tabular-nums">{formatMoney(allocPreview.credit)}</span></div>}
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="text-[10px] text-zinc-400 flex items-start gap-1.5">
                 <Info size={12} className="shrink-0 mt-0.5" />
-                To'lov o'quvchining balansiga yoziladi va kvitansiya raqami beriladi (Q-2026-…).
+                To'lov eng eski qarzdan boshlab qoplanadi (guruh tanlansa — avval shu guruh), ortig'i avans bo'ladi. Kvitansiya raqami beriladi (Q-2026-…).
               </p>
             </div>
           )}
@@ -1828,6 +1901,7 @@ export default function CrmFinance() {
             <Button disabled={!form.category || categoriesLoading || !!categoriesError || txSaving || (isOylikForm && !selectedPayrollId) || (isAvansForm && !form.staffId)} onClick={handleSave} leftIcon={<Check size={14} />}>{txSaving ? 'Saqlanmoqda...' : 'Saqlash'}</Button>
           </div>
         </div>
+        )}
       </Modal>
 
       <Modal

@@ -24,6 +24,7 @@ interface TelegramSettings {
     autoAttendance: boolean;
     autoPayment: boolean;
     autoLead: boolean;
+    autoReceipt?: boolean;
     miniAppUrl: string;
     staffMiniAppUrl: string;
 }
@@ -73,6 +74,7 @@ export default function CrmTelegram() {
     const [autoAttendance, setAutoAttendance] = useState(false);
     const [autoPayment, setAutoPayment] = useState(false);
     const [autoLead, setAutoLead] = useState(false);
+    const [autoReceipt, setAutoReceipt] = useState(false);
     const [savingSettings, setSavingSettings] = useState(false);
     const [settingWebhook, setSettingWebhook] = useState(false);
 
@@ -136,6 +138,7 @@ export default function CrmTelegram() {
             setAutoAttendance(settingsRes.data.autoAttendance || false);
             setAutoPayment(settingsRes.data.autoPayment || false);
             setAutoLead(settingsRes.data.autoLead || false);
+            setAutoReceipt(settingsRes.data.autoReceipt || false);
             setMiniAppUrl(settingsRes.data.miniAppUrl || '');
         } catch (err: any) {
             const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Ma'lumot yuklanmadi";
@@ -184,7 +187,7 @@ export default function CrmTelegram() {
     const saveSettings = async () => {
         setSavingSettings(true);
         try {
-            const payload: any = { adminChatId: adminChatId.trim(), autoAttendance, autoPayment, autoLead };
+            const payload: any = { adminChatId: adminChatId.trim(), autoAttendance, autoPayment, autoLead, autoReceipt };
             if (tokenInput.trim()) payload.token = tokenInput.trim();
             await api.put('/telegram/settings', payload);
             showToast('Sozlamalar saqlandi!', 'success');
@@ -711,7 +714,8 @@ export default function CrmTelegram() {
                                 <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Avtomatik Bildirishnomalar</p>
                                 {[
                                     { key: 'att', label: 'Davomat: kelmagan kun ota-onaga xabar', emoji: '📚', value: autoAttendance, setter: setAutoAttendance },
-                                    { key: 'pay', label: "To'lov: muddati o'tganda eslatma", emoji: '💰', value: autoPayment, setter: setAutoPayment },
+                                    { key: 'pay', label: "To'lov: muddati yaqin/o'tganda eslatma", emoji: '💰', value: autoPayment, setter: setAutoPayment },
+                                    { key: 'rcpt', label: "To'lov qabul qilinganda ota-onaga kvitansiya", emoji: '🧾', value: autoReceipt, setter: setAutoReceipt },
                                     { key: 'lead', label: 'Lid: yangi lid kelganda admin alert', emoji: '🎯', value: autoLead, setter: setAutoLead },
                                 ].map(item => (
                                     <label key={item.key} className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl cursor-pointer">

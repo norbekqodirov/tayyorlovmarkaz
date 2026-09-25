@@ -478,7 +478,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
                     studentId, amount: Math.round(numAmount), method, date, note: description, category, source: 'finance_form',
                     groupId: groupId || null, month: month || null,
                 }, { id: requester?.id, name: requester?.name });
-                return res.json(r.transaction);
+                return res.json({ ...r.transaction, receiptNo: r.payment.receiptNo, paymentId: r.payment.id, allocations: r.allocations.map(a => ({ chargeId: a.chargeId, amount: a.amount })), unallocated: r.unallocated });
             } catch (e: any) {
                 if (e instanceof ReceiptError || e instanceof AllocationError) return res.status(e.status).json({ error: e.message, code: e.code });
                 throw e;

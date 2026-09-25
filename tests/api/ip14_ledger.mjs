@@ -49,6 +49,18 @@ try {
   const row = Array.isArray(r.data) ? r.data.find(x => x.id === G.id) : null;
   check('analitika: kutilgan oylik tushum = sentabr hisobi 600 000, qarzdor 1', r.status === 200 && row?.expectedMonthly === 600000 && row.debtors === 1, row);
 
+  // ── IP-19: kassir — kurs to'lovi javobida kvitansiya va taqsimot (chek uchun)
+  r = await api('POST', '/finance/transactions', manager.token, { type: 'income', amount: 150000, category: "Kurs to'lovi", date: today, method: 'Naqd', studentId: S.id });
+  check('kurs to\'lovi javobi: kvitansiya raqami va taqsimot (150 000 → sentabr)', r.status === 200 && /^Q-\d{4}-\d{6}$/.test(r.data.receiptNo || '') && r.data.allocations?.[0]?.amount === 150000 && r.data.unallocated === 0, r.data);
+  r = await api('GET', `/receipts/suggest?studentId=${S.id}&amount=400000`, manager.token);
+  check('taklif: 400 000 dan 250 000 qarzga, 150 000 avansga', r.status === 200 && r.data.plan?.[0]?.amount === 250000 && r.data.credit === 150000, r.data);
+  const tgBefore = await prisma.setting.findUnique({ where: { key: 'telegram_auto_receipt' } });
+  r = await api('PUT', '/telegram/settings', admin.token, { autoReceipt: true });
+  const tg = await api('GET', '/telegram/settings', admin.token);
+  check('Telegram sozlamasi: kvitansiya yoqildi', r.status === 200 && tg.data.autoReceipt === true, tg.data);
+  if (tgBefore) await prisma.setting.update({ where: { key: 'telegram_auto_receipt' }, data: { value: tgBefore.value } });
+  else await prisma.setting.deleteMany({ where: { key: 'telegram_auto_receipt' } });
+
   // ── Legacy rejimda portal eskicha (orqaga moslik)
   await setMode('legacy');
   r = await api('GET', '/portal/payments', null, undefined, { 'x-portal-token': token });
