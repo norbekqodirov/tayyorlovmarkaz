@@ -16,6 +16,7 @@ import prisma from '../db.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { daysBetween, isValidDate, monthOf } from '../domain/lessonCalendar.js';
 import { teacherAt } from './lessonPlan.js';
+import { isMonthClosed } from './moneyReversal.js';
 
 export class AttendanceError extends Error {
     constructor(public status: number, message: string, public code?: string) { super(message); }
@@ -35,6 +36,8 @@ async function checkAccessAndWindow(groupId: string, date: string, actor: Attend
     if (!isValidDate(date)) throw new AttendanceError(400, "Sana YYYY-MM-DD formatida bo'lishi kerak", 'BAD_DATE');
     const today = todayDateStr();
     if (date > today) throw new AttendanceError(400, "Kelajak sanasiga davomat belgilab bo'lmaydi", 'FUTURE');
+    // IP-21: yopilgan oy davomati o'zgarmaydi (hisob-kitob va maosh yakunlangan)
+    if (await isMonthClosed(prisma, date)) throw new AttendanceError(409, `${date.slice(0, 7)} oyi yopilgan — davomat o'zgartirilmaydi`, 'PERIOD_CLOSED');
     const group = await prisma.group.findUnique({ where: { id: groupId }, select: { id: true, teacherId: true, deletedAt: true } });
     if (!group) throw new AttendanceError(404, 'Guruh topilmadi', 'NOT_FOUND');
     if (actor.role === 'TEACHER' && group.teacherId !== actor.id && (await teacherAt(prisma, groupId, date)) !== actor.id) {

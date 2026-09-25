@@ -229,6 +229,9 @@ router.post('/', canReview, async (req, res) => {
         }
         const basis = parseBasis(rawBasis);
         const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+        if (await isMonthClosed(prisma, `${monthStr}-01`)) {
+            return res.status(409).json({ message: `${monthStr} oyi yopilgan — maosh qayta hisoblanmaydi (tuzatma keyingi oyga)`, code: 'PERIOD_CLOSED' });
+        }
 
         const existing = await prisma.teacherPayroll.findUnique({
             where: { teacherId_month_basis: { teacherId, month: monthStr, basis } },

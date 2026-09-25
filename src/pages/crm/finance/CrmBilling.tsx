@@ -18,6 +18,7 @@ import { formatNumber } from '../../../utils/formatters';
 import { tashkentMonth } from '../../../utils/tashkentDate';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import ConfirmDialog from '../../../components/ConfirmDialog';
+import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
 
 const STATUS_BADGE: Record<string, { label: string; color: 'amber' | 'emerald' | 'slate' }> = {
   draft: { label: 'Qoralama', color: 'amber' },
@@ -56,6 +57,12 @@ export default function CrmBilling() {
   const [detail, setDetail] = useState<any | null>(null);
   const [search, setSearch] = useState('');
   const [summary, setSummary] = useState<any[]>([]);
+  // IP-21: o'tgan oy — yopish checklist'i / yopilgan holat
+  const [closeInfo, setCloseInfo] = useState<any | null>(null);
+  const [closeModal, setCloseModal] = useState<null | 'force' | 'reopen'>(null);
+  const [showMissing, setShowMissing] = useState(false);
+  const isSuper = getCurrentRoleLevel() >= ROLE_LEVEL.SUPER_ADMIN;
+  const pastMonth = month < tashkentMonth();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,6 +71,10 @@ export default function CrmBilling() {
       setMode(m.data.mode);
       setCharges(c.data || []);
       setSummary(sm.data || []);
+      setCloseInfo(null);
+      if (m.data.mode === 'live' && month < tashkentMonth()) {
+        api.get(`/billing/${month}/close-check`).then(r => setCloseInfo(r.data)).catch(() => setCloseInfo(null));
+      }
     } catch (e: any) {
       showToast(e?.response?.data?.message || "Hisoblarni yuklab bo'lmadi", 'error');
     } finally {
@@ -111,6 +122,30 @@ export default function CrmBilling() {
     }
   };
   const live = mode === 'live';
+  const doClose = async (force: boolean, reason?: string) => {
+    setBusy('close');
+    try {
+      await api.post(`/billing/${month}/close`, force ? { force: true, reason } : {});
+      showToast(`${month} oyi yopildi`, 'success');
+      setCloseModal(null);
+      await load();
+    } catch (e: any) {
+      if (e?.response?.data?.details) setCloseInfo((c: any) => ({ ...(c || {}), ...e.response.data.details }));
+      const msg = apiError(e, "Oyni yopib bo'lmadi");
+      if (force) return msg;
+      showToast(msg, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const doReopen = async (reason: string) => {
+    try {
+      await api.post(`/billing/${month}/reopen`, { reason });
+      showToast(`${month} oyi qayta ochildi`, 'success');
+      setCloseModal(null);
+      await load();
+    } catch (e: any) { return apiError(e); }
+  };
   const liveRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return summary.filter(r => !q || r.student?.name?.toLowerCase().includes(q) || r.student?.code?.toLowerCase().includes(q) || r.groupName?.toLowerCase().includes(q));
@@ -202,6 +237,58 @@ export default function CrmBilling() {
         onCancel={() => setConfirmLive(false)}
       />
 
+      {live && pastMonth && closeInfo && (
+        closeInfo.status === 'closed' ? (
+          <div role="note" className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-200 flex flex-wrap items-center justify-between gap-2">
+            <span><b>{month} oyi yopilgan</b>{closeInfo.closedAt ? ` · ${new Date(closeInfo.closedAt).toLocaleDateString('ru-RU')}` : ''} — hisob, davomat va maosh o'zgarmaydi; tuzatishlar keyingi ochiq oyga tushadi.</span>
+            {isSuper && <Button size="sm" variant="secondary" onClick={() => setCloseModal('reopen')}>Qayta ochish</Button>}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-black text-slate-900 dark:text-white">{month} oyini yopish</p>
+              {isAdmin && (
+                <div className="flex gap-2">
+                  {closeInfo.blockers?.length > 0 && !closeInfo.blockers.includes('ended') && (
+                    <Button size="sm" variant="secondary" onClick={() => setCloseModal('force')}>Majburiy yopish…</Button>
+                  )}
+                  <Button size="sm" isLoading={busy === 'close'} disabled={!closeInfo.canClose} onClick={() => void doClose(false)}>Oyni yopish</Button>
+                </div>
+              )}
+            </div>
+            <ul className="space-y-1.5 text-xs">
+              {closeInfo.items?.map((it: any) => (
+                <li key={it.key} className="flex items-start gap-2">
+                  <span className={`mt-0.5 inline-flex w-4 justify-center font-black ${it.status === 'ok' ? 'text-emerald-600' : it.status === 'warn' ? 'text-amber-600' : 'text-rose-600'}`}>{it.status === 'ok' ? '✓' : it.status === 'warn' ? '!' : '✕'}</span>
+                  <span className="min-w-0">
+                    <span className="font-bold text-slate-800 dark:text-zinc-200">{it.label}</span>
+                    {it.count > 0 && <span className="text-zinc-500"> — {it.count}</span>}
+                    {it.hint && <span className="block text-zinc-500">{it.hint}</span>}
+                    {it.key === 'attendance' && it.count > 0 && (
+                      <>
+                        <button type="button" className="text-blue-600 font-bold hover:underline" onClick={() => setShowMissing(v => !v)}>{showMissing ? 'Yashirish' : "Qaysi darslar?"}</button>
+                        {showMissing && (
+                          <span className="block mt-1 space-y-0.5">
+                            {it.details.map((g: any) => <span key={g.groupId} className="block text-zinc-600 dark:text-zinc-400">{g.groupName}: {g.dates.map((d: string) => dm(d)).join(', ')}</span>)}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {it.key === 'payroll' && it.count > 0 && <span className="block text-zinc-500">{it.details.map((u: any) => u.name).join(', ')}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-zinc-400">Yopishda hisoblar yangilanadi, davr tugagan hisoblarga davomat tuzatmasi yoziladi, avans qarzga biriktiriladi va balanslar solishtiriladi.</p>
+          </div>
+        )
+      )}
+      <ReasonModal isOpen={closeModal === 'force'} title={`${month} oyini majburiy yopish`}
+        message="Checklist'da hal qilinmagan band bor (masalan davomati olinmagan darslar). Sabab bilan yopiladi va audit jurnaliga yoziladi."
+        confirmText="Majburiy yopish" onClose={() => setCloseModal(null)} onConfirm={reason => doClose(true, reason)} />
+      <ReasonModal isOpen={closeModal === 'reopen'} title={`${month} oyini qayta ochish`}
+        message="Yopilgan oy qayta ochilsa, uning hisob va davomatini o'zgartirish mumkin bo'ladi. Faqat zarur holatda, sabab bilan."
+        confirmText="Qayta ochish" danger={false} onClose={() => setCloseModal(null)} onConfirm={doReopen} />
       {live ? (<>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="O'quvchilar" value={liveStats.students} sub={`${summary.length} ta hisob`} variant="minimal" color="blue" />

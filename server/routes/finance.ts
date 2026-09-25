@@ -583,6 +583,7 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
         if (!category || !amount || !date) {
             return res.status(400).json({ error: 'category, amount va date majburiy' });
         }
+        if (await isMonthClosed(prisma, String(date))) return res.status(409).json({ error: `${String(date).slice(0, 7)} oyi yopilgan — xarajatni joriy sana bilan kiriting`, code: 'PERIOD_CLOSED' });
         const numAmount = Number(amount);
         if (!Number.isFinite(numAmount) || numAmount <= 0) {
             return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
@@ -625,6 +626,10 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
 router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
         const { category, amount, description, date, receipt } = req.body;
+        const cur = await prisma.expense.findUnique({ where: { id: req.params.id }, select: { date: true } });
+        if (cur && (await isMonthClosed(prisma, cur.date) || (date && await isMonthClosed(prisma, String(date))))) {
+            return res.status(409).json({ error: "Yopilgan oy xarajati o'zgartirilmaydi — Tranzaksiyalar'da «Bekor qilish» orqali", code: 'PERIOD_CLOSED' });
+        }
         const data: any = {};
         if (category !== undefined) data.category = category;
         if (amount !== undefined) {

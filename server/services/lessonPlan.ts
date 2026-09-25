@@ -15,6 +15,7 @@ import prisma from '../db.js';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { todayDateStr } from '../utils/timezone.js';
 import { isValidDate, monthRange, scheduledDates, versionAt, addDays } from '../domain/lessonCalendar.js';
+import { isMonthClosed } from './moneyReversal.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -114,6 +115,7 @@ export async function cancelSession(sessionId: string, input: { reason: string; 
     if (!(CANCEL_REASONS as readonly string[]).includes(input.reason)) throw new LessonPlanError(400, "Bekor qilish sababi noto'g'ri", 'BAD_REASON');
     const s = await prisma.lessonSession.findUnique({ where: { id: sessionId } });
     if (!s) throw new LessonPlanError(404, 'Dars topilmadi', 'NOT_FOUND');
+    if (await isMonthClosed(prisma, s.date)) throw new LessonPlanError(409, `${s.date.slice(0, 7)} oyi yopilgan — dars rejasi o'zgartirilmaydi`, 'PERIOD_CLOSED');
     if (s.status === 'cancelled' || s.status === 'moved') throw new LessonPlanError(409, 'Dars allaqachon bekor qilingan yoki ko\'chirilgan', 'NOT_ACTIVE');
     if (await hasAttendanceOn(prisma, s.groupId, s.date, s.id)) throw new LessonPlanError(409, "Bu darsga davomat belgilangan — avval davomatni olib tashlang", 'HAS_ATTENDANCE');
     return prisma.lessonSession.update({
@@ -128,6 +130,7 @@ export async function moveSession(sessionId: string, input: { toDate: string; st
         const s = await tx.lessonSession.findUnique({ where: { id: sessionId } });
         if (!s) throw new LessonPlanError(404, 'Dars topilmadi', 'NOT_FOUND');
         if (s.kind !== 'regular' || s.status !== 'planned') throw new LessonPlanError(409, "Faqat rejadagi (o'tmagan) darsni ko'chirish mumkin", 'NOT_PLANNED');
+        if (await isMonthClosed(tx, s.date) || await isMonthClosed(tx, input.toDate)) throw new LessonPlanError(409, "Yopilgan oydagi darsni ko'chirib bo'lmaydi", 'PERIOD_CLOSED');
         if (s.date === input.toDate) throw new LessonPlanError(400, 'Yangi sana eskisidan farq qilishi kerak', 'SAME_DATE');
         if (await hasAttendanceOn(tx, s.groupId, s.date, s.id)) throw new LessonPlanError(409, "Bu darsga davomat belgilangan", 'HAS_ATTENDANCE');
         const clash = await tx.lessonSession.findFirst({ where: { groupId: s.groupId, date: input.toDate, kind: 'regular', status: { in: ACTIVE_STATUSES } } });
@@ -147,6 +150,7 @@ export interface AddSessionInput { groupId: string; date: string; kind: 'extra' 
 export async function addSession(input: AddSessionInput, actorId?: string | null) {
     if (!['extra', 'makeup', 'trial'].includes(input.kind)) throw new LessonPlanError(400, "Dars turi noto'g'ri", 'BAD_KIND');
     if (!isValidDate(input.date)) throw new LessonPlanError(400, "Sana YYYY-MM-DD formatida bo'lishi kerak", 'BAD_DATE');
+    if (await isMonthClosed(prisma, input.date)) throw new LessonPlanError(409, `${input.date.slice(0, 7)} oyi yopilgan — dars qo'shib bo'lmaydi`, 'PERIOD_CLOSED');
     const price = input.price == null ? null : Math.round(Number(input.price));
     if (price != null && (!Number.isFinite(price) || price < 0 || price > 1e8)) throw new LessonPlanError(400, "Narx noto'g'ri", 'BAD_PRICE');
     if (input.kind !== 'extra' && price) throw new LessonPlanError(400, "Qoplash va sinov darslari pullik bo'lmaydi", 'NOT_BILLABLE_KIND');

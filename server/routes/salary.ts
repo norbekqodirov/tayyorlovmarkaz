@@ -8,7 +8,7 @@ import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
-import { payrollDeleteBlock, releaseAdvanceApplications } from '../services/moneyReversal.js';
+import { payrollDeleteBlock, releaseAdvanceApplications, isMonthClosed } from '../services/moneyReversal.js';
 
 const router = express.Router();
 
@@ -79,6 +79,7 @@ router.post('/', requireAuth, requireMinRole('MANAGER'), canReview, async (req, 
         if (!staffId || !month) {
             return res.status(400).json({ message: 'staffId va month kiritilishi shart' });
         }
+        if (await isMonthClosed(prisma, `${month}-01`)) return res.status(409).json({ message: `${month} oyi yopilgan — oylik o'zgartirilmaydi`, code: 'PERIOD_CLOSED' });
 
         const existing = await prisma.salary.findUnique({ where: { staffId_month: { staffId, month } } });
         if (existing?.paid) {
@@ -332,6 +333,7 @@ router.post('/generate-month', requireAuth, requireMinRole('MANAGER'), canManage
     try {
         const { month } = req.body;
         if (!month) return res.status(400).json({ message: 'month kiritilishi shart' });
+        if (await isMonthClosed(prisma, `${month}-01`)) return res.status(409).json({ message: `${month} oyi yopilgan`, code: 'PERIOD_CLOSED' });
 
         const staff = await prisma.staffMember.findMany({ where: { status: 'Faol', deletedAt: null } });
         const results = [];

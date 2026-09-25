@@ -12,14 +12,16 @@ import {
     studentAccount, shadowReport, refreshMonth, monthSummary, studentLedger,
 } from '../services/chargeEngine.js';
 import { LedgerModeError } from '../services/ledgerMode.js';
+import { PeriodError, closeChecklist, closeMonth, reopenMonth } from '../services/periodClose.js';
 import { syncAllBalances, reconcileBalances } from '../services/balanceCache.js';
 
 const router = express.Router();
 const canView = [requireAuth, requireMinRole('MANAGER'), requirePermission('finance')];
 const canWrite = [requireAuth, requireMinRole('MANAGER'), requirePermission('finance')];
 
-const actor = (req: any) => ({ id: req.user?.id as string | undefined, name: (req.user?.name || req.user?.phone || 'tizim') as string });
+const actor = (req: any) => ({ id: req.user?.id as string | undefined, name: (req.user?.name || req.user?.phone || 'tizim') as string , role: req.user?.role as string | undefined });
 function sendError(res: express.Response, err: any) {
+    if (err instanceof PeriodError) return res.status(err.status).json({ message: err.message, code: err.code, details: err.details });
     if (err instanceof BillingError || err instanceof LedgerModeError) return res.status(err.status).json({ message: err.message, code: err.code });
     console.error('[billing]', err);
     return res.status(500).json({ message: err?.message || 'Server xatosi' });
@@ -62,6 +64,21 @@ router.get('/periods', ...canView, async (_req, res) => {
 router.get('/students/:id/ledger', ...canView, async (req, res) => {
     try { res.json({ mode: await getLedgerMode(), ...(await studentLedger(req.params.id, { limit: 24 })) }); }
     catch (err) { sendError(res, err); }
+});
+
+// ─── IP-21: oy yopish (F.10) ─────────────────────────────────────────────────
+// GET /api/billing/:month/close-check — checklist (faqat o'qiydi)
+router.get('/:month/close-check', ...canView, async (req, res) => {
+    try { res.json(await closeChecklist(req.params.month)); } catch (err) { sendError(res, err); }
+});
+// POST /api/billing/:month/close — { force?, reason? } (ADMIN+; majburiy yopish — sabab bilan)
+router.post('/:month/close', ...canWrite, async (req, res) => {
+    try { res.json(await closeMonth(req.params.month, { force: !!req.body?.force, reason: req.body?.reason }, actor(req))); }
+    catch (err) { sendError(res, err); }
+});
+// POST /api/billing/:month/reopen — { reason } (faqat SUPER_ADMIN)
+router.post('/:month/reopen', ...canWrite, async (req, res) => {
+    try { res.json(await reopenMonth(req.params.month, req.body?.reason, actor(req))); } catch (err) { sendError(res, err); }
 });
 
 // ─── Oy jadvali (soddalashtirilgan ko'rinish) ────────────────────────────────
