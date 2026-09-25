@@ -7,6 +7,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import prisma from '../db.js';
+import { afterExternalPayment, afterPaymentVoided } from '../services/balanceCache.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
@@ -293,7 +294,7 @@ router.post('/payme', async (req, res) => {
                             });
 
                             const todayStr = todayDateStr();
-                            await txClient.payment.create({
+                            const onlinePayment = await txClient.payment.create({
                                 data: {
                                     studentId: student.id,
                                     amount: tx.amount,
@@ -321,6 +322,8 @@ router.post('/payme', async (req, res) => {
                                     sourceId: tx.id,
                                 }
                             });
+                            // IP-14/16: shadow/live — FIFO taqsimot, live — balans formula bo'yicha
+                            await afterExternalPayment(txClient, onlinePayment.id);
                         }
                         return { applied: true, current };
                     });
@@ -458,10 +461,13 @@ router.post('/payme', async (req, res) => {
                             // aslida bekor qilingan to'lovni hamon "to'langan" deb
                             // ko'rsatardi. Endi sourceId orqali topilib 'refunded'
                             // qilinadi.
+                            const cancelledPayments = await txClient.payment.findMany({ where: { sourceType: 'online_transaction', sourceId: tx.id, status: 'paid' }, select: { id: true } });
                             await txClient.payment.updateMany({
                                 where: { sourceType: 'online_transaction', sourceId: tx.id, status: 'paid' },
                                 data: { status: 'refunded' },
                             });
+                            // IP-14/17: bekor qilingan to'lov taqsimotlari qaytariladi, live — kesh
+                            for (const cp of cancelledPayments) await afterPaymentVoided(txClient, cp.id, `Payme to'lovi bekor qilindi (${txId})`);
                         }
                         return { current };
                     });
@@ -784,7 +790,7 @@ router.post('/click', async (req, res) => {
                         where: { id: student.id },
                         data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
                     });
-                    await txClient.payment.create({
+                    const onlinePayment = await txClient.payment.create({
                         data: {
                             studentId: student.id,
                             amount: amountUZS,
@@ -810,6 +816,7 @@ router.post('/click', async (req, res) => {
                             sourceId: newTx.id,
                         }
                     });
+                    await afterExternalPayment(txClient, onlinePayment.id);
                     return newTx;
                 });
 
@@ -891,7 +898,7 @@ router.post('/click', async (req, res) => {
                     where: { id: student.id },
                     data: { paymentStatus: updated.balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik' },
                 });
-                await txClient.payment.create({
+                const onlinePayment = await txClient.payment.create({
                     data: {
                         studentId: student.id,
                         amount: amountUZS,
@@ -917,6 +924,7 @@ router.post('/click', async (req, res) => {
                         sourceId: tx.id,
                     }
                 });
+                await afterExternalPayment(txClient, onlinePayment.id);
                 return { applied: true };
             });
 

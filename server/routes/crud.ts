@@ -11,6 +11,7 @@ import { CURRENT_ENROLLMENT_WHERE } from '../utils/activeFilters.js';
 import { normalizeStudentStatus } from '../utils/studentStatus.js';
 import { recordGroupCreate, recordLegacyGroupEdit, safeHistory } from '../services/groupHistory.js';
 import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
+import { afterPaymentVoided } from '../services/balanceCache.js';
 
 const router = express.Router();
 
@@ -937,7 +938,7 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
 
             const student = tx.studentId ? await prisma.student.findUnique({ where: { id: tx.studentId }, select: { id: true } }) : null;
             await prisma.$transaction(async (txClient) => {
-                if (tx.type === 'income' && student && (!tx.sourceType || tx.sourceType === 'manual_payment')) {
+                if (tx.type === 'income' && student && (!tx.sourceType || tx.sourceType === 'manual_payment' || tx.sourceType === 'receipt')) {
                     const updated = await txClient.student.update({
                         where: { id: student.id },
                         data: { balance: { decrement: tx.amount } },
@@ -949,6 +950,12 @@ router.delete('/:collection/:id', auditPositionsOnly, async (req, res) => {
                 }
                 if (tx.sourceType === 'manual_payment' && tx.sourceId) {
                     await txClient.payment.deleteMany({ where: { id: tx.sourceId } });
+                }
+                // IP-12/17: kvitansiya — to'lov o'chirilmaydi (tarix), bekor qilinadi: taqsimotlar
+                // qaytariladi, live rejimda balans formula bo'yicha qayta hisoblanadi.
+                if (tx.sourceType === 'receipt' && tx.sourceId) {
+                    await txClient.payment.updateMany({ where: { id: tx.sourceId, deletedAt: null }, data: { deletedAt: new Date() } });
+                    await afterPaymentVoided(txClient, tx.sourceId, 'Kassa yozuvi o\'chirildi', (req as any).user?.id);
                 }
                 if (tx.sourceType === 'expense' && tx.sourceId) {
                     await txClient.expense.deleteMany({ where: { id: tx.sourceId } });

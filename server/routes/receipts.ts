@@ -8,7 +8,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
 import { idempotent } from '../middleware/idempotency.js';
-import { ReceiptError, createReceipt, allocatePayment, reverseAllocation, suggestAllocation } from '../services/receipts.js';
+import { ReceiptError, AllocationError, createReceipt, allocatePayment, reverseAllocation, suggestAllocation } from '../services/receipts.js';
 import { studentPosition } from '../services/receivables.js';
 
 const router = express.Router();
@@ -17,7 +17,7 @@ const canWrite = [requireAuth, requireMinRole('MANAGER'), requirePermission('fin
 
 const actor = (req: any) => ({ id: req.user?.id as string | undefined, name: (req.user?.name || req.user?.phone || 'tizim') as string });
 function sendError(res: express.Response, err: any) {
-    if (err instanceof ReceiptError) return res.status(err.status).json({ message: err.message, code: err.code });
+    if (err instanceof ReceiptError || err instanceof AllocationError) return res.status(err.status).json({ message: err.message, code: err.code });
     console.error('[receipts]', err);
     return res.status(500).json({ message: err?.message || 'Server xatosi' });
 }

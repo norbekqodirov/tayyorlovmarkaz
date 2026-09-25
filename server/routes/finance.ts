@@ -5,7 +5,8 @@
 
 import express from 'express';
 import prisma from '../db.js';
-import { createReceipt, ReceiptError } from '../services/receipts.js';
+import { createReceipt, ReceiptError, AllocationError } from '../services/receipts.js';
+import { afterExternalPayment } from '../services/balanceCache.js';
 import { categoryKind } from '../services/categories.js';
 import { idempotent } from '../middleware/idempotency.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
@@ -228,7 +229,7 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
 
                 const netAmount = computeInvoiceNetAmount(invoice);
 
-                await tx.payment.create({
+                const invPayment = await tx.payment.create({
                     data: {
                         studentId: invoice.studentId,
                         amount: netAmount,
@@ -256,6 +257,8 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                     where: { id: invoice.studentId },
                     data: { balance: { increment: netAmount }, paymentStatus: 'Tolov qilingan' },
                 });
+                // IP-14/16: shadow/live — FIFO taqsimot, live — balans formula bo'yicha
+                await afterExternalPayment(tx, invPayment.id, (req as any).user?.id);
 
                 return { invoice, applied: true };
             });
@@ -403,7 +406,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
                 }, { id: requester?.id, name: requester?.name });
                 return res.json(r.transaction);
             } catch (e: any) {
-                if (e instanceof ReceiptError) return res.status(e.status).json({ error: e.message, code: e.code });
+                if (e instanceof ReceiptError || e instanceof AllocationError) return res.status(e.status).json({ error: e.message, code: e.code });
                 throw e;
             }
         }

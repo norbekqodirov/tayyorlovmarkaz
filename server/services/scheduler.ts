@@ -8,6 +8,8 @@ import { syncAllHistoryCaches } from './groupHistory.js';
 import { generateAllPlans } from './lessonPlan.js';
 import { dailyRefresh } from './chargeEngine.js';
 import { pruneIdempotencyRecords } from '../middleware/idempotency.js';
+import { reconcileBalances } from './balanceCache.js';
+import { getLedgerMode } from './ledgerMode.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -724,6 +726,13 @@ export async function startScheduler() {
             dailyRefresh()
                 .then(r => { if (r) console.log(`[Scheduler] Hisoblar (${r.month}): +${r.created}, ~${r.updated}, skip ${r.skipped.length}`); })
                 .catch(e => console.error('[Scheduler] Hisob generatsiyasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-14: har kuni 02:00 — balans keshi va formula solishtiruvi (live — tuzatiladi, shadow — hisobot)
+        cron.schedule('0 2 * * *', () => {
+            getLedgerMode().then(mode => mode === 'legacy' ? null : reconcileBalances({ fix: mode === 'live' }))
+                .then(r => { if (r && r.differences) console.log(`[Scheduler] Balans solishtiruvi (${r.mode}): ${r.differences} farq, ${r.fixed} tuzatildi`); })
+                .catch(e => console.error('[Scheduler] Balans solishtiruvi xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
         // IP-12: 30 kundan eski idempotency yozuvlari (har kuni 04:10)

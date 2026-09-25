@@ -11,6 +11,8 @@ import {
     BillingError, getLedgerMode, setLedgerMode, generateMonth, postMonth, settleMonth, adjustCharge, voidDraft,
     studentAccount, shadowReport,
 } from '../services/chargeEngine.js';
+import { LedgerModeError } from '../services/ledgerMode.js';
+import { syncAllBalances, reconcileBalances } from '../services/balanceCache.js';
 
 const router = express.Router();
 const canView = [requireAuth, requireMinRole('MANAGER'), requirePermission('finance')];
@@ -18,7 +20,7 @@ const canWrite = [requireAuth, requireMinRole('MANAGER'), requirePermission('fin
 
 const actor = (req: any) => ({ id: req.user?.id as string | undefined, name: (req.user?.name || req.user?.phone || 'tizim') as string });
 function sendError(res: express.Response, err: any) {
-    if (err instanceof BillingError) return res.status(err.status).json({ message: err.message, code: err.code });
+    if (err instanceof BillingError || err instanceof LedgerModeError) return res.status(err.status).json({ message: err.message, code: err.code });
     console.error('[billing]', err);
     return res.status(500).json({ message: err?.message || 'Server xatosi' });
 }
@@ -31,9 +33,24 @@ router.put('/mode', requireAuth, requireMinRole('ADMIN'), requirePermission('fin
     try {
         const before = await getLedgerMode();
         const mode = await setLedgerMode(req.body?.mode);
+        // IP-14: live'ga o'tishda barcha balanslar formula bo'yicha qayta hisoblanadi
+        const synced = mode === 'live' && before !== 'live' ? await syncAllBalances() : 0;
         const a = actor(req);
-        await logAudit({ userId: a.id, userName: a.name, action: 'ledger_mode', resource: 'setting', resourceId: 'ledger_mode', before: { mode: before }, after: { mode } });
-        res.json({ mode });
+        await logAudit({ userId: a.id, userName: a.name, action: 'ledger_mode', resource: 'setting', resourceId: 'ledger_mode', before: { mode: before }, after: { mode, synced } });
+        res.json({ mode, synced });
+    } catch (err) { sendError(res, err); }
+});
+
+// ─── Balans keshi solishtiruvi (IP-14, J.5 "qarz farqi") ─────────────────────
+router.get('/reconcile', ...canView, async (_req, res) => {
+    try { res.json(await reconcileBalances()); } catch (err) { sendError(res, err); }
+});
+router.post('/reconcile/fix', requireAuth, requireMinRole('ADMIN'), requirePermission('finance'), async (req, res) => {
+    try {
+        const r = await reconcileBalances({ fix: true });
+        const a = actor(req);
+        await logAudit({ userId: a.id, userName: a.name, action: 'balance_reconcile', resource: 'student', metadata: { mode: r.mode, differences: r.differences, fixed: r.fixed } });
+        res.json({ ...r, rows: r.rows.slice(0, 200) });
     } catch (err) { sendError(res, err); }
 });
 

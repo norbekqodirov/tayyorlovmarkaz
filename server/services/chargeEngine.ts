@@ -24,6 +24,11 @@ import { billableLessonDates, teacherAt } from './lessonPlan.js';
 import { groupScheduleDays } from './enrollment.js';
 import { getBillingSettings, calculateStudentMonthlyDue, type BillingSettings } from './billing.js';
 import { studentPosition } from './receivables.js';
+import { getLedgerMode, setLedgerMode, LEDGER_MODES, type LedgerMode } from './ledgerMode.js';
+import { syncStudents } from './balanceCache.js';
+import { trimOverAllocation } from './allocation.js';
+
+export { getLedgerMode, setLedgerMode, LEDGER_MODES, type LedgerMode };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -40,21 +45,7 @@ function nextMonth(month: string): string {
     return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
 }
 
-// ─── Rejim va davr ───────────────────────────────────────────────────────────
-
-export type LedgerMode = 'legacy' | 'shadow' | 'live';
-export const LEDGER_MODES: LedgerMode[] = ['legacy', 'shadow', 'live'];
-
-export async function getLedgerMode(): Promise<LedgerMode> {
-    const row = await prisma.setting.findUnique({ where: { key: 'ledger_mode' } });
-    return LEDGER_MODES.includes(row?.value as LedgerMode) ? (row!.value as LedgerMode) : 'legacy';
-}
-
-export async function setLedgerMode(mode: string): Promise<LedgerMode> {
-    if (!LEDGER_MODES.includes(mode as LedgerMode)) throw new BillingError(400, "Rejim: legacy | shadow | live", 'BAD_MODE');
-    await prisma.setting.upsert({ where: { key: 'ledger_mode' }, create: { key: 'ledger_mode', value: mode }, update: { value: mode } });
-    return mode as LedgerMode;
-}
+// ─── Davr ────────────────────────────────────────────────────────────────────
 
 async function getPeriod(db: Db, month: string) {
     return db.billingPeriod.findUnique({ where: { month } });
@@ -270,10 +261,10 @@ export async function generateMonth(month: string, opts: { groupId?: string; stu
 export async function postMonth(month: string, opts: { groupId?: string } = {}, actorId?: string | null) {
     assertMonth(month);
     await ensureOpenPeriod(prisma, month);
-    const r = await prisma.charge.updateMany({
-        where: { month, status: 'draft', ...(opts.groupId && { groupId: opts.groupId }) },
-        data: { status: 'posted', postedAt: new Date(), postedById: actorId ?? null },
-    });
+    const where = { month, status: 'draft', ...(opts.groupId && { groupId: opts.groupId }) };
+    const affected = await prisma.charge.findMany({ where, select: { studentId: true }, distinct: ['studentId'] });
+    const r = await prisma.charge.updateMany({ where, data: { status: 'posted', postedAt: new Date(), postedById: actorId ?? null } });
+    await syncStudents(prisma, affected.map(a => a.studentId));
     return { month, posted: r.count };
 }
 
@@ -317,8 +308,10 @@ export async function settleMonth(month: string, opts: { groupId?: string } = {}
                 lines: { create: [{ kind: 'manual', amount: delta, description: `${month} hisobiga tuzatma (${ch.net + adj.net} → ${freshNet})` }] },
             },
         });
+        if (delta < 0) await prisma.$transaction(tx => trimOverAllocation(tx, ch.id, `${month} oyi yakuni tuzatmasi`, actorId));
         created.push({ chargeId: ch.id, delta, teacherBaseDelta: tbDelta, month: targetMonth });
     }
+    await syncStudents(prisma, charges.filter(c => created.some(x => x.chargeId === c.id)).map(c => c.studentId));
     return { month, targetMonth, adjustments: created };
 }
 
@@ -346,6 +339,10 @@ export async function adjustCharge(chargeId: string, input: { amount: number; re
                 lines: { create: [{ kind: 'manual', amount, description: reason }] },
             },
             include: { lines: true },
+        }).then(async adj => {
+            if (amount < 0) await trimOverAllocation(tx, ch.id, `Hisob kamaytirildi: ${reason}`, actorId);
+            await syncStudents(tx, [ch.studentId]);
+            return adj;
         });
     });
 }
