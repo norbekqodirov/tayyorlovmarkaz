@@ -114,14 +114,20 @@ async function archiveUploads(ts: string, reason: BackupReason): Promise<{ name:
     return { name, size: fs.statSync(out).size };
 }
 
-/** Eng eski nusxalarni o'chirish — har tur bo'yicha oxirgi KEEP_PER_KIND tasi qoladi. */
+/**
+ * Eng eski nusxalarni o'chirish — har tur va sabab bo'yicha oxirgi KEEP_PER_KIND
+ * tasi qoladi. Faqat shu modul yaratgan nomlar (`...-daily.db`, `...-manual.zip`
+ * kabi) hisobga olinadi: eski formatdagi (`backup-2026-06-20T21-00-00.db`) va
+ * qo'lda olingan (`prod.db.bak*`) nusxalarga hech qachon tegilmaydi.
+ */
 export function pruneBackups(dir = BACKUP_DIR, keep = KEEP_PER_KIND) {
     if (!fs.existsSync(dir)) return;
     const files = fs.readdirSync(dir);
-    const kinds: Array<(f: string) => boolean> = [
-        f => f.startsWith('backup-') && (f.endsWith('.db') || f.endsWith('.sql')),
-        f => f.startsWith('uploads-') && f.endsWith('.zip'),
-    ];
+    const reasons: BackupReason[] = ['manual', 'daily', 'pre-deploy'];
+    const kinds: Array<(f: string) => boolean> = reasons.flatMap(r => [
+        (f: string) => f.startsWith('backup-') && (f.endsWith(`-${r}.db`) || f.endsWith(`-${r}.sql`)),
+        (f: string) => f.startsWith('uploads-') && f.endsWith(`-${r}.zip`),
+    ]);
     for (const match of kinds) {
         files.filter(match).sort().reverse().slice(keep).forEach(f => {
             try { fs.unlinkSync(path.join(dir, f)); } catch { /* jim */ }
