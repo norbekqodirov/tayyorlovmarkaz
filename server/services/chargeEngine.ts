@@ -564,8 +564,36 @@ export async function refreshMonth(month: string, actorId?: string | null) {
  * CRM "Oylik hisoblar", o'quvchi profili, ota-ona portali va bot — hammasi shu shakldan
  * (yagona manba: receivables.chargeBalances).
  */
+const LINE_LABELS: Record<string, string> = {
+    extra_lesson: "qo'shimcha dars", absence_discount: 'davomat chegirmasi', cancel_credit: 'bekor qilingan dars',
+    promo: 'promo chegirma', sibling: 'aka-uka chegirmasi', social: 'ijtimoiy chegirma', manual: 'tuzatma',
+};
+const fmtSom = (n: number) => Math.round(n).toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
+
+/**
+ * Hisobning qisqa izohi ("nima uchun shu summa"): asosiy qism, chegirma/qo'shimchalar va tuzatmalar.
+ * Masalan: "7 dars × 600 000 / 12 · davomat chegirmasi −50 000 · tuzatma −100 000".
+ */
+function explainCharge(type: string, calc: any, lines: Array<{ kind: string; amount: number }>, net: number, adjusted: number): string {
+    const parts: string[] = [];
+    if (type === 'tuition' && calc?.P != null) {
+        parts.push(calc.fullMonth ? `To'liq oy ${fmtSom(calc.P)}` : `${calc.R} dars × ${fmtSom(calc.P)} / ${calc.N}`);
+    } else if (type === 'other_fee') parts.push(`Boshqa to'lov ${fmtSom(net)}`);
+    else if (type === 'opening_balance') parts.push(`Boshlang'ich qoldiq ${fmtSom(net)}`);
+    for (const l of lines) {
+        if (l.kind === 'base' || !l.amount) continue;
+        parts.push(`${LINE_LABELS[l.kind] || l.kind} ${l.amount > 0 ? '+' : '−'}${fmtSom(Math.abs(l.amount))}`);
+    }
+    const adj = adjusted - net;
+    if (adj) parts.push(`tuzatma ${adj > 0 ? '+' : '−'}${fmtSom(Math.abs(adj))}`);
+    return parts.join(' · ');
+}
+
 async function describeCharges(rows: Awaited<ReturnType<typeof chargeBalances>>) {
     const today = todayDateStr();
+    const lineRows = rows.length ? await prisma.chargeLine.findMany({ where: { chargeId: { in: rows.map(r => r.id) } }, select: { chargeId: true, kind: true, amount: true } }) : [];
+    const linesOf = new Map<string, Array<{ kind: string; amount: number }>>();
+    for (const l of lineRows) { if (!linesOf.has(l.chargeId)) linesOf.set(l.chargeId, []); linesOf.get(l.chargeId)!.push(l); }
     const [students, groups, calcs] = await Promise.all([
         prisma.student.findMany({ where: { id: { in: [...new Set(rows.map(r => r.studentId))] } }, select: { id: true, name: true, code: true } }),
         prisma.group.findMany({ where: { id: { in: [...new Set(rows.map(r => r.groupId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } }),
@@ -585,6 +613,7 @@ async function describeCharges(rows: Awaited<ReturnType<typeof chargeBalances>>)
             lessons: c.R ?? null, groupLessons: c.F ?? null, fullMonth: c.fullMonth ?? null,
             amount: r.adjusted, paid: r.allocated, debt: r.debt,
             overdue: r.debt > 0 && !!r.dueDate && today > r.dueDate,
+            explain: explainCharge(r.type, c, linesOf.get(r.id) ?? [], r.net, r.adjusted),
         };
     });
 }

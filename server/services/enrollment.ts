@@ -386,7 +386,7 @@ export async function listPeriods(where: { studentId?: string; groupId?: string 
     return prisma.enrollmentPeriod.findMany({
         where,
         orderBy: [{ startDate: 'desc' }],
-        include: { pauses: { orderBy: { fromDate: 'asc' } }, group: { select: { id: true, name: true } }, student: { select: { id: true, name: true, code: true } } },
+        include: { pauses: { orderBy: { fromDate: 'asc' } }, group: { select: { id: true, name: true, startDate: true } }, student: { select: { id: true, name: true, code: true } } },
     });
 }
 

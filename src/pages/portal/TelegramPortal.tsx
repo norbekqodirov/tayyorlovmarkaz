@@ -31,7 +31,7 @@ interface AttendanceSummary { present: number; absent: number; late: number; exc
 interface PaymentItem { id: string; amount: number; dueDate?: string; month?: string; status: string; notes?: string; }
 interface PaidItem { id: string; amount: number; date: string; method: string; month?: string; receiptNo?: string | null; refunded?: boolean; }
 // Jonli rejim: CRM bilan bir xil manba — oylar (hisob davrlari) bo'yicha hisob, to'langan, qarz
-interface LedgerCharge { id: string; type: string; month: string; groupName: string | null; from: string | null; to: string | null; lessons: number | null; groupLessons: number | null; amount: number; paid: number; debt: number; dueDate: string | null; overdue: boolean; }
+interface LedgerCharge { id: string; type: string; month: string; groupName: string | null; from: string | null; to: string | null; lessons: number | null; groupLessons: number | null; amount: number; paid: number; debt: number; dueDate: string | null; overdue: boolean; explain?: string; }
 interface Ledger { debt: number; credit: number; overdueDebt: number; charges: LedgerCharge[]; }
 const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
 interface MonthlyDueGroup { groupId: string; groupName: string; courseName: string; basePrice: number; absences: number; discountApplied: boolean; discount: number; finalPrice: number; }
@@ -704,6 +704,7 @@ export default function TelegramPortal() {
                                                                                 <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${st.cls}`}>{st.t}</span>
                                                                             </div>
                                                                         </div>
+                                                                        {c.explain && <p className="text-[11px] text-zinc-400 mt-1.5">{c.explain}</p>}
                                                                         {c.paid > 0 && c.debt > 0 && (
                                                                             <p className="text-[11px] text-zinc-500 mt-1.5">To'langan {formatMoney(c.paid)} · qoldi <b className="text-red-600 dark:text-red-400">{formatMoney(c.debt)}</b></p>
                                                                         )}

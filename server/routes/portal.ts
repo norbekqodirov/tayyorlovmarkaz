@@ -235,7 +235,7 @@ router.get('/payments', portalAuth, async (req: any, res) => {
                     charges: ledger.charges.map(c => ({
                         id: c.chargeId, type: c.type, month: c.month, groupName: c.groupName,
                         from: c.windowFrom, to: c.windowTo, lessons: c.lessons, groupLessons: c.groupLessons,
-                        amount: c.amount, paid: c.paid, debt: c.debt, dueDate: c.dueDate, overdue: c.overdue,
+                        amount: c.amount, paid: c.paid, debt: c.debt, dueDate: c.dueDate, overdue: c.overdue, explain: c.explain,
                     })),
                 },
             });

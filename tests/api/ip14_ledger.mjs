@@ -37,6 +37,7 @@ try {
   const c0 = r.data.charges?.[0];
   check('CRM hisob varag\'i: qarz 400 000, sentabr 600 000 / 200 000 to\'langan, muddati o\'tgan', r.status === 200 && r.data.mode === 'live' && r.data.debt === 400000 && c0?.amount === 600000 && c0.paid === 200000 && c0.debt === 400000 && c0.overdue === (today > '2026-09-10') && c0.windowFrom === '2026-09-01', r.data);
 
+  check("hisob izohi: to'liq oy paket narxi", c0?.explain === "To'liq oy 600 000", c0?.explain);
   // ── Ota-ona portali: xuddi shu raqamlar
   const token = jwt.sign({ chatId }, process.env.JWT_SECRET);
   r = await api('GET', '/portal/payments', null, undefined, { 'x-portal-token': token });

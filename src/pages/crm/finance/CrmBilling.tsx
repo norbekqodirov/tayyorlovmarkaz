@@ -6,28 +6,24 @@
  * Backend: server/routes/billing.ts, qoidalar: docs/ADR_HISOB_QOIDALARI.md.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calculator, CheckCheck, RefreshCw, Scale, FileSearch } from 'lucide-react';
+import { Calculator, CheckCheck, RefreshCw, Scale } from 'lucide-react';
 import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import { PageHeader } from '../../../components/ui/PageHeader';
 import { StatCard } from '../../../components/ui/StatCard';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
-import { Modal } from '../../../components/ui/Modal';
 import { formatNumber } from '../../../utils/formatters';
 import { tashkentMonth } from '../../../utils/tashkentDate';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
+import { ChargeDetailModal } from '../../../components/finance/ChargeDetailModal';
 
 const STATUS_BADGE: Record<string, { label: string; color: 'amber' | 'emerald' | 'slate' }> = {
   draft: { label: 'Qoralama', color: 'amber' },
   posted: { label: 'Hisoblangan', color: 'emerald' },
   void: { label: 'Bekor', color: 'slate' },
-};
-const LINE_LABEL: Record<string, string> = {
-  base: 'Asosiy', extra_lesson: "Qo'shimcha dars", absence_discount: 'Davomat chegirmasi', cancel_credit: 'Bekor qilingan dars',
-  promo: 'Promo', sibling: 'Aka-uka', social: 'Ijtimoiy', manual: 'Tuzatma',
 };
 const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
 const todayStr = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
@@ -54,7 +50,7 @@ export default function CrmBilling() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState<'charges' | 'shadow'>('charges');
   const [shadow, setShadow] = useState<any | null>(null);
-  const [detail, setDetail] = useState<any | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [summary, setSummary] = useState<any[]>([]);
   // IP-21: o'tgan oy — yopish checklist'i / yopilgan holat
@@ -168,10 +164,7 @@ export default function CrmBilling() {
     }
   };
 
-  const openDetail = async (id: string) => {
-    try { setDetail((await api.get(`/billing/charges/${id}`)).data); }
-    catch { showToast("Hisobni ochib bo'lmadi", 'error'); }
-  };
+  const openDetail = (id: string) => setDetailId(id);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -437,45 +430,7 @@ export default function CrmBilling() {
       </div>
       </>)}
 
-      <Modal isOpen={!!detail} onClose={() => setDetail(null)} title="Hisob tafsiloti" description={detail ? `${detail.month} · ${STATUS_BADGE[detail.status]?.label || detail.status}` : ''} width="lg">
-        {detail && (
-          <div className="space-y-4 text-sm">
-            <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 divide-y divide-zinc-100 dark:divide-zinc-800">
-              {detail.lines.map((l: any) => (
-                <div key={l.id} className="flex justify-between gap-3 px-3 py-2">
-                  <span><span className="font-bold">{LINE_LABEL[l.kind] || l.kind}</span> <span className="text-xs text-zinc-500">{l.description}</span></span>
-                  <span className={`tabular-nums font-bold ${l.amount < 0 ? 'text-emerald-600' : ''}`}>{formatNumber(l.amount)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50">
-                <span className="font-black">Net</span><span className="tabular-nums font-black">{formatNumber(detail.net)} so'm</span>
-              </div>
-            </div>
-            {detail.calc?.P != null && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                {[
-                  ['Oylik narx (P)', formatNumber(detail.calc.P)], ['Paket (N)', detail.calc.N], ['Billable darslar (R)', detail.calc.R],
-                  ['Guruh darslari (F)', detail.calc.F], ["To'liq oy", detail.calc.fullMonth ? 'Ha' : "Yo'q"], ['Qoldirishlar (A / M)', `${detail.calc.A} / ${detail.calc.M}`],
-                  ['Ustoz bazasi', formatNumber(detail.teacherBase)], ['Tarif', detail.calc.tariffSource === 'version' ? 'Tarix versiyasi' : 'Joriy narx'], ["Davr", `${detail.calc.periodStart} — ${detail.calc.periodEnd || '…'}`],
-                ].map(([k, v]) => (
-                  <div key={String(k)} className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50"><div className="text-zinc-500">{k}</div><div className="font-bold tabular-nums">{String(v)}</div></div>
-                ))}
-              </div>
-            )}
-            {detail.calc?.billableDates?.length > 0 && <p className="text-xs text-zinc-500"><FileSearch size={12} className="inline mr-1" />Darslar: {detail.calc.billableDates.join(', ')}{detail.calc.absentDates?.length ? ` · kelmagan: ${detail.calc.absentDates.join(', ')}` : ''}</p>}
-            {detail.adjustments?.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-xs font-black text-zinc-500 uppercase">Tuzatmalar</p>
-                {detail.adjustments.map((a: any) => (
-                  <div key={a.id} className="flex justify-between text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/10">
-                    <span>{a.month} · {a.reason}</span><span className="tabular-nums font-bold">{formatNumber(a.net)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
+      <ChargeDetailModal chargeId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }

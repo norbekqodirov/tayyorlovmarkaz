@@ -5,7 +5,7 @@
  *        Tests, Certificates — all in one place.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -31,6 +31,8 @@ import { Button } from '../../../components/ui/Button';
 import { useToast } from '../../../components/Toast';
 import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
 import { RefundModal } from '../../../components/finance/RefundModal';
+import { ChargeDetailModal } from '../../../components/finance/ChargeDetailModal';
+import { EndEnrollmentModal, PauseModal, StartDatesModal } from '../../../components/group-detail/EnrollmentModals';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 function LoadingState({ label }: { label?: string }) {
@@ -64,6 +66,7 @@ const TABS = [
   { id: 'attendance',   label: 'Davomat',      icon: CheckCircle2 },
   { id: 'statistics',   label: 'Statistika',   icon: BarChart2  },
   { id: 'analytics',    label: 'Analitika',    icon: TrendingUp },
+  { id: 'groups',       label: 'Guruhlar',     icon: Users      },
   { id: 'payments',     label: "To'lovlar",    icon: Wallet     },
   { id: 'tests',        label: 'Testlar',      icon: FileText   },
   { id: 'certificates', label: 'Sertifikatlar', icon: Trophy    },
@@ -317,6 +320,7 @@ export default function CrmStudentDetail() {
         <TabPanel value="payments" className="mt-5">{data.financeHidden
           ? <EmptyState icon={<Wallet size={24} />} title="Moliyaviy ma'lumot yopiq" message="To'lovlar va balansni ko'rish uchun «Moliya» ruxsati kerak." />
           : <PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} studentName={student.name} onChanged={fetchStudentData} />}</TabPanel>
+        <TabPanel value="groups" className="mt-5"><GroupsTab studentId={id!} studentName={student.name} onChanged={fetchStudentData} /></TabPanel>
         <TabPanel value="tests" className="mt-5"><TestsTab studentId={id!} /></TabPanel>
         <TabPanel value="certificates" className="mt-5"><CertificatesTab certificates={data.certificates} /></TabPanel>
       </Tabs>
@@ -708,6 +712,7 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
 
   const live = ledger?.mode === 'live';
   const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
+  const [detailId, setDetailId] = useState<string | null>(null);
   return (
     <div className="space-y-4">
       {live && (
@@ -727,7 +732,8 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
               {ledger.charges.map((c: any) => {
                 const st = c.debt <= 0 ? { t: "To'langan", cls: 'text-emerald-600' } : c.overdue ? { t: "Muddati o'tgan", cls: 'text-rose-600' } : c.paid > 0 ? { t: 'Qisman', cls: 'text-amber-600' } : { t: 'Qarz', cls: 'text-amber-600' };
                 return (
-                  <div key={c.chargeId} className="flex items-center justify-between gap-3 px-5 py-3">
+                  <div key={c.chargeId} role="button" tabIndex={0} onClick={() => setDetailId(c.chargeId)} onKeyDown={e => { if (e.key === 'Enter') setDetailId(c.chargeId); }}
+                    title="Qanday hisoblangan — batafsil" className="flex items-center justify-between gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-50 dark:hover:bg-white/[0.02]">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{c.groupName || (c.type === 'other_fee' ? "Boshqa to'lov" : "Boshlang'ich qoldiq")}</p>
                       <p className="text-[10px] text-zinc-400 mt-0.5 tabular-nums">
@@ -735,6 +741,7 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
                         {c.lessons != null ? ` · ${c.lessons}/${c.groupLessons} dars` : ''}
                         {c.debt > 0 && c.dueDate ? ` · muddat ${formatDate(c.dueDate)}` : ''}
                       </p>
+                      {c.explain && <p className="text-[10px] text-zinc-500 mt-0.5">{c.explain}</p>}
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-sm font-black tabular-nums text-slate-900 dark:text-white">{formatMoney(c.amount)}</p>
@@ -747,6 +754,7 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
           )}
         </div>
       )}
+      <ChargeDetailModal chargeId={detailId} onClose={() => setDetailId(null)} />
       <RefundModal isOpen={refundOpen} onClose={() => setRefundOpen(false)} studentId={studentId} studentName={studentName}
         available={refundInfo?.available ?? 0}
         onDone={() => { setRefundOpen(false); showToast("Qaytarish yozildi", 'success'); onChanged?.(); }} />
@@ -994,6 +1002,88 @@ function RecommendationCard({ type, title, description }: any) {
           <p className="text-xs text-slate-700 dark:text-zinc-300 mt-1 leading-relaxed">{description}</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Guruhlar (a'zolik tarixi) ─────────────────────────────────────────────────
+const END_REASON_LABEL: Record<string, string> = {
+  left: 'Ketdi', graduated: 'Bitirdi', transfer: "Boshqa guruhga o'tdi", admin_fix: "Xato qo'shilgan", unknown: "Sababi noma'lum",
+};
+
+function GroupsTab({ studentId, studentName, onChanged }: { studentId: string; studentName: string; onChanged?: () => void }) {
+  const { showToast } = useToast();
+  const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
+  const [periods, setPeriods] = useState<any[] | null>(null);
+  const [endTarget, setEndTarget] = useState<any>(null);
+  const [pauseTarget, setPauseTarget] = useState<any>(null);
+  const [startTarget, setStartTarget] = useState<any>(null);
+  const today = new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
+
+  const load = useCallback(() => {
+    api.get('/enrollments/periods', { params: { studentId } })
+      .then(r => setPeriods(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setPeriods([]));
+  }, [studentId]);
+  useEffect(() => { load(); }, [load]);
+  const changed = () => { load(); onChanged?.(); };
+
+  const stopPause = async (pauseId: string) => {
+    try { await api.post(`/enrollments/pauses/${pauseId}/stop`); showToast("Pauza to'xtatildi", 'success'); changed(); }
+    catch (e: any) { showToast(apiError(e), 'error'); }
+  };
+
+  if (periods === null) return <LoadingState />;
+  if (!periods.length) return <EmptyState icon={<Users size={24} />} title="Guruh a'zoligi yo'q" />;
+  const active = periods.filter(p => p.status === 'active');
+  const ended = periods.filter(p => p.status !== 'active');
+
+  const Card = ({ p }: { p: any }) => (
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm p-4 space-y-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link to={`/crmtayyorlovmarkaz/groups/${p.groupId}`} className="text-sm font-black text-slate-900 dark:text-white hover:text-blue-600">{p.group?.name || 'Guruh'}</Link>
+          <p className="text-xs text-zinc-500 tabular-nums mt-0.5">
+            {formatDate(p.startDate)} dan{p.endDate ? ` — ${formatDate(p.endDate)} gacha` : ''}
+          </p>
+        </div>
+        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${p.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>
+          {p.status === 'active' ? "O'qimoqda" : (END_REASON_LABEL[p.endReason] || 'Tugagan')}
+        </span>
+      </div>
+      {p.pauses?.filter((x: any) => x.status === 'active').map((x: any) => (
+        <div key={x.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <span>⏸ Muzlatilgan: {formatDate(x.fromDate)} — {formatDate(x.toDate)} · {x.reason}</span>
+          {canManage && p.status === 'active' && x.toDate >= today && (
+            <button type="button" onClick={() => void stopPause(x.id)} className="font-bold hover:underline">To'xtatish</button>
+          )}
+        </div>
+      ))}
+      {canManage && p.status === 'active' && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button size="sm" variant="secondary" onClick={() => setStartTarget(p)}>Boshlash sanasi</Button>
+          <Button size="sm" variant="secondary" onClick={() => setPauseTarget(p)}>Muzlatish</Button>
+          <Button size="sm" variant="secondary" onClick={() => setEndTarget(p)}>Chiqarish / o'tkazish</Button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {active.length > 0 && <div className="space-y-3">{active.map(p => <Card key={p.id} p={p} />)}</div>}
+      {ended.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-black text-zinc-500 uppercase tracking-widest">Tarix</p>
+          {ended.map(p => <Card key={p.id} p={p} />)}
+        </div>
+      )}
+      <EndEnrollmentModal isOpen={!!endTarget} onClose={() => setEndTarget(null)} groupId={endTarget?.groupId || ''}
+        student={endTarget ? { id: studentId, name: studentName, period: { id: endTarget.id, startDate: endTarget.startDate } } : null} onDone={changed} />
+      <PauseModal isOpen={!!pauseTarget} onClose={() => setPauseTarget(null)} period={pauseTarget ? { id: pauseTarget.id, startDate: pauseTarget.startDate } : null}
+        studentName={`${studentName} · ${pauseTarget?.group?.name || ''}`} onDone={changed} />
+      <StartDatesModal isOpen={!!startTarget} onClose={() => setStartTarget(null)} groupId={startTarget?.groupId || ''} groupStartDate={startTarget?.group?.startDate ?? null}
+        members={startTarget ? [{ id: studentId, name: studentName, _period: { id: startTarget.id, startDate: startTarget.startDate } }] : []} onDone={changed} />
     </div>
   );
 }

@@ -348,7 +348,7 @@ export function StartDatesModal({ isOpen, onClose, groupId, groupStartDate, memb
         </div>
 
         {missing > 0 && <p className="text-xs text-amber-600">{missing} ta o'quvchida a'zolik sanasi hali yo'q (eski yozuv) — ma'lumot ko'chirish bajarilgach shu yerda chiqadi.</p>}
-        <p className="text-xs text-zinc-500">Oylik hisob shu sanadan boshlanadi: oy o'rtasida boshlasa — qolgan darslar bo'yicha. E'lon qilingan hisob bo'lsa, farq tuzatma sifatida yoziladi.</p>
+        <p className="text-xs text-zinc-500">Oylik hisob shu sanadan boshlanadi: oy o'rtasida boshlasa — qolgan darslar bo'yicha. Bu oy uchun hisob allaqachon chiqqan bo'lsa, farq avtomatik tuzatma sifatida yoziladi.</p>
         {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
         <div className="flex items-center justify-between gap-3 pt-1">
           <span className="text-xs text-zinc-500">{changed.length ? `${changed.length} ta o'zgarish` : "O'zgarish yo'q"}</span>
@@ -356,6 +356,78 @@ export function StartDatesModal({ isOpen, onClose, groupId, groupStartDate, memb
             <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>Bekor qilish</Button>
             <Button type="button" isLoading={saving} disabled={!changed.length} onClick={() => void submit()}>Saqlash</Button>
           </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Muzlatish (pauza, OQ-06) ────────────────────────────────────────────────
+// Pauzadagi darslar hisobga kirmaydi; muddat — sozlamadagi chegara (standart 7–60 kun).
+
+export function PauseModal({ isOpen, onClose, period, studentName, onDone }: {
+  isOpen: boolean;
+  onClose: () => void;
+  period: { id: string; startDate: string } | null;
+  studentName?: string;
+  onDone: () => void;
+}) {
+  const { showToast } = useToast();
+  const [fromDate, setFromDate] = useState(tashkentToday());
+  const [toDate, setToDate] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const today = tashkentToday();
+    setFromDate(today);
+    const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 13);
+    setToDate(d.toISOString().slice(0, 10));
+    setReason(''); setError('');
+  }, [isOpen]);
+
+  const days = fromDate && toDate ? Math.round((Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86400000) + 1 : 0;
+
+  const submit = async () => {
+    if (!period || saving) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.post(`/enrollments/periods/${period.id}/pause`, { fromDate, toDate, reason: reason.trim() });
+      showToast(`Muzlatildi: ${fromDate} — ${toDate}`, 'success');
+      onDone();
+      onClose();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={() => { if (!saving) onClose(); }} title="Muzlatish (pauza)" description={studentName} width="md">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1.5">
+            <span className={labelCls}>Boshlanishi</span>
+            <input type="date" value={fromDate} min={period?.startDate} onChange={e => setFromDate(e.target.value)} className={inputCls} />
+          </label>
+          <label className="space-y-1.5">
+            <span className={labelCls}>Tugashi</span>
+            <input type="date" value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)} className={inputCls} />
+          </label>
+        </div>
+        {days > 0 && <p className="text-xs text-zinc-500">{days} kun. Pauzadagi darslar hisobga kirmaydi; muddat tugagach o'quvchi avtomatik davom etadi.</p>}
+        <label className="block space-y-1.5">
+          <span className={labelCls}>Sabab</span>
+          <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Masalan: kasallik, safar" className={inputCls} />
+        </label>
+        {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-3 pt-2">
+          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>Bekor qilish</Button>
+          <Button type="button" isLoading={saving} disabled={!fromDate || !toDate || reason.trim().length < 3} onClick={() => void submit()}>Muzlatish</Button>
         </div>
       </div>
     </Modal>
