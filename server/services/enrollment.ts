@@ -22,7 +22,7 @@ import { billableLessonDates } from './lessonPlan.js';
 type Db = PrismaClient | Prisma.TransactionClient;
 
 export class EnrollmentError extends Error {
-    constructor(public status: number, message: string, public code?: string) { super(message); }
+    constructor(public status: number, message: string, public code?: string, public details?: unknown) { super(message); }
 }
 
 export interface Actor { id?: string | null; name?: string | null }
@@ -381,4 +381,101 @@ export async function activePeriodsByStudent(groupId: string) {
         select: { id: true, studentId: true, startDate: true, pauses: { where: { status: 'active' }, select: { id: true, fromDate: true, toDate: true, reason: true } } },
     });
     return new Map(rows.map(r => [r.studentId, r]));
+}
+
+// ─── Boshlanish sanasini tahrirlash ──────────────────────────────────────────
+// Guruh qachon boshlangani va o'quvchi qachon o'qishni boshlaganini adminlar
+// belgilaydi (tizimga kiritilgan kun emas). Hisob-kitob shu sanalardan: oy
+// o'rtasida qo'shilsa — qolgan darslar (TQ-A). Hisoblarni yangilash —
+// chaqiruvchi (route) tomonida: chargeEngine.refreshMembershipCharges.
+
+export interface StartChange { periodId: string; startDate: string }
+export interface StartChangeResult { periodId: string; studentId: string; groupId: string; from: string; to: string }
+
+async function startChangeProblem(
+    db: Db,
+    period: { id: string; studentId: string; groupId: string; startDate: string; endDate: string | null },
+    group: { startDate: string | null; endDate: string | null },
+    startDate: string,
+): Promise<string | null> {
+    if (group.startDate && startDate < group.startDate) return `Guruh ${group.startDate} dan boshlanadi — undan oldingi sana qo'yib bo'lmaydi`;
+    if (group.endDate && startDate > group.endDate) return `Guruh ${group.endDate} da tugaydi`;
+    if (period.endDate && startDate > period.endDate) return `A'zolik ${period.endDate} da tugagan — boshlanish undan keyin bo'lmaydi`;
+    const prev = await db.enrollmentPeriod.findFirst({
+        where: { studentId: period.studentId, groupId: period.groupId, id: { not: period.id }, startDate: { lte: period.startDate } },
+        orderBy: { startDate: 'desc' },
+    });
+    if (prev && (!prev.endDate || prev.endDate >= startDate)) return `Oldingi a'zolik ${prev.endDate ?? '(ochiq)'} gacha — yangi sana undan keyin bo'lishi kerak`;
+    const pause = await db.enrollmentPause.findFirst({ where: { periodId: period.id, status: 'active' }, orderBy: { fromDate: 'asc' } });
+    if (pause && pause.fromDate < startDate) return `${pause.fromDate} dan pauza bor — boshlanish undan keyin bo'lmaydi`;
+    if (startDate > period.startDate) {
+        const att = await db.attendanceRecord.findFirst({
+            where: { studentId: period.studentId, groupId: period.groupId, date: { gte: period.startDate, lt: startDate } },
+            orderBy: { date: 'asc' }, select: { date: true },
+        });
+        if (att) return `${att.date} sanada davomat bor — boshlanishni undan keyinga surib bo'lmaydi`;
+    }
+    return null;
+}
+
+/** Bir guruhdagi bir yoki bir nechta a'zolikning boshlanish sanasini o'zgartirish (hammasi yoki hech biri). */
+export async function changePeriodStarts(input: { groupId: string; items: StartChange[] }, actor: Actor): Promise<StartChangeResult[]> {
+    if (!Array.isArray(input.items) || !input.items.length) throw new EnrollmentError(400, "O'zgartiriladigan a'zolik yo'q", 'EMPTY');
+    if (input.items.length > 300) throw new EnrollmentError(400, "Bir martada ko'pi bilan 300 ta a'zolik", 'TOO_MANY');
+    const changed = await prisma.$transaction(async tx => {
+        const group = await loadGroup(tx, input.groupId);
+        if (!group || group.deletedAt) throw new EnrollmentError(404, 'Guruh topilmadi', 'NOT_FOUND');
+        const errors: Array<{ periodId: string; studentId?: string; message: string }> = [];
+        const out: StartChangeResult[] = [];
+        for (const it of input.items) {
+            if (!isValidDate(it?.startDate)) { errors.push({ periodId: it?.periodId, message: "Sana YYYY-MM-DD formatida bo'lishi kerak" }); continue; }
+            const p = await tx.enrollmentPeriod.findUnique({ where: { id: it.periodId } });
+            if (!p || p.groupId !== group.id) { errors.push({ periodId: it.periodId, message: "A'zolik topilmadi" }); continue; }
+            if (p.startDate === it.startDate) continue;
+            const problem = await startChangeProblem(tx, p, group, it.startDate);
+            if (problem) { errors.push({ periodId: p.id, studentId: p.studentId, message: problem }); continue; }
+            await tx.enrollmentPeriod.update({ where: { id: p.id }, data: { startDate: it.startDate } });
+            out.push({ periodId: p.id, studentId: p.studentId, groupId: p.groupId, from: p.startDate, to: it.startDate });
+        }
+        if (errors.length) {
+            throw new EnrollmentError(400, errors.length === 1 ? errors[0].message : `${errors.length} ta sanada xato — belgilangan qatorlarni tuzating`, 'INVALID_DATES', errors);
+        }
+        return out;
+    });
+    for (const c of changed) {
+        await logAudit({ userId: actor.id, userName: actor.name || 'tizim', action: 'enroll_start_change', resource: 'enrollmentPeriod', resourceId: c.periodId, before: { startDate: c.from }, after: { startDate: c.to } });
+    }
+    return changed;
+}
+
+/**
+ * Guruh boshlanish sanasi o'zgarishi rejasi: yangi sanadan oldin boshlangan a'zoliklar
+ * yangi sanaga suriladi. Davomat, pauza yoki shu sanagacha tugagan a'zolik bo'lsa — rad.
+ */
+export async function planGroupStartChange(db: Db, groupId: string, newStart: string): Promise<{ error?: string; shifts: StartChangeResult[] }> {
+    if (!isValidDate(newStart)) return { error: "Boshlanish sanasi YYYY-MM-DD formatida bo'lishi kerak", shifts: [] };
+    const att = await db.attendanceRecord.findFirst({ where: { groupId, date: { lt: newStart } }, orderBy: { date: 'asc' }, select: { date: true } });
+    if (att) return { error: `Guruhda ${att.date} sanada davomat bor — boshlanishni undan keyinga surib bo'lmaydi`, shifts: [] };
+    const periods = await db.enrollmentPeriod.findMany({ where: { groupId, startDate: { lt: newStart } }, include: { pauses: { where: { status: 'active' } } } });
+    const shifts: StartChangeResult[] = [];
+    for (const p of periods) {
+        if (p.endDate && p.endDate < newStart) return { error: `Bir a'zolik ${p.endDate} da tugagan — guruh boshlanishini undan keyinga surib bo'lmaydi`, shifts: [] };
+        if (p.pauses.some(x => x.fromDate < newStart)) return { error: `Bir a'zolikda ${newStart} dan oldin pauza bor — avval pauzani o'zgartiring`, shifts: [] };
+        shifts.push({ periodId: p.id, studentId: p.studentId, groupId, from: p.startDate, to: newStart });
+    }
+    return { shifts };
+}
+
+/** Rejani qo'llash: a'zoliklar suriladi, birinchi tarif/ustoz versiyasi yangi boshlanishga moslanadi. */
+export async function applyGroupStartChange(groupId: string, newStart: string, shifts: StartChangeResult[], actor: Actor) {
+    await prisma.$transaction(async tx => {
+        for (const sh of shifts) await tx.enrollmentPeriod.update({ where: { id: sh.periodId }, data: { startDate: newStart } });
+        const firstTariff = await tx.tariffVersion.findFirst({ where: { groupId }, orderBy: { effectiveFrom: 'asc' } });
+        if (firstTariff && firstTariff.effectiveFrom > newStart) await tx.tariffVersion.update({ where: { id: firstTariff.id }, data: { effectiveFrom: newStart } });
+        const firstAssign = await tx.groupTeacherAssignment.findFirst({ where: { groupId }, orderBy: { fromDate: 'asc' } });
+        if (firstAssign && firstAssign.fromDate > newStart) await tx.groupTeacherAssignment.update({ where: { id: firstAssign.id }, data: { fromDate: newStart } });
+    });
+    for (const sh of shifts) {
+        await logAudit({ userId: actor.id, userName: actor.name || 'tizim', action: 'enroll_start_change', resource: 'enrollmentPeriod', resourceId: sh.periodId, before: { startDate: sh.from }, after: { startDate: sh.to, reason: 'group_start_change' } });
+    }
 }

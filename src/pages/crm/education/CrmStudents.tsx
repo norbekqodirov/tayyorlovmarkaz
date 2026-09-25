@@ -88,6 +88,9 @@ export default function CrmStudents() {
   const showFinance = canManage;
   const [balanceTarget, setBalanceTarget] = useState<{ id: string; name: string; balance?: number | null } | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  // O'quvchi guruhda qachondan o'qiyotgani (tizimga kiritilgan kun emas) — admin belgilaydi
+  const [groupStartDate, setGroupStartDate] = useState(() => toTashkentDate());
+  const [currentPeriod, setCurrentPeriod] = useState<{ id: string; groupId: string; startDate: string } | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const itemsPerPage = 20;
 
@@ -135,6 +138,12 @@ export default function CrmStudents() {
       }
     }
 
+    const selGroup = groupOptions.find((g: any) => g.id === selectedGroupId) as any;
+    if (selectedGroupId) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(groupStartDate)) errs.groupStartDate = "Guruhda o'qishni boshlagan sanani kiriting";
+      else if (selGroup?.startDate && groupStartDate < selGroup.startDate) errs.groupStartDate = `Guruh ${selGroup.startDate} dan boshlangan — undan oldingi sana bo'lmaydi`;
+    }
+
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -164,28 +173,31 @@ export default function CrmStudents() {
         // /api/enrollments orqali ishlaymiz — billing, davomat va bot shu
         // jadvalga qaraydi, faqat Student.group matn maydoniga emas).
         const oldStudent = (students || []).find((s: any) => s.id === formData.id) as any;
-        const oldGroup = groupOptions.find((g: any) => g.name === oldStudent?.group);
-        if (oldGroup?.id !== selectedGroupId) {
-          if (oldGroup?.id) {
-            await api.delete('/enrollments/remove', { data: { studentId: formData.id, groupId: oldGroup.id } });
+        const oldGroupId: string | undefined = currentPeriod?.groupId ?? groupOptions.find((g: any) => g.name === oldStudent?.group)?.id;
+        if (oldGroupId !== selectedGroupId) {
+          if (oldGroupId) {
+            await api.delete('/enrollments/remove', { data: { studentId: formData.id, groupId: oldGroupId } });
           }
           if (selectedGroupId) {
-            await api.post('/enrollments', { studentId: formData.id, groupId: selectedGroupId });
+            await api.post('/enrollments', { studentId: formData.id, groupId: selectedGroupId, startDate: groupStartDate });
           }
+        } else if (currentPeriod && currentPeriod.groupId === selectedGroupId && currentPeriod.startDate !== groupStartDate) {
+          // Shu guruhda — faqat boshlash sanasi tuzatildi
+          await api.post('/enrollments/periods/start-dates', { groupId: selectedGroupId, items: [{ periodId: currentPeriod.id, startDate: groupStartDate }] });
         }
         await updateDocument(formData.id, studentData);
         showToast("O'quvchi ma'lumotlari yangilandi", 'success');
       } else {
         const newId = await addDocument(studentData);
         if (selectedGroupId && newId) {
-          await api.post('/enrollments', { studentId: newId, groupId: selectedGroupId });
+          await api.post('/enrollments', { studentId: newId, groupId: selectedGroupId, startDate: groupStartDate });
         }
         showToast("Yangi o'quvchi qo'shildi", 'success');
       }
       closeModal();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving student:", error);
-      showToast("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.", 'error');
+      showToast(error?.response?.data?.message || "Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.", 'error');
     }
   };
 
@@ -246,8 +258,24 @@ export default function CrmStudents() {
         ...student,
         email: student.email || '',
       });
-      setSelectedGroupId(groupOptions.find((g: any) => g.name === student.group)?.id || '');
+      const gid = groupOptions.find((g: any) => g.name === student.group)?.id || '';
+      setSelectedGroupId(gid);
+      setCurrentPeriod(null);
+      setGroupStartDate(toTashkentDate());
+      // Joriy a'zolik (guruh va boshlanish sanasi) — haqiqiy davrdan; matn maydoni (student.group)
+      // bo'sh yoki eskirgan bo'lishi mumkin
+      api.get('/enrollments/periods', { params: { studentId: student.id } }).then(r => {
+        const active = (Array.isArray(r.data) ? r.data : []).filter((x: any) => x.status === 'active');
+        const p = active.find((x: any) => x.groupId === gid) ?? active[0];
+        if (p) {
+          setSelectedGroupId(p.groupId);
+          setCurrentPeriod({ id: p.id, groupId: p.groupId, startDate: p.startDate });
+          setGroupStartDate(p.startDate);
+        }
+      }).catch(() => { /* guruh matn maydonidan, sana bugungi bilan qoladi */ });
     } else {
+      setCurrentPeriod(null);
+      setGroupStartDate(toTashkentDate());
       setFormData({
         name: '',
         phone: '',
@@ -886,6 +914,12 @@ export default function CrmStudents() {
                     onChange={(e) => {
                       const g = groupOptions.find((g: any) => g.id === e.target.value);
                       setSelectedGroupId(e.target.value);
+                      {
+                        const today = toTashkentDate();
+                        const gs = (g as any)?.startDate as string | undefined;
+                        setGroupStartDate(currentPeriod && currentPeriod.groupId === e.target.value ? currentPeriod.startDate : (gs && gs > today ? gs : today));
+                      }
+                      if (formErrors.groupStartDate) setFormErrors({ ...formErrors, groupStartDate: '' });
                       // IP-02: guruh tanlash endi balansni `-narx` bilan ustidan
                       // yozmaydi (to'lov/avans tarixini o'chirib yuborardi).
                       setFormData({
@@ -905,6 +939,26 @@ export default function CrmStudents() {
                   </select>
                   <p className="text-[10px] text-zinc-400">Kurs guruh orqali avtomatik aniqlanadi</p>
                 </div>
+                {selectedGroupId && (() => {
+                  const selGroup = groupOptions.find((g: any) => g.id === selectedGroupId) as any;
+                  const gStart: string | undefined = selGroup?.startDate || undefined;
+                  return (
+                    <div className="space-y-1.5 flex flex-col gap-1.5">
+                      <label htmlFor="student-group-start" className="text-sm font-bold text-slate-700 dark:text-zinc-300">Guruhda o'qishni boshlagan sana</label>
+                      <input id="student-group-start" type="date" value={groupStartDate} min={gStart}
+                        onChange={e => { setGroupStartDate(e.target.value); if (formErrors.groupStartDate) setFormErrors({ ...formErrors, groupStartDate: '' }); }}
+                        className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500 font-medium" />
+                      {gStart && gStart < toTashkentDate() && groupStartDate !== gStart && (
+                        <button type="button" onClick={() => setGroupStartDate(gStart)} className="self-start text-xs font-bold text-blue-600 hover:underline">
+                          Guruh boshidan ({gStart})
+                        </button>
+                      )}
+                      {formErrors.groupStartDate
+                        ? <p className="text-xs text-rose-500 font-bold">{formErrors.groupStartDate}</p>
+                        : <p className="text-[10px] text-zinc-400">Oylik to'lov shu sanadan hisoblanadi (oy o'rtasida boshlasa — qolgan darslar bo'yicha)</p>}
+                    </div>
+                  );
+                })()}
                 <div className="grid grid-cols-1 gap-3">
                   <div className="space-y-1.5 flex flex-col gap-1.5">
                     <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Holat</label>

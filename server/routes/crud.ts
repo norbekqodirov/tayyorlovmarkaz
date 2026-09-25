@@ -13,6 +13,8 @@ import { recordGroupCreate, recordLegacyGroupEdit, safeHistory } from '../servic
 import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 import { deleteTransaction, ReversalError } from '../services/moneyReversal.js';
 import { CATEGORY_KINDS_BY_TYPE } from '../services/categories.js';
+import { planGroupStartChange, applyGroupStartChange } from '../services/enrollment.js';
+import { refreshMembershipCharges, monthsBetween } from '../services/chargeEngine.js';
 
 const router = express.Router();
 
@@ -848,9 +850,29 @@ router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
         const groupBefore = modelName === 'group' && ('price' in req.body || 'teacherId' in req.body)
             ? await prisma.group.findUnique({ where: { id: req.params.id }, select: { id: true, price: true, teacherId: true, startDate: true, courseId: true, createdAt: true } })
             : null;
+        // Guruh boshlanish sanasi o'zgarsa: undan oldin boshlangan a'zoliklar yangi sanaga
+        // suriladi (davomat/pauza bo'lsa — rad), tarif/ustoz tarixi moslanadi, hisoblar yangilanadi.
+        let groupStartPlan: { from: string | null; to: string; shifts: Awaited<ReturnType<typeof planGroupStartChange>>['shifts'] } | null = null;
+        if (modelName === 'group' && typeof req.body.startDate === 'string' && req.body.startDate) {
+            const cur = await prisma.group.findUnique({ where: { id: req.params.id }, select: { startDate: true } });
+            if (cur && cur.startDate !== req.body.startDate) {
+                const plan = await planGroupStartChange(prisma, req.params.id, req.body.startDate);
+                if (plan.error) return res.status(400).json({ message: plan.error });
+                groupStartPlan = { from: cur.startDate, to: req.body.startDate, shifts: plan.shifts };
+            }
+        }
         // @ts-ignore
         const data = await prisma[modelName].update({ where: { id: req.params.id }, data: req.body, ...(include && { include }) });
         if (groupBefore) await safeHistory('legacy_group_edit', () => recordLegacyGroupEdit(groupBefore, { price: (data as any).price ?? null, teacherId: (data as any).teacherId ?? null }, requester?.id));
+        if (groupStartPlan) {
+            const gsp = groupStartPlan;
+            await safeHistory('group_start_change', async () => {
+                await applyGroupStartChange(req.params.id, gsp.to, gsp.shifts, { id: requester?.id, name: requester?.name });
+                for (const sh of gsp.shifts) {
+                    await refreshMembershipCharges({ studentId: sh.studentId, groupId: sh.groupId, months: monthsBetween(sh.from, sh.to), reason: `Guruh boshlanishi ${gsp.from ?? '-'} → ${gsp.to}` }, requester?.id);
+                }
+            });
+        }
         res.json(parseJsonFields(modelName, data));
     } catch (error) {
         res.status(500).json({ error: String(error) });

@@ -11,8 +11,9 @@ import { requireAnyPermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
 import {
     EnrollmentError, previewEnrollment, enrollStudent, endPeriod, transferPeriod, pausePeriod, stopPause,
-    legacyRemove, listPeriods, activePeriodsByStudent, type Actor,
+    legacyRemove, listPeriods, activePeriodsByStudent, changePeriodStarts, type Actor,
 } from '../services/enrollment.js';
+import { refreshMembershipCharges, monthsBetween } from '../services/chargeEngine.js';
 
 const router = express.Router();
 const canManage = [requireAuth, requireMinRole('MANAGER'), requireAnyPermission(['students', 'groups'])];
@@ -20,7 +21,7 @@ const canManage = [requireAuth, requireMinRole('MANAGER'), requireAnyPermission(
 const actorOf = (req: any): Actor => ({ id: req.user?.id, name: req.user?.name || req.user?.phone || null });
 
 function sendError(res: express.Response, err: any) {
-    if (err instanceof EnrollmentError) return res.status(err.status).json({ message: err.message, code: err.code });
+    if (err instanceof EnrollmentError) return res.status(err.status).json({ message: err.message, code: err.code, details: err.details });
     console.error('[enrollments]', err);
     return res.status(500).json({ message: err?.message || 'Server xatosi' });
 }
@@ -44,9 +45,40 @@ router.post('/', ...canManage, async (req, res) => {
     try {
         const { studentId, groupId, startDate, note } = req.body || {};
         if (!studentId || !groupId) return res.status(400).json({ message: 'studentId va groupId kiritilishi shart' });
-        const r = await enrollStudent({ studentId, groupId, startDate: startDate || todayDateStr(), note, source: 'manual' }, actorOf(req));
+        // Sana berilmasa — bugun; guruh hali boshlanmagan bo'lsa — guruh boshlanishi
+        let start = startDate as string | undefined;
+        if (!start) {
+            const g = await prisma.group.findUnique({ where: { id: groupId }, select: { startDate: true } });
+            start = g?.startDate && g.startDate > todayDateStr() ? g.startDate : todayDateStr();
+        }
+        const r = await enrollStudent({ studentId, groupId, startDate: start, note, source: 'manual' }, actorOf(req));
+        // O'tgan sanadan yozilsa — o'sha oylarning qoralama hisoblari ham tayyorlanadi (shadow/live)
+        if (!r.alreadyEnrolled && r.period && r.period.startDate < todayDateStr().slice(0, 7) + '-01') {
+            await refreshMembershipCharges({ studentId, groupId, months: monthsBetween(r.period.startDate, todayDateStr()), reason: "A'zolik o'tgan sanadan kiritildi" }, actorOf(req).id)
+                .catch(e => console.error('[enrollments] hisob yangilash', e));
+        }
         // Eski javob shakli (Enrollment maydonlari) saqlanadi + davr
         res.status(r.alreadyEnrolled ? 200 : 201).json({ ...r.enrollment, period: r.period, alreadyEnrolled: r.alreadyEnrolled });
+    } catch (err) { sendError(res, err); }
+});
+
+// POST /api/enrollments/periods/start-dates — { groupId, items: [{ periodId, startDate }] }
+// Adminlar o'quvchi guruhda qachondan o'qiyotganini belgilaydi (bir yoki hammasi).
+// Hammasi yoki hech biri; xato qatorlar `details`da. Keyin hisoblar yangilanadi.
+router.post('/periods/start-dates', ...canManage, async (req, res) => {
+    try {
+        const actor = actorOf(req);
+        const changed = await changePeriodStarts({ groupId: req.body?.groupId, items: req.body?.items }, actor);
+        const billing = [];
+        for (const c of changed) {
+            billing.push(await refreshMembershipCharges({ studentId: c.studentId, groupId: c.groupId, months: monthsBetween(c.from, c.to), reason: `A'zolik boshlanishi ${c.from} → ${c.to}` }, actor.id));
+        }
+        res.json({
+            changed: changed.length,
+            items: changed,
+            drafts: billing.reduce((s, b) => s + b.drafts + b.newDrafts, 0),
+            adjustments: billing.flatMap(b => b.adjustments),
+        });
     } catch (err) { sendError(res, err); }
 });
 

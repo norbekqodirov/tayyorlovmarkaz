@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { Button } from '../ui/Button';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Download, User, Search, UserPlus, Trash2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Download, User, Search, UserPlus, Trash2, Loader2, CalendarDays } from 'lucide-react';
 import { formatNumber } from '../../utils/formatters';
 import { studentStatusToUi } from '../../utils/statusBadge';
 
@@ -33,6 +33,8 @@ interface Props {
   onRemoveStudent: (studentId: string) => void;
   onShowAddToggle: (val: boolean) => void;
   onSearchChange: (val: string) => void;
+  /** O'qishni boshlagan sanalarni tahrirlash oynasi (MANAGER+) */
+  onEditStartDates?: () => void;
 }
 
 const GroupSidebar: React.FC<Props> = ({
@@ -53,6 +55,7 @@ const GroupSidebar: React.FC<Props> = ({
   onRemoveStudent,
   onShowAddToggle,
   onSearchChange,
+  onEditStartDates,
 }) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
@@ -108,6 +111,12 @@ const GroupSidebar: React.FC<Props> = ({
           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500" /> Sinov</span>
           <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-800 dark:bg-white" /> Faol</span>
         </div>
+        {canManage && onEditStartDates && groupStudents.length > 0 && !rosterUnavailable && (
+          <button type="button" onClick={onEditStartDates}
+            className="w-full mb-2 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 px-3 py-2 text-[11px] font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10">
+            <CalendarDays size={13} /> O'qishni boshlagan sanalar
+          </button>
+        )}
 
         {enrollmentsLoading ? (
           <div className="flex justify-center py-8">
@@ -138,9 +147,16 @@ const GroupSidebar: React.FC<Props> = ({
                   <span className="min-w-0 flex flex-col">
                     <span className="break-words text-xs font-bold text-slate-800 dark:text-zinc-200">{s.name}</span>
                     {s._period?.startDate && (
-                      <span className="text-[10px] text-zinc-400 tabular-nums">
-                        {s._period.startDate} dan{s._period.pauses?.length ? ` · pauza ${s._period.pauses[0].fromDate}–${s._period.pauses[0].toDate}` : ''}
-                      </span>
+                      canManage && onEditStartDates ? (
+                        <button type="button" onClick={onEditStartDates} title="Boshlash sanasini o'zgartirish"
+                          className="text-left text-[10px] text-zinc-400 tabular-nums hover:text-blue-600 hover:underline">
+                          {s._period.startDate} dan{s._period.pauses?.length ? ` · pauza ${s._period.pauses[0].fromDate}–${s._period.pauses[0].toDate}` : ''}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-zinc-400 tabular-nums">
+                          {s._period.startDate} dan{s._period.pauses?.length ? ` · pauza ${s._period.pauses[0].fromDate}–${s._period.pauses[0].toDate}` : ''}
+                        </span>
+                      )
                     )}
                   </span>
                 </div>

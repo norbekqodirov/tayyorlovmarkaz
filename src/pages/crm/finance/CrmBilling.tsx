@@ -16,6 +16,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { formatNumber } from '../../../utils/formatters';
 import { tashkentMonth } from '../../../utils/tashkentDate';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
 const STATUS_BADGE: Record<string, { label: string; color: 'amber' | 'emerald' | 'slate' }> = {
   draft: { label: 'Qoralama', color: 'amber' },
@@ -84,6 +85,7 @@ export default function CrmBilling() {
     }
   };
 
+  const [confirmLive, setConfirmLive] = useState(false);
   const changeMode = async (next: string) => {
     try {
       await api.put('/billing/mode', { mode: next });
@@ -137,6 +139,25 @@ export default function CrmBilling() {
           {isAdmin && <Button size="sm" variant="secondary" onClick={() => void changeMode('shadow')}>Shadow rejimini yoqish</Button>}
         </div>
       )}
+      {mode === 'shadow' && (
+        <div role="note" className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200/70 dark:border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2">
+          <span>Sinov rejimi: hisoblar har kecha avtomatik tayyorlanadi, lekin qarz va balans hali eski tizimdan olinadi. Jonli rejimda qarz, balans va ustoz maoshi shu hisoblardan olinadi.</span>
+          {isAdmin && <Button size="sm" variant="primary" onClick={() => setConfirmLive(true)}>Jonli rejimga o'tish</Button>}
+        </div>
+      )}
+      {mode === 'live' && (
+        <div role="note" className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-200">
+          Jonli rejim — qarz va balans shu hisoblardan. Har oy: hisoblar har kecha o'zi tayyorlanadi → ro'yxatni tekshiring → <b>"E'lon qilish"</b>. Oldindan kiritilgan to'lov e'lon qilingan hisobga o'zi biriktiriladi. O'quvchi guruhda qachondan o'qiyotgani — guruh sahifasida "O'qishni boshlagan sanalar".
+        </div>
+      )}
+      <ConfirmDialog
+        isOpen={isAdmin && confirmLive}
+        title="Jonli rejimga o'tish"
+        message="Shundan keyin o'quvchi qarzi va balansi faqat e'lon qilingan oylik hisoblar va to'lovlardan hisoblanadi, ustoz maoshi ham shu hisoblardan. Eski tizimdagi qo'lda yozilgan qarz/avans bo'lsa, u avval kiritilishi kerak. Davom etasizmi?"
+        confirmText="Ha, o'tish"
+        onConfirm={() => { setConfirmLive(false); void changeMode('live'); }}
+        onCancel={() => setConfirmLive(false)}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Hisoblar" value={stats.count} sub={`${stats.draft} ta qoralama`} variant="minimal" color="blue" />

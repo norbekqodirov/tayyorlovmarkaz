@@ -517,7 +517,7 @@ router.post('/:id/convert', async (req, res) => {
 
         const group = await prisma.group.findUnique({
             where: { id: groupId },
-            select: { id: true, deletedAt: true, maxSize: true, _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } } },
+            select: { id: true, deletedAt: true, maxSize: true, startDate: true, _count: { select: { enrollments: { where: { student: { deletedAt: null } } } } } },
         });
         if (!group || group.deletedAt) return res.status(400).json({ message: "Guruh topilmadi yoki arxivlangan" });
         if (group.maxSize > 0 && group._count.enrollments >= group.maxSize) {
@@ -538,7 +538,11 @@ router.post('/:id/convert', async (req, res) => {
                 },
             });
             // IP-09: a'zolik davri bilan (sig'im guruh qulfi ostida qayta tekshiriladi)
-            await enrollInTx(tx, { studentId: student.id, groupId, startDate: todayDateStr(), source: 'lead_convert' }, (req as any).user?.id);
+            // Boshlanish: berilgan sana, aks holda bugun (guruh hali boshlanmagan bo'lsa — guruh boshlanishi)
+            const today = todayDateStr();
+            const reqStart = typeof req.body?.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.startDate) ? req.body.startDate : null;
+            const startDate = reqStart ?? (group.startDate && group.startDate > today ? group.startDate : today);
+            await enrollInTx(tx, { studentId: student.id, groupId, startDate, source: 'lead_convert' }, (req as any).user?.id);
             const updatedLead = await tx.lead.update({
                 where: { id: lead.id },
                 data: { stage: 'won', studentId: student.id, convertedAt: new Date(), stageChangedAt: new Date() },

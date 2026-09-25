@@ -26,7 +26,7 @@ import { getBillingSettings, calculateStudentMonthlyDue, type BillingSettings } 
 import { studentPosition } from './receivables.js';
 import { getLedgerMode, setLedgerMode, LEDGER_MODES, type LedgerMode } from './ledgerMode.js';
 import { syncStudents } from './balanceCache.js';
-import { trimOverAllocation } from './allocation.js';
+import { trimOverAllocation, applyStudentCredit } from './allocation.js';
 
 export { getLedgerMode, setLedgerMode, LEDGER_MODES, type LedgerMode };
 
@@ -264,8 +264,55 @@ export async function postMonth(month: string, opts: { groupId?: string } = {}, 
     const where = { month, status: 'draft', ...(opts.groupId && { groupId: opts.groupId }) };
     const affected = await prisma.charge.findMany({ where, select: { studentId: true }, distinct: ['studentId'] });
     const r = await prisma.charge.updateMany({ where, data: { status: 'posted', postedAt: new Date(), postedById: actorId ?? null } });
+    // Oldindan kiritilgan to'lov (avans) yangi e'lon qilingan hisobni avtomatik qoplaydi (RS-38)
+    let creditApplied = 0;
+    if ((await getLedgerMode()) !== 'legacy') {
+        for (const a of affected) creditApplied += await prisma.$transaction(tx => applyStudentCredit(tx, a.studentId, actorId));
+    }
     await syncStudents(prisma, affected.map(a => a.studentId));
-    return { month, posted: r.count };
+    return { month, posted: r.count, creditApplied };
+}
+
+/**
+ * A'zolik boshlanishi (yoki guruh boshlanishi) o'zgarganda — ta'sirlangan oylar hisobini
+ * yangilash: qoralama qayta hisoblanadi; e'lon qilingan hisob o'zgarmaydi, farq tuzatma
+ * bo'lib yoziladi (QT-66; yopilgan oyniki keyingi ochiq oyga). legacy rejimda — hech narsa.
+ */
+export async function refreshMembershipCharges(input: { studentId: string; groupId: string; months: string[]; reason: string }, actorId?: string | null) {
+    const out = { months: [] as string[], drafts: 0, newDrafts: 0, adjustments: [] as Array<{ month: string; chargeId: string; delta: number }> };
+    if ((await getLedgerMode()) === 'legacy') return out;
+    const current = todayDateStr().slice(0, 7);
+    const settings = await getBillingSettings();
+    for (const month of [...new Set(input.months)].sort()) {
+        if (month > current) continue;
+        out.months.push(month);
+        const period = await getPeriod(prisma, month);
+        if (period?.status !== 'closed') {
+            const g = await generateMonth(month, { groupId: input.groupId, studentId: input.studentId }, actorId);
+            out.drafts += g.updated + g.voided;
+            out.newDrafts += g.created;
+        }
+        const posted = await prisma.charge.findMany({ where: { month, studentId: input.studentId, groupId: input.groupId, type: 'tuition', status: 'posted' } });
+        for (const ch of posted) {
+            const ep = ch.enrollmentPeriodId ? await prisma.enrollmentPeriod.findUnique({ where: { id: ch.enrollmentPeriodId }, include: { pauses: true } }) : null;
+            const fresh = ep ? await calcPeriodMonth(prisma, ep, month, settings) : null;
+            const adj = await adjustmentsSum(prisma, ch.id);
+            const delta = (fresh?.result?.net ?? 0) - (ch.net + adj.net);
+            if (delta !== 0) {
+                await adjustCharge(ch.id, { amount: delta, reason: input.reason }, actorId);
+                out.adjustments.push({ month, chargeId: ch.id, delta });
+            }
+        }
+    }
+    return out;
+}
+
+/** Sana oralig'idagi oylar (YYYY-MM), ikkala chet ham kiradi. */
+export function monthsBetween(a: string, b: string): string[] {
+    let [from, to] = [a.slice(0, 7), b.slice(0, 7)].sort();
+    const out: string[] = [];
+    for (let i = 0; i < 36 && from <= to; i++) { out.push(from); from = nextMonth(from); }
+    return out;
 }
 
 // ─── Tuzatmalar ──────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import { isAxiosError } from 'axios';
 import { format } from 'date-fns';
 import { Button } from '../../../components/ui/Button';
 import { Tabs, TabsList, Tab } from '../../../components/ui/Tabs';
-import { AddEnrollmentModal, EndEnrollmentModal } from '../../../components/group-detail/EnrollmentModals';
+import { AddEnrollmentModal, EndEnrollmentModal, StartDatesModal } from '../../../components/group-detail/EnrollmentModals';
 
 import { useFirestore } from '../../../hooks/useFirestore';
 import { exportToExcel } from '../../../utils/export';
@@ -67,6 +67,7 @@ export default function CrmGroupDetail() {
   const [addStudentSearch, setAddStudentSearch] = useState('');
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [addingStudentId, setAddingStudentId] = useState<string | null>(null);
+  const [startDatesOpen, setStartDatesOpen] = useState(false);
   // IP-09: yozish/yakunlash sana bilan — oynalar orqali (EnrollmentModals)
   const [enrollTarget, setEnrollTarget] = useState<{ id: string; name: string } | null>(null);
   const [studentToRemove, setStudentToRemove] = useState<{ id: string; name: string; period?: { id: string; startDate: string } | null } | null>(null);
@@ -286,11 +287,21 @@ export default function CrmGroupDetail() {
           }}
           onShowAddToggle={setShowAddStudent}
           onSearchChange={setAddStudentSearch}
+          onEditStartDates={() => setStartDatesOpen(true)}
         />
+      <StartDatesModal
+        isOpen={canManage && startDatesOpen}
+        onClose={() => setStartDatesOpen(false)}
+        groupId={id || ''}
+        groupStartDate={groupWithSchedule?.startDate ?? null}
+        members={enrolledStudents}
+        onDone={() => { void fetchEnrollments(); }}
+      />
       <AddEnrollmentModal
         isOpen={!!enrollTarget}
         onClose={() => setEnrollTarget(null)}
         groupId={id || ''}
+        groupStartDate={groupWithSchedule?.startDate ?? null}
         student={enrollTarget}
         onDone={() => { setShowAddStudent(false); void fetchEnrollments(); }}
       />

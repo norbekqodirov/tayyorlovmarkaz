@@ -30,10 +30,12 @@ const errMsg = (e: any) => e?.response?.data?.message || "Saqlab bo'lmadi. Qayta
 
 // ─── Guruhga yozish ──────────────────────────────────────────────────────────
 
-export function AddEnrollmentModal({ isOpen, onClose, groupId, student, onDone }: {
+export function AddEnrollmentModal({ isOpen, onClose, groupId, groupStartDate, student, onDone }: {
   isOpen: boolean;
   onClose: () => void;
   groupId: string;
+  /** Guruh boshlangan sana — tezkor tanlash va cheklov uchun */
+  groupStartDate?: string | null;
   student: { id: string; name: string } | null;
   onDone: (alreadyEnrolled: boolean) => void;
 }) {
@@ -44,7 +46,12 @@ export function AddEnrollmentModal({ isOpen, onClose, groupId, student, onDone }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => { if (isOpen) { setStartDate(tashkentToday()); setError(''); } }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const today = tashkentToday();
+    setStartDate(groupStartDate && groupStartDate > today ? groupStartDate : today);
+    setError('');
+  }, [isOpen, groupStartDate]);
 
   useEffect(() => {
     if (!isOpen || !student || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return;
@@ -82,8 +89,13 @@ export function AddEnrollmentModal({ isOpen, onClose, groupId, student, onDone }
       <div className="space-y-4">
         <div className="space-y-1.5">
           <label htmlFor="enroll-start" className={labelCls}>Boshlash sanasi</label>
-          <input id="enroll-start" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} />
-          <p className="text-xs text-zinc-500">Shu kungi dars ham hisobga kiradi. Darsdan keyin qo'shayotgan bo'lsangiz, ertangi sanani tanlang.</p>
+          <input id="enroll-start" type="date" value={startDate} min={groupStartDate || undefined} onChange={e => setStartDate(e.target.value)} className={inputCls} />
+          {groupStartDate && groupStartDate < tashkentToday() && (
+            <button type="button" onClick={() => setStartDate(groupStartDate)} className="text-xs font-bold text-blue-600 hover:underline">
+              Guruh boshidan ({groupStartDate})
+            </button>
+          )}
+          <p className="text-xs text-zinc-500">O'quvchi guruhda haqiqatan qachondan o'qiyotganini kiriting — shu kungi dars ham hisobga kiradi.</p>
         </div>
 
         <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 p-3 text-xs space-y-1.5" aria-live="polite">
@@ -100,7 +112,7 @@ export function AddEnrollmentModal({ isOpen, onClose, groupId, student, onDone }
               )}
               {preview.errors.map(m => <p key={m} className="text-rose-600 font-bold">{m}</p>)}
               {preview.warnings.map(m => <p key={m} className="text-amber-600">{m}</p>)}
-              <p className="text-zinc-400 pt-1">Bu ma'lumot uchun: hozirgi oylik hisob-kitob hali to'liq oy bo'yicha ishlaydi (yangi hisob tizimi keyingi bosqichda).</p>
+              <p className="text-zinc-400 pt-1">Oy o'rtasida boshlasa — shu oy qolgan darslar bo'yicha hisoblanadi.</p>
             </>
           ) : <p className="text-zinc-500">Hisoblab bo'lmadi</p>}
         </div>
@@ -236,6 +248,114 @@ export function EndEnrollmentModal({ isOpen, onClose, groupId, student, onDone }
           <Button type="button" variant={mode === 'end' ? 'danger' : 'primary'} isLoading={saving} onClick={() => void submit()}>
             {mode === 'transfer' && period ? "O'tkazish" : 'Chiqarish'}
           </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── O'qishni boshlagan sanalar ──────────────────────────────────────────────
+// Adminlar har o'quvchi guruhda qachondan o'qiyotganini belgilaydi (tizimga
+// kiritilgan kun emas). Backend: POST /api/enrollments/periods/start-dates —
+// hammasi yoki hech biri; xato qatorlar `details`da qaytadi.
+
+type StartMember = { id: string; name: string; _period?: { id: string; startDate: string } | null };
+
+export function StartDatesModal({ isOpen, onClose, groupId, groupStartDate, members, onDone }: {
+  isOpen: boolean;
+  onClose: () => void;
+  groupId: string;
+  groupStartDate?: string | null;
+  members: StartMember[];
+  onDone: () => void;
+}) {
+  const { showToast } = useToast();
+  const rows = useMemo(() => members.filter(m => m._period?.id).sort((a, b) => a.name.localeCompare(b.name)), [members]);
+  const missing = members.length - rows.length;
+  const [dates, setDates] = useState<Record<string, string>>({});
+  const [bulk, setBulk] = useState('');
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setDates(Object.fromEntries(rows.map(m => [m._period!.id, m._period!.startDate])));
+    setBulk(groupStartDate || tashkentToday());
+    setRowErrors({});
+    setError('');
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const changed = rows.filter(m => dates[m._period!.id] && dates[m._period!.id] !== m._period!.startDate);
+
+  const submit = async () => {
+    if (saving) return;
+    if (!changed.length) { onClose(); return; }
+    setSaving(true);
+    setError('');
+    setRowErrors({});
+    try {
+      const r = await api.post('/enrollments/periods/start-dates', {
+        groupId, items: changed.map(m => ({ periodId: m._period!.id, startDate: dates[m._period!.id] })),
+      });
+      const adj = r.data?.adjustments?.length ? ` · ${r.data.adjustments.length} ta hisobga tuzatma` : '';
+      showToast(`${r.data?.changed ?? changed.length} ta o'quvchining sanasi saqlandi${adj}`, 'success');
+      onDone();
+      onClose();
+    } catch (e: any) {
+      const details = e?.response?.data?.details;
+      if (Array.isArray(details)) setRowErrors(Object.fromEntries(details.filter((d: any) => d?.periodId).map((d: any) => [d.periodId, d.message])));
+      setError(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={() => { if (!saving) onClose(); }} title="O'qishni boshlagan sanalar" description="Har o'quvchi shu guruhda qachondan o'qiyotganini belgilang" width="lg">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end gap-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 p-3">
+          <label className="space-y-1">
+            <span className="block text-xs font-bold text-zinc-500">Hammasiga bir xil sana</span>
+            <input type="date" value={bulk} min={groupStartDate || undefined} onChange={e => setBulk(e.target.value)} className={`${inputCls} py-2`} />
+          </label>
+          <Button type="button" variant="secondary" size="sm" disabled={!bulk || !rows.length}
+            onClick={() => setDates(Object.fromEntries(rows.map(m => [m._period!.id, bulk])))}>
+            Hammasiga qo'llash
+          </Button>
+          {groupStartDate && <p className="w-full text-xs text-zinc-500">Guruh {groupStartDate} dan boshlangan — undan oldingi sana qo'yilmaydi.</p>}
+        </div>
+
+        <div className="max-h-[45vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-700 divide-y divide-zinc-100 dark:divide-zinc-800">
+          {!rows.length ? (
+            <p className="p-4 text-sm text-zinc-500">Sanani o'zgartiradigan a'zolik yo'q.</p>
+          ) : rows.map((m, i) => {
+            const pid = m._period!.id;
+            const dirty = dates[pid] !== m._period!.startDate;
+            return (
+              <div key={pid} className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 ${rowErrors[pid] ? 'bg-rose-50 dark:bg-rose-500/10' : ''}`}>
+                <span className="min-w-0 flex-1 text-sm">
+                  <span className="text-zinc-400 tabular-nums mr-2">{i + 1}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{m.name}</span>
+                  {rowErrors[pid] && <span className="block text-xs font-semibold text-rose-600">{rowErrors[pid]}</span>}
+                </span>
+                <input type="date" aria-label={`${m.name} — boshlash sanasi`} value={dates[pid] || ''} min={groupStartDate || undefined}
+                  onChange={e => setDates(d => ({ ...d, [pid]: e.target.value }))}
+                  className={`${inputCls} w-auto py-1.5 ${dirty ? 'border-blue-500' : ''}`} />
+              </div>
+            );
+          })}
+        </div>
+
+        {missing > 0 && <p className="text-xs text-amber-600">{missing} ta o'quvchida a'zolik sanasi hali yo'q (eski yozuv) — ma'lumot ko'chirish bajarilgach shu yerda chiqadi.</p>}
+        <p className="text-xs text-zinc-500">Oylik hisob shu sanadan boshlanadi: oy o'rtasida boshlasa — qolgan darslar bo'yicha. E'lon qilingan hisob bo'lsa, farq tuzatma sifatida yoziladi.</p>
+        {error && <p role="alert" className="text-sm font-semibold text-rose-600">{error}</p>}
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="text-xs text-zinc-500">{changed.length ? `${changed.length} ta o'zgarish` : "O'zgarish yo'q"}</span>
+          <div className="flex gap-2">
+            <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>Bekor qilish</Button>
+            <Button type="button" isLoading={saving} disabled={!changed.length} onClick={() => void submit()}>Saqlash</Button>
+          </div>
         </div>
       </div>
     </Modal>

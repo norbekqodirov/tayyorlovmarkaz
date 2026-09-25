@@ -5,7 +5,7 @@
  * qulflanadi (Postgres — qator qulfi, SQLite — yozuvchi qulfi), keyin qarz qayta o'qiladi.
  */
 import type { Prisma } from '@prisma/client';
-import { chargeBalances, openCharges, DEBT_CHARGE_TYPES } from './receivables.js';
+import { chargeBalances, openCharges, paymentUnallocated, DEBT_CHARGE_TYPES, NEW_PAYMENT_MODES } from './receivables.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -84,4 +84,26 @@ export async function reversePaymentAllocations(tx: Tx, paymentId: string, reaso
         data: { reversedAt: new Date(), reversedById: actorId ?? null, reverseReason: reason },
     });
     return r.count;
+}
+
+/**
+ * O'quvchining taqsimlanmagan pulini (avansini) ochiq hisoblarga FIFO biriktirish —
+ * hisob to'lovdan KEYIN e'lon qilinganda (RS-38: avans yangi oy hisobini avtomatik qoplaydi).
+ * Eng eski to'lovdan boshlab; har to'lov o'z guruhini oldin qoplaydi (OQ-08).
+ */
+export async function applyStudentCredit(tx: Tx, studentId: string, actorId?: string | null) {
+    const payments = await tx.payment.findMany({
+        where: { studentId, status: 'paid', deletedAt: null, allocationMode: { in: NEW_PAYMENT_MODES } },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true, groupId: true },
+    });
+    let created = 0;
+    for (const p of payments) {
+        const available = await paymentUnallocated(tx, p.id);
+        if (available <= 0) continue;
+        const rows = await applyAllocations(tx, p.id, studentId, available, { auto: true, preferGroupId: p.groupId }, actorId);
+        created += rows.length;
+        if (!rows.length) break; // ochiq hisob qolmadi
+    }
+    return created;
 }
