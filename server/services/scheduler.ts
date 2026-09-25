@@ -6,6 +6,7 @@ import { OPEN_STAGES } from '../constants/leads.js';
 import { createConsistentBackup } from './dbBackup.js';
 import { syncAllHistoryCaches } from './groupHistory.js';
 import { generateAllPlans } from './lessonPlan.js';
+import { dailyRefresh } from './chargeEngine.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -714,6 +715,14 @@ export async function startScheduler() {
             generateAllPlans(todayDateStr().slice(0, 7))
                 .then(r => console.log(`[Scheduler] Joriy oy dars rejasi: ${r.length} guruh`))
                 .catch(e => console.error('[Scheduler] Dars rejasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-11: shadow/live rejimda har kuni 01:30 — joriy oy draft hisoblarini
+        // yangilash (legacy rejimda hech narsa qilmaydi). E'lon qilish — qo'lda.
+        cron.schedule('30 1 * * *', () => {
+            dailyRefresh()
+                .then(r => { if (r) console.log(`[Scheduler] Hisoblar (${r.month}): +${r.created}, ~${r.updated}, skip ${r.skipped.length}`); })
+                .catch(e => console.error('[Scheduler] Hisob generatsiyasi xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
         // Har kuni 00:05 — kelajak sanali tarif/ustoz/foiz versiyalari kuchga

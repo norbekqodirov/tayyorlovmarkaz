@@ -152,6 +152,8 @@ model Student {
   phoneNorm        String?
   enrollments       Enrollment[]
   enrollmentPeriods EnrollmentPeriod[]
+  charges           Charge[]
+  studentDiscounts  StudentDiscount[]
   payments          Payment[]
   attendanceRecords AttendanceRecord[]
   assessments       Assessment[]
@@ -348,6 +350,86 @@ model TeacherRate {
   createdAt     DateTime @default(now())
 
   @@index([teacherId, effectiveFrom])
+}
+
+// ============================================
+// O'QUVCHI HISOBLARI (IP-11) — docs/ADR_HISOB_QOIDALARI.md, server/services/chargeEngine.ts
+// Hisob (majburiyat) guruh×oy bo'yicha; e'lon qilingani o'zgarmaydi — faqat tuzatma hisobi.
+// ============================================
+
+model BillingPeriod {
+  id           String    @id @default(uuid())
+  month        String    @unique // "2026-11"
+  status       String    @default("open") // open | closing | closed
+  closedAt     DateTime?
+  closedById   String?
+  checklist    String? // JSON natija
+  reopenedAt   DateTime?
+  reopenReason String?
+  createdAt    DateTime  @default(now())
+}
+
+model Charge {
+  id                 String       @id @default(uuid())
+  chargeKey          String       @unique // "T:{periodId}:{YYYY-MM}" | "S:{chargeId}:{n}" | "A:{chargeId}:{uuid}" | "O:{studentId}:{groupId}"
+  studentId          String
+  student            Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId            String?
+  enrollmentPeriodId String?
+  month              String // xizmat oyi
+  type               String // tuition | adjustment | opening_balance | other_fee
+  status             String       @default("draft") // draft | posted | void
+  gross              Int
+  net                Int
+  teacherBase        Int          @default(0) // OQ-05: ustoz maosh bazasi (marketing chegirmalarisiz)
+  dueDate            String?
+  teacherId          String? // asosiy ustoz (ko'rsatish uchun)
+  calc               String?      @db.Text // JSON: P, N, R, F, A, M, tarif/stavka, sanalar, ustoz darslari
+  reversesChargeId   String? // tuzatma qaysi hisobga
+  reason             String?
+  postedAt           DateTime?
+  postedById         String?
+  createdById        String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  lines              ChargeLine[]
+
+  @@index([studentId, month])
+  @@index([groupId, month])
+  @@index([status, month])
+  @@index([reversesChargeId])
+}
+
+model ChargeLine {
+  id          String  @id @default(uuid())
+  chargeId    String
+  charge      Charge  @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  kind        String // base | extra_lesson | absence_discount | cancel_credit | promo | sibling | social | manual
+  amount      Int // ishorali: baza musbat, chegirma manfiy
+  description String
+  sourceId    String? // StudentDiscount.id, LessonSession.id va h.k.
+
+  @@index([chargeId])
+}
+
+// Takrorlanuvchi chegirma (aka-uka, ijtimoiy, grant) — hisob generatsiyasida ChargeLine bo'ladi (OQ-05 tartibi)
+model StudentDiscount {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  groupId     String? // null — o'quvchining barcha guruhlariga
+  kind        String // sibling | social | promo | manual
+  percentBp   Int? // 1000 = 10% (qolgan summaga)
+  amount      Int? // yoki qat'iy summa
+  fromMonth   String // "YYYY-MM"
+  toMonth     String? // null — muddatsiz
+  reason      String
+  discountId  String? // promo-kod manbai (Discount)
+  status      String   @default("active") // active | cancelled
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([studentId])
 }
 
 // ============================================

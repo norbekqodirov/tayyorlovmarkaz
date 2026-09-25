@@ -7,7 +7,7 @@ import {
   ClipboardCheck, ClipboardList, FileText, TrendingUp, Link as LinkIcon,
   Megaphone, Sparkles, MessageSquare, Bell, Bot, UserCog, Users, Presentation,
   Fingerprint, MapPin, CreditCard, Wallet, TrendingDown, BarChart2, Brain,
-  Target, FileBarChart2, Settings, Building2, DoorOpen, Package, Zap, Award, Shield,
+  Target, FileBarChart2, Settings, Building2, DoorOpen, Package, Zap, Award, Shield, Receipt,
 } from 'lucide-react';
 
 export type NavItem = {
@@ -132,6 +132,7 @@ export const MODULES: NavModule[] = [
       {
         links: [
           { name: 'Moliya',    path: '/crmtayyorlovmarkaz/finance',    icon: Wallet,      permission: 'finance' },
+          { name: 'Oylik hisoblar', path: '/crmtayyorlovmarkaz/billing', icon: Receipt, permission: 'finance' },
           { name: "Xodimlar Oyligi", path: '/crmtayyorlovmarkaz/teacher-payroll', icon: Users, permission: ['finance', 'payroll_review'] },
           { name: 'Kirim/Chiqim kategoriyalari', path: '/crmtayyorlovmarkaz/transaction-categories', icon: Layers, permission: 'transaction_categories' },
           { name: 'Chegirmalar', path: '/crmtayyorlovmarkaz/discounts', icon: TrendingDown, permission: 'discounts' },

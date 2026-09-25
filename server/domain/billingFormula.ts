@@ -81,6 +81,8 @@ export interface ChargeLineCalc {
     kind: 'base' | 'extra_lesson' | 'absence_discount' | DiscountKind;
     amount: number; // ishorali: baza musbat, chegirma manfiy
     description: string;
+    /** Manba yozuvi (StudentDiscount, LessonSession...) — izohlash uchun. */
+    sourceId?: string;
 }
 
 /**
@@ -97,13 +99,14 @@ export interface DiscountInput {
     /** Foiz, basis point'da (1000 = 10%) — qolgan summaga nisbatan. */
     percentBp?: number;
     description: string;
+    sourceId?: string;
 }
 
 export interface ChargeInput extends BaseInput {
     absences: number;
     threshold: number;
     /** Qo'shimcha pullik darslar (OQ-03) — alohida musbat qator. */
-    extraLessons?: Array<{ amount: number; description: string }>;
+    extraLessons?: Array<{ amount: number; description: string; sourceId?: string }>;
     otherDiscounts?: DiscountInput[];
 }
 
@@ -133,7 +136,7 @@ export function computeCharge(input: ChargeInput): ChargeResult {
     let gross = base;
     for (const x of input.extraLessons || []) {
         const amt = Math.max(0, roundSom(x.amount));
-        if (amt > 0) { lines.push({ kind: 'extra_lesson', amount: amt, description: x.description }); gross += amt; }
+        if (amt > 0) { lines.push({ kind: 'extra_lesson', amount: amt, description: x.description, ...(x.sourceId && { sourceId: x.sourceId }) }); gross += amt; }
     }
     let remaining = gross;
     const abs = computeAbsenceDiscount({ price: input.price, lessonsPerPackage: input.lessonsPerPackage, absences: input.absences, threshold: input.threshold, base });
@@ -146,7 +149,7 @@ export function computeCharge(input: ChargeInput): ChargeResult {
         const raw = d.percentBp != null ? (remaining * d.percentBp) / 10000 : (d.amount ?? 0);
         const amt = Math.min(remaining, Math.max(0, roundSom(raw)));
         if (amt > 0) {
-            lines.push({ kind: d.kind, amount: -amt, description: d.description });
+            lines.push({ kind: d.kind, amount: -amt, description: d.description, ...(d.sourceId && { sourceId: d.sourceId }) });
             remaining -= amt;
         }
     };
