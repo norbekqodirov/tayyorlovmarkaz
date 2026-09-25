@@ -9,8 +9,25 @@ import { Modal } from '../../../components/ui/Modal';
 import type { TransactionCategory } from '../../../types/transactionCategory';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
-type CategoryForm = Pick<TransactionCategory, 'name' | 'type' | 'isActive'>;
-const emptyForm = (type: TransactionCategory['type'] = 'income'): CategoryForm => ({ name: '', type, isActive: true });
+type CategoryForm = Pick<TransactionCategory, 'name' | 'type' | 'isActive'> & { kind: string };
+const emptyForm = (type: TransactionCategory['type'] = 'income'): CategoryForm => ({ name: '', type, isActive: true, kind: '' });
+
+// TQ-E: tur qoidani belgilaydi — kurs to'lovi o'quvchi qarziga yoziladi, boshqa kirim esa yo'q.
+const KIND_OPTIONS: Record<TransactionCategory['type'], Array<{ value: string; label: string }>> = {
+  income: [
+    { value: 'TUITION', label: "Kurs to'lovi (o'quvchi qarzini yopadi)" },
+    { value: 'OTHER_INCOME', label: "Boshqa kirim (kitob, forma — qarzga ta'sir qilmaydi)" },
+  ],
+  expense: [
+    { value: 'OPERATING_EXPENSE', label: 'Operatsion xarajat' },
+    { value: 'PAYROLL_PAYOUT', label: 'Oylik / maosh' },
+    { value: 'STAFF_ADVANCE', label: 'Xodimga avans' },
+    { value: 'REFUND', label: 'Qaytarish' },
+    { value: 'TRANSFER', label: "O'tkazma" },
+  ],
+};
+const kindLabel = (type: TransactionCategory['type'], kind?: string | null) =>
+  kind ? (KIND_OPTIONS[type].find(o => o.value === kind)?.label.split(' (')[0] ?? kind) : 'Avtomatik (nomdan)';
 
 export default function CrmCategories() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
@@ -31,7 +48,7 @@ export default function CrmCategories() {
     if (!canManage) return;
     setEditingId(category?.id ?? null);
     setForm(category ? {
-      name: category.name, type: category.type, isActive: category.isActive,
+      name: category.name, type: category.type, isActive: category.isActive, kind: category.kind ?? '',
     } : emptyForm(activeType));
     setIsOpen(true);
   };
@@ -97,11 +114,12 @@ export default function CrmCategories() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500"><tr>
-                {['Kategoriya', 'Holat', 'Amallar'].map(label => <th key={label} scope="col" className="px-6 py-4 font-bold whitespace-nowrap">{label}</th>)}
+                {['Kategoriya', 'Turi', 'Holat', 'Amallar'].map(label => <th key={label} scope="col" className="px-6 py-4 font-bold whitespace-nowrap">{label}</th>)}
               </tr></thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {filtered.map(category => <tr key={category.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                   <td className="px-6 py-4"><p className="font-bold text-slate-900 dark:text-white">{category.name}</p></td>
+                  <td className="px-6 py-4 text-zinc-600 dark:text-zinc-300 whitespace-nowrap">{kindLabel(category.type, category.kind)}</td>
                   <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-xs font-bold ${category.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>{category.isActive ? 'Faol' : 'Nofaol'}</span></td>
                   <td className="px-6 py-4">{canManage && <div className="flex gap-2">
                     <Button variant="ghost" aria-label={`${category.name}: tahrirlash`} onClick={() => openModal(category)}><Edit2 size={16} /></Button>
@@ -117,6 +135,15 @@ export default function CrmCategories() {
         <form onSubmit={save} className="space-y-5">
           <fieldset disabled={saving} className="space-y-5">
             <Input id="category-name" label="Nom" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <label className="block space-y-1.5">
+              <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">Turi</span>
+              <select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })}
+                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500">
+                <option value="">Avtomatik (nomdan aniqlanadi)</option>
+                {KIND_OPTIONS[form.type].map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {form.type === 'income' && <span className="block text-xs text-zinc-500">"Kurs to'lovi" turida o'quvchi tanlash majburiy va to'lov uning qarziga yoziladi.</span>}
+            </label>
             <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} className="size-4 accent-blue-600" />Faol kategoriya</label>
           </fieldset>
           <div className="flex justify-end gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-4">

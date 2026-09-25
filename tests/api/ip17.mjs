@@ -180,6 +180,18 @@ try {
   r = await api('DELETE', `/finance/${invTx.id}`, manager.token);
   check('invoice to\'lovi kassa yozuvi — o\'chirilmaydi (400 INVOICE)', r.status === 400 && r.data.code === 'INVOICE', r);
 
+  // ── Kategoriya turi (TQ-E): sahifadan tanlanadi; "kurs puli" nomi — kurs to'lovi
+  r = await api('POST', '/transactionCategories', admin.token, { name: `${TAG} Kitob`, type: 'income', kind: 'REFUND' });
+  check('kirim kategoriyasiga REFUND turi — 400', r.status === 400, r);
+  r = await api('POST', '/transactionCategories', admin.token, { name: `${TAG} O'quvchi kurs puli to'ladi`, type: 'income', isActive: true });
+  const autoCat = r.data; if (autoCat?.id) track('transactionCategory', autoCat.id);
+  r = await api('POST', '/finance/transactions', manager.token, { type: 'income', amount: 40000, category: autoCat.name, date: today, method: 'Naqd', studentId: S.id });
+  check('"kurs puli to\'ladi" (tur tanlanmagan) + o\'quvchi — kurs to\'lovi sifatida kvitansiya', r.status === 200 && r.data?.sourceType === 'receipt', r);
+  r = await api('POST', '/transactionCategories', admin.token, { name: `${TAG} Forma`, type: 'income', kind: 'OTHER_INCOME', isActive: true });
+  const otherCat = r.data; if (otherCat?.id) track('transactionCategory', otherCat.id);
+  r = await api('PUT', `/transactionCategories/${otherCat.id}`, admin.token, { name: otherCat.name, type: 'income', isActive: true, kind: 'TUITION' });
+  check('kategoriya turini tahrirlash — TUITION saqlandi', r.status === 200 && (await prisma.transactionCategory.findUnique({ where: { id: otherCat.id } })).kind === 'TUITION', r);
+
   // ── Legacy rejim: qaytarish musbat balansdan
   await setMode('legacy');
   const L = await prisma.student.create({ data: { name: `${TAG} Legacy Refund`, balance: 70000 } });

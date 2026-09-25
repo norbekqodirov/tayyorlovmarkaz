@@ -12,6 +12,7 @@ import { normalizeStudentStatus } from '../utils/studentStatus.js';
 import { recordGroupCreate, recordLegacyGroupEdit, safeHistory } from '../services/groupHistory.js';
 import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 import { deleteTransaction, ReversalError } from '../services/moneyReversal.js';
+import { CATEGORY_KINDS_BY_TYPE } from '../services/categories.js';
 
 const router = express.Router();
 
@@ -136,7 +137,7 @@ const SCHEMA_FIELDS: Record<string, string[]> = {
     'payment': ['studentId', 'amount', 'method', 'date', 'month', 'dueDate', 'status', 'notes'],
     'staffMember': ['name', 'role', 'positionId', 'email', 'phone', 'salary', 'joinedDate', 'status', 'department', 'address', 'passport', 'education', 'experience', 'photo'],
     'position': ['name', 'description', 'responsibilities', 'suggestedRole', 'defaultPermissions', 'roleId', 'isActive'],
-    'transactionCategory': ['name', 'type', 'isActive'],
+    'transactionCategory': ['name', 'type', 'isActive', 'kind'],
     'post': ['title', 'content', 'excerpt', 'imageUrl', 'author', 'status', 'category', 'date'],
     'inventoryItem': ['name', 'category', 'quantity', 'price', 'location', 'condition', 'purchaseDate', 'notes'],
     'task': ['title', 'completed', 'userId', 'staffId', 'priority', 'deadline'],
@@ -255,6 +256,16 @@ const VALIDATION_RULES: Record<string, { required: string[]; messages: Record<st
     payment: { required: ['studentId', 'amount', 'date'], messages: { studentId: "O'quvchi tanlanishi shart", amount: 'Summa kiritilishi shart', date: 'Sana kiritilishi shart' } },
     post: { required: ['title'], messages: { title: 'Sarlavha kiritilishi shart' } },
 };
+
+// TQ-E: kategoriya turi qoidani belgilaydi (kurs to'lovi / boshqa kirim ...). Bo'sh — nomdan avtomatik.
+function checkCategoryKind(data: any): string | null {
+    if (!('kind' in data)) return null;
+    if (data.kind === '' || data.kind == null) { data.kind = null; return null; }
+    const allowed: string[] = data.type === 'income' || data.type === 'expense'
+        ? CATEGORY_KINDS_BY_TYPE[data.type as 'income' | 'expense']
+        : [...CATEGORY_KINDS_BY_TYPE.income, ...CATEGORY_KINDS_BY_TYPE.expense];
+    return allowed.includes(data.kind) ? null : "Kategoriya turi noto'g'ri";
+}
 
 function validateInput(modelName: string, data: any): string | null {
     const rules = VALIDATION_RULES[modelName];
@@ -544,6 +555,10 @@ router.use('/:collection', authForCollection, async (req, res, next) => {
         req.body = sanitizeForPrisma(modelName, req.body);
         req.body = normalizeData(modelName, req.body);
         req.body = stringifyJsonFields(modelName, req.body);
+        if (modelName === 'transactionCategory') {
+            const kindError = checkCategoryKind(req.body);
+            if (kindError) return res.status(400).json({ message: kindError });
+        }
 
         // Faqat CREATE'da — tahrirlashda mavjud kod SAQLANIB QOLISHI kerak,
         // aks holda allaqachon ulashilgan qisqa havola buzilib qoladi.
