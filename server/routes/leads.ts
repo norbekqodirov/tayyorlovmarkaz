@@ -23,6 +23,7 @@ import { createLeadFromIntake, LeadIntakeValidationError } from '../services/lea
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { OPEN_STAGES } from '../constants/leads.js';
 import { enrollInTx, EnrollmentError } from '../services/enrollment.js';
+import { refreshMembershipCharges, monthsBetween } from '../services/chargeEngine.js';
 import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 import { todayDateStr } from '../utils/timezone.js';
 
@@ -543,6 +544,7 @@ router.post('/:id/convert', async (req, res) => {
             const reqStart = typeof req.body?.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.startDate) ? req.body.startDate : null;
             const startDate = reqStart ?? (group.startDate && group.startDate > today ? group.startDate : today);
             await enrollInTx(tx, { studentId: student.id, groupId, startDate, source: 'lead_convert' }, (req as any).user?.id);
+            (req as any)._enrolled = { studentId: student.id, startDate };
             const updatedLead = await tx.lead.update({
                 where: { id: lead.id },
                 data: { stage: 'won', studentId: student.id, convertedAt: new Date(), stageChangedAt: new Date() },
@@ -557,6 +559,13 @@ router.post('/:id/convert', async (req, res) => {
             return res.status(200).json({ student, lead: current, alreadyConverted: true });
         }
         await ensureStudentIdentitySafe(prisma, result.student.id);
+        // Hisob darhol (live — kuchga kiradi); xato aylantirishni bekor qilmaydi
+        const enrolled = (req as any)._enrolled as { studentId: string; startDate: string } | undefined;
+        if (enrolled) {
+            const today = todayDateStr();
+            await refreshMembershipCharges({ studentId: enrolled.studentId, groupId, months: monthsBetween(enrolled.startDate < today ? enrolled.startDate : today, today), reason: "Liddan o'quvchiga aylantirildi" }, (req as any).user?.id)
+                .catch(e => console.error('[leads] hisob yangilash', e?.message));
+        }
         try { emitToAdmins('lead:updated', { id: result.lead.id }); } catch { /* jim */ }
         res.status(201).json(result);
     } catch (err: any) {

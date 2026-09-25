@@ -57,6 +57,40 @@ export function scheduledDates(days: number[], from: string, to: string, holiday
 
 export interface DateRange { from: string; to: string }
 
+// ─── Hisob davri: "1 oy" qanday hisoblanadi (sozlama billing_cycle_mode) ─────
+// calendar          — kalendar oy (standart): 15-sentabrda boshlangan guruh 15–30-sentabr
+//                     darslar bo'yicha, oktabrdan to'liq oy.
+// group_anniversary — guruh boshlangan kundan har oy: 15-sentabrda boshlangan guruhning
+//                     "sentabr hisobi" 15.09–14.10, "oktabr hisobi" 15.10–14.11.
+//                     Oy kuni yo'q bo'lsa (31) — oyning oxirgi kuni.
+export type CycleMode = 'calendar' | 'group_anniversary';
+export const CYCLE_MODES: CycleMode[] = ['calendar', 'group_anniversary'];
+
+function daysInMonth(month: string): number {
+    const [y, m] = month.split('-').map(Number);
+    return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+function dayIn(month: string, day: number): string {
+    return `${month}-${String(Math.min(day, daysInMonth(month))).padStart(2, '0')}`;
+}
+function nextMonthOf(month: string): string {
+    const [y, m] = month.split('-').map(Number);
+    return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/**
+ * `month` hisobining sana oynasi. group_anniversary'da oyna shu oyda boshlanadi va keyingi
+ * oyning shu kunidan bir kun oldin tugaydi; guruh bu oyda hali boshlanmagan bo'lsa — null.
+ */
+export function billingWindow(month: string, mode: CycleMode, groupStart: string | null | undefined): DateRange | null {
+    const { first, last } = monthRange(month);
+    if (mode !== 'group_anniversary' || !groupStart || !isValidDate(groupStart)) return { from: first, to: last };
+    const anchorDay = Number(groupStart.slice(8, 10));
+    const from = dayIn(month, anchorDay);
+    if (from < groupStart) return null;
+    return { from, to: addDays(dayIn(nextMonthOf(month), anchorDay), -1) };
+}
+
 export function inRange(date: string, r: { from: string; to?: string | null }): boolean {
     return date >= r.from && (r.to == null || date <= r.to);
 }
@@ -76,6 +110,8 @@ export interface MonthLessonsInput {
     holidays?: ReadonlySet<string>;
     /** Dars rejasi (IP-10) bor bo'lsa — jadval o'rniga shu billable sanalar ishlatiladi. */
     lessonDates?: string[];
+    /** Hisob davri oynasi (billingWindow). Berilmasa — kalendar oy. */
+    window?: DateRange;
 }
 
 export interface MonthLessons {
@@ -96,7 +132,7 @@ export interface MonthLessons {
  * Guruhning shu oyda darsi bo'lmasa — R = 0, to'liq oy emas (hisob chiqmaydi).
  */
 export function monthLessons(i: MonthLessonsInput): MonthLessons {
-    const { first, last } = monthRange(i.month);
+    const { first, last } = i.window ? { first: i.window.from, last: i.window.to } : monthRange(i.month);
     const from = i.groupStart && i.groupStart > first ? i.groupStart : first;
     const to = i.groupEnd && i.groupEnd < last ? i.groupEnd : last;
     const groupLessons = i.lessonDates

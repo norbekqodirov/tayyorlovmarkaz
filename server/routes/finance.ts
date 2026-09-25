@@ -84,6 +84,10 @@ router.get('/billing-settings', requireAuth, requirePermission('finance'), async
 router.put('/billing-settings', requireAuth, requireMinRole('ADMIN'), requirePermission('finance'), async (req, res) => {
     try {
         const { lessonsPerMonth, absenceThreshold, teacherSalaryPercent } = req.body as Record<string, number>;
+        const cycleMode = (req.body as any)?.cycleMode as string | undefined;
+        if (cycleMode !== undefined && !['calendar', 'group_anniversary'].includes(cycleMode)) {
+            return res.status(400).json({ message: "Oy hisoblash usuli: calendar yoki group_anniversary" });
+        }
 
         const isNonNegativeInt = (v: number) => Number.isInteger(v) && v >= 0;
 
@@ -101,6 +105,8 @@ router.put('/billing-settings', requireAuth, requireMinRole('ADMIN'), requirePer
         if (lessonsPerMonth !== undefined) updates.push({ key: 'monthly_lessons_count', value: String(lessonsPerMonth) });
         if (absenceThreshold !== undefined) updates.push({ key: 'absence_discount_threshold', value: String(absenceThreshold) });
         if (teacherSalaryPercent !== undefined) updates.push({ key: 'teacher_salary_percent', value: String(teacherSalaryPercent) });
+        // Yangi usul hali hisob chiqmagan guruhlarga qo'llanadi (chargeEngine.groupCycleMode)
+        if (cycleMode !== undefined) updates.push({ key: 'billing_cycle_mode', value: cycleMode });
 
         for (const u of updates) {
             await prisma.setting.upsert({ where: { key: u.key }, update: { value: u.value }, create: u });

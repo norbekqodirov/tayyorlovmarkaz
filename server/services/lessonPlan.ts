@@ -14,7 +14,7 @@
 import prisma from '../db.js';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { todayDateStr } from '../utils/timezone.js';
-import { isValidDate, monthRange, scheduledDates, versionAt } from '../domain/lessonCalendar.js';
+import { isValidDate, monthRange, scheduledDates, versionAt, addDays } from '../domain/lessonCalendar.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -227,4 +227,23 @@ export async function unmarkedLessons(opts: { upTo?: string; teacherId?: string 
         if (members > 0 && marked === 0) out.push({ sessionId: s.id, date: s.date, startTime: s.startTime, groupId: s.groupId, groupName: s.group.name, teacherId: s.teacherId, members });
     }
     return out;
+}
+
+/**
+ * Hisob oynasi darslari (oyna ikki kalendar oyni kesishi mumkin — guruh boshlangan kundan
+ * hisob): har oy uchun reja bo'lsa rejadagi billable darslar, bo'lmasa jadval kunlari.
+ * Na reja, na jadval bo'lsa — null.
+ */
+export async function windowLessonDates(db: Db, groupId: string, days: number[], from: string, to: string): Promise<{ dates: string[]; planUsed: boolean } | null> {
+    const dates: string[] = [];
+    let planUsed = false;
+    for (let m = from.slice(0, 7); m <= to.slice(0, 7); m = monthRange(addDays(monthRange(m).last, 1)).first.slice(0, 7)) {
+        const plan = await billableLessonDates(db, groupId, m);
+        if (plan) { planUsed = true; dates.push(...plan.filter(d => d >= from && d <= to)); continue; }
+        if (!days.length) continue;
+        const r = monthRange(m);
+        dates.push(...scheduledDates(days, from > r.first ? from : r.first, to < r.last ? to : r.last));
+    }
+    if (!planUsed && !days.length) return null;
+    return { dates: [...new Set(dates)].sort(), planUsed };
 }

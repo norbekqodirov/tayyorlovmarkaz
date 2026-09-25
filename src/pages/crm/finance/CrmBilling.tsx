@@ -1,7 +1,8 @@
 /**
- * IP-11 — Oylik hisoblar (o'quvchi majburiyatlari). Moliya mas'uli shu yerda oy
- * hisoblarini generatsiya qiladi, tekshiradi, e'lon qiladi va oy yakunida
- * tuzatmalarni hisoblaydi. Shadow rejimda — eski hisob bilan solishtirish.
+ * Oylik hisoblar — har o'quvchining oy (hisob davri) bo'yicha hisobi, to'lagani va qarzi.
+ * Jonli rejimda hammasi avtomatik: hisob o'zi chiqadi va darhol kuchga kiradi (qo'lda
+ * "e'lon qilish" yo'q), to'lovlar qarzni o'zi qoplaydi, davr tugagach davomat tuzatmasi
+ * o'zi yoziladi. Shadow/legacy'da — eski boshqaruv vositalari (sinov uchun).
  * Backend: server/routes/billing.ts, qoidalar: docs/ADR_HISOB_QOIDALARI.md.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -20,13 +21,22 @@ import ConfirmDialog from '../../../components/ConfirmDialog';
 
 const STATUS_BADGE: Record<string, { label: string; color: 'amber' | 'emerald' | 'slate' }> = {
   draft: { label: 'Qoralama', color: 'amber' },
-  posted: { label: "E'lon qilingan", color: 'emerald' },
+  posted: { label: 'Hisoblangan', color: 'emerald' },
   void: { label: 'Bekor', color: 'slate' },
 };
 const LINE_LABEL: Record<string, string> = {
   base: 'Asosiy', extra_lesson: "Qo'shimcha dars", absence_discount: 'Davomat chegirmasi', cancel_credit: 'Bekor qilingan dars',
   promo: 'Promo', sibling: 'Aka-uka', social: 'Ijtimoiy', manual: 'Tuzatma',
 };
+const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
+const todayStr = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
+function payState(r: { amount: number; paid: number; debt: number; dueDate?: string | null }) {
+  if (r.debt <= 0) return { label: "To'langan", color: 'emerald' as const };
+  if (r.dueDate && todayStr() > r.dueDate) return { label: "Muddati o'tgan", color: 'rose' as const };
+  if (r.paid > 0) return { label: 'Qisman', color: 'amber' as const };
+  return { label: 'Qarz', color: 'amber' as const };
+}
+
 const MODE_LABEL: Record<string, { label: string; color: 'blue' | 'amber' | 'green' }> = {
   legacy: { label: 'Eski tizim (legacy)', color: 'blue' },
   shadow: { label: 'Sinov (shadow)', color: 'amber' },
@@ -45,13 +55,15 @@ export default function CrmBilling() {
   const [shadow, setShadow] = useState<any | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
   const [search, setSearch] = useState('');
+  const [summary, setSummary] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, c] = await Promise.all([api.get('/billing/mode'), api.get(`/billing/${month}/charges`)]);
+      const [m, c, sm] = await Promise.all([api.get('/billing/mode'), api.get(`/billing/${month}/charges`), api.get(`/billing/${month}/summary`)]);
       setMode(m.data.mode);
       setCharges(c.data || []);
+      setSummary(sm.data || []);
     } catch (e: any) {
       showToast(e?.response?.data?.message || "Hisoblarni yuklab bo'lmadi", 'error');
     } finally {
@@ -84,6 +96,31 @@ export default function CrmBilling() {
       setBusy(null);
     }
   };
+
+  // Jonli rejim: "Yangilash" — hisoblarni hozir hisoblash (odatda har kecha o'zi bo'ladi)
+  const refreshNow = async () => {
+    setBusy('refresh');
+    try {
+      const d = (await api.post(`/billing/${month}/refresh`, {})).data;
+      showToast(d.created || d.updated ? `Yangilandi: yangi ${d.created}, o'zgargan ${d.updated}` : "Hisoblar dolzarb — o'zgarish yo'q", 'success');
+      await load();
+    } catch (e: any) {
+      showToast(e?.response?.data?.message || 'Yangilab bo\'lmadi', 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const live = mode === 'live';
+  const liveRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return summary.filter(r => !q || r.student?.name?.toLowerCase().includes(q) || r.student?.code?.toLowerCase().includes(q) || r.groupName?.toLowerCase().includes(q));
+  }, [summary, search]);
+  const liveStats = useMemo(() => ({
+    students: new Set(summary.map(r => r.student?.id)).size,
+    amount: summary.reduce((a, r) => a + r.amount, 0),
+    paid: summary.reduce((a, r) => a + r.paid, 0),
+    debt: summary.reduce((a, r) => a + r.debt, 0),
+  }), [summary]);
 
   const [confirmLive, setConfirmLive] = useState(false);
   const changeMode = async (next: string) => {
@@ -120,15 +157,21 @@ export default function CrmBilling() {
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Oylik hisoblar"
-        subtitle="O'quvchi majburiyatlari guruh×oy bo'yicha — har summa qanday hisoblangani bilan"
-        badge={{ label: MODE_LABEL[mode]?.label || mode, color: MODE_LABEL[mode]?.color || 'blue' }}
+        subtitle={live ? "Har o'quvchining shu oy uchun hisobi, to'lagani va qarzi" : "O'quvchi majburiyatlari guruh×oy bo'yicha — har summa qanday hisoblangani bilan"}
+        badge={live ? undefined : { label: MODE_LABEL[mode]?.label || mode, color: MODE_LABEL[mode]?.color || 'blue' }}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <input type="month" aria-label="Oy" value={month} onChange={e => e.target.value && setMonth(e.target.value)}
               className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-bold" />
-            <Button variant="secondary" size="sm" isLoading={busy === 'generate'} leftIcon={<Calculator size={16} />} onClick={() => void run('generate')}>Hisoblash</Button>
-            <Button variant="primary" size="sm" isLoading={busy === 'post'} disabled={!stats.draft} leftIcon={<CheckCheck size={16} />} onClick={() => void run('post')}>E'lon qilish ({stats.draft})</Button>
-            <Button variant="outline" size="sm" isLoading={busy === 'settle'} leftIcon={<Scale size={16} />} onClick={() => void run('settle')}>Oy yakuni tuzatmasi</Button>
+            {live ? (
+              <Button variant="secondary" size="sm" isLoading={busy === 'refresh'} leftIcon={<RefreshCw size={16} />} onClick={() => void refreshNow()}>Yangilash</Button>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" isLoading={busy === 'generate'} leftIcon={<Calculator size={16} />} onClick={() => void run('generate')}>Hisoblash</Button>
+                <Button variant="primary" size="sm" isLoading={busy === 'post'} disabled={!stats.draft} leftIcon={<CheckCheck size={16} />} onClick={() => void run('post')}>E'lon qilish ({stats.draft})</Button>
+                <Button variant="outline" size="sm" isLoading={busy === 'settle'} leftIcon={<Scale size={16} />} onClick={() => void run('settle')}>Oy yakuni tuzatmasi</Button>
+              </>
+            )}
           </div>
         }
       />
@@ -147,7 +190,7 @@ export default function CrmBilling() {
       )}
       {mode === 'live' && (
         <div role="note" className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200/70 dark:border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-200">
-          Jonli rejim — qarz va balans shu hisoblardan. Har oy: hisoblar har kecha o'zi tayyorlanadi → ro'yxatni tekshiring → <b>"E'lon qilish"</b>. Oldindan kiritilgan to'lov e'lon qilingan hisobga o'zi biriktiriladi. O'quvchi guruhda qachondan o'qiyotgani — guruh sahifasida "O'qishni boshlagan sanalar".
+          Hisoblar avtomatik: har oy boshida (yoki guruh boshlangan kuni — sozlamaga ko'ra), o'quvchi qo'shilganda yoki sanasi o'zgarganda darhol chiqadi. Kiritilgan to'lovlar qarzni o'zi qoplaydi; davr tugagach davomat bo'yicha tuzatma o'zi yoziladi. O'quvchi qachondan o'qiyotgani — guruh sahifasida "O'qishni boshlagan sanalar".
         </div>
       )}
       <ConfirmDialog
@@ -159,6 +202,61 @@ export default function CrmBilling() {
         onCancel={() => setConfirmLive(false)}
       />
 
+      {live ? (<>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <StatCard label="O'quvchilar" value={liveStats.students} sub={`${summary.length} ta hisob`} variant="minimal" color="blue" />
+        <StatCard label="Jami hisob" value={formatNumber(liveStats.amount)} sub="so'm" variant="minimal" color="slate" />
+        <StatCard label="To'langan" value={formatNumber(liveStats.paid)} sub="so'm" variant="minimal" color="emerald" />
+        <StatCard label="Qarz" value={formatNumber(liveStats.debt)} sub="so'm" variant="minimal" color="rose" />
+      </div>
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-2 p-3 border-b border-zinc-200 dark:border-zinc-800 flex-wrap">
+          <p className="text-xs font-black text-slate-900 dark:text-white">{month} hisoblari</p>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="O'quvchi, kod yoki guruh…" aria-label="Qidirish"
+            className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-sm min-w-0 flex-1 sm:flex-none sm:w-64" />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+              <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <th className="px-4 py-3 text-left">O'quvchi</th>
+                <th className="px-4 py-3 text-left">Guruh</th>
+                <th className="px-4 py-3 text-left">Davr</th>
+                <th className="px-4 py-3 text-right">Darslar</th>
+                <th className="px-4 py-3 text-right">Hisob</th>
+                <th className="px-4 py-3 text-right">To'langan</th>
+                <th className="px-4 py-3 text-right">Qarz</th>
+                <th className="px-4 py-3 text-left">Holat</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {loading ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Yuklanmoqda…</td></tr>
+              ) : liveRows.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Bu oy uchun hisob hali yo'q — hisoblar har kecha o'zi chiqadi yoki "Yangilash"ni bosing</td></tr>
+              ) : liveRows.map(r => {
+                const st = payState(r);
+                return (
+                  <tr key={r.chargeId} className="hover:bg-zinc-50 dark:hover:bg-white/5 cursor-pointer" onClick={() => void openDetail(r.chargeId)}>
+                    <td className="px-4 py-3">
+                      <div className="font-bold text-slate-900 dark:text-white">{r.student?.name}</div>
+                      <div className="text-[10px] text-zinc-400">{r.student?.code || '—'}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs">{r.type === 'tuition' ? (r.groupName || '—') : r.type === 'other_fee' ? 'Boshqa to\'lov' : "Boshlang'ich qoldiq"}</td>
+                    <td className="px-4 py-3 text-xs tabular-nums whitespace-nowrap">{r.windowFrom ? `${dm(r.windowFrom)}–${dm(r.windowTo)}` : '—'}</td>
+                    <td className="px-4 py-3 text-right text-xs tabular-nums">{r.lessons != null ? `${r.lessons}/${r.groupLessons}` : '—'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums font-bold">{formatNumber(r.amount)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-emerald-600">{formatNumber(r.paid)}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums font-black ${r.debt > 0 ? 'text-rose-600' : 'text-zinc-400'}`}>{formatNumber(r.debt)}</td>
+                    <td className="px-4 py-3"><Badge color={st.color}>{st.label}</Badge></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </>) : (<>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Hisoblar" value={stats.count} sub={`${stats.draft} ta qoralama`} variant="minimal" color="blue" />
         <StatCard label="Jami (net)" value={formatNumber(stats.net)} sub="so'm" variant="minimal" color="emerald" />
@@ -250,6 +348,7 @@ export default function CrmBilling() {
           </div>
         )}
       </div>
+      </>)}
 
       <Modal isOpen={!!detail} onClose={() => setDetail(null)} title="Hisob tafsiloti" description={detail ? `${detail.month} · ${STATUS_BADGE[detail.status]?.label || detail.status}` : ''} width="lg">
         {detail && (

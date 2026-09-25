@@ -244,9 +244,12 @@ function addDays(dateStr: string, days: number): string {
  * oyda — yozilgandan `graceDays` (standart 7) kun, lekin `dueDay`dan oldin emas
  * (oy boshida qo'shilganlar to'liq oydagilardan erta muddat olmasin).
  */
-export function chargeDueDate(p: { year: number; month: number; fullMonth: boolean; startDate?: string; dueDay?: number; graceDays?: number }): string {
+export function chargeDueDate(p: { year: number; month: number; fullMonth: boolean; startDate?: string; dueDay?: number; graceDays?: number; windowStart?: string }): string {
     const dueDay = p.dueDay ?? 10;
-    const regular = `${p.year}-${String(p.month).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+    // Guruh boshlangan kundan hisob (group_anniversary): muddat — oyna boshidan dueDay kun ichida
+    const regular = p.windowStart
+        ? addDays(p.windowStart, dueDay - 1)
+        : `${p.year}-${String(p.month).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
     if (p.fullMonth || !p.startDate) return regular;
     const partial = addDays(p.startDate, p.graceDays ?? 7);
     return partial > regular ? partial : regular;

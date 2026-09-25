@@ -26,6 +26,17 @@ function sendError(res: express.Response, err: any) {
     return res.status(500).json({ message: err?.message || 'Server xatosi' });
 }
 
+/**
+ * A'zolik o'zgarishidan keyin shu o'quvchi×guruh hisoblari (shadow/live; live'da darhol kuchga
+ * kiradi — qo'lda "e'lon qilish" yo'q). Xato a'zolik amalining o'zini bekor qilmaydi.
+ */
+async function syncCharges(studentId: string, groupId: string, fromDate: string, reason: string, actorId?: string | null) {
+    const today = todayDateStr();
+    const from = fromDate && fromDate < today ? fromDate : today;
+    await refreshMembershipCharges({ studentId, groupId, months: monthsBetween(from, today), reason }, actorId)
+        .catch(e => console.error('[enrollments] hisob yangilash', e?.message));
+}
+
 async function teacherOwnsGroup(groupId: string, userId: string) {
     const g = await prisma.group.findUnique({ where: { id: groupId }, select: { teacherId: true } });
     return !!g && g.teacherId === userId;
@@ -52,11 +63,8 @@ router.post('/', ...canManage, async (req, res) => {
             start = g?.startDate && g.startDate > todayDateStr() ? g.startDate : todayDateStr();
         }
         const r = await enrollStudent({ studentId, groupId, startDate: start, note, source: 'manual' }, actorOf(req));
-        // O'tgan sanadan yozilsa — o'sha oylarning qoralama hisoblari ham tayyorlanadi (shadow/live)
-        if (!r.alreadyEnrolled && r.period && r.period.startDate < todayDateStr().slice(0, 7) + '-01') {
-            await refreshMembershipCharges({ studentId, groupId, months: monthsBetween(r.period.startDate, todayDateStr()), reason: "A'zolik o'tgan sanadan kiritildi" }, actorOf(req).id)
-                .catch(e => console.error('[enrollments] hisob yangilash', e));
-        }
+        // Hisob darhol: boshlangan oydan bugungacha (o'tgan sanadan yozilsa — o'sha oylar ham)
+        if (!r.alreadyEnrolled && r.period) await syncCharges(studentId, groupId, r.period.startDate, "Guruhga yozildi", actorOf(req).id);
         // Eski javob shakli (Enrollment maydonlari) saqlanadi + davr
         res.status(r.alreadyEnrolled ? 200 : 201).json({ ...r.enrollment, period: r.period, alreadyEnrolled: r.alreadyEnrolled });
     } catch (err) { sendError(res, err); }
@@ -108,6 +116,7 @@ router.delete('/remove', ...canManage, async (req, res) => {
         const { studentId, groupId } = req.body || {};
         if (!studentId || !groupId) return res.status(400).json({ message: 'studentId va groupId kiritilishi shart' });
         const r = await legacyRemove({ studentId, groupId }, actorOf(req));
+        await syncCharges(studentId, groupId, todayDateStr(), "Guruhdan chiqarildi", actorOf(req).id);
         res.json({ success: true, removed: r.removed, period: r.period });
     } catch (err) { sendError(res, err); }
 });
@@ -126,7 +135,9 @@ router.get('/periods', ...canManage, async (req, res) => {
 router.post('/periods/:id/end', ...canManage, async (req, res) => {
     try {
         const { endDate, reason, note } = req.body || {};
-        const r = await endPeriod({ periodId: req.params.id, endDate: endDate || todayDateStr(), reason: reason || 'left', note }, actorOf(req));
+        const end = endDate || todayDateStr();
+        const r = await endPeriod({ periodId: req.params.id, endDate: end, reason: reason || 'left', note }, actorOf(req));
+        await syncCharges(r.period.studentId, r.period.groupId, r.removed ? r.period.startDate : end, r.removed ? "Xato qo'shilgan a'zolik olib tashlandi" : "A'zolik yakunlandi", actorOf(req).id);
         res.json({ success: true, removed: r.removed });
     } catch (err) { sendError(res, err); }
 });
@@ -136,7 +147,10 @@ router.post('/periods/:id/transfer', ...canManage, async (req, res) => {
     try {
         const { toGroupId, date } = req.body || {};
         if (!toGroupId) return res.status(400).json({ message: 'toGroupId kiritilishi shart' });
-        const r = await transferPeriod({ periodId: req.params.id, toGroupId, date: date || todayDateStr() }, actorOf(req));
+        const d = date || todayDateStr();
+        const r = await transferPeriod({ periodId: req.params.id, toGroupId, date: d }, actorOf(req));
+        await syncCharges(r.from.period.studentId, r.from.period.groupId, r.from.removed ? r.from.period.startDate : d, "Boshqa guruhga o'tkazildi", actorOf(req).id);
+        await syncCharges(r.from.period.studentId, toGroupId, d, "Boshqa guruhdan o'tkazildi", actorOf(req).id);
         res.json({ success: true, newPeriod: r.to.period, oldPeriodRemoved: r.from.removed });
     } catch (err) { sendError(res, err); }
 });
@@ -145,14 +159,20 @@ router.post('/periods/:id/transfer', ...canManage, async (req, res) => {
 router.post('/periods/:id/pause', ...canManage, async (req, res) => {
     try {
         const { fromDate, toDate, reason } = req.body || {};
-        res.status(201).json(await pausePeriod({ periodId: req.params.id, fromDate, toDate, reason }, actorOf(req)));
+        const pause = await pausePeriod({ periodId: req.params.id, fromDate, toDate, reason }, actorOf(req));
+        const p = await prisma.enrollmentPeriod.findUnique({ where: { id: req.params.id }, select: { studentId: true, groupId: true } });
+        if (p) await syncCharges(p.studentId, p.groupId, fromDate, 'Pauza', actorOf(req).id);
+        res.status(201).json(pause);
     } catch (err) { sendError(res, err); }
 });
 
 // POST /api/enrollments/pauses/:id/stop — pauzani bekor qilish / muddatidan oldin tugatish
 router.post('/pauses/:id/stop', ...canManage, async (req, res) => {
     try {
-        res.json(await stopPause(req.params.id, actorOf(req)));
+        const before = await prisma.enrollmentPause.findUnique({ where: { id: req.params.id }, include: { period: { select: { studentId: true, groupId: true } } } });
+        const r = await stopPause(req.params.id, actorOf(req));
+        if (before?.period) await syncCharges(before.period.studentId, before.period.groupId, before.fromDate, 'Pauza bekor qilindi', actorOf(req).id);
+        res.json(r);
     } catch (err) { sendError(res, err); }
 });
 

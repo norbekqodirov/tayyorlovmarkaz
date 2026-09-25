@@ -15,14 +15,18 @@
  */
 import prisma from '../db.js';
 import { enrollmentActiveInMonthWhere, groupActiveInMonthWhere, monthStartInstant } from '../utils/activeFilters.js';
+import { CYCLE_MODES, type CycleMode } from '../domain/lessonCalendar.js';
 
 export interface BillingSettings {
     lessonsPerMonth: number;
     absenceThreshold: number;
     teacherSalaryPercent: number;
+    /** "1 oy" qanday hisoblanadi (lessonCalendar.billingWindow) — yangi guruhlar uchun */
+    cycleMode: CycleMode;
 }
 
 const DEFAULTS: BillingSettings = {
+    cycleMode: 'calendar',
     lessonsPerMonth: 12,
     absenceThreshold: 3,
     teacherSalaryPercent: 40,
@@ -30,7 +34,7 @@ const DEFAULTS: BillingSettings = {
 
 export async function getBillingSettings(): Promise<BillingSettings> {
     const rows = await prisma.setting.findMany({
-        where: { key: { in: ['monthly_lessons_count', 'absence_discount_threshold', 'teacher_salary_percent'] } },
+        where: { key: { in: ['monthly_lessons_count', 'absence_discount_threshold', 'teacher_salary_percent', 'billing_cycle_mode'] } },
     });
     const map: Record<string, string> = {};
     rows.forEach(r => { map[r.key] = r.value; });
@@ -46,6 +50,7 @@ export async function getBillingSettings(): Promise<BillingSettings> {
         lessonsPerMonth: numOrDefault(map['monthly_lessons_count'], DEFAULTS.lessonsPerMonth),
         absenceThreshold: numOrDefault(map['absence_discount_threshold'], DEFAULTS.absenceThreshold),
         teacherSalaryPercent: numOrDefault(map['teacher_salary_percent'], DEFAULTS.teacherSalaryPercent),
+        cycleMode: (CYCLE_MODES as string[]).includes(map['billing_cycle_mode']) ? map['billing_cycle_mode'] as CycleMode : DEFAULTS.cycleMode,
     };
 }
 

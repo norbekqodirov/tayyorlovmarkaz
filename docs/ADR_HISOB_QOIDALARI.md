@@ -82,6 +82,9 @@ Bu savollar L bo'limida alohida qo'yilmagan. Dataset'ni tuzishda javob kerak bo'
 
 ### 5.1. IP-17 amalga oshirishda aniqlashtirilgan tafsilotlar
 
+- **"1 oy" qanday hisoblanadi — sozlama `billing_cycle_mode`** (foydalanuvchi, 2026-09-26). `calendar` (standart): kalendar oy; oy o'rtasida boshlansa — qolgan darslar bo'yicha, keyingi oydan to'liq. `group_anniversary`: guruh boshlangan kundan har oy (15.09–14.10, 15.10–14.11…), oyna o'rtasida qo'shilgan o'quvchi — qolgan darslar bo'yicha. Hisob kaliti o'zgarmaydi: oyna boshlangan oy ("sentabr hisobi" = 15.09–14.10). Guruh bir marta hisob e'lon qilingan usulda davom etadi (`charge.calc.cycleMode`), sozlama hali hisobi chiqmagan guruhlarga qo'llanadi — oylar orasida bo'shliq yoki ikki marta hisob bo'lmaydi.
+- **Jonli rejimda qo'lda "e'lon qilish" yo'q** (foydalanuvchi, 2026-09-26): hisob chiqishi bilan kuchga kiradi — har kecha 01:30, o'quvchi yozilganda, sanasi/yakunlanishi/pauzasi o'zgarganda. E'lon qilingan hisob o'zgarmaydi, farq tuzatma bo'lib yoziladi; oynasi tugagan hisoblarga davomat bo'yicha yakuniy tuzatma ham avtomatik. Kelgusi oyna hisobi oldindan chiqmaydi.
+
 - **Guruhning o'zi oy o'rtasida boshlansa (yoki tugasa)** — foydalanuvchi qarori (2026-09-25, variant B): o'sha oy **qisman**, darslar bo'yicha (`P × min(R,N)/N`), o'quvchi guruhning birinchi darsidan qatnashsa ham. To'liq oy (`P`) — faqat guruh butun oy dars o'tganda va o'quvchi uning barcha darslarida a'zo bo'lganda. Misol: guruh 10-sentabrdan, 9 dars, 425 000 / 12 → 318 750.
 
 - **Qaytarish kassada manfiy "kirim"** ("To'lov qaytarish"), xarajat emas: shu bilan barcha tushum yig'indilari (dashboard, hisobotlar, maqsadlar) hech qanday o'zgartirishsiz sof tushumni beradi (QT-26), xarajatlar esa sun'iy oshmaydi. Kassa qoldig'i (kirim − chiqim) bir xil.

@@ -19,11 +19,11 @@ import prisma from '../db.js';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { todayDateStr } from '../utils/timezone.js';
 import { computeCharge, chargeDueDate, roundSom, type ChargeInput, type ChargeResult, type DiscountInput } from '../domain/billingFormula.js';
-import { monthLessons, monthRange, versionAt, addDays } from '../domain/lessonCalendar.js';
-import { billableLessonDates, teacherAt } from './lessonPlan.js';
+import { monthLessons, monthRange, versionAt, addDays, billingWindow, type CycleMode } from '../domain/lessonCalendar.js';
+import { billableLessonDates, teacherAt, windowLessonDates } from './lessonPlan.js';
 import { groupScheduleDays } from './enrollment.js';
 import { getBillingSettings, calculateStudentMonthlyDue, type BillingSettings } from './billing.js';
-import { studentPosition } from './receivables.js';
+import { studentPosition, chargeBalances } from './receivables.js';
 import { getLedgerMode, setLedgerMode, LEDGER_MODES, type LedgerMode } from './ledgerMode.js';
 import { syncStudents } from './balanceCache.js';
 import { trimOverAllocation, applyStudentCredit } from './allocation.js';
@@ -87,25 +87,51 @@ export interface PeriodMonthCalc {
 
 type PeriodWithPauses = Prisma.EnrollmentPeriodGetPayload<{ include: { pauses: true } }>;
 
-export async function calcPeriodMonth(db: Db, period: PeriodWithPauses, month: string, settings?: BillingSettings): Promise<PeriodMonthCalc> {
+/**
+ * Guruhning hisob usuli: bir marta hisob e'lon qilingan bo'lsa — o'sha usulda davom etadi
+ * (oylar orasida bo'shliq yoki ikki marta hisob bo'lmasligi uchun); aks holda sozlama.
+ */
+export async function groupCycleMode(db: Db, groupId: string, fallback: CycleMode): Promise<CycleMode> {
+    const last = await db.charge.findFirst({ where: { groupId, type: 'tuition', status: 'posted' }, orderBy: { month: 'desc' }, select: { calc: true } });
+    if (!last) return fallback;
+    try { return (JSON.parse(last.calc || '{}').cycleMode as CycleMode) || 'calendar'; } catch { return 'calendar'; }
+}
+
+/** Mavjud hisob qaysi usulda hisoblangan (qayta hisoblash shu usulda bo'ladi). */
+function chargeCycleMode(calc: string | null): CycleMode {
+    try { return (JSON.parse(calc || '{}').cycleMode as CycleMode) || 'calendar'; } catch { return 'calendar'; }
+}
+
+export interface CalcOptions {
+    /** Majburiy usul (mavjud hisobni qayta hisoblashda — o'sha hisob usuli). */
+    cycleMode?: CycleMode;
+    /** Shu sanadan keyin boshlanadigan oyna uchun hisob chiqmaydi (avtomatik generatsiya). */
+    upTo?: string;
+}
+
+export async function calcPeriodMonth(db: Db, period: PeriodWithPauses, month: string, settings?: BillingSettings, opts: CalcOptions = {}): Promise<PeriodMonthCalc> {
     const s = settings ?? await getBillingSettings();
-    const { first, last } = monthRange(month);
     const base = { calc: { month, periodId: period.id }, teacherId: null, dueDate: null } as PeriodMonthCalc;
-    if (period.startDate > last || (period.endDate && period.endDate < first)) return { ...base, skip: 'Davr bu oyni qamramaydi' };
     const [group, student] = await Promise.all([
         db.group.findUnique({ where: { id: period.groupId }, select: { id: true, startDate: true, endDate: true, teacherId: true, price: true, course: { select: { price: true } } } }),
         db.student.findUnique({ where: { id: period.studentId }, select: { deletedAt: true } }),
     ]);
     if (!group) return { ...base, skip: 'Guruh topilmadi' };
+    const cycleMode = opts.cycleMode ?? await groupCycleMode(db, group.id, s.cycleMode);
+    const win = billingWindow(month, cycleMode, group.startDate);
+    if (!win) return { ...base, skip: 'Guruh bu oyda hali boshlanmagan' };
+    const first = win.from, last = win.to;
+    if (opts.upTo && first > opts.upTo) return { ...base, skip: 'Hisob davri hali boshlanmagan' };
+    if (period.startDate > last || (period.endDate && period.endDate < first)) return { ...base, skip: 'Davr bu oyni qamramaydi' };
     if (student?.deletedAt && todayDateStr(student.deletedAt) < first) return { ...base, skip: "O'quvchi bu oydan oldin arxivlangan" };
 
-    const plan = await billableLessonDates(db, group.id, month);
     const days = await groupScheduleDays(db, group.id);
-    if (!plan && !days.length) return { ...base, skip: "Guruh dars jadvali va rejasi yo'q" };
+    const wl = await windowLessonDates(db, group.id, days, first, last);
+    if (!wl) return { ...base, skip: "Guruh dars jadvali va rejasi yo'q" };
     const pauses = period.pauses.filter(p => p.status === 'active').map(p => ({ from: p.fromDate, to: p.toDate }));
     const ml = monthLessons({
-        month, days, groupStart: group.startDate, groupEnd: group.endDate,
-        periodStart: period.startDate, periodEnd: period.endDate, pauses, lessonDates: plan ?? undefined,
+        month, window: win, days, groupStart: group.startDate, groupEnd: group.endDate,
+        periodStart: period.startDate, periodEnd: period.endDate, pauses, lessonDates: wl.dates,
     });
     const inPeriod = (d: string) => d >= period.startDate && (!period.endDate || d <= period.endDate) && !pauses.some(p => d >= p.from && d <= p.to);
 
@@ -165,11 +191,15 @@ export async function calcPeriodMonth(db: Db, period: PeriodWithPauses, month: s
     return {
         input, result,
         teacherId: mainTeacher === "noma'lum" ? null : mainTeacher,
-        dueDate: chargeDueDate({ year: y, month: m, fullMonth: ml.fullMonth, startDate: period.startDate > first ? period.startDate : undefined }),
+        dueDate: chargeDueDate({
+            year: y, month: m, fullMonth: ml.fullMonth, startDate: period.startDate > first ? period.startDate : undefined,
+            windowStart: cycleMode === 'group_anniversary' ? first : undefined,
+        }),
         calc: {
             month, periodId: period.id, periodStart: period.startDate, periodEnd: period.endDate,
+            cycleMode, windowFrom: first, windowTo: last,
             P: input.price, N, R: ml.billable.length, F: ml.groupLessons.length, A: absentRows.length, M: s.absenceThreshold,
-            fullMonth: ml.fullMonth, planUsed: !!plan, tariffSource: v ? 'version' : 'legacy', tariffVersionId: v?.id ?? null,
+            fullMonth: ml.fullMonth, planUsed: wl.planUsed, tariffSource: v ? 'version' : 'legacy', tariffVersionId: v?.id ?? null,
             billableDates: ml.billable, absentDates: absentRows.map(r => r.date), pauses, cancelCredits,
             extras: extras.map(e => ({ sessionId: e.sourceId, amount: e.amount })), discounts: studentDiscounts.map(d => d.id),
             teacherLessons,
@@ -191,14 +221,15 @@ function sameLines(a: Array<{ kind: string; amount: number }>, b: Array<{ kind: 
     return a.length === b.length && key(a) === key(b);
 }
 
-export async function generateMonth(month: string, opts: { groupId?: string; studentId?: string } = {}, actorId?: string | null): Promise<GenerateResult> {
+export async function generateMonth(month: string, opts: { groupId?: string; studentId?: string; upTo?: string } = {}, actorId?: string | null): Promise<GenerateResult> {
     assertMonth(month);
     await ensureOpenPeriod(prisma, month);
-    const { first, last } = monthRange(month);
+    const { first } = monthRange(month);
     const settings = await getBillingSettings();
+    // Oyna keyingi oyga o'tishi mumkin (guruh boshlangan kundan hisob) — keng oraliq, aniq tekshiruv calc'da
     const periods = await prisma.enrollmentPeriod.findMany({
         where: {
-            startDate: { lte: last }, OR: [{ endDate: null }, { endDate: { gte: first } }],
+            startDate: { lte: addDays(monthRange(nextMonth(month)).last, 0) }, OR: [{ endDate: null }, { endDate: { gte: first } }],
             ...(opts.groupId && { groupId: opts.groupId }), ...(opts.studentId && { studentId: opts.studentId }),
         },
         include: { pauses: true },
@@ -206,7 +237,7 @@ export async function generateMonth(month: string, opts: { groupId?: string; stu
     const out: GenerateResult = { month, created: 0, updated: 0, unchanged: 0, voided: 0, postedDiffs: [], skipped: [], legacyWithoutPeriod: 0 };
 
     for (const period of periods) {
-        const c = await calcPeriodMonth(prisma, period, month, settings);
+        const c = await calcPeriodMonth(prisma, period, month, settings, { upTo: opts.upTo });
         const chargeKey = `T:${period.id}:${month}`;
         let existing = await prisma.charge.findUnique({ where: { chargeKey }, include: { lines: true } });
         if (c.skip || !c.result) {
@@ -258,10 +289,10 @@ export async function generateMonth(month: string, opts: { groupId?: string; stu
 }
 
 /** Draft hisoblarni e'lon qilish (bundan keyin o'zgarmaydi). */
-export async function postMonth(month: string, opts: { groupId?: string } = {}, actorId?: string | null) {
+export async function postMonth(month: string, opts: { groupId?: string; studentId?: string } = {}, actorId?: string | null) {
     assertMonth(month);
     await ensureOpenPeriod(prisma, month);
-    const where = { month, status: 'draft', ...(opts.groupId && { groupId: opts.groupId }) };
+    const where = { month, status: 'draft', ...(opts.groupId && { groupId: opts.groupId }), ...(opts.studentId && { studentId: opts.studentId }) };
     const affected = await prisma.charge.findMany({ where, select: { studentId: true }, distinct: ['studentId'] });
     const r = await prisma.charge.updateMany({ where, data: { status: 'posted', postedAt: new Date(), postedById: actorId ?? null } });
     // Oldindan kiritilgan to'lov (avans) yangi e'lon qilingan hisobni avtomatik qoplaydi (RS-38)
@@ -283,19 +314,25 @@ export async function refreshMembershipCharges(input: { studentId: string; group
     if ((await getLedgerMode()) === 'legacy') return out;
     const current = todayDateStr().slice(0, 7);
     const settings = await getBillingSettings();
-    for (const month of [...new Set(input.months)].sort()) {
+    // Sana oldingi oy oynasiga tushishi mumkin (15.09–14.10 "sentabr hisobi") — oldingi oy ham tekshiriladi
+    const months = new Set(input.months);
+    const earliest = [...months].sort()[0];
+    if (earliest) months.add(addDays(monthRange(earliest).first, -1).slice(0, 7));
+    for (const month of [...months].sort()) {
         if (month > current) continue;
         out.months.push(month);
         const period = await getPeriod(prisma, month);
+        const posted = await prisma.charge.findMany({ where: { month, studentId: input.studentId, groupId: input.groupId, type: 'tuition', status: 'posted' } });
         if (period?.status !== 'closed') {
-            const g = await generateMonth(month, { groupId: input.groupId, studentId: input.studentId }, actorId);
+            const g = await generateMonth(month, { groupId: input.groupId, studentId: input.studentId, upTo: todayDateStr() }, actorId);
             out.drafts += g.updated + g.voided;
             out.newDrafts += g.created;
+            // Jonli rejimda hisob darhol kuchga kiradi (qo'lda "e'lon qilish" yo'q)
+            if ((await getLedgerMode()) === 'live') await postMonth(month, { groupId: input.groupId, studentId: input.studentId }, actorId);
         }
-        const posted = await prisma.charge.findMany({ where: { month, studentId: input.studentId, groupId: input.groupId, type: 'tuition', status: 'posted' } });
         for (const ch of posted) {
             const ep = ch.enrollmentPeriodId ? await prisma.enrollmentPeriod.findUnique({ where: { id: ch.enrollmentPeriodId }, include: { pauses: true } }) : null;
-            const fresh = ep ? await calcPeriodMonth(prisma, ep, month, settings) : null;
+            const fresh = ep ? await calcPeriodMonth(prisma, ep, month, settings, { cycleMode: chargeCycleMode(ch.calc) }) : null;
             const adj = await adjustmentsSum(prisma, ch.id);
             const delta = (fresh?.result?.net ?? 0) - (ch.net + adj.net);
             if (delta !== 0) {
@@ -327,7 +364,7 @@ async function adjustmentsSum(db: Db, chargeId: string) {
  * pauza bo'yicha qayta hisoblash; farq — tuzatma hisobi (e'lon qilingan hisob
  * o'zgarmaydi, QT-66). Idempotent: farq 0 bo'lsa hech narsa yaratilmaydi.
  */
-export async function settleMonth(month: string, opts: { groupId?: string } = {}, actorId?: string | null) {
+export async function settleMonth(month: string, opts: { groupId?: string; endedBefore?: string } = {}, actorId?: string | null) {
     assertMonth(month);
     const settings = await getBillingSettings();
     const charges = await prisma.charge.findMany({ where: { month, type: 'tuition', status: 'posted', ...(opts.groupId && { groupId: opts.groupId }) } });
@@ -336,9 +373,15 @@ export async function settleMonth(month: string, opts: { groupId?: string } = {}
     const created: Array<{ chargeId: string; delta: number; teacherBaseDelta: number; month: string }> = [];
     for (const ch of charges) {
         if (!ch.enrollmentPeriodId) continue;
+        // Avtomatik yakun: faqat oynasi tugagan hisoblar (davomat to'liq bo'lganda)
+        if (opts.endedBefore) {
+            let windowTo = monthRange(month).last;
+            try { windowTo = JSON.parse(ch.calc || '{}').windowTo || windowTo; } catch { /* eski hisob — kalendar oy */ }
+            if (windowTo >= opts.endedBefore) continue;
+        }
         const period = await prisma.enrollmentPeriod.findUnique({ where: { id: ch.enrollmentPeriodId }, include: { pauses: true } });
         if (!period) continue;
-        const c = await calcPeriodMonth(prisma, period, month, settings);
+        const c = await calcPeriodMonth(prisma, period, month, settings, { cycleMode: chargeCycleMode(ch.calc) });
         const freshNet = c.result?.net ?? 0;
         const freshTb = c.result?.teacherBase ?? 0;
         const adj = await adjustmentsSum(prisma, ch.id);
@@ -483,11 +526,61 @@ export async function shadowReport(month: string) {
 }
 
 /** Kunlik (shadow/live): joriy oy draft'larini yangilash. */
+/**
+ * Har kecha (01:30): shadow — joriy oy qoralamalari; live — hisoblar avtomatik chiqadi va
+ * darhol kuchga kiradi, oynasi tugagan hisoblarga davomat bo'yicha yakuniy tuzatma yoziladi.
+ */
 export async function dailyRefresh(): Promise<GenerateResult | null> {
     const mode = await getLedgerMode();
     if (mode === 'legacy') return null;
-    const month = todayDateStr().slice(0, 7);
-    return generateMonth(month);
+    const today = todayDateStr();
+    const month = today.slice(0, 7);
+    const r = await generateMonth(month, { upTo: today });
+    if (mode === 'live') {
+        await postMonth(month);
+        const prev = monthRange(month).first;
+        const prevMonth = addDays(prev, -1).slice(0, 7);
+        for (const m of [prevMonth, month]) {
+            const p = await getPeriod(prisma, m);
+            if (p?.status === 'closed') continue;
+            await settleMonth(m, { endedBefore: today }).catch(e => console.error('[billing] oy yakuni', m, e?.message));
+        }
+    }
+    return r;
+}
+
+/** "Yangilash" (UI): joriy/ko'rsatilgan oy hisoblarini hozir hisoblash; live — darhol e'lon. */
+export async function refreshMonth(month: string, actorId?: string | null) {
+    assertMonth(month);
+    const today = todayDateStr();
+    if (month > today.slice(0, 7)) throw new BillingError(400, "Kelgusi oy hisobi oldindan chiqarilmaydi", 'FUTURE_MONTH');
+    const r = await generateMonth(month, { upTo: today }, actorId);
+    const posted = (await getLedgerMode()) === 'live' ? (await postMonth(month, {}, actorId)).posted : 0;
+    return { ...r, posted };
+}
+
+/** Oy bo'yicha o'quvchilar hisobi: hisob, to'langan, qarz (yagona formula — receivables). */
+export async function monthSummary(month: string, opts: { groupId?: string } = {}) {
+    assertMonth(month);
+    const rows = await chargeBalances(prisma, { month, ...(opts.groupId && { groupId: opts.groupId }) });
+    const [students, groups, calcs] = await Promise.all([
+        prisma.student.findMany({ where: { id: { in: [...new Set(rows.map(r => r.studentId))] } }, select: { id: true, name: true, code: true } }),
+        prisma.group.findMany({ where: { id: { in: [...new Set(rows.map(r => r.groupId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } }),
+        prisma.charge.findMany({ where: { id: { in: rows.map(r => r.id) } }, select: { id: true, calc: true } }),
+    ]);
+    const sm = new Map(students.map(x => [x.id, x]));
+    const gm = new Map(groups.map(x => [x.id, x.name]));
+    const cm = new Map(calcs.map(x => { try { return [x.id, JSON.parse(x.calc || '{}')]; } catch { return [x.id, {}]; } }));
+    return rows.map(r => {
+        const c: any = cm.get(r.id) || {};
+        return {
+            chargeId: r.id, type: r.type, month: r.month, dueDate: r.dueDate,
+            student: sm.get(r.studentId) ?? { id: r.studentId, name: '—', code: null },
+            groupId: r.groupId, groupName: r.groupId ? gm.get(r.groupId) ?? '—' : null,
+            windowFrom: c.windowFrom ?? null, windowTo: c.windowTo ?? null, lessons: c.R ?? null, groupLessons: c.F ?? null, fullMonth: c.fullMonth ?? null,
+            amount: r.adjusted, paid: r.allocated, debt: r.debt,
+        };
+    }).sort((a, b) => a.student.name.localeCompare(b.student.name));
 }
 
 export { nextMonth, addDays };

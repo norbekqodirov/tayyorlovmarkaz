@@ -720,8 +720,8 @@ export async function startScheduler() {
                 .catch(e => console.error('[Scheduler] Dars rejasi xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
-        // IP-11: shadow/live rejimda har kuni 01:30 — joriy oy draft hisoblarini
-        // yangilash (legacy rejimda hech narsa qilmaydi). E'lon qilish — qo'lda.
+        // IP-11: har kuni 01:30 — shadow: joriy oy qoralamalari; live: hisoblar avtomatik
+        // chiqadi va darhol kuchga kiradi, oynasi tugagan hisoblarga davomat tuzatmasi.
         cron.schedule('30 1 * * *', () => {
             dailyRefresh()
                 .then(r => { if (r) console.log(`[Scheduler] Hisoblar (${r.month}): +${r.created}, ~${r.updated}, skip ${r.skipped.length}`); })

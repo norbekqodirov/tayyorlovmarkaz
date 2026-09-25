@@ -26,7 +26,7 @@ export default function CrmSettings() {
   const [leadSettings, setLeadSettings] = useState({ mode: 'on', pool: [] as string[], slaMinutes: 30, workStart: '09:00', workEnd: '19:00' });
   const [leadSettingsSaving, setLeadSettingsSaving] = useState(false);
   const [assignableManagers, setAssignableManagers] = useState<{ id: string; name: string; role: string }[]>([]);
-  const [billingSettings, setBillingSettings] = useState({ lessonsPerMonth: 12, absenceThreshold: 3, teacherSalaryPercent: 40 });
+  const [billingSettings, setBillingSettings] = useState<{ lessonsPerMonth: number; absenceThreshold: number; teacherSalaryPercent: number; cycleMode: 'calendar' | 'group_anniversary' }>({ lessonsPerMonth: 12, absenceThreshold: 3, teacherSalaryPercent: 40, cycleMode: 'calendar' });
   const [billingSaving, setBillingSaving] = useState(false);
 
   const userRoleLevel = getCurrentRoleLevel();
@@ -72,7 +72,7 @@ export default function CrmSettings() {
         api.get('/public/lead-form-config').catch(() => ({ data: { type: 'none' } })),
         api.get('/leads/settings').catch(() => ({ data: { mode: 'on', pool: [], slaMinutes: 30, workStart: '09:00', workEnd: '19:00' } })),
         api.get('/leads/assignable-users').catch(() => ({ data: [] })),
-        api.get('/finance/billing-settings').catch(() => ({ data: { lessonsPerMonth: 12, absenceThreshold: 3, teacherSalaryPercent: 40 } }))
+        api.get('/finance/billing-settings').catch(() => ({ data: { lessonsPerMonth: 12, absenceThreshold: 3, teacherSalaryPercent: 40, cycleMode: 'calendar' } }))
       ]);
 
       const user = meRes.data;
@@ -228,6 +228,7 @@ export default function CrmSettings() {
             lessonsPerMonth: Number(billingSettings.lessonsPerMonth),
             absenceThreshold: Number(billingSettings.absenceThreshold),
             teacherSalaryPercent: Number(billingSettings.teacherSalaryPercent),
+            cycleMode: billingSettings.cycleMode,
           };
           const res = await api.put('/finance/billing-settings', payload);
           setBillingSettings(res.data);
@@ -585,7 +586,24 @@ export default function CrmSettings() {
                   agar shu oy ichida bir kursdan pastdagi chegaradagi songa yetadigan yoki undan
                   ko'p dars qoldirsa, qoldirgan barcha kunlari uchun pul avtomatik ayriladi.
                 </p>
-                <div className="space-y-5 max-w-md">
+                <div className="space-y-5 max-w-xl">
+                  <fieldset className="space-y-2" disabled={!isAdmin}>
+                    <legend className="text-sm font-bold text-slate-700 dark:text-zinc-300 mb-1">Bir oy qanday hisoblanadi</legend>
+                    {([
+                      { value: 'calendar', title: 'Kalendar oy bo\'yicha (standart)', text: "15-sentabrda boshlangan guruh: 15–30-sentabr o'tilgan darslar bo'yicha, oktabrdan boshlab har oy to'liq to'lov." },
+                      { value: 'group_anniversary', title: 'Guruh boshlangan kundan har oy', text: "15-sentabrda boshlangan guruh: birinchi oy 15-sentabr – 14-oktabr, keyingisi 15-oktabr – 14-noyabr va hokazo; har oy to'liq to'lov." },
+                    ] as const).map(o => (
+                      <label key={o.value} className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${billingSettings.cycleMode === o.value ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-500/10' : 'border-zinc-200 dark:border-zinc-700'}`}>
+                        <input type="radio" name="cycleMode" value={o.value} checked={billingSettings.cycleMode === o.value}
+                          onChange={() => setBillingSettings({ ...billingSettings, cycleMode: o.value })} className="mt-1 accent-blue-600" />
+                        <span>
+                          <span className="block text-sm font-bold text-slate-900 dark:text-white">{o.title}</span>
+                          <span className="block text-xs text-zinc-500 mt-0.5">{o.text}</span>
+                        </span>
+                      </label>
+                    ))}
+                    <p className="text-xs text-zinc-400">O'quvchi oy o'rtasida qo'shilsa — shu oyning qolgan darslari bo'yicha. Usul hali hisob chiqmagan guruhlarga qo'llanadi; hisobi chiqqan guruh o'z usulida davom etadi (oylar orasida bo'shliq yoki ikki marta hisob bo'lmasligi uchun).</p>
+                  </fieldset>
                   <div>
                     <Input
                       type="number" min="1"

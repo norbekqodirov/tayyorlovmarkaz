@@ -13,11 +13,11 @@ import prisma from '../db.js';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { todayDateStr } from '../utils/timezone.js';
 import { logAudit } from '../middleware/audit.js';
-import { addDays, daysBetween, firstOfMonth, isValidDate, monthLessons, monthOf, versionAt } from '../domain/lessonCalendar.js';
+import { addDays, daysBetween, firstOfMonth, isValidDate, monthLessons, monthOf, versionAt, billingWindow, type CycleMode } from '../domain/lessonCalendar.js';
 import { computeBase } from '../domain/billingFormula.js';
 import { getBillingSettings } from './billing.js';
 import { ensureStudentIdentitySafe } from './studentIdentity.js';
-import { billableLessonDates } from './lessonPlan.js';
+import { windowLessonDates } from './lessonPlan.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -112,6 +112,9 @@ export interface EnrollmentPreview {
     billableLessons: number | null;
     firstBillableDate: string | null;
     fullMonth: boolean | null;
+    /** Birinchi hisob oynasi (kalendar oy yoki guruh boshlangan kundan) */
+    windowFrom?: string | null;
+    windowTo?: string | null;
     firstMonthAmount: number | null;
 }
 
@@ -150,11 +153,24 @@ export async function previewEnrollment(db: Db, input: { studentId?: string; gro
     if (!base.tariff) warnings.push("Guruh va kursda narx yo'q — birinchi oy summasi hisoblanmaydi");
     else if (base.tariff.source === 'legacy') warnings.push("Tarif tarixi hali yo'q — joriy guruh narxi ishlatildi");
     const days = await groupScheduleDays(db, group.id);
-    // IP-10: oy rejasi (bayram, bekor/ko'chirilgan darslar bilan) bo'lsa — undan, aks holda jadvaldan
-    const planDates = await billableLessonDates(db, group.id, base.month);
-    if (!days.length && !planDates) warnings.push("Guruh dars jadvali yo'q — darslar soni va birinchi oy summasi hisoblanmaydi");
+    // Hisob usuli: guruhda hisob chiqqan bo'lsa — o'sha usul, aks holda sozlama (chargeEngine.groupCycleMode)
+    let cycleMode: CycleMode = (await getBillingSettings()).cycleMode;
+    const lastCharge = await db.charge.findFirst({ where: { groupId: group.id, type: 'tuition', status: 'posted' }, orderBy: { month: 'desc' }, select: { calc: true } });
+    if (lastCharge) { try { cycleMode = JSON.parse(lastCharge.calc || '{}').cycleMode || 'calendar'; } catch { cycleMode = 'calendar'; } }
+    // Boshlanish sanasini qamraydigan hisob oynasi (guruh boshlangan kundan hisobda — oldingi oy oynasi bo'lishi mumkin)
+    let win = billingWindow(base.month, cycleMode, group.startDate);
+    if (!win || startDate < win.from) {
+        const prevMonth = monthOf(addDays(firstOfMonth(startDate), -1));
+        const prevWin = billingWindow(prevMonth, cycleMode, group.startDate);
+        if (prevWin && startDate >= prevWin.from && startDate <= prevWin.to) { win = prevWin; base.month = prevMonth; }
+    }
+    base.windowFrom = win?.from ?? null;
+    base.windowTo = win?.to ?? null;
+    // IP-10: reja (bayram, bekor/ko'chirilgan darslar bilan) bo'lsa — undan, aks holda jadvaldan
+    const wl = win ? await windowLessonDates(db, group.id, days, win.from, win.to) : null;
+    if (!wl) warnings.push("Guruh dars jadvali yo'q — darslar soni va birinchi oy summasi hisoblanmaydi");
     else {
-        const ml = monthLessons({ month: base.month, days, groupStart: group.startDate, groupEnd: group.endDate, periodStart: startDate, lessonDates: planDates ?? undefined });
+        const ml = monthLessons({ month: base.month, window: win!, days, groupStart: group.startDate, groupEnd: group.endDate, periodStart: startDate, lessonDates: wl.dates });
         base.groupLessonsInMonth = ml.groupLessons.length;
         base.billableLessons = ml.billable.length;
         base.firstBillableDate = ml.billable[0] ?? null;

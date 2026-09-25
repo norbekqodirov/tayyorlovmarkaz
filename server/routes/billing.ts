@@ -9,7 +9,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
 import {
     BillingError, getLedgerMode, setLedgerMode, generateMonth, postMonth, settleMonth, adjustCharge, voidDraft,
-    studentAccount, shadowReport,
+    studentAccount, shadowReport, refreshMonth, monthSummary,
 } from '../services/chargeEngine.js';
 import { LedgerModeError } from '../services/ledgerMode.js';
 import { syncAllBalances, reconcileBalances } from '../services/balanceCache.js';
@@ -56,6 +56,23 @@ router.post('/reconcile/fix', requireAuth, requireMinRole('ADMIN'), requirePermi
 
 router.get('/periods', ...canView, async (_req, res) => {
     try { res.json(await prisma.billingPeriod.findMany({ orderBy: { month: 'desc' } })); } catch (err) { sendError(res, err); }
+});
+
+// ─── Oy jadvali (soddalashtirilgan ko'rinish) ────────────────────────────────
+// GET /api/billing/:month/summary — har hisob: o'quvchi, guruh, davr, summa, to'langan, qarz
+router.get('/:month/summary', ...canView, async (req, res) => {
+    try { res.json(await monthSummary(req.params.month, { groupId: typeof req.query.groupId === 'string' ? req.query.groupId : undefined })); }
+    catch (err) { sendError(res, err); }
+});
+
+// POST /api/billing/:month/refresh — "Yangilash": hisoblarni hozir hisoblash (live — darhol kuchga kiradi)
+router.post('/:month/refresh', ...canWrite, async (req, res) => {
+    try {
+        const a = actor(req);
+        const r = await refreshMonth(req.params.month, a.id);
+        await logAudit({ userId: a.id, userName: a.name, action: 'billing_refresh', resource: 'charge', metadata: { month: r.month, created: r.created, updated: r.updated, posted: r.posted } });
+        res.json(r);
+    } catch (err) { sendError(res, err); }
 });
 
 // ─── Oy amallari ─────────────────────────────────────────────────────────────
