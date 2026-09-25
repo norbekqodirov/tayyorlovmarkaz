@@ -13,6 +13,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { tashkentMidnightInstant, todayDateStr } from '../utils/timezone.js';
 import { OPEN_STAGES } from '../constants/leads.js';
+import { partialRefundsByStudent, sumMap } from '../services/moneyReversal.js';
 
 const router = express.Router();
 router.use(requireAuth, requireMinRole('MANAGER'), requirePermission('marketing'));
@@ -61,7 +62,8 @@ router.get('/overview', async (req, res) => {
         const payments = studentIds.length
             ? await prisma.payment.findMany({ where: { studentId: { in: studentIds }, status: 'paid', deletedAt: null }, select: { amount: true, studentId: true, createdAt: true } })
             : [];
-        const revenue = payments.reduce((s, p) => s + p.amount, 0);
+        // IP-17 (QT-26): qisman qaytarishlar sof tushumdan ayriladi
+        const revenue = payments.reduce((s, p) => s + p.amount, 0) - sumMap(await partialRefundsByStudent(prisma, studentIds));
 
         // CAC "qoplanishi" — konversiyadan keyingi 90 kun ichidagi to'lovlar.
         const convertedAtMap = new Map(wonLeadsInRange.map(l => [l.studentId, l.convertedAt]));
@@ -122,6 +124,7 @@ router.get('/by-source', async (req, res) => {
             : [];
         const revenueByStudent = new Map<string, number>();
         for (const p of payments) revenueByStudent.set(p.studentId, (revenueByStudent.get(p.studentId) || 0) + p.amount);
+        for (const [sid, refunded] of await partialRefundsByStudent(prisma, studentIds)) revenueByStudent.set(sid, (revenueByStudent.get(sid) || 0) - refunded);
         const leadsByStudent = new Map(leads.filter(l => l.studentId).map(l => [l.studentId as string, l.source || 'Boshqa']));
         const revenueBySource = new Map<string, number>();
         for (const [studentId, amount] of revenueByStudent) {
@@ -163,7 +166,7 @@ router.get('/by-campaign', async (req, res) => {
             const payments = studentIds.length
                 ? await prisma.payment.aggregate({ where: { studentId: { in: studentIds }, status: 'paid', deletedAt: null }, _sum: { amount: true } })
                 : { _sum: { amount: 0 } };
-            const revenue = payments._sum.amount || 0;
+            const revenue = (payments._sum.amount || 0) - sumMap(await partialRefundsByStudent(prisma, studentIds));
             return {
                 id: c.id, name: c.name, platform: c.platform, status: c.status,
                 budget: c.budget, spent: c.spent,
@@ -286,7 +289,7 @@ router.get('/managers', async (req, res) => {
                 conversionRate: assigned ? Math.round((won / assigned) * 1000) / 10 : 0,
                 avgFirstResponseMin: frm._avg.firstResponseMinutes ? Math.round(frm._avg.firstResponseMinutes) : null,
                 slaBreaches, overdueFollowUps,
-                revenue: revenueAgg._sum.amount || 0,
+                revenue: (revenueAgg._sum.amount || 0) - sumMap(await partialRefundsByStudent(prisma, studentIds)),
             };
         }));
 

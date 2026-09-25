@@ -17,6 +17,8 @@ const norm = (s: string) => s.toLowerCase().replace(/[ʻʼ‘’`']/g, "'").repl
 export function guessCategoryKind(name: string, type: string): CategoryKind {
     const n = norm(name || '');
     if (type === 'income') {
+        // IP-17: o'quvchiga qaytarish kassada manfiy "kirim" sifatida yoziladi (sof tushum)
+        if (/to'lov qaytar|tolov qaytar|pul qaytar|refund/.test(n)) return 'REFUND';
         if (/kurs to'lov|kurs tolov|o'qish to'lov|tuition/.test(n)) return 'TUITION';
         return 'OTHER_INCOME';
     }

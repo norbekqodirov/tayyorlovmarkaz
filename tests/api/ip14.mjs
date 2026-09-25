@@ -67,11 +67,14 @@ try {
   const invPay = await prisma.payment.findFirst({ where: { studentId: S.id, notes: { contains: inv.number } }, include: { allocations: true } });
   check('live: invoice to\'landi — auto_fifo taqsimot, balans −380 000', r.status === 200 && invPay?.allocationMode === 'auto_fifo' && invPay.allocations.length > 0 && await bal(S.id) === -380000, { st: r.status, mode: invPay?.allocationMode, bal: await bal(S.id) });
 
-  // Kvitansiya kassa yozuvini o'chirish — to'lov bekor, taqsimot qaytadi, balans qayta hisoblanadi
+  // Kvitansiya kassa yozuvi o'chirilmaydi (IP-17, OQ-12) — bekor qilinadi: to'lov void,
+  // taqsimot qaytadi, qarshi yozuv, balans qayta hisoblanadi
   const rTx = await prisma.transaction.findFirst({ where: { sourceType: 'receipt', sourceId: pay.id } });
   r = await api('DELETE', `/finance/${rTx.id}`, manager.token);
+  check('kvitansiya yozuvini o\'chirish — 409 VOID_REQUIRED', r.status === 409 && r.data.code === 'VOID_REQUIRED', r);
+  r = await api('POST', `/finance/transactions/${rTx.id}/void`, manager.token, { reason: 'Xato kiritilgan' });
   const payAfter = await prisma.payment.findUnique({ where: { id: pay.id }, include: { allocations: true } });
-  check('kvitansiya o\'chirildi: to\'lov soft-delete, taqsimotlar bekor, balans −830 000', r.status === 200 && !!payAfter.deletedAt && payAfter.allocations.every(a => a.reversedAt) && await bal(S.id) === -830000, { st: r.status, bal: await bal(S.id), del: payAfter.deletedAt });
+  check('kvitansiya bekor qilindi: to\'lov void, taqsimotlar bekor, balans −830 000', r.status === 200 && payAfter.status === 'void' && payAfter.allocations.every(a => a.reversedAt) && await bal(S.id) === -830000, { st: r.status, data: r.data, bal: await bal(S.id), status: payAfter.status });
 
   r = await api('GET', '/billing/reconcile', manager.token);
   check('live: solishtirish — test o\'quvchida farq yo\'q', !r.data.rows.some(x => x.studentId === S.id), r.data.rows.filter(x => x.studentId === S.id));

@@ -26,6 +26,7 @@ import api, { newIdempotencyKey, idempotencyHeaders } from '../../../api/client'
 import type { TransactionCategory } from '../../../types/transactionCategory';
 import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
+import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
 
 interface Invoice {
   id: string;
@@ -56,6 +57,26 @@ interface Transaction {
   studentName?: string;
   staffId?: string;
   staffName?: string;
+  // IP-17: bekor qilingan yozuv (qarshi yozuv bilan) va manba
+  sourceType?: string | null;
+  sourceId?: string | null;
+  voidedAt?: string | null;
+  voidReason?: string | null;
+}
+
+// IP-17: kassa yo'nalishi — kirim musbat, chiqim manfiy; qaytarish (manfiy kirim) va
+// qarshi yozuvlar ham to'g'ri belgi bilan ko'rsatiladi.
+const cashSigned = (t: Pick<Transaction, 'type' | 'amount'>) => (t.type === 'income' ? 1 : -1) * t.amount;
+const isLocked = (t: Transaction) => !!t.voidedAt || t.sourceType === 'reversal';
+
+function TxBadges({ t }: { t: Transaction }) {
+  return (
+    <>
+      {t.voidedAt && <span title={t.voidReason || ''} className="ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300 align-middle">Bekor qilingan</span>}
+      {t.sourceType === 'reversal' && <span className="ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200 align-middle">Qarshi yozuv</span>}
+      {(t.sourceType === 'refund' || t.sourceType === 'online_transaction_refund') && <span className="ml-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300 align-middle">Qaytarish</span>}
+    </>
+  );
 }
 
 const EXPENSE_LABELS = {
@@ -120,7 +141,7 @@ const RESERVED_EXPENSE_CATEGORIES: { name: string; label: string }[] = [
 
 export default function CrmFinance() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
-  const { data: transactions = [], deleteDocument, refetch: refetchTransactions } = useFirestore<Transaction>('finance');
+  const { data: transactions = [], refetch: refetchTransactions } = useFirestore<Transaction>('finance');
   const { data: students = [], refetch: refetchStudents } = useFirestore<any>('students');
   const { data: staff = [] } = useFirestore<any>('staff');
   const { data: teachers = [] } = useFirestore<any>('teachers');
@@ -131,6 +152,8 @@ export default function CrmFinance() {
     const reserved = type === 'expense' ? RESERVED_EXPENSE_CATEGORIES.find(r => r.name === name) : undefined;
     if (reserved) return reserved.label;
     const label = type === 'expense' ? (EXPENSE_LABELS[name as keyof typeof EXPENSE_LABELS] ?? name) : name;
+    // IP-17: tizim yozuvi (qaytarish — manfiy kirim) foydalanuvchi kategoriyasi emas
+    if (type === 'income' && name === "To'lov qaytarish") return label;
     return !categoriesLoading && !categoriesError && !activeCategoryNames(type).includes(name) ? label + ' (Nofaol)' : label;
   };
   const categoryOptions = (type: TransactionCategory['type'], selected: string) => {
@@ -364,6 +387,18 @@ export default function CrmFinance() {
   // frontend tugmasi ikki marta bosilganda ikkita ortiqcha so'rov
   // yubormasligi uchun ham "band" holati qo'shildi.
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
+  const [cancelInvoiceId, setCancelInvoiceId] = useState<string | null>(null);
+  const handleCancelInvoice = async (reason: string) => {
+    if (!cancelInvoiceId) return;
+    try {
+      await api.patch(`/finance/invoices/${cancelInvoiceId}`, { status: 'cancelled', reason });
+      setCancelInvoiceId(null);
+      showToast('Invoice bekor qilindi', 'success');
+      fetchInvoices();
+    } catch (e: any) {
+      return apiError(e);
+    }
+  };
   const handleMarkInvoicePaid = async (invoiceId: string) => {
     if (!canManage || markingPaidId) return;
     setMarkingPaidId(invoiceId);
@@ -578,12 +613,37 @@ export default function CrmFinance() {
     }
   };
 
+  // IP-17 (OQ-12): bog'liq (to'lov/maosh/avans) yoki yopilgan oy yozuvi o'chirilmaydi —
+  // server 409 VOID_REQUIRED qaytaradi va sabab so'rab "bekor qilish" (qarshi yozuv) taklif qilinadi.
+  const [voidTarget, setVoidTarget] = useState<{ id: string; message: string } | null>(null);
   const confirmDelete = async () => {
     if (!canManage) return;
-    await deleteDocument(deleteConfirm.id);
-    if (selectedTransaction?.id === deleteConfirm.id) setIsDetailOpen(false);
+    const id = deleteConfirm.id;
     setDeleteConfirm({ open: false, id: '' });
-    showToast("Tranzaksiya o'chirildi", 'success');
+    try {
+      await api.delete(`/finance/${id}`);
+      if (selectedTransaction?.id === id) setIsDetailOpen(false);
+      await refetchTransactions();
+      showToast("Tranzaksiya o'chirildi", 'success');
+    } catch (e: any) {
+      if (e?.response?.status === 409 && e.response.data?.code === 'VOID_REQUIRED') {
+        setVoidTarget({ id, message: e.response.data.message });
+        return;
+      }
+      showToast(apiError(e, "O'chirib bo'lmadi"), 'error');
+    }
+  };
+  const confirmVoid = async (reason: string) => {
+    if (!voidTarget) return;
+    try {
+      await api.post(`/finance/transactions/${voidTarget.id}/void`, { reason });
+      if (selectedTransaction?.id === voidTarget.id) setIsDetailOpen(false);
+      setVoidTarget(null);
+      await refetchTransactions();
+      showToast('Yozuv bekor qilindi — qarshi yozuv yaratildi', 'success');
+    } catch (e: any) {
+      return apiError(e);
+    }
   };
 
   const currentMonth = new Date().getMonth();
@@ -678,10 +738,26 @@ export default function CrmFinance() {
       <ConfirmDialog
         isOpen={canManage && deleteConfirm.open}
         title="Tranzaksiyani o'chirish"
-        message="Haqiqatan ham ushbu tranzaksiyani o'chirmoqchimisiz?"
+        message="Haqiqatan ham ushbu tranzaksiyani o'chirmoqchimisiz? To'lov, maosh yoki avansga bog'liq bo'lsa (yoki oyi yopilgan bo'lsa), o'chirish o'rniga sabab bilan bekor qilish taklif qilinadi."
         confirmText="Ha, o'chirish"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: '' })}
+      />
+      <ReasonModal
+        isOpen={canManage && !!voidTarget}
+        title="Yozuvni bekor qilish"
+        message={voidTarget ? `${voidTarget.message}. Bog'liq hujjat (kvitansiya, maosh, avans) ta'siri qaytariladi; asl yozuv va qarshi yozuv tarixda qoladi.` : ''}
+        confirmText="Bekor qilish"
+        onClose={() => setVoidTarget(null)}
+        onConfirm={confirmVoid}
+      />
+      <ReasonModal
+        isOpen={canManage && !!cancelInvoiceId}
+        title="Invoice'ni bekor qilish"
+        message="Bekor qilingan invoice qayta ochilmaydi va unga to'lov qabul qilinmaydi — kerak bo'lsa yangi invoice yaratiladi."
+        confirmText="Bekor qilish"
+        onClose={() => setCancelInvoiceId(null)}
+        onConfirm={handleCancelInvoice}
       />
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1025,7 +1101,7 @@ export default function CrmFinance() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{t.description || t.category}</p>
+                        <p className={`text-sm font-bold text-slate-900 dark:text-white ${t.voidedAt ? 'line-through opacity-60' : ''}`}>{t.description || t.category}<TxBadges t={t} /></p>
                         {t.studentName && <p className="text-[10px] text-zinc-400">{t.studentName}</p>}
                       </div>
                     </td>
@@ -1037,12 +1113,12 @@ export default function CrmFinance() {
                         <CreditCard size={11} /> {t.method}
                       </span>
                     </td>
-                    <td className={`px-5 py-3.5 text-right font-black text-sm ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
+                    <td className={`px-5 py-3.5 text-right font-black text-sm tabular-nums ${cashSigned(t) >= 0 ? 'text-emerald-600' : 'text-rose-600'} ${t.voidedAt ? 'line-through opacity-60' : ''}`}>
+                      {cashSigned(t) >= 0 ? '+' : '−'}{formatMoney(Math.abs(t.amount))}
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        {t.type === 'income' && (
+                        {t.type === 'income' && t.amount > 0 && !isLocked(t) && (
                           <button
                             onClick={e => {
                               e.stopPropagation();
@@ -1060,7 +1136,7 @@ export default function CrmFinance() {
                             <Receipt size={14} />
                           </button>
                         )}
-                        {canManage && (
+                        {canManage && !isLocked(t) && (
                           <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ open: true, id: t.id }); }}
                             className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-lg transition-all">
                             <Trash2 size={14} />
@@ -1162,7 +1238,7 @@ export default function CrmFinance() {
                           <span className={`text-xs font-bold ${isOverdue ? 'text-rose-500' : 'text-zinc-500'}`}>{inv.dueDate}</span>
                         </td>
                         <td className="px-5 py-3.5">
-                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${statusColors[isOverdue ? 'overdue' : inv.status]}`}>
+                          <span title={inv.status === 'cancelled' ? ((inv as any).cancelReason || '') : ''} className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${statusColors[isOverdue ? 'overdue' : inv.status]}`}>
                             {statusLabels[isOverdue ? 'overdue' : inv.status]}
                           </span>
                         </td>
@@ -1187,6 +1263,15 @@ export default function CrmFinance() {
                                 >
                                   <ExternalLink size={13} />
                                 </button>
+                                {canManage && (
+                                  <button
+                                    onClick={() => setCancelInvoiceId(inv.id)}
+                                    className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-500 rounded-lg"
+                                    title="Bekor qilish (sabab bilan)"
+                                  >
+                                    <XCircle size={13} />
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
@@ -1530,9 +1615,10 @@ export default function CrmFinance() {
                   <div className={`w-14 h-14 rounded-2xl mx-auto mb-3 flex items-center justify-center ${selectedTransaction.type === 'income' ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600' : 'bg-rose-100 dark:bg-rose-500/20 text-rose-600'}`}>
                     {selectedTransaction.type === 'income' ? <TrendingUp size={28} /> : <TrendingDown size={28} />}
                   </div>
-                  <p className={`text-2xl font-black ${selectedTransaction.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {selectedTransaction.type === 'income' ? '+' : '-'}{formatMoney(selectedTransaction.amount)}
+                  <p className={`text-2xl font-black tabular-nums ${cashSigned(selectedTransaction) >= 0 ? 'text-emerald-600' : 'text-rose-600'} ${selectedTransaction.voidedAt ? 'line-through opacity-60' : ''}`}>
+                    {cashSigned(selectedTransaction) >= 0 ? '+' : '−'}{formatMoney(Math.abs(selectedTransaction.amount))}
                   </p>
+                  {(selectedTransaction.voidedAt || selectedTransaction.sourceType === 'reversal' || selectedTransaction.sourceType === 'refund') && <div className="mt-2"><TxBadges t={selectedTransaction} /></div>}
                   <p className="text-sm text-zinc-500 mt-1">{categoryLabel(selectedTransaction.category, selectedTransaction.type)}</p>
                 </div>
                 <div className="space-y-3">
@@ -1541,6 +1627,7 @@ export default function CrmFinance() {
                     { icon: CreditCard, label: "To'lov usuli", value: selectedTransaction.method },
                     ...(selectedTransaction.studentName ? [{ icon: User, label: "O'quvchi", value: selectedTransaction.studentName }] : []),
                     ...(selectedTransaction.description ? [{ icon: FileText, label: 'Tavsif', value: selectedTransaction.description }] : []),
+                    ...(selectedTransaction.voidedAt ? [{ icon: XCircle, label: 'Bekor qilish sababi', value: selectedTransaction.voidReason || '—' }] : []),
                   ].map((row, i) => (
                     <div key={i} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
                       <div className="flex items-center gap-2.5">
@@ -1556,10 +1643,10 @@ export default function CrmFinance() {
                     onClick={async () => { await exportReceiptToPDF(selectedTransaction); }}>
                     Chek (PDF)
                   </Button>
-                  {canManage && (
+                  {canManage && !isLocked(selectedTransaction) && (
                     <Button variant="danger" className="w-full" leftIcon={<Trash2 size={15} />}
                       onClick={() => setDeleteConfirm({ open: true, id: selectedTransaction.id })}>
-                      O'chirish
+                      O'chirish / bekor qilish
                     </Button>
                   )}
                 </div>

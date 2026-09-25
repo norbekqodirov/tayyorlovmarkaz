@@ -8,6 +8,7 @@ import express from 'express';
 import crypto from 'crypto';
 import prisma from '../db.js';
 import { afterExternalPayment, afterPaymentVoided } from '../services/balanceCache.js';
+import { REFUND_CATEGORY } from '../services/moneyReversal.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
@@ -439,11 +440,12 @@ router.post('/payme', async (req, res) => {
                             });
 
                             const todayStr = todayDateStr();
-                            await txClient.transaction.create({
+                            // IP-17 (QT-26/73): qaytarish kassada manfiy "kirim" — sof tushumdan chiqadi
+                            const refundCash = await txClient.transaction.create({
                                 data: {
-                                    type: 'expense',
-                                    amount: tx.amount,
-                                    category: 'Qaytarish',
+                                    type: 'income',
+                                    amount: -tx.amount,
+                                    category: REFUND_CATEGORY,
                                     description: `Payme to'lovi bekor qilindi (ID: ${txId})`,
                                     date: todayStr,
                                     method: 'Bank',
@@ -461,13 +463,19 @@ router.post('/payme', async (req, res) => {
                             // aslida bekor qilingan to'lovni hamon "to'langan" deb
                             // ko'rsatardi. Endi sourceId orqali topilib 'refunded'
                             // qilinadi.
-                            const cancelledPayments = await txClient.payment.findMany({ where: { sourceType: 'online_transaction', sourceId: tx.id, status: 'paid' }, select: { id: true } });
+                            const cancelledPayments = await txClient.payment.findMany({ where: { sourceType: 'online_transaction', sourceId: tx.id, status: 'paid' }, select: { id: true, amount: true } });
                             await txClient.payment.updateMany({
                                 where: { sourceType: 'online_transaction', sourceId: tx.id, status: 'paid' },
                                 data: { status: 'refunded' },
                             });
                             // IP-14/17: bekor qilingan to'lov taqsimotlari qaytariladi, live — kesh
-                            for (const cp of cancelledPayments) await afterPaymentVoided(txClient, cp.id, `Payme to'lovi bekor qilindi (${txId})`);
+                            for (const cp of cancelledPayments) {
+                                await afterPaymentVoided(txClient, cp.id, `Payme to'lovi bekor qilindi (${txId})`);
+                                // IP-17: qaytarish yozuvi (Refund) — kvitansiya va kassa bilan bog'langan
+                                await txClient.refund.create({
+                                    data: { studentId: student.id, paymentId: cp.id, amount: Math.round(cp.amount), method: 'Payme', date: todayStr, reason: `Payme bekor qildi (sabab kodi ${reason ?? '-'})`, transactionId: refundCash.id },
+                                });
+                            }
                         }
                         return { current };
                     });

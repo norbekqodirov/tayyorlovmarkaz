@@ -16,6 +16,7 @@ import { getLedgerMode } from './ledgerMode.js';
 import { openCharges, paymentUnallocated } from './receivables.js';
 import { applyAllocations, AllocationError, type AllocationInput } from './allocation.js';
 import { syncStudentBalance } from './balanceCache.js';
+import { isMonthClosed } from './moneyReversal.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -52,6 +53,7 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
     const date = input.date || todayDateStr();
     if (!isValidDate(date)) throw new ReceiptError(400, "Sana YYYY-MM-DD formatida bo'lishi kerak", 'BAD_DATE');
     if (date > todayDateStr()) throw new ReceiptError(400, "Kelajak sanasi bilan to'lov qabul qilinmaydi", 'FUTURE');
+    if (await isMonthClosed(prisma, date)) throw new ReceiptError(409, `${date.slice(0, 7)} oyi yopilgan — to'lovni joriy sana bilan qabul qiling`, 'PERIOD_CLOSED');
     const mode = await getLedgerMode();
     if (mode === 'legacy' && input.allocations?.length) throw new ReceiptError(400, "Eski rejimda (legacy) to'lov hisoblarga taqsimlanmaydi", 'LEGACY_MODE');
     const allocationMode = mode === 'legacy' ? 'legacy' : (input.allocations?.length ? 'manual' : 'auto_fifo');

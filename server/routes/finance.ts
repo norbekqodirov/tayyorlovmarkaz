@@ -14,6 +14,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { getBillingSettings, calculateStudentMonthlyDue, calculateTeacherMonthlyRevenue } from '../services/billing.js';
 import { logAudit } from '../middleware/audit.js';
+import { voidTransaction, ReversalError, isMonthClosed } from '../services/moneyReversal.js';
 
 const router = express.Router();
 
@@ -31,6 +32,38 @@ export function computeInvoiceNetAmount(invoice: { amount: number; discount: num
     const tax = Number(invoice.tax) || 0;
     const afterDiscount = gross * (1 - discountPercent / 100);
     return Math.max(0, Math.round(afterDiscount + tax));
+}
+
+// IP-17 (H.4, QT-74): invoice holat mashinasi. `pending` — chiqarilgan (issued).
+// `paid` va `cancelled` — yakuniy: bekor qilingan invoice to'lanmaydi va qayta
+// ochilmaydi (yangisi yaratiladi), to'langani faqat «Pul qaytarish» (kredit) orqali tuzatiladi.
+export const INVOICE_TRANSITIONS: Record<string, string[]> = {
+    pending: ['paid', 'overdue', 'cancelled'],
+    overdue: ['paid', 'pending', 'cancelled'],
+    partially_paid: ['paid'],
+    paid: [],
+    cancelled: [],
+};
+const INVOICE_PAYABLE = ['pending', 'overdue', 'partially_paid'];
+
+// ML-11: raqam `count()`dan emas — yil bo'yicha ketma-ketlik (Setting, CAS). Birinchi
+// ishlatishda mavjud eng katta raqamdan davom etadi; P2002 bo'lsa keyingisi olinadi.
+async function reserveInvoiceNo(year: string): Promise<string> {
+    const key = `invoice_seq_${year}`;
+    const prefix = `INV-${year}-`;
+    for (let i = 0; i < 20; i++) {
+        const row = await prisma.setting.findUnique({ where: { key } });
+        if (!row) {
+            const existing = await prisma.invoice.findMany({ where: { number: { startsWith: prefix } }, select: { number: true } });
+            const max = existing.reduce((m, x) => Math.max(m, Number(x.number.slice(prefix.length)) || 0), 0);
+            try { await prisma.setting.create({ data: { key, value: String(max) } }); } catch { /* parallel yaratildi */ }
+            continue;
+        }
+        const next = Number(row.value) + 1;
+        const r = await prisma.setting.updateMany({ where: { key, value: row.value }, data: { value: String(next) } });
+        if (r.count === 1) return `${prefix}${String(next).padStart(4, '0')}`;
+    }
+    throw new Error("Invoice raqamini band qilib bo'lmadi");
 }
 
 // ─── OYLIK TO'LOV HISOB-KITOBI (davomat asosida) ──────────────────────────────
@@ -153,6 +186,17 @@ router.post('/invoices', requireAuth, requireMinRole('MANAGER'), requirePermissi
         if (!studentId || !amount || !dueDate) {
             return res.status(400).json({ error: 'studentId, amount va dueDate majburiy' });
         }
+        const grossAmount = Number(amount);
+        if (!Number.isFinite(grossAmount) || grossAmount <= 0) return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
+        const discountPct = Number(discount || 0);
+        if (!Number.isFinite(discountPct) || discountPct < 0 || discountPct > 100) return res.status(400).json({ error: "Chegirma 0–100% oralig'ida bo'lishi kerak" });
+        // ML-11: bandlar berilsa — ularning yig'indisi invoice summasiga teng bo'lishi shart
+        if (Array.isArray(items) && items.length) {
+            const itemsSum = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1) * (Number(it.price) || 0), 0);
+            if (Math.round(itemsSum) !== Math.round(grossAmount)) {
+                return res.status(400).json({ error: `Bandlar yig'indisi (${Math.round(itemsSum)}) invoice summasiga (${Math.round(grossAmount)}) teng emas` });
+            }
+        }
 
         // FIN-03 tuzatish: raqam ilgari bitta count()dan hisoblanardi — ikki
         // parallel so'rov bir xil count'ni o'qib, bir xil raqam (number
@@ -163,8 +207,7 @@ router.post('/invoices', requireAuth, requireMinRole('MANAGER'), requirePermissi
         const year = todayDateStr().slice(0, 4);
         let invoice;
         for (let attempt = 0; attempt < 5; attempt++) {
-            const count = await prisma.invoice.count();
-            const number = `INV-${year}-${String(count + 1 + attempt).padStart(4, '0')}`;
+            const number = await reserveInvoiceNo(year);
             try {
                 invoice = await prisma.invoice.create({
                     data: {
@@ -216,8 +259,9 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
             const paidAtDate = paidAt ? new Date(paidAt) : new Date();
 
             const result = await prisma.$transaction(async (tx) => {
+                // IP-17 (QT-74): faqat to'lanadigan holatdan — bekor qilingan invoice to'lanmaydi
                 const { count } = await tx.invoice.updateMany({
-                    where: { id: req.params.id, status: { not: 'paid' } },
+                    where: { id: req.params.id, status: { in: INVOICE_PAYABLE } },
                     data: { status: 'paid', paidAt: paidAtDate, ...(method !== undefined ? { method } : {}) },
                 });
 
@@ -225,7 +269,7 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                     where: { id: req.params.id },
                     include: { student: true, items: true },
                 });
-                if (!invoice || count === 0) return { invoice, applied: false };
+                if (!invoice || count === 0) return { invoice, applied: false, cancelled: invoice?.status === 'cancelled' };
 
                 const netAmount = computeInvoiceNetAmount(invoice);
 
@@ -264,6 +308,7 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
             });
 
             if (!result.invoice) return res.status(404).json({ error: 'Invoice topilmadi' });
+            if (result.cancelled) return res.status(409).json({ error: "Bekor qilingan invoice to'lanmaydi — kerak bo'lsa yangi invoice yarating", code: 'CANCELLED' });
 
             // F22 tuzatish (2026-09-16 audit): "Asosiy moliyaviy yo'llarning
             // auditi izchil emas" — invoice "to'landi" qilish real pul
@@ -289,22 +334,37 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
         // takror kredit). Endi "paid" holatidan chiqish shu umumiy yo'l
         // orqali UMUMAN taqiqlanadi — to'langan invoice'ni bekor qilish
         // uchun alohida (hali qo'shilmagan) reversal jarayoni kerak bo'ladi.
-        if (status !== undefined && status !== 'paid') {
-            const current = await prisma.invoice.findUnique({ where: { id: req.params.id }, select: { status: true } });
-            if (!current) return res.status(404).json({ error: 'Invoice topilmadi' });
+        // IP-17 (H.4): ruxsat etilgan o'tishlar jadvali; bekor qilish — sabab bilan.
+        const current = await prisma.invoice.findUnique({ where: { id: req.params.id }, select: { status: true } });
+        if (!current) return res.status(404).json({ error: 'Invoice topilmadi' });
+        const data: any = {};
+        if (status !== undefined && status !== current.status) {
             if (current.status === 'paid') {
-                return res.status(400).json({ error: "To'langan invoice holatini shu yo'l orqali o'zgartirib bo'lmaydi — reversal/refund jarayoni kerak" });
+                return res.status(409).json({ error: "To'langan invoice holatini o'zgartirib bo'lmaydi — o'quvchi profilidagi «Pul qaytarish» orqali tuzating", code: 'BAD_TRANSITION' });
+            }
+            if (!(INVOICE_TRANSITIONS[current.status] ?? []).includes(status)) {
+                return res.status(409).json({ error: `Invoice holatini «${current.status}» dan «${status}» ga o'zgartirib bo'lmaydi`, code: 'BAD_TRANSITION' });
+            }
+            data.status = status;
+            if (status === 'cancelled') {
+                const reason = String(req.body.reason ?? req.body.cancelReason ?? '').trim();
+                if (reason.length < 3) return res.status(400).json({ error: 'Bekor qilish sababini yozing' });
+                data.cancelledAt = new Date();
+                data.cancelReason = reason.slice(0, 500);
             }
         }
-
-        const data: any = {};
-        if (status !== undefined) data.status = status;
-        if (method !== undefined) data.method = method;
-        const invoice = await prisma.invoice.update({
-            where: { id: req.params.id },
-            data,
-            include: { student: true, items: true },
-        });
+        if (method !== undefined) {
+            if (['paid', 'cancelled'].includes(current.status)) return res.status(409).json({ error: "Yakunlangan invoice'ni tahrirlab bo'lmaydi", code: 'FINAL' });
+            data.method = method;
+        }
+        // holat o'qilgandan beri o'zgarmagan bo'lsagina yoziladi (parallel o'tishlar)
+        const { count } = await prisma.invoice.updateMany({ where: { id: req.params.id, status: current.status }, data });
+        if (count === 0) return res.status(409).json({ error: "Invoice holati o'zgargan — sahifani yangilang", code: 'CONFLICT' });
+        const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id }, include: { student: true, items: true } });
+        if (data.status === 'cancelled') {
+            const user = (req as any).user;
+            await logAudit({ userId: user?.id, userName: user?.name || 'system', action: 'invoice_cancel', resource: 'invoice', resourceId: req.params.id, before: { status: current.status }, after: { status: 'cancelled', reason: data.cancelReason } });
+        }
         res.json(invoice);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -391,12 +451,19 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
         if (!Number.isFinite(numAmount) || numAmount <= 0) {
             return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
         }
+        // IP-17: yopilgan oyga yangi kassa yozuvi kiritilmaydi (oy raqamlari o'zgarmasin)
+        if (await isMonthClosed(prisma, String(date))) {
+            return res.status(409).json({ error: `${String(date).slice(0, 7)} oyi yopilgan — yozuvni joriy sana bilan kiriting`, code: 'PERIOD_CLOSED' });
+        }
         if (studentId) {
             const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true } });
             if (!student) return res.status(400).json({ error: "Ko'rsatilgan o'quvchi topilmadi" });
         }
         // IP-12 (TQ-D, TQ-E): qoida kategoriya TURIga bog'liq, nomga emas.
         const kind = await categoryKind(prisma, category, type);
+        if (type === 'income' && kind === 'REFUND') {
+            return res.status(400).json({ error: "O'quvchiga pul qaytarish faqat o'quvchi profilidagi «Pul qaytarish» orqali yoziladi" });
+        }
         if (type === 'income' && kind === 'TUITION') {
             if (!studentId) return res.status(400).json({ error: "Kurs to'lovi uchun o'quvchini tanlang" });
             try {
@@ -455,6 +522,26 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
 
         res.json(result);
     } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/finance/transactions/:id/void — { reason } (IP-17, OQ-12): bog'liq yoki yopilgan
+// oydagi yozuv o'chirilmaydi — bog'liq hujjat ta'siri qaytariladi va qarshi yozuv yaratiladi.
+router.post('/transactions/:id/void', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
+    try {
+        const user = (req as any).user;
+        const actor = { id: user?.id, name: user?.name, role: user?.role };
+        const before = await prisma.transaction.findUnique({ where: { id: req.params.id } });
+        const result = await voidTransaction(req.params.id, req.body?.reason, actor);
+        await logAudit({
+            userId: user?.id, userName: user?.name || 'system', action: 'void', resource: 'transaction', resourceId: req.params.id,
+            before: before ? { type: before.type, amount: before.amount, category: before.category, date: before.date, sourceType: before.sourceType, sourceId: before.sourceId } : undefined,
+            after: { reason: String(req.body?.reason || '').trim(), result },
+        });
+        res.json(result);
+    } catch (err: any) {
+        if (err instanceof ReversalError) return res.status(err.status).json({ error: err.message, message: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });
@@ -573,6 +660,15 @@ router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePer
 // $transaction ichida birga o'chiriladi.
 router.delete('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
+        // IP-17 (OQ-12): yopilgan oy yoki allaqachon bekor qilingan xarajat o'chirilmaydi
+        const expense = await prisma.expense.findUnique({ where: { id: req.params.id }, select: { date: true } });
+        if (!expense) return res.status(404).json({ error: 'Xarajat topilmadi' });
+        if (await isMonthClosed(prisma, expense.date)) {
+            return res.status(409).json({ error: `${expense.date.slice(0, 7)} oyi yopilgan — xarajatni Tranzaksiyalar bo'limida «Bekor qilish» orqali qaytaring`, code: 'VOID_REQUIRED' });
+        }
+        if (await prisma.transaction.count({ where: { sourceType: 'expense', sourceId: req.params.id, voidedAt: { not: null } } })) {
+            return res.status(409).json({ error: "Bu xarajat kassada bekor qilingan — o'chirilmaydi (tarix)", code: 'ALREADY_VOID' });
+        }
         await prisma.$transaction(async (tx) => {
             await tx.transaction.deleteMany({ where: { sourceType: 'expense', sourceId: req.params.id } });
             await tx.expense.delete({ where: { id: req.params.id } });

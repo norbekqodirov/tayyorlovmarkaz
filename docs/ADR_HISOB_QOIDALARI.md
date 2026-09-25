@@ -80,6 +80,14 @@ Bu savollar L bo'limida alohida qo'yilmagan. Dataset'ni tuzishda javob kerak bo'
 4. **R = 0 bo'lsa** (faqat sinov darsi yoki butun oy pauza) hisob 0 va maosh 0. Hisob yaratilmaydi, lekin ogohlantirish chiqmaydi (RS-20).
 5. **Taqsimot qat'iy tekshiriladi:** bitta taqsimot hisob qarzidan, jami taqsimotlar esa to'lovdan oshmaydi. Xato bo'lsa hech narsa yozilmaydi (RS-40).
 
+### 5.1. IP-17 amalga oshirishda aniqlashtirilgan tafsilotlar
+
+- **Qaytarish kassada manfiy "kirim"** ("To'lov qaytarish"), xarajat emas: shu bilan barcha tushum yig'indilari (dashboard, hisobotlar, maqsadlar) hech qanday o'zgartirishsiz sof tushumni beradi (QT-26), xarajatlar esa sun'iy oshmaydi. Kassa qoldig'i (kirim − chiqim) bir xil.
+- **Qarshi yozuv** asl yozuv bilan bir xil tur va kategoriyada, manfiy summa, bugungi sana, `sourceType = 'reversal'`. Asl yozuv `voidedAt` bilan belgilanadi; qarshi yozuvni bekor qilib yoki o'chirib bo'lmaydi.
+- **`Payment.status`:** to'liq qaytarilsa `refunded`; qisman qaytarilganda `paid` qoladi va qaytarilgan qism `Refund` qatorlaridan ayriladi (H.4 dagi `partially_refunded` hosila sifatida ko'rsatiladi). Sabab: mavjud "status = 'paid'" yig'indilari to'lovni butunlay yo'qotib qo'ymasligi uchun.
+- **Kvitansiya void va qaytarish farqi:** void — pul umuman kelmagan (xato yozuv; taqsimotlar qaytariladi, avans qolmaydi); qaytarish — pul kelgan va qaytarildi (faqat avansdan, hisob taqsimotiga tegmaydi, QT-27).
+- **Maosh:** accrual (TQ-B) to'lovga bog'liq emas — qaytarish yoki void maoshni o'zgartirmaydi. Cash asosidagi tasdiqlangan maoshga faqat "qayta ko'rib chiqing" belgisi yoziladi.
+
 ## 6. Oqibatlar
 
 - IP-09…IP-17 shu hujjat va `billingFormula.ts` ga tayanadi. Hisob dvigateli formulani qayta yozmaydi, faqat ma'lumot yig'ib (R, A, tariflar, ustoz darslari) shu funksiyalarni chaqiradi.

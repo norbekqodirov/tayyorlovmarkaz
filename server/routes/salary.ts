@@ -8,6 +8,7 @@ import { emitToAdmins } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
+import { payrollDeleteBlock, releaseAdvanceApplications } from '../services/moneyReversal.js';
 
 const router = express.Router();
 
@@ -263,7 +264,7 @@ router.get('/:id/payouts', requireAuth, requireMinRole('MANAGER'), canReview, as
     try {
         const [transactions, advanceApplications] = await Promise.all([
             prisma.transaction.findMany({
-                where: { sourceType: 'salary', sourceId: req.params.id },
+                where: { sourceType: 'salary', sourceId: req.params.id, voidedAt: null }, // IP-17: bekor qilinganlar — kassa tarixida
                 orderBy: { createdAt: 'desc' },
             }),
             prisma.staffAdvanceApplication.findMany({
@@ -302,14 +303,13 @@ router.delete('/:id', requireAuth, requireMinRole('MANAGER'), canManageMoney, as
     try {
         const salary = await prisma.salary.findUnique({ where: { id: req.params.id } });
         if (!salary) return res.status(404).json({ message: 'Topilmadi' });
+        // IP-17 (OQ-12): to'lov berilgan yoki oyi yopilgan oylik o'chirilmaydi — avval
+        // to'lovlar Tranzaksiyalar'da «Bekor qilish» orqali qaytariladi (kassa izi qoladi).
+        const block = await payrollDeleteBlock(prisma, 'salary', salary.id, salary.month, salary.paidAmount);
+        if (block) return res.status(block.status).json({ message: block.message, error: block.message, code: block.code });
 
         await prisma.$transaction(async (tx) => {
-            await tx.transaction.deleteMany({ where: { sourceType: 'salary', sourceId: salary.id } });
-            const applications = await tx.staffAdvanceApplication.findMany({ where: { appliedToType: 'salary', appliedToId: salary.id } });
-            for (const app of applications) {
-                await tx.staffAdvance.update({ where: { id: app.advanceId }, data: { remaining: { increment: app.amount } } });
-            }
-            await tx.staffAdvanceApplication.deleteMany({ where: { appliedToType: 'salary', appliedToId: salary.id } });
+            await releaseAdvanceApplications(tx, 'salary', salary.id);
             await tx.salary.delete({ where: { id: salary.id } });
         });
 

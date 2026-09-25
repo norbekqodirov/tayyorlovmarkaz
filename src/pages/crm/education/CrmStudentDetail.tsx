@@ -27,6 +27,11 @@ import { EmptyState, ErrorState } from '../../../components/States';
 import { SkeletonStatCard } from '../../../components/Skeleton';
 import { Tabs, TabsList, Tab, TabPanel } from '../../../components/ui/Tabs';
 import { studentStatusToUi } from '../../../utils/statusBadge';
+import { Button } from '../../../components/ui/Button';
+import { useToast } from '../../../components/Toast';
+import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
+import { RefundModal } from '../../../components/finance/RefundModal';
+import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
 function LoadingState({ label }: { label?: string }) {
   return (
@@ -129,8 +134,9 @@ export default function CrmStudentDetail() {
       const financeHidden = student.balance === undefined;
       const payments = (Array.isArray(student.payments) ? student.payments : []).map((p: any) => ({
         ...p,
-        type: p.status === 'refunded' ? 'refund' : 'income',
-        category: p.status === 'refunded' ? "Qaytarilgan to'lov" : (p.notes || "Kurs to'lovi"),
+        // IP-17: bekor qilingan (void) kvitansiya tushumga kirmaydi
+        type: p.status === 'refunded' ? 'refund' : p.status === 'void' ? 'void' : 'income',
+        category: p.status === 'refunded' ? "Qaytarilgan to'lov" : p.status === 'void' ? 'Bekor qilingan kvitansiya' : (p.notes || "Kurs to'lovi"),
       }));
 
       // Process certificates
@@ -310,7 +316,7 @@ export default function CrmStudentDetail() {
         <TabPanel value="analytics" className="mt-5"><AnalyticsTab data={data} analytics={analytics} /></TabPanel>
         <TabPanel value="payments" className="mt-5">{data.financeHidden
           ? <EmptyState icon={<Wallet size={24} />} title="Moliyaviy ma'lumot yopiq" message="To'lovlar va balansni ko'rish uchun «Moliya» ruxsati kerak." />
-          : <PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} />}</TabPanel>
+          : <PaymentsTab payments={data.payments} balance={student.balance} studentId={id!} studentName={student.name} onChanged={fetchStudentData} />}</TabPanel>
         <TabPanel value="tests" className="mt-5"><TestsTab studentId={id!} /></TabPanel>
         <TabPanel value="certificates" className="mt-5"><CertificatesTab certificates={data.certificates} /></TabPanel>
       </Tabs>
@@ -656,17 +662,65 @@ function AnalyticsTab({ data, analytics }: any) {
 }
 
 // ── Payments ─────────────────────────────────────────────────────────────────
-function PaymentsTab({ payments, balance, studentId }: any) {
+function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: any) {
+  const { showToast } = useToast();
   const [monthlyDue, setMonthlyDue] = useState<any>(null);
+  // IP-17: qaytarish mumkin bo'lgan avans, qaytarishlar tarixi (moliya huquqi bo'lsa)
+  const [refundInfo, setRefundInfo] = useState<{ available: number; minRole: string } | null>(null);
+  const [refunds, setRefunds] = useState<any[]>([]);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [voidPayment, setVoidPayment] = useState<any>(null);
+  const [voidRefundRow, setVoidRefundRow] = useState<any>(null);
   useEffect(() => {
     if (studentId) {
       api.get(`/finance/monthly-due/${studentId}`).then(res => setMonthlyDue(res.data)).catch(() => setMonthlyDue(null));
+      api.get(`/receipts/refundable/${studentId}`).then(res => setRefundInfo(res.data)).catch(() => setRefundInfo(null));
+      api.get(`/receipts/refunds?studentId=${studentId}`).then(res => setRefunds(Array.isArray(res.data) ? res.data : [])).catch(() => setRefunds([]));
     }
   }, [studentId]);
 
-  const totalIncome = payments.filter((p: any) => p.type === 'income').reduce((s: number, p: any) => s + (p.amount || 0), 0);
+  const canRefund = !!refundInfo && getCurrentRoleLevel() >= (ROLE_LEVEL[refundInfo.minRole] ?? ROLE_LEVEL.ADMIN);
+  const canVoid = !!refundInfo; // moliya huquqi bor (server shu kun/ADMIN qoidasini o'zi tekshiradi)
+  const refundedByPayment = new Map<string, number>();
+  for (const r of refunds) if (r.status === 'done' && r.paymentId) refundedByPayment.set(r.paymentId, (refundedByPayment.get(r.paymentId) || 0) + r.amount);
+  const refundsDone = refunds.filter(r => r.status === 'done').reduce((s, r) => s + r.amount, 0);
+  const totalIncome = payments.filter((p: any) => p.type === 'income' || p.type === 'refund').reduce((s: number, p: any) => s + (p.amount || 0), 0) - refundsDone;
+
+  const doVoidPayment = async (reason: string) => {
+    try {
+      await api.post(`/receipts/${voidPayment.id}/void`, { reason });
+      setVoidPayment(null);
+      showToast('Kvitansiya bekor qilindi', 'success');
+      onChanged?.();
+    } catch (e: any) { return apiError(e); }
+  };
+  const doVoidRefund = async (reason: string) => {
+    try {
+      await api.post(`/receipts/refunds/${voidRefundRow.id}/void`, { reason });
+      setVoidRefundRow(null);
+      showToast('Qaytarish bekor qilindi', 'success');
+      onChanged?.();
+    } catch (e: any) { return apiError(e); }
+  };
+
   return (
     <div className="space-y-4">
+      <RefundModal isOpen={refundOpen} onClose={() => setRefundOpen(false)} studentId={studentId} studentName={studentName}
+        available={refundInfo?.available ?? 0}
+        onDone={() => { setRefundOpen(false); showToast("Qaytarish yozildi", 'success'); onChanged?.(); }} />
+      <ReasonModal isOpen={!!voidPayment} title="Kvitansiyani bekor qilish"
+        message={voidPayment ? `${voidPayment.receiptNo || "To'lov"} — ${formatMoney(voidPayment.amount)}. Faqat xato kiritilgan (pul aslida kelmagan) to'lov uchun: hisoblarga taqsimot qaytariladi, kassada qarshi yozuv qilinadi. Qabul qilingan kundan keyin — faqat administrator. Pul qaytarilgan bo'lsa «Pul qaytarish»dan foydalaning.` : ''}
+        confirmText="Bekor qilish" onClose={() => setVoidPayment(null)} onConfirm={doVoidPayment} />
+      <ReasonModal isOpen={!!voidRefundRow} title="Qaytarishni bekor qilish"
+        message={voidRefundRow ? `${formatMoney(voidRefundRow.amount)} qaytarish xato yozilgan bo'lsa (pul aslida berilmagan) — avans tiklanadi, kassada qarshi yozuv qilinadi.` : ''}
+        confirmText="Bekor qilish" onClose={() => setVoidRefundRow(null)} onConfirm={doVoidRefund} />
+
+      {canRefund && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm px-5 py-3">
+          <p className="text-xs text-zinc-500">Qaytarish mumkin bo'lgan avans: <b className="text-slate-900 dark:text-white tabular-nums">{formatMoney(refundInfo!.available)}</b></p>
+          <Button size="sm" variant="secondary" disabled={!refundInfo!.available} onClick={() => setRefundOpen(true)}>Pul qaytarish</Button>
+        </div>
+      )}
       {monthlyDue?.byGroup?.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
@@ -706,14 +760,40 @@ function PaymentsTab({ payments, balance, studentId }: any) {
               <p className="text-xs font-black text-slate-900 dark:text-white">To'lovlar Tarixi</p>
             </div>
             <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
-              {payments.map((p: any) => (
-                <div key={p.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-zinc-50 dark:hover:bg-white/[0.02]">
-                  <div>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">{p.category || 'To\'lov'}</p>
-                    <p className="text-[10px] text-zinc-400 mt-0.5">{formatDate(p.date)} · {p.method}</p>
+              {payments.map((p: any) => {
+                const partly = refundedByPayment.get(p.id) || 0;
+                return (
+                <div key={p.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-zinc-50 dark:hover:bg-white/[0.02]">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-bold text-slate-900 dark:text-white ${p.type === 'void' ? 'line-through opacity-60' : ''}`}>{p.category || 'To\'lov'}</p>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      {formatDate(p.date)} · {p.method}{p.receiptNo ? ` · ${p.receiptNo}` : ''}
+                      {p.type === 'void' && p.voidReason ? ` · sabab: ${p.voidReason}` : ''}
+                      {p.type === 'income' && partly > 0 ? ` · ${formatMoney(partly)} qaytarilgan` : ''}
+                    </p>
                   </div>
-                  <div className={`text-sm font-black ${p.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {p.type === 'income' ? '+' : '−'}{formatMoney(p.amount)}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canVoid && p.type === 'income' && p.sourceType !== 'online_transaction' && !partly && (
+                      <button onClick={() => setVoidPayment(p)} className="text-[10px] font-bold text-rose-500 hover:underline">Bekor qilish</button>
+                    )}
+                    <div className={`text-sm font-black tabular-nums ${p.type === 'income' ? 'text-emerald-600' : p.type === 'void' ? 'text-zinc-400 line-through' : 'text-rose-600'}`}>
+                      {p.type === 'income' || p.type === 'void' ? '+' : '−'}{formatMoney(p.amount)}
+                    </div>
+                  </div>
+                </div>
+                );
+              })}
+              {refunds.map((r: any) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 px-5 py-3.5 bg-amber-50/40 dark:bg-amber-500/[0.04]">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-bold text-slate-900 dark:text-white ${r.status === 'void' ? 'line-through opacity-60' : ''}`}>Pul qaytarildi{r.status === 'void' ? ' (bekor qilingan)' : ''}</p>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">{formatDate(r.date)} · {r.method} · {r.reason}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canRefund && r.status === 'done' && (
+                      <button onClick={() => setVoidRefundRow(r)} className="text-[10px] font-bold text-rose-500 hover:underline">Bekor qilish</button>
+                    )}
+                    <div className={`text-sm font-black tabular-nums ${r.status === 'void' ? 'text-zinc-400 line-through' : 'text-rose-600'}`}>−{formatMoney(r.amount)}</div>
                   </div>
                 </div>
               ))}

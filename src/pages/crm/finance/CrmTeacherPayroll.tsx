@@ -26,6 +26,7 @@ import { Modal } from '../../../components/ui/Modal';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { formatNumber } from '../../../utils/formatters';
 import { hasAnyPermission } from '../../../utils/roles';
+import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
 
 const MONTHS = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 
@@ -318,10 +319,24 @@ export default function CrmTeacherPayroll() {
     } finally { setBusy(false); }
   };
 
-  // Moliya-audit (2026-09-22, foydalanuvchi so'rovi): xato yaratilgan yoki
-  // test uchun ishlatilgan tasdiqlangan/to'langan davrni ham butunlay
-  // tozalash — backend bog'liq Transaction/StaffAdvanceApplication'larni
-  // ham atomar qaytaradi (server/routes/teacherPayroll.ts).
+  // IP-17 (H.4): tasdiqlangan, lekin to'lov berilmagan maoshni qoralamaga qaytarish (sabab bilan)
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const reopenPayroll = async (reason: string) => {
+    if (!payroll) return;
+    try {
+      const res = await api.post(`/finance/teacher-payroll/${payroll.id}/reopen`, { reason });
+      setPayroll(res.data);
+      setReopenOpen(false);
+      showToast('Maosh qoralamaga qaytarildi', 'success');
+      void loadTeacherDetail();
+      refreshTeacherPayrollList();
+    } catch (e: any) {
+      return apiError(e);
+    }
+  };
+
+  // IP-17 (OQ-12): faqat to'lov berilmagan (yoki to'lovlari bekor qilingan) va oyi
+  // yopilmagan yozuv o'chiriladi; aks holda server sababini qaytaradi (toast'da).
   const deletePayroll = async () => {
     if (!payroll) return;
     setBusy(true);
@@ -555,6 +570,7 @@ export default function CrmTeacherPayroll() {
             onBack={() => setSelectedTeacherId(null)}
             onCreateDraft={createDraft} onApprove={approve} onPay={pay}
             onRequestDelete={() => setDeleteRecordConfirm(true)}
+            onRequestReopen={() => setReopenOpen(true)}
           />
         ) : (
           <TeacherList
@@ -591,10 +607,20 @@ export default function CrmTeacherPayroll() {
       <ConfirmDialog
         isOpen={deleteRecordConfirm}
         title="Davr yozuvini o'chirish"
-        message="Haqiqatan ham bu davr uchun hisoblangan/tasdiqlangan oylik yozuvini butunlay o'chirmoqchimisiz? Bog'liq to'lov(lar) kirim-chiqimdan ham o'chadi, qo'llanilgan avans bo'lsa qoldig'i qaytariladi. Bu amalni bekor qilib bo'lmaydi."
+        message="Haqiqatan ham bu davr uchun hisoblangan oylik yozuvini o'chirmoqchimisiz? Faqat to'lov berilmagan yozuv o'chiriladi — to'lov berilgan bo'lsa, avval Moliya → Tranzaksiyalar'da o'sha to'lovni sabab bilan bekor qiling (kassa tarixida qoladi). Qo'llanilgan avans bo'lsa, qoldig'i avansga qaytariladi."
         confirmText="Ha, butunlay o'chirish"
         onConfirm={async () => { setDeleteRecordConfirm(false); if (section === 'teachers') await deletePayroll(); else await deleteSalary(); }}
         onCancel={() => setDeleteRecordConfirm(false)}
+      />
+
+      <ReasonModal
+        isOpen={reopenOpen}
+        title="Maoshni qayta ochish"
+        message="Tasdiqlangan maosh qoralamaga qaytadi va qayta hisoblash mumkin bo'ladi. Qo'llangan avans avansga qaytariladi. Faqat to'lov berilmagan va oyi yopilmagan maosh uchun."
+        confirmText="Qayta ochish"
+        danger={false}
+        onClose={() => setReopenOpen(false)}
+        onConfirm={reopenPayroll}
       />
 
       <AdvanceModal
@@ -811,7 +837,7 @@ function TeacherDetail(props: {
   payMethod: string; setPayMethod: (m: string) => void;
   outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
   onBack: () => void; onCreateDraft: () => void; onApprove: () => void; onPay: () => void;
-  onRequestDelete: () => void;
+  onRequestDelete: () => void; onRequestReopen: () => void;
 }) {
   const {
     teacherName, month, year, basis, setBasis, accrualPreview, cashPreview, activePreview,
@@ -819,7 +845,7 @@ function TeacherDetail(props: {
     payroll, history, payoutEvents, remaining, accrualCashDelta, staffAtt, loading, busy,
     expandedGroupId, setExpandedGroupId, payAmount, setPayAmount, payMethod, setPayMethod,
     outstandingAdvance, onGiveAdvance, canManageMoney,
-    onBack, onCreateDraft, onApprove, onPay, onRequestDelete,
+    onBack, onCreateDraft, onApprove, onPay, onRequestDelete, onRequestReopen,
   } = props;
 
   return (
@@ -1011,12 +1037,16 @@ function TeacherDetail(props: {
               )}
             </div>
 
-            {/* Moliya-audit (2026-09-22): xato/test uchun yaratilgan davrni
-                butunlay tozalash — statusdan qat'i nazar. */}
+            {/* IP-17 (OQ-12): to'lovsiz yozuvni o'chirish; tasdiqlanganini qoralamaga qaytarish. */}
             {payroll && canManageMoney && (
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-4">
+                {payroll.status === 'approved' && payroll.paidAmount === 0 && (
+                  <button onClick={onRequestReopen} disabled={busy} className="text-[11px] font-bold text-blue-600 hover:underline disabled:opacity-50">
+                    Qayta ochish (qoralamaga)
+                  </button>
+                )}
                 <button onClick={onRequestDelete} disabled={busy} className="flex items-center gap-1.5 text-[11px] font-bold text-rose-500 hover:text-rose-600 hover:underline disabled:opacity-50">
-                  <Trash2 size={12} /> Bu davr yozuvini butunlay o'chirish
+                  <Trash2 size={12} /> Bu davr yozuvini o'chirish
                 </button>
               </div>
             )}

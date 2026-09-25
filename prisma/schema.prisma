@@ -632,6 +632,11 @@ model Transaction {
   // to'ldirilmaydi).
   sourceType  String?
   sourceId    String?
+  // IP-17 (OQ-12): bog'liq yoki yopilgan davrdagi yozuv o'chirilmaydi — bekor qilinadi:
+  // asl yozuv belgilanadi, qarshi yozuv (manfiy summa, sourceType 'reversal') yaratiladi.
+  voidedAt    DateTime?
+  voidedById  String?
+  voidReason  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -662,6 +667,10 @@ model Payment {
   allocationMode String? // legacy | manual | auto_fifo (null — IP-12 dan oldingi)
   receivedById   String?
   groupId        String? // to'lov qaysi guruh uchun (taklif; aniq biriktirish — PaymentAllocation)
+  // IP-17 (H.4): kvitansiya bekor qilinishi (status 'void') — o'chirilmaydi, sabab bilan
+  voidedAt   DateTime?
+  voidedById String?
+  voidReason String?
 
   allocations PaymentAllocation[]
 }
@@ -682,6 +691,25 @@ model PaymentAllocation {
 
   @@index([paymentId])
   @@index([chargeId])
+}
+
+// IP-17 (OQ-07): o'quvchiga pul qaytarish — faqat taqsimlanmagan avansdan (rahbar tasdig'i).
+// Kassa chiqimi (Transaction, REFUND) bilan bog'lanadi; bekor qilish — status void (o'chirilmaydi).
+model Refund {
+  id            String   @id @default(uuid())
+  studentId     String
+  paymentId     String? // qaysi kvitansiyaning avansidan (ixtiyoriy)
+  amount        Int
+  method        String   @default("Naqd")
+  date          String
+  reason        String
+  transactionId String?
+  status        String   @default("done") // done | void
+  createdById   String?
+  createdAt     DateTime @default(now())
+
+  @@index([studentId])
+  @@index([paymentId])
 }
 
 // IP-12: pul komandalari idempotentligi (Idempotency-Key sarlavhasi) — bir kalit bilan
@@ -1298,6 +1326,9 @@ model Invoice {
   paidAt      DateTime?
   method      String?       // Naqd, Payme, Click, Bank, Karta
   description String?       @db.Text
+  // IP-17 (H.4): holat mashinasi — bekor qilingan invoice qayta ochilmaydi va to'lanmaydi
+  cancelledAt  DateTime?
+  cancelReason String?
   items       InvoiceItem[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

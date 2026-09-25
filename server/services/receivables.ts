@@ -3,6 +3,8 @@
  *
  *   Qarz(hisob)  = net + Σ e'lon qilingan tuzatmalar − Σ faol taqsimotlar   (≥ 0)
  *   Avans        = Σ yangi rejimdagi to'lovlar − Σ ularning faol taqsimotlari − Σ qaytarishlar
+ *                  (to'liq qaytarilgan to'lov 'refunded' — hisobga kirmaydi; qisman — 'paid' va
+ *                   Refund qatorlari ayriladi; bekor qilingan 'void' — kirmaydi, IP-17)
  *   Balans (kesh)= Avans − Σ Qarz
  *
  * Eski (`allocationMode` null/legacy) to'lovlar yangi avansga kirmaydi — o'tishdan oldingi
@@ -52,8 +54,11 @@ export async function openCharges(db: Db, studentId: string, preferGroupId?: str
 export async function paymentUnallocated(db: Db, paymentId: string): Promise<number> {
     const p = await db.payment.findUnique({ where: { id: paymentId }, select: { amount: true } });
     if (!p) return 0;
-    const agg = await db.paymentAllocation.aggregate({ where: { paymentId, reversedAt: null }, _sum: { amount: true } });
-    return Math.round(p.amount) - (agg._sum.amount ?? 0);
+    const [agg, ref] = await Promise.all([
+        db.paymentAllocation.aggregate({ where: { paymentId, reversedAt: null }, _sum: { amount: true } }),
+        db.refund.aggregate({ where: { paymentId, status: 'done' }, _sum: { amount: true } }),
+    ]);
+    return Math.round(p.amount) - (agg._sum.amount ?? 0) - (ref._sum.amount ?? 0);
 }
 
 export interface StudentPosition { debt: number; credit: number; balance: number; charges: ChargeBalance[] }
@@ -66,9 +71,13 @@ export async function studentPosition(db: Db, studentId: string): Promise<Studen
         select: { id: true, amount: true },
     });
     const paid = payments.reduce((a, p) => a + Math.round(p.amount), 0);
-    const allocated = payments.length
-        ? (await db.paymentAllocation.aggregate({ where: { paymentId: { in: payments.map(p => p.id) }, reversedAt: null }, _sum: { amount: true } }))._sum.amount ?? 0
-        : 0;
-    const credit = Math.max(0, paid - allocated);
+    const ids = payments.map(p => p.id);
+    const [allocated, refunded] = payments.length
+        ? await Promise.all([
+            db.paymentAllocation.aggregate({ where: { paymentId: { in: ids }, reversedAt: null }, _sum: { amount: true } }).then(a => a._sum.amount ?? 0),
+            db.refund.aggregate({ where: { paymentId: { in: ids }, status: 'done' }, _sum: { amount: true } }).then(a => a._sum.amount ?? 0),
+        ])
+        : [0, 0];
+    const credit = Math.max(0, paid - allocated - refunded);
     return { debt, credit, balance: credit - debt, charges };
 }
