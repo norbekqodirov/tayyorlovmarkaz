@@ -440,7 +440,7 @@ router.get('/invoices/:id/payment-links', requireAuth, requirePermission('financ
 // bog'langan), mustaqil ikki yozuv emas.
 router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), idempotent('finance_transaction'), async (req, res) => {
     try {
-        const { type, amount, category, description, date, method, studentId, studentName, staffId, staffName } = req.body;
+        const { type, amount, category, description, date, method, studentId, studentName, staffId, staffName, groupId, month } = req.body;
         if (!type || !category || !date) {
             return res.status(400).json({ error: 'type, category va date majburiy' });
         }
@@ -470,6 +470,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
                 const requester = (req as any).user;
                 const r = await createReceipt({
                     studentId, amount: Math.round(numAmount), method, date, note: description, category, source: 'finance_form',
+                    groupId: groupId || null, month: month || null,
                 }, { id: requester?.id, name: requester?.name });
                 return res.json(r.transaction);
             } catch (e: any) {

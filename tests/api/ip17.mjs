@@ -192,6 +192,16 @@ try {
   r = await api('PUT', `/transactionCategories/${otherCat.id}`, admin.token, { name: otherCat.name, type: 'income', isActive: true, kind: 'TUITION' });
   check('kategoriya turini tahrirlash — TUITION saqlandi', r.status === 200 && (await prisma.transactionCategory.findUnique({ where: { id: otherCat.id } })).kind === 'TUITION', r);
 
+  // ── TQ-D: "Kurs to'lovi" (bazada bunday kategoriya bo'lmasa ham) + o'quvchi + guruh + oy
+  r = await api('POST', '/finance/transactions', manager.token, { type: 'income', amount: 25000, category: "Kurs to'lovi", date: today, method: 'Naqd', studentId: S.id, groupId: G.id, month: '2026-10' });
+  const tp = r.data?.sourceId ? await prisma.payment.findUnique({ where: { id: r.data.sourceId } }) : null;
+  check('kurs to\'lovi: kvitansiya guruh va oy bilan', r.status === 200 && tp?.groupId === G.id && tp?.month === '2026-10' && !!tp?.receiptNo, { st: r.status, tp });
+  r = await api('POST', '/finance/transactions', manager.token, { type: 'income', amount: 25000, category: "Kurs to'lovi", date: today, method: 'Naqd', studentId: S2.id, groupId: G.id });
+  check('o\'quvchi o\'qimaydigan guruh — 400 BAD_GROUP', r.status === 400 && r.data.code === 'BAD_GROUP', r);
+  await prisma.student.update({ where: { id: S2.id }, data: { phone: '+998 (93) 517-17-17' } });
+  r = await api('GET', '/students/search?q=935171717', manager.token);
+  check('qidiruv: xom telefon raqami bo\'yicha (phoneNorm hali bo\'sh), balans bilan', r.status === 200 && r.data.some(x => x.id === S2.id && typeof x.balance === 'number'), r.data);
+
   // ── Legacy rejim: qaytarish musbat balansdan
   await setMode('legacy');
   const L = await prisma.student.create({ data: { name: `${TAG} Legacy Refund`, balance: 70000 } });

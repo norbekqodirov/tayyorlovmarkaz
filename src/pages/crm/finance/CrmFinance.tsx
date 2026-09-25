@@ -27,6 +27,7 @@ import type { TransactionCategory } from '../../../types/transactionCategory';
 import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
+import { StudentSearchSelect, type FoundStudent } from '../../../components/finance/StudentSearchSelect';
 
 interface Invoice {
   id: string;
@@ -138,6 +139,14 @@ const RESERVED_EXPENSE_CATEGORIES: { name: string; label: string }[] = [
   { name: 'Oylik', label: "Oylik maosh (xodim/o'qituvchi)" },
   { name: 'Avans', label: "Avans (xodim/o'qituvchiga oldindan)" },
 ];
+// TQ-D: kurs to'lovi har doim tanlanadi — markazda bunday nomli kategoriya bo'lmasa ham
+// (masalan production'da "O'quvchi kurs puli to'ladi" nomi bilan yaratilgan).
+const RESERVED_INCOME_CATEGORIES: { name: string; label: string }[] = [
+  { name: "Kurs to'lovi", label: "Kurs to'lovi (o'quvchi to'lovi)" },
+];
+// server/services/categories.ts guessCategoryKind bilan bir xil lug'at (tur tanlanmagan kategoriyalar uchun)
+const TUITION_NAME_RE = /kurs to'lov|kurs tolov|kurs pul|o'qish to'lov|o'qish pul|tuition/;
+const normCategoryName = (name: string) => name.toLowerCase().replace(/[ʻʼ‘’`']/g, "'").replace(/\s+/g, ' ').trim();
 
 export default function CrmFinance() {
   const canManage = getCurrentRoleLevel() >= ROLE_LEVEL.MANAGER;
@@ -148,8 +157,16 @@ export default function CrmFinance() {
   const { showToast } = useToast();
   const { data: categories, loading: categoriesLoading, error: categoriesError, refetch: reloadCategories } = useFirestore<TransactionCategory>('transactionCategories');
   const activeCategoryNames = (type: TransactionCategory['type']) => [...new Set(categories.filter(category => category.type === type && category.isActive).map(category => category.name))];
+  // TQ-D/TQ-E: kategoriya "kurs to'lovi" turidami — tanlangan tur, bo'lmasa nomdan (server bilan bir xil)
+  const isTuitionCategory = (name?: string) => {
+    if (!name) return false;
+    if (RESERVED_INCOME_CATEGORIES.some(r => r.name === name)) return true;
+    const cat = categories.find(c => c.type === 'income' && c.name === name);
+    if (cat?.kind) return cat.kind === 'TUITION';
+    return TUITION_NAME_RE.test(normCategoryName(name));
+  };
   const categoryLabel = (name: string, type: TransactionCategory['type']) => {
-    const reserved = type === 'expense' ? RESERVED_EXPENSE_CATEGORIES.find(r => r.name === name) : undefined;
+    const reserved = (type === 'expense' ? RESERVED_EXPENSE_CATEGORIES : RESERVED_INCOME_CATEGORIES).find(r => r.name === name);
     if (reserved) return reserved.label;
     const label = type === 'expense' ? (EXPENSE_LABELS[name as keyof typeof EXPENSE_LABELS] ?? name) : name;
     // IP-17: tizim yozuvi (qaytarish — manfiy kirim) foydalanuvchi kategoriyasi emas
@@ -158,7 +175,7 @@ export default function CrmFinance() {
   };
   const categoryOptions = (type: TransactionCategory['type'], selected: string) => {
     const active = activeCategoryNames(type);
-    const reserved = type === 'expense' ? RESERVED_EXPENSE_CATEGORIES.filter(r => !active.includes(r.name)) : [];
+    const reserved = (type === 'expense' ? RESERVED_EXPENSE_CATEGORIES : RESERVED_INCOME_CATEGORIES).filter(r => !active.includes(r.name));
     return <>
       <option value="">{categoriesLoading ? 'Kategoriyalar yuklanmoqda...' : 'Kategoriya tanlang'}</option>
       {selected && !active.includes(selected) && !reserved.some(r => r.name === selected) && <option value={selected}>{categoryLabel(selected, type)}</option>}
@@ -357,6 +374,7 @@ export default function CrmFinance() {
   // F21 tuzatish: ilgari bu yerda ham "band" holati yo'q edi — ikki marta
   // bosilsa ikkita invoice yaratilishi mumkin edi.
   const [invoiceSaving, setInvoiceSaving] = useState(false);
+  const [invoiceStudent, setInvoiceStudent] = useState<FoundStudent | null>(null);
   const handleCreateInvoice = async () => {
     if (!canManage || !invoiceForm.studentId || !invoiceForm.amount || invoiceSaving) return;
     setInvoiceSaving(true);
@@ -373,6 +391,7 @@ export default function CrmFinance() {
       showToast("Invoice yaratildi", 'success');
       setIsInvoiceModalOpen(false);
       setInvoiceForm({ studentId: '', amount: '', discount: '0', tax: '0', dueDate: toTashkentDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), method: 'Naqd', description: '' });
+      setInvoiceStudent(null);
       setPromoCode(''); setPromoApplied(null);
       fetchInvoices();
     } catch (e: any) {
@@ -461,6 +480,16 @@ export default function CrmFinance() {
     staffId: '',
     staffName: ''
   });
+  // TQ-D: kurs to'lovi — o'quvchi qidirib tanlanadi, guruh va oy ko'rsatiladi
+  const [tuitionStudent, setTuitionStudent] = useState<FoundStudent | null>(null);
+  const [tuitionGroupId, setTuitionGroupId] = useState('');
+  const [tuitionMonth, setTuitionMonth] = useState(() => toTashkentDate().slice(0, 7));
+  const isTuitionForm = form.type === 'income' && isTuitionCategory(form.category);
+  const pickTuitionStudent = (st: FoundStudent | null) => {
+    setTuitionStudent(st);
+    setTuitionGroupId(st && st.groups.length === 1 ? st.groups[0].id : '');
+    setForm(f => ({ ...f, studentId: st?.id || '', studentName: st?.name || '', description: st ? `${st.name} — kurs to'lovi` : '' }));
+  };
 
   // F21 tuzatish (2026-09-16 audit): ilgari bu amalda HECH QANDAY "band"
   // holati yo'q edi — ikki marta tez bosilsa (yoki tarmoq sekin javob
@@ -557,8 +586,8 @@ export default function CrmFinance() {
       showToast("Iltimos, xodim yoki o'qituvchini tanlang", 'error');
       return;
     }
-    if (form.type === 'income' && form.category === "Kurs to'lovi" && !form.studentId) {
-      showToast("Kurs to'lovi uchun o'quvchini tanlang", 'error');
+    if (isTuitionForm && !form.studentId) {
+      showToast("Kurs to'lovi uchun o'quvchini qidirib tanlang", 'error');
       return;
     }
     setTxSaving(true);
@@ -587,7 +616,10 @@ export default function CrmFinance() {
           method: form.method, date: form.date, notes: form.description || undefined,
         }, idempotencyHeaders(txKey));
       } else {
-        const newTransaction = { ...form, amount: Number(form.amount) };
+        const newTransaction = {
+          ...form, amount: Number(form.amount),
+          ...(isTuitionForm ? { groupId: tuitionGroupId || undefined, month: tuitionMonth || undefined } : { studentId: '', studentName: '' }),
+        };
         // FIN-01 tuzatish: balans endi brauzerda hisoblanib alohida yozilmaydi —
         // bitta server so'rovi (POST /finance/transactions) Transaction'ni va
         // (kirim + o'quvchi bo'lsa) balansni bitta atomar tranzaksiyada
@@ -605,6 +637,7 @@ export default function CrmFinance() {
         method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
       });
       setSelectedPayrollId('');
+      pickTuitionStudent(null);
       setTxKey(newIdempotencyKey());
     } catch (e: any) {
       showToast(e?.response?.data?.message || e?.response?.data?.error || (isOylikOrAvansForm ? "Qayd etishda xatolik" : "Tranzaksiya qo'shishda xatolik yuz berdi"), 'error');
@@ -1291,16 +1324,7 @@ export default function CrmFinance() {
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-black text-zinc-500 uppercase tracking-widest mb-1.5">Talaba</label>
-            <select
-              value={invoiceForm.studentId}
-              onChange={e => setInvoiceForm(f => ({ ...f, studentId: e.target.value }))}
-              className="w-full px-3 py-2.5 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
-            >
-              <option value="">Talabani tanlang...</option>
-              {students.map((s: any) => (
-                <option key={s.id} value={s.id}>{s.name} {s.group ? `(${s.group})` : ''}</option>
-              ))}
-            </select>
+            <StudentSearchSelect value={invoiceStudent} onChange={st => { setInvoiceStudent(st); setInvoiceForm(f => ({ ...f, studentId: st?.id || '' })); }} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1674,7 +1698,7 @@ export default function CrmFinance() {
 
           <div className="space-y-1.5">
             <label htmlFor="transaction-category" className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Kategoriya</label>
-            <select id="transaction-category" disabled={categoriesLoading || !!categoriesError} value={form.category} onChange={e => setForm({ ...form, category: e.target.value, studentId: '', studentName: '', staffId: '', staffName: '' })}
+            <select id="transaction-category" disabled={categoriesLoading || !!categoriesError} value={form.category} onChange={e => { setTuitionStudent(null); setTuitionGroupId(''); setForm({ ...form, category: e.target.value, studentId: '', studentName: '', staffId: '', staffName: '', description: '' }); }}
               className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
               {categoryOptions(form.type, form.category)}
             </select>
@@ -1682,16 +1706,33 @@ export default function CrmFinance() {
             {!categoriesLoading && !categoriesError && activeCategoryNames(form.type).length === 0 && <p className="text-sm text-zinc-500">Faol kategoriya yo'q. Kirim/Chiqim kategoriyalari bo'limida kategoriya qo'shing.</p>}
           </div>
 
-          {form.type === 'income' && form.category === "Kurs to'lovi" && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</label>
-              <select value={form.studentId} onChange={e => {
-                const s = students.find(st => st.id === e.target.value);
-                setForm({ ...form, studentId: e.target.value, studentName: s?.name || '', description: s ? `${s.name} — kurs to'lovi` : '' });
-              }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">O'quvchini tanlang</option>
-                {students.map(s => <option key={s.id} value={s.id}>{s.name} {s.balance !== undefined ? `(${s.balance > 0 ? '+' : ''}${formatNumber(s.balance)} so'm)` : ''}</option>)}
-              </select>
+          {isTuitionForm && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">O'quvchi</label>
+                <StudentSearchSelect value={tuitionStudent} onChange={pickTuitionStudent} autoFocus />
+              </div>
+              {tuitionStudent && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Guruh</label>
+                    <select value={tuitionGroupId} onChange={e => setTuitionGroupId(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">{tuitionStudent.groups.length ? 'Umumiy (eng eski qarzdan)' : 'Guruhsiz'}</option>
+                      {tuitionStudent.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Qaysi oy uchun</label>
+                    <input type="month" value={tuitionMonth} onChange={e => setTuitionMonth(e.target.value)}
+                      className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              )}
+              <p className="text-[10px] text-zinc-400 flex items-start gap-1.5">
+                <Info size={12} className="shrink-0 mt-0.5" />
+                To'lov o'quvchining balansiga yoziladi va kvitansiya raqami beriladi (Q-2026-…).
+              </p>
             </div>
           )}
 

@@ -41,17 +41,18 @@ router.get('/search', requireAuth, requireMinRole('MANAGER'), requireAnyPermissi
         const rows = await prisma.student.findMany({
             where: { deletedAt: null },
             select: {
-                id: true, name: true, phone: true, parentPhone: true, code: true, phoneNorm: true, status: true,
+                id: true, name: true, phone: true, parentPhone: true, code: true, phoneNorm: true, status: true, balance: true,
                 enrollments: { select: { group: { select: { id: true, name: true } } } },
             },
         });
         const matches = rows.filter(s =>
             (codeQ && s.code === codeQ)
             || normName(s.name).includes(nq)
-            || (digits.length >= 4 && ((s.phoneNorm || '').includes(digits.slice(-9)) || (s.parentPhone || '').replace(/\D/g, '').includes(digits.slice(-9))))
+            // phoneNorm backfill'dan keyin to'ladi — unga qadar xom telefon raqamlari ham solishtiriladi
+            || (digits.length >= 4 && [s.phoneNorm, s.phone, s.parentPhone].some(p => (p || '').replace(/\D/g, '').includes(digits.slice(-9))))
             || (s.code || '').toLowerCase() === nq);
         res.json(matches.slice(0, 20).map(s => ({
-            id: s.id, name: s.name, code: s.code, phone: s.phone, status: s.status,
+            id: s.id, name: s.name, code: s.code, phone: s.phone, status: s.status, balance: s.balance,
             groups: s.enrollments.map(e => e.group),
         })));
     } catch (err: any) {

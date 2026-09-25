@@ -45,6 +45,8 @@ async function reserveReceiptNo(tx: Tx, date: string): Promise<string> {
 export interface ReceiptInput {
     studentId: string; amount: number; method?: string; date?: string; note?: string | null; groupId?: string | null;
     allocations?: AllocationInput[]; auto?: boolean; category?: string; source?: string;
+    /** TQ-D: qaysi oy uchun (YYYY-MM) — hujjat uchun; taqsimot baribir e'lon qilingan hisoblar bo'yicha */
+    month?: string | null;
 }
 
 export async function createReceipt(input: ReceiptInput, actor: { id?: string | null; name?: string | null }) {
@@ -53,6 +55,7 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
     const date = input.date || todayDateStr();
     if (!isValidDate(date)) throw new ReceiptError(400, "Sana YYYY-MM-DD formatida bo'lishi kerak", 'BAD_DATE');
     if (date > todayDateStr()) throw new ReceiptError(400, "Kelajak sanasi bilan to'lov qabul qilinmaydi", 'FUTURE');
+    if (input.month != null && input.month !== '' && !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) throw new ReceiptError(400, "Oy YYYY-MM formatida bo'lishi kerak", 'BAD_MONTH');
     if (await isMonthClosed(prisma, date)) throw new ReceiptError(409, `${date.slice(0, 7)} oyi yopilgan — to'lovni joriy sana bilan qabul qiling`, 'PERIOD_CLOSED');
     const mode = await getLedgerMode();
     if (mode === 'legacy' && input.allocations?.length) throw new ReceiptError(400, "Eski rejimda (legacy) to'lov hisoblarga taqsimlanmaydi", 'LEGACY_MODE');
@@ -62,12 +65,18 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
     return prisma.$transaction(async tx => {
         const student = await tx.student.findUnique({ where: { id: input.studentId }, select: { id: true, name: true } });
         if (!student) throw new ReceiptError(404, "O'quvchi topilmadi", 'NO_STUDENT');
+        if (input.groupId) {
+            const member = await tx.enrollment.findUnique({ where: { studentId_groupId: { studentId: student.id, groupId: input.groupId } }, select: { id: true } })
+                ?? await tx.enrollmentPeriod.findFirst({ where: { studentId: student.id, groupId: input.groupId }, select: { id: true } });
+            if (!member) throw new ReceiptError(400, "O'quvchi bu guruhda o'qimaydi", 'BAD_GROUP');
+        }
         const receiptNo = await reserveReceiptNo(tx, date);
         const payment = await tx.payment.create({
             data: {
                 studentId: student.id, amount, method: input.method || 'Naqd', date, status: 'paid',
                 notes: input.note || `Kurs to'lovi — ${student.name}`, receiptNo, allocationMode,
                 receivedById: actor.id ?? null, groupId: input.groupId ?? null, sourceType: input.source ?? 'receipt',
+                month: input.month || null,
             },
         });
         const transaction = await tx.transaction.create({
