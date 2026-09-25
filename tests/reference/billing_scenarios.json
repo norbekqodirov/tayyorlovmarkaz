@@ -1,0 +1,290 @@
+{
+  "about": "IP-07 referens dataset — docs/ADR_HISOB_QOIDALARI.md qarorlari bo'yicha kutilgan natijalar. Kutilgan qiymatlar QO'LDA hisoblangan (spetsifikatsiya); tests/unit/referenceDataset.test.ts ularni server/domain/billingFormula.ts bilan solishtiradi. Standart: P=600000, N=12, M=3, ustoz 40% (4000 bp).",
+  "scenarios": [
+    {
+      "id": "RS-01", "type": "month", "refs": ["TQ-A", "TQ-B", "Misol 1", "QT-01"],
+      "title": "20-sentabrda qo'shildi, qolgan 6 dars — hisob 300 000, ustoz 120 000 (to'lanmagan bo'lsa ham)",
+      "charges": [{ "id": "mat-09", "price": 600000, "N": 12, "R": 6, "fullMonth": false, "teachers": { "A": { "lessons": 6, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "mat-09": { "gross": 300000, "net": 300000, "teacherBase": 300000, "salary": { "A": 120000 } } }, "debt": 300000, "credit": 0, "balance": -300000, "salaryTotal": 120000 }
+    },
+    {
+      "id": "RS-02", "type": "month", "refs": ["Misol 1", "TQ-B"],
+      "title": "Misol 1 davomi: 300 000 to'landi — qarz 0, maosh o'zgarmaydi",
+      "charges": [{ "id": "mat-09", "price": 600000, "N": 12, "R": 6, "fullMonth": false, "teachers": { "A": { "lessons": 6, "rateBp": 4000 } } }],
+      "payments": [{ "amount": 300000, "allocations": [{ "charge": "mat-09", "amount": 300000 }] }],
+      "expect": { "charges": { "mat-09": { "net": 300000, "salary": { "A": 120000 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 120000 }
+    },
+    {
+      "id": "RS-03", "type": "month", "refs": ["QT-02", "OQ-01"],
+      "title": "To'liq oy, 13 darsli oy — paket narxi 600 000",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 13, "fullMonth": true, "teachers": { "A": { "lessons": 13, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "gross": 600000, "net": 600000, "salary": { "A": 240000 } } }, "debt": 600000, "credit": 0, "balance": -600000, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-04", "type": "month", "refs": ["OQ-03", "QT-02"],
+      "title": "To'liq oy, bayram tufayli 11 dars — narx o'zgarmaydi (paket)",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 11, "fullMonth": true, "teachers": { "A": { "lessons": 11, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 600000, "salary": { "A": 240000 } } }, "debt": 600000, "credit": 0, "balance": -600000, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-05", "type": "month", "refs": ["QT-03"],
+      "title": "Qisman oyda R = N — to'liq narxdan oshmaydi",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": false, "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 600000 } }, "debt": 600000, "credit": 0, "balance": -600000, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-06", "type": "month", "refs": ["Misol 2", "OQ-04", "OQ-05"],
+      "title": "Qisman oyda 6 darsdan 3 tasi qoldirildi, oldindan 300 000 to'langan — net 150 000, avans 150 000, ustoz 60 000",
+      "charges": [{ "id": "mat-09", "price": 600000, "N": 12, "R": 6, "fullMonth": false, "absences": 3, "teachers": { "A": { "lessons": 6, "rateBp": 4000 } } }],
+      "payments": [{ "amount": 300000, "allocations": [{ "charge": "mat-09", "amount": 150000 }] }],
+      "expect": { "charges": { "mat-09": { "gross": 300000, "net": 150000, "teacherBase": 150000, "lines": [300000, -150000], "salary": { "A": 60000 } } }, "debt": 0, "credit": 150000, "balance": 150000, "salaryTotal": 60000 }
+    },
+    {
+      "id": "RS-07", "type": "month", "refs": ["QT-05", "OQ-04"],
+      "title": "A=2 < M=3 — chegirma yo'q",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "absences": 2, "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 600000, "lines": [600000] } }, "debt": 600000, "credit": 0, "balance": -600000, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-08", "type": "month", "refs": ["QT-05", "OQ-04", "OQ-05"],
+      "title": "To'liq oyda A=3 — 150 000 chegirma, ustoz bazasi ham kamayadi",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "absences": 3, "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 450000, "teacherBase": 450000, "salary": { "A": 180000 } } }, "debt": 450000, "credit": 0, "balance": -450000, "salaryTotal": 180000 }
+    },
+    {
+      "id": "RS-09", "type": "month", "refs": ["G.3 §2"],
+      "title": "Qisman oyda (R=2) 5 ta qoldirish — chegirma bazadan oshmaydi, net 0",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 2, "fullMonth": false, "absences": 5, "teachers": { "A": { "lessons": 2, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "gross": 100000, "net": 0, "teacherBase": 0, "lines": [100000, -100000], "salary": { "A": 0 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 0 }
+    },
+    {
+      "id": "RS-10", "type": "month", "refs": ["TQ-C", "TQ-D", "Misol 3", "QT-07"],
+      "title": "Ikki guruh: Matematika qisman (300 000), Ingliz tili to'liq (400 000); 400 000 taqsimlandi",
+      "charges": [
+        { "id": "mat-09", "price": 600000, "N": 12, "R": 6, "fullMonth": false, "teachers": { "A": { "lessons": 6, "rateBp": 4000 } } },
+        { "id": "eng-09", "price": 400000, "N": 12, "R": 12, "fullMonth": true, "teachers": { "B": { "lessons": 12, "rateBp": 4000 } } }
+      ],
+      "payments": [{ "amount": 400000, "allocations": [{ "charge": "mat-09", "amount": 300000 }, { "charge": "eng-09", "amount": 100000 }] }],
+      "expect": { "charges": { "mat-09": { "net": 300000, "debt": 0, "salary": { "A": 120000 } }, "eng-09": { "net": 400000, "debt": 300000, "salary": { "B": 160000 } } }, "debt": 300000, "credit": 0, "balance": -300000, "salaryTotal": 280000 }
+    },
+    {
+      "id": "RS-11", "type": "month", "refs": ["Misol 3", "TQ-B"],
+      "title": "Misol 3 davomi: Ingliz tiliga yana 300 000 — qarz 0, maosh o'zgarmaydi",
+      "charges": [
+        { "id": "mat-09", "price": 600000, "N": 12, "R": 6, "fullMonth": false, "teachers": { "A": { "lessons": 6, "rateBp": 4000 } } },
+        { "id": "eng-09", "price": 400000, "N": 12, "R": 12, "fullMonth": true, "teachers": { "B": { "lessons": 12, "rateBp": 4000 } } }
+      ],
+      "payments": [
+        { "amount": 400000, "allocations": [{ "charge": "mat-09", "amount": 300000 }, { "charge": "eng-09", "amount": 100000 }] },
+        { "amount": 300000, "allocations": [{ "charge": "eng-09", "amount": 300000 }] }
+      ],
+      "expect": { "charges": { "eng-09": { "debt": 0, "salary": { "B": 160000 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 280000 }
+    },
+    {
+      "id": "RS-12", "type": "month", "refs": ["Misol 5", "OQ-08"],
+      "title": "Ortiqcha to'lov: qarz 700 000, 1 000 000 keldi — avans 300 000",
+      "charges": [
+        { "id": "mat-09", "price": 600000, "N": 12, "R": 6, "fullMonth": false, "teachers": { "A": { "lessons": 6, "rateBp": 4000 } } },
+        { "id": "eng-09", "price": 400000, "N": 12, "R": 12, "fullMonth": true, "teachers": { "B": { "lessons": 12, "rateBp": 4000 } } }
+      ],
+      "payments": [{ "amount": 1000000, "allocations": [{ "charge": "mat-09", "amount": 300000 }, { "charge": "eng-09", "amount": 400000 }] }],
+      "expect": { "debt": 0, "credit": 300000, "balance": 300000, "salaryTotal": 280000 }
+    },
+    {
+      "id": "RS-13", "type": "month", "refs": ["Misol 6", "OQ-11", "QT-22"],
+      "title": "Oy o'rtasida ustoz almashdi: A 5 dars (40%), B 7 dars (45%)",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "teachers": { "A": { "lessons": 5, "rateBp": 4000 }, "B": { "lessons": 7, "rateBp": 4500 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "teacherBase": 600000, "salary": { "A": 100000, "B": 157500 } } }, "debt": 600000, "credit": 0, "balance": -600000, "salaryTotal": 257500 }
+    },
+    {
+      "id": "RS-14", "type": "month", "refs": ["OQ-05"],
+      "title": "Aka-uka chegirmasi 10% — o'quvchi 540 000, ustoz bazasi 600 000 (marketing — markaz hisobidan)",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "discounts": [{ "kind": "sibling", "percentBp": 1000, "description": "Aka-uka 10%" }], "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 540000, "teacherBase": 600000, "lines": [600000, -60000], "salary": { "A": 240000 } } }, "debt": 540000, "credit": 0, "balance": -540000, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-15", "type": "month", "refs": ["OQ-05"],
+      "title": "Promo 100 000 va aka-uka 10% — avval foizli, keyin qat'iy (kiritish tartibidan qat'i nazar)",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "discounts": [{ "kind": "promo", "amount": 100000, "description": "PROMO100" }, { "kind": "sibling", "percentBp": 1000, "description": "Aka-uka 10%" }], "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 440000, "teacherBase": 600000, "lines": [600000, -60000, -100000], "salary": { "A": 240000 } } }, "debt": 440000, "credit": 0, "balance": -440000, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-16", "type": "month", "refs": ["OQ-05", "OQ-04"],
+      "title": "Davomat chegirmasi (A=3) keyin aka-uka 10% qolgan summaga",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "absences": 3, "discounts": [{ "kind": "sibling", "percentBp": 1000, "description": "Aka-uka 10%" }], "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 405000, "teacherBase": 450000, "lines": [600000, -150000, -45000], "salary": { "A": 180000 } } }, "debt": 405000, "credit": 0, "balance": -405000, "salaryTotal": 180000 }
+    },
+    {
+      "id": "RS-17", "type": "month", "refs": ["OQ-03"],
+      "title": "Markaz bekor qilgan va qoplanmagan 1 dars — kredit P/N, ustoz bazasi ham kamayadi",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "discounts": [{ "kind": "cancel_credit", "amount": 50000, "description": "Bekor qilingan dars (12-sentabr)" }], "teachers": { "A": { "lessons": 11, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 550000, "teacherBase": 550000, "salary": { "A": 220000 } } }, "debt": 550000, "credit": 0, "balance": -550000, "salaryTotal": 220000 }
+    },
+    {
+      "id": "RS-18", "type": "month", "refs": ["OQ-03"],
+      "title": "Pullik qo'shimcha dars 80 000 — alohida qator, ustoz bazasiga kiradi",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "extraLessons": [{ "amount": 80000, "description": "Imtihon oldi qo'shimcha dars" }], "teachers": { "A": { "lessons": 13, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "gross": 680000, "net": 680000, "teacherBase": 680000, "lines": [600000, 80000], "salary": { "A": 272000 } } }, "debt": 680000, "credit": 0, "balance": -680000, "salaryTotal": 272000 }
+    },
+    {
+      "id": "RS-19", "type": "month", "refs": ["OQ-05", "G.5"],
+      "title": "Promo qolgan summadan katta — o'quvchi 0 to'laydi, ustoz bazasi 100 000 saqlanadi",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 2, "fullMonth": false, "discounts": [{ "kind": "promo", "amount": 150000, "description": "Grant" }], "teachers": { "A": { "lessons": 2, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "gross": 100000, "net": 0, "teacherBase": 100000, "lines": [100000, -100000], "salary": { "A": 40000 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 40000 }
+    },
+    {
+      "id": "RS-20", "type": "month", "refs": ["OQ-18", "G.5"],
+      "title": "Faqat bepul sinov darsi — billable dars yo'q, hisob va maosh 0",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 0, "fullMonth": false, "teachers": { "A": { "lessons": 0, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "gross": 0, "net": 0, "salary": { "A": 0 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 0 }
+    },
+    {
+      "id": "RS-21", "type": "month", "refs": ["OQ-06"],
+      "title": "2 haftalik pauza (4 dars) — oy qisman, R = 8 → 400 000",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 8, "fullMonth": false, "teachers": { "A": { "lessons": 8, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 400000, "salary": { "A": 160000 } } }, "debt": 400000, "credit": 0, "balance": -400000, "salaryTotal": 160000 }
+    },
+    {
+      "id": "RS-22", "type": "month", "refs": ["OQ-02"],
+      "title": "Qo'shilgan kuni dars bor — o'sha dars hisobga kiradi (R = 7 → 350 000)",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 7, "fullMonth": false, "teachers": { "A": { "lessons": 7, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 350000, "salary": { "A": 140000 } } }, "debt": 350000, "credit": 0, "balance": -350000, "salaryTotal": 140000 }
+    },
+    {
+      "id": "RS-23", "type": "month", "refs": ["G.3 §6"],
+      "title": "Yaxlitlash: 550 000 × 5/13 = 211 538,46 → 211 538; 40% → 84 615",
+      "charges": [{ "id": "c", "price": 550000, "N": 13, "R": 5, "fullMonth": false, "teachers": { "A": { "lessons": 5, "rateBp": 4000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 211538, "salary": { "A": 84615 } } }, "debt": 211538, "credit": 0, "balance": -211538, "salaryTotal": 84615 }
+    },
+    {
+      "id": "RS-24", "type": "month", "refs": ["G.3 §6"],
+      "title": "Yaxlitlash 0,5 yuqoriga: 500 000/12 = 41 666,67 → 41 667; 37,5% → 15 625",
+      "charges": [{ "id": "c", "price": 500000, "N": 12, "R": 1, "fullMonth": false, "teachers": { "A": { "lessons": 1, "rateBp": 3750 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 41667, "salary": { "A": 15625 } } }, "debt": 41667, "credit": 0, "balance": -41667, "salaryTotal": 15625 }
+    },
+    {
+      "id": "RS-25", "type": "month", "refs": ["Misol 9"],
+      "title": "Eng katta qoldiq: 100 so'm uch ustozga teng — 34/33/33",
+      "charges": [{ "id": "c", "price": 100, "N": 3, "R": 3, "fullMonth": false, "teachers": { "A": { "lessons": 1, "rateBp": 10000 }, "B": { "lessons": 1, "rateBp": 10000 }, "C": { "lessons": 1, "rateBp": 10000 } } }],
+      "payments": [],
+      "expect": { "charges": { "c": { "net": 100, "salary": { "A": 34, "B": 33, "C": 33 } } }, "debt": 100, "credit": 0, "balance": -100, "salaryTotal": 100 }
+    },
+    {
+      "id": "RS-26", "type": "correction", "refs": ["Misol 8", "OQ-10"],
+      "title": "Yopilgan sentabrda 3 emas 4 qoldirish aniqlandi — oktyabrda o'quvchiga −50 000, ustozga −20 000",
+      "original": { "price": 600000, "N": 12, "R": 12, "fullMonth": true, "absences": 3 },
+      "corrected": { "price": 600000, "N": 12, "R": 12, "fullMonth": true, "absences": 4 },
+      "rateBp": 4000,
+      "expect": { "studentDelta": -50000, "teacherDelta": -20000 }
+    },
+    {
+      "id": "RS-27", "type": "correction", "refs": ["Misol 10", "OQ-07"],
+      "title": "4 darsdan keyin chiqdi — hisob 200 000, kredit −400 000, maosh tuzatmasi −160 000",
+      "original": { "price": 600000, "N": 12, "R": 12, "fullMonth": true },
+      "corrected": { "price": 600000, "N": 12, "R": 4, "fullMonth": false },
+      "rateBp": 4000,
+      "expect": { "studentDelta": -400000, "teacherDelta": -160000 }
+    },
+    {
+      "id": "RS-28", "type": "correction", "refs": ["Misol 2", "OQ-10"],
+      "title": "Maosh tasdiqlangandan keyin qisman oyda 3 qoldirish — tuzatma −150 000 / −60 000",
+      "original": { "price": 600000, "N": 12, "R": 6, "fullMonth": false },
+      "corrected": { "price": 600000, "N": 12, "R": 6, "fullMonth": false, "absences": 3 },
+      "rateBp": 4000,
+      "expect": { "studentDelta": -150000, "teacherDelta": -60000 }
+    },
+    {
+      "id": "RS-29", "type": "due", "refs": ["OQ-09"],
+      "title": "To'liq oy muddati — 10-sana; 11-da qarz bor — muddati o'tgan",
+      "input": { "year": 2026, "month": 9, "fullMonth": true, "today": "2026-09-11", "debt": 600000 },
+      "expect": { "dueDate": "2026-09-10", "overdue": true }
+    },
+    {
+      "id": "RS-30", "type": "due", "refs": ["OQ-09"],
+      "title": "20-sentabrda qo'shildi — muddat 27-sentabr; 25-da hali o'tmagan",
+      "input": { "year": 2026, "month": 9, "fullMonth": false, "startDate": "2026-09-20", "today": "2026-09-25", "debt": 300000 },
+      "expect": { "dueDate": "2026-09-27", "overdue": false }
+    },
+    {
+      "id": "RS-31", "type": "due", "refs": ["OQ-09"],
+      "title": "2-sentabrda qo'shildi — +7 kun (9-sana) oddiy muddatdan erta, shuning uchun 10-sana",
+      "input": { "year": 2026, "month": 9, "fullMonth": false, "startDate": "2026-09-02", "today": "2026-09-10", "debt": 550000 },
+      "expect": { "dueDate": "2026-09-10", "overdue": false }
+    },
+    {
+      "id": "RS-32", "type": "due", "refs": ["OQ-09"],
+      "title": "Muddat o'tgan, lekin qarz 0 — muddati o'tgan emas",
+      "input": { "year": 2026, "month": 9, "fullMonth": true, "today": "2026-09-15", "debt": 0 },
+      "expect": { "dueDate": "2026-09-10", "overdue": false }
+    },
+    {
+      "id": "RS-33", "type": "due", "refs": ["OQ-09"],
+      "title": "28-sentabrda qo'shildi — muddat keyingi oyga o'tadi (5-oktyabr)",
+      "input": { "year": 2026, "month": 9, "fullMonth": false, "startDate": "2026-09-28", "today": "2026-10-06", "debt": 100000 },
+      "expect": { "dueDate": "2026-10-05", "overdue": true }
+    },
+    {
+      "id": "RS-34", "type": "payroll", "refs": ["Misol 7", "TQ-F"],
+      "title": "Hisoblangan 2 000 000, avans 500 000, berilgan 1 000 000 — qoldiq 500 000",
+      "input": { "accrued": 2000000, "advanceApplied": 500000, "paid": 1000000 },
+      "expect": { "remaining": 500000 }
+    },
+    {
+      "id": "RS-35", "type": "payroll", "refs": ["Misol 7"],
+      "title": "Yana 500 000 berildi — qoldiq 0",
+      "input": { "accrued": 2000000, "advanceApplied": 500000, "paid": 1500000 },
+      "expect": { "remaining": 0 }
+    },
+    {
+      "id": "RS-36", "type": "month", "refs": ["Misol 4", "TQ-B"],
+      "title": "Avgust qarzi sentabrda to'landi va avgustga taqsimlandi — avgust maoshi o'zgarmaydi",
+      "charges": [{ "id": "mat-08", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "teachers": { "A": { "lessons": 12, "rateBp": 4000 } } }],
+      "payments": [{ "amount": 600000, "allocations": [{ "charge": "mat-08", "amount": 600000 }] }],
+      "expect": { "charges": { "mat-08": { "debt": 0, "salary": { "A": 240000 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 240000 }
+    },
+    {
+      "id": "RS-37", "type": "month", "refs": ["Misol 10", "OQ-07"],
+      "title": "Chiqqan o'quvchi: tuzatilgan hisob 200 000, 600 000 to'langan, 400 000 qaytarildi — hammasi 0",
+      "charges": [{ "id": "mat-10", "price": 600000, "N": 12, "R": 4, "fullMonth": false, "teachers": { "A": { "lessons": 4, "rateBp": 4000 } } }],
+      "payments": [{ "amount": 600000, "allocations": [{ "charge": "mat-10", "amount": 200000 }] }],
+      "refunds": 400000,
+      "expect": { "charges": { "mat-10": { "net": 200000, "salary": { "A": 80000 } } }, "debt": 0, "credit": 0, "balance": 0, "salaryTotal": 80000 }
+    },
+    {
+      "id": "RS-38", "type": "credit", "refs": ["OQ-08", "Misol 5"],
+      "title": "Avans 300 000, yangi oy hisobi 600 000 — 300 000 avtomatik qoplanadi",
+      "input": { "credit": 300000, "debt": 600000 },
+      "expect": { "applied": 300000 }
+    },
+    {
+      "id": "RS-39", "type": "invalid", "refs": ["QT-06", "G.5"],
+      "title": "N = 0 — hisob avtomatik chiqarilmaydi (xato)",
+      "charge": { "price": 600000, "N": 0, "R": 6, "fullMonth": false }
+    },
+    {
+      "id": "RS-40", "type": "invalid", "refs": ["G.3 §5"],
+      "title": "Taqsimot hisob qarzidan katta — rad etiladi",
+      "charges": [{ "id": "c", "price": 600000, "N": 12, "R": 12, "fullMonth": true, "teachers": {} }],
+      "payments": [{ "amount": 700000, "allocations": [{ "charge": "c", "amount": 700000 }] }]
+    }
+  ]
+}

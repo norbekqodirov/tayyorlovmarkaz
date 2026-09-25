@@ -75,14 +75,54 @@ export function computeAbsenceDiscount({ price, lessonsPerPackage: N, absences: 
     return Math.min(base, roundSom((price * A) / N));
 }
 
+export type DiscountKind = 'promo' | 'sibling' | 'social' | 'manual' | 'cancel_credit';
+
 export interface ChargeLineCalc {
-    kind: 'base' | 'absence_discount' | 'promo' | 'sibling' | 'social' | 'manual';
+    kind: 'base' | 'extra_lesson' | 'absence_discount' | DiscountKind;
     amount: number; // ishorali: baza musbat, chegirma manfiy
     description: string;
 }
 
-/** Hisob qatorlari va net (min 0). Boshqa chegirmalar tartib bilan qo'llanadi (OQ-05). */
-export function computeCharge(input: BaseInput & { absences: number; threshold: number; otherDiscounts?: Array<{ kind: ChargeLineCalc['kind']; amount: number; description: string }> }): { lines: ChargeLineCalc[]; gross: number; net: number } {
+/**
+ * OQ-05: marketing chegirmalari (promo, aka-uka, ijtimoiy) markaz hisobidan —
+ * ustoz maosh bazasini kamaytirmaydi. Davomat chegirmasi va tuzatmalar
+ * (markaz bekor qilgan dars krediti, qo'lda tuzatma) — kamaytiradi.
+ */
+export const MARKETING_DISCOUNT_KINDS: ReadonlySet<ChargeLineCalc['kind']> = new Set(['promo', 'sibling', 'social']);
+
+export interface DiscountInput {
+    kind: DiscountKind;
+    /** Qat'iy summa (so'm). */
+    amount?: number;
+    /** Foiz, basis point'da (1000 = 10%) — qolgan summaga nisbatan. */
+    percentBp?: number;
+    description: string;
+}
+
+export interface ChargeInput extends BaseInput {
+    absences: number;
+    threshold: number;
+    /** Qo'shimcha pullik darslar (OQ-03) — alohida musbat qator. */
+    extraLessons?: Array<{ amount: number; description: string }>;
+    otherDiscounts?: DiscountInput[];
+}
+
+export interface ChargeResult {
+    lines: ChargeLineCalc[];
+    /** Baza + qo'shimcha darslar. */
+    gross: number;
+    net: number;
+    /** Ustoz maosh bazasi (OQ-05): marketing chegirmalaridan oldingi summa. */
+    teacherBase: number;
+}
+
+/**
+ * Hisob qatorlari (OQ-05 tartibi): baza (prorata) → qo'shimcha darslar →
+ * davomat chegirmasi (bazadan oshmaydi) → tuzatmalar (bekor qilingan dars
+ * krediti, qo'lda) → foizli marketing chegirmalari qolgan summaga → qat'iy
+ * marketing chegirmalari → min 0. Har guruh ichida kiritilgan tartib saqlanadi.
+ */
+export function computeCharge(input: ChargeInput): ChargeResult {
     const base = computeBase(input);
     const lines: ChargeLineCalc[] = [{
         kind: 'base', amount: base,
@@ -90,20 +130,31 @@ export function computeCharge(input: BaseInput & { absences: number; threshold: 
             ? `Oylik narx (to'liq oy)`
             : `${input.price} × ${Math.min(input.billableLessons, input.lessonsPerPackage)}/${input.lessonsPerPackage} dars`,
     }];
-    let remaining = base;
+    let gross = base;
+    for (const x of input.extraLessons || []) {
+        const amt = Math.max(0, roundSom(x.amount));
+        if (amt > 0) { lines.push({ kind: 'extra_lesson', amount: amt, description: x.description }); gross += amt; }
+    }
+    let remaining = gross;
     const abs = computeAbsenceDiscount({ price: input.price, lessonsPerPackage: input.lessonsPerPackage, absences: input.absences, threshold: input.threshold, base });
     if (abs > 0) {
         lines.push({ kind: 'absence_discount', amount: -abs, description: `${input.absences} ta qoldirilgan dars (chegara ${input.threshold})` });
         remaining -= abs;
     }
-    for (const d of input.otherDiscounts || []) {
-        const amt = Math.min(remaining, Math.max(0, roundSom(d.amount)));
+    const discounts = input.otherDiscounts || [];
+    const apply = (d: DiscountInput) => {
+        const raw = d.percentBp != null ? (remaining * d.percentBp) / 10000 : (d.amount ?? 0);
+        const amt = Math.min(remaining, Math.max(0, roundSom(raw)));
         if (amt > 0) {
             lines.push({ kind: d.kind, amount: -amt, description: d.description });
             remaining -= amt;
         }
-    }
-    return { lines, gross: base, net: Math.max(0, remaining) };
+    };
+    discounts.filter(d => !MARKETING_DISCOUNT_KINDS.has(d.kind)).forEach(apply);
+    const teacherBase = remaining;
+    discounts.filter(d => MARKETING_DISCOUNT_KINDS.has(d.kind) && d.percentBp != null).forEach(apply);
+    discounts.filter(d => MARKETING_DISCOUNT_KINDS.has(d.kind) && d.percentBp == null).forEach(apply);
+    return { lines, gross, net: Math.max(0, remaining), teacherBase: Math.max(0, teacherBase) };
 }
 
 /**
@@ -125,4 +176,92 @@ export function salaryFromBase(base: number, rateBp: number): number {
 /** Maosh qoldig'i = hisoblangan − avansdan qoplangan − berilgan (min 0). */
 export function payrollRemaining(accrued: number, advanceApplied: number, paid: number): number {
     return Math.max(0, roundSom(accrued - advanceApplied - paid));
+}
+
+// ─── To'lov taqsimoti, qarz va avans (G.3 §5, TQ-C/TQ-D/TQ-F) ─────────────────
+
+export interface ChargeState { net: number; allocated: number }
+
+/**
+ * To'lovni hisoblarga taqsimlash. Har taqsimot hisobning qolgan qarzidan,
+ * jami esa to'lov summasidan oshmaydi (aks holda xato — qisman yozilmaydi).
+ * Qolgani — o'quvchi avansi (kredit).
+ */
+export function applyPayment(
+    amount: number,
+    allocations: Array<{ chargeId: string; amount: number }>,
+    charges: Record<string, ChargeState>,
+): { charges: Record<string, ChargeState>; credit: number } {
+    if (!Number.isInteger(amount) || amount <= 0) throw new Error("To'lov summasi musbat butun son bo'lishi kerak");
+    const next: Record<string, ChargeState> = Object.fromEntries(Object.entries(charges).map(([k, v]) => [k, { ...v }]));
+    let used = 0;
+    for (const a of allocations) {
+        const c = next[a.chargeId];
+        if (!c) throw new Error(`Hisob topilmadi: ${a.chargeId}`);
+        if (!Number.isInteger(a.amount) || a.amount <= 0) throw new Error("Taqsimot summasi musbat butun son bo'lishi kerak");
+        if (a.amount > c.net - c.allocated) throw new Error(`Taqsimot hisob qarzidan oshadi: ${a.chargeId}`);
+        c.allocated += a.amount;
+        used += a.amount;
+    }
+    if (used > amount) throw new Error("Taqsimotlar jami to'lovdan oshadi");
+    return { charges: next, credit: amount - used };
+}
+
+/** Hisob qarzi (≥ 0). */
+export function chargeDebt(c: ChargeState): number {
+    return Math.max(0, c.net - c.allocated);
+}
+
+/**
+ * O'quvchi holati: qarz — hisoblar bo'yicha (guruh×oy), avans — taqsimlanmagan
+ * pul. `balance` — eski `Student.balance` bilan mos kesh (avans − qarz).
+ */
+export function studentPosition(charges: ChargeState[], paymentsTotal: number, refundsTotal = 0): { debt: number; credit: number; balance: number } {
+    const debt = charges.reduce((s, c) => s + chargeDebt(c), 0);
+    const allocated = charges.reduce((s, c) => s + c.allocated, 0);
+    const credit = paymentsTotal - allocated - refundsTotal;
+    if (credit < 0) throw new Error("Taqsimotlar va qaytarishlar to'lovlardan oshib ketgan");
+    return { debt, credit, balance: credit - debt };
+}
+
+/** OQ-08: avans yangi hisob e'lon qilinganda avtomatik (shu guruh) — qancha qoplanadi. */
+export function autoApplyCredit(credit: number, debt: number): number {
+    return Math.max(0, Math.min(credit, debt));
+}
+
+// ─── To'lov muddati (OQ-09) ───────────────────────────────────────────────────
+
+function addDays(dateStr: string, days: number): string {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Hisob muddati: to'liq oyda — oyning `dueDay`-sanasi (standart 10); qisman
+ * oyda — yozilgandan `graceDays` (standart 7) kun, lekin `dueDay`dan oldin emas
+ * (oy boshida qo'shilganlar to'liq oydagilardan erta muddat olmasin).
+ */
+export function chargeDueDate(p: { year: number; month: number; fullMonth: boolean; startDate?: string; dueDay?: number; graceDays?: number }): string {
+    const dueDay = p.dueDay ?? 10;
+    const regular = `${p.year}-${String(p.month).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+    if (p.fullMonth || !p.startDate) return regular;
+    const partial = addDays(p.startDate, p.graceDays ?? 7);
+    return partial > regular ? partial : regular;
+}
+
+/** Muddati o'tganmi: bugun muddatdan keyin va qarz bor. */
+export function isOverdue(dueDate: string, today: string, debt: number): boolean {
+    return debt > 0 && today > dueDate;
+}
+
+// ─── Yopilgan davrga tuzatma (OQ-10, OQ-07) ──────────────────────────────────
+
+/**
+ * Yopilgan oy hisobi o'zgarmaydi — farq keyingi ochiq oyda tuzatma qatori
+ * bo'lib tushadi (Misol 8, Misol 10). Manfiy — o'quvchiga kredit.
+ */
+export function correctionDelta(original: ChargeInput, corrected: ChargeInput): { studentDelta: number; teacherBaseDelta: number } {
+    const a = computeCharge(original);
+    const b = computeCharge(corrected);
+    return { studentDelta: b.net - a.net, teacherBaseDelta: b.teacherBase - a.teacherBase };
 }
