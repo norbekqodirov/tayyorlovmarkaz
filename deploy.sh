@@ -22,6 +22,15 @@ git update-index --no-skip-worktree prisma/schema.prisma 2>/dev/null || true
 git checkout -- prisma/schema.prisma package-lock.json 2>/dev/null || true
 git pull origin master
 
+# 1b. IP-05: deploy oldidan izchil baza nusxasi (VACUUM INTO + integrity_check).
+#     Hali ESKI node_modules/Prisma client bilan ishlaydi (u joriy baza bilan
+#     mos). Nusxa olinmasa (disk to'la, baza buzilgan...) deploy TO'XTAYDI —
+#     tiklash nuqtasisiz davom etilmaydi. Batafsil: docs/RUNBOOK_BACKUP_RESTORE.md
+if [ -f scripts/backup_db.ts ] && [ -x node_modules/.bin/tsx ]; then
+    echo ">> pre-deploy backup..."
+    node_modules/.bin/tsx scripts/backup_db.ts pre-deploy
+fi
+
 # 2. SQLite schema.prisma ni tiklash (git pull PostgreSQL versiyasini keltirishi mumkin)
 echo ">> schema.prisma SQLite uchun moslashtirish..."
 sed -i 's/provider = "postgresql"/provider = "sqlite"/' prisma/schema.prisma

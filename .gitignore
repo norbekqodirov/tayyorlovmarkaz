@@ -11,3 +11,6 @@ prisma/dev.db
 prisma/dev.db-journal
 *.db
 *.db-journal
+
+# IP-05: baza va fayl nusxalari (backups/) repoga tushmasin
+backups/

@@ -3,6 +3,7 @@ import prisma from '../db.js';
 import { sendMessage, sendPaymentReminder, sendAttendanceAlert, sendBroadcast, sendStaffMessage } from './telegramService.js';
 import { todayDateStr, addDaysDateStr, tashkentDayOfWeek, nowTimeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { OPEN_STAGES } from '../constants/leads.js';
+import { createConsistentBackup } from './dbBackup.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -560,6 +561,24 @@ async function runGroupLifecycle() {
     }
 }
 
+// ─── IP-05 (PL-01): kunlik izchil backup (03:30 Toshkent) ────────────────────
+// Workflow jadvalidan mustaqil — har doim yoqilgan (BACKUP_DAILY=off bilan
+// o'chiriladi). Xato bo'lsa administrator Telegram chatiga xabar yuboriladi —
+// jim muvaffaqiyatsizlik backup'ning eng xavfli holati.
+async function runDailyBackup() {
+    if (process.env.BACKUP_DAILY === 'off') return;
+    try {
+        const r = await createConsistentBackup('daily', { includeUploads: true });
+        console.log(`[Backup] Kunlik nusxa: ${r.name} (${(r.size / 1024 / 1024).toFixed(2)} MB, integrity=${r.integrity}${r.copiedTo ? ', tashqi nusxa bor' : ''})`);
+    } catch (err: any) {
+        console.error('[Backup] Kunlik backup XATO:', err.message);
+        const adminChatId = await getSetting('telegram_admin_chat_id');
+        if (adminChatId) {
+            await sendMessage(adminChatId, `⚠️ <b>Kunlik backup bajarilmadi</b>\n${String(err.message).slice(0, 300)}`).catch(() => {});
+        }
+    }
+}
+
 // ─── Default workflow'larni DB ga qo'shish ───────────────────────────────────
 async function ensureDefaultWorkflows() {
     const defaults = [
@@ -671,6 +690,11 @@ export async function startScheduler() {
         cron.schedule('0 9 * * 1', () => {
             console.log('[Scheduler] ⏰ Haftalik marketing hisoboti job boshlandi');
             runWeeklyMarketingReport();
+        }, { timezone: 'Asia/Tashkent' });
+
+        // Har kuni 03:30 — izchil baza + fayllar backup'i (IP-05)
+        cron.schedule('30 3 * * *', () => {
+            runDailyBackup();
         }, { timezone: 'Asia/Tashkent' });
 
         // Har kuni 08:00 — Staff: dars eslatmasi

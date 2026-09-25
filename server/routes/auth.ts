@@ -6,10 +6,11 @@ import path from 'path';
 import { spawn } from 'child_process';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
-import { getDbConfig } from '../services/dbBackup.js';
+import os from 'os';
+import { getDbConfig, createConsistentBackup } from '../services/dbBackup.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 import { getEffectivePermissions } from '../middleware/authorize.js';
-import { withAudit } from '../middleware/audit.js';
+import { withAudit, logAudit } from '../middleware/audit.js';
 import { resolveRoleAssignment } from '../services/roleAssignment.js';
 
 const router = express.Router();
@@ -521,10 +522,19 @@ router.get('/backup', requireAuth, requireMinRole('ADMIN'), async (req, res) => 
 
         if (db.type === 'sqlite') {
             if (!fs.existsSync(db.filePath)) return res.status(404).json({ message: "Ma'lumotlar bazasi fayli topilmadi" });
+            // IP-05 (PL-01): faol baza faylini to'g'ridan-to'g'ri oqimga
+            // berish yozuv paytida buzilgan nusxa berishi mumkin edi — endi
+            // avval VACUUM INTO bilan izchil nusxa olinadi, u yuboriladi.
+            const tmpDir = path.join(os.tmpdir(), 'tayyorlov-backup');
+            const snap = await createConsistentBackup('download', { dir: tmpDir });
             const filename = `tayyorlov-backup-${dateStr}.db`;
             res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
             res.setHeader('Content-Type', 'application/octet-stream');
-            fs.createReadStream(db.filePath).pipe(res);
+            const stream = fs.createReadStream(snap.path);
+            stream.on('close', () => { fs.unlink(snap.path, () => {}); });
+            stream.pipe(res);
+            const user = (req as any).user;
+            await logAudit({ userId: user?.id, userName: user?.name || 'system', action: 'backup_download', resource: 'database', resourceId: filename });
             return;
         }
 

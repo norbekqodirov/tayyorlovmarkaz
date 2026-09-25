@@ -5,7 +5,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { generateCertificate, generateBatch } from '../services/certificateService.js';
 import { emitToAdmins, emitToUser } from '../services/realtime.js';
 import { logAudit } from '../middleware/audit.js';
-import * as archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import fs from 'fs';
 import path from 'path';
 
@@ -199,9 +199,10 @@ router.post('/zip', requireAuth, requireMinRole('MANAGER'), requirePermission('c
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="certificates-${Date.now()}.zip"`);
 
-        const archive = (archiver as any).default
-            ? (archiver as any).default('zip', { zlib: { level: 6 } })
-            : (archiver as any)('zip', { zlib: { level: 6 } });
+        // archiver v8 funksiya emas, ZipArchive klassini eksport qiladi — eski
+        // `archiver('zip')` chaqiruvi "archiver is not a function" bilan
+        // yiqilardi va ZIP yuklash hech qachon ishlamasdi.
+        const archive = new ZipArchive({ zlib: { level: 6 } });
         archive.on('error', (err: any) => {
             console.error('ZIP error:', err);
             res.status(500).end();

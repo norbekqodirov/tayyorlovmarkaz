@@ -1,16 +1,12 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { getDbConfig } from '../services/dbBackup.js';
+import { getDbConfig, createConsistentBackup, BACKUP_DIR } from '../services/dbBackup.js';
+import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
-const execFileAsync = promisify(execFile);
-
-const BACKUP_DIR = path.join(process.cwd(), 'backups');
-const MAX_BACKUPS = 7;
+const MAX_BACKUPS = 14;
 
 function ensureBackupDir() {
     if (!fs.existsSync(BACKUP_DIR)) {
@@ -23,7 +19,7 @@ router.get('/status', requireAuth, requireMinRole('ADMIN'), (_req, res) => {
     try {
         ensureBackupDir();
         const files = fs.readdirSync(BACKUP_DIR)
-            .filter(f => f.endsWith('.sql') || f.endsWith('.backup') || f.endsWith('.db'))
+            .filter(f => f.endsWith('.sql') || f.endsWith('.backup') || f.endsWith('.db') || f.endsWith('.zip'))
             .map(f => {
                 const stat = fs.statSync(path.join(BACKUP_DIR, f));
                 return { name: f, size: stat.size, sizeMB: (stat.size / 1024 / 1024).toFixed(2), createdAt: stat.birthtime };
@@ -38,6 +34,8 @@ router.get('/status', requireAuth, requireMinRole('ADMIN'), (_req, res) => {
             backups: files,
             backupCount: files.length,
             maxBackups: MAX_BACKUPS,
+            offsiteCopy: !!process.env.BACKUP_COPY_DIR,
+            dailySchedule: process.env.BACKUP_DAILY === 'off' ? null : '03:30 (Toshkent)',
         });
     } catch (err: any) {
         res.status(500).json({ message: err.message });
@@ -45,53 +43,23 @@ router.get('/status', requireAuth, requireMinRole('ADMIN'), (_req, res) => {
 });
 
 // POST /api/backup/create
-router.post('/create', requireAuth, requireMinRole('ADMIN'), async (_req, res) => {
+// IP-05 (PL-01): izchil nusxa — SQLite uchun VACUUM INTO + integrity_check,
+// PostgreSQL uchun pg_dump; yuklangan fayllar ham arxivlanadi.
+router.post('/create', requireAuth, requireMinRole('ADMIN'), async (req, res) => {
     try {
-        const db = getDbConfig();
-        if (!db) return res.status(500).json({ message: 'DATABASE_URL konfiguratsiya qilinmagan' });
-
-        ensureBackupDir();
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-
-        let backupPath: string;
-        let backupName: string;
-
-        if (db.type === 'postgres') {
-            backupName = `backup-${timestamp}.sql`;
-            backupPath = path.join(BACKUP_DIR, backupName);
-            const env = { ...process.env, PGPASSWORD: db.password };
-            await execFileAsync(
-                'pg_dump',
-                ['-h', db.host, '-p', db.port, '-U', db.user, '-F', 'p', '-f', backupPath, db.database],
-                { env }
-            );
-        } else {
-            // SQLite — root/pg_dump yo'q production'da. Fayl nusxasi orqali backup
-            // olinadi (bu kichik hajmli, past yozuv trafikli CRM bazasi uchun xavfsiz).
-            if (!fs.existsSync(db.filePath)) {
-                return res.status(500).json({ message: `SQLite fayl topilmadi: ${db.filePath}` });
-            }
-            backupName = `backup-${timestamp}.db`;
-            backupPath = path.join(BACKUP_DIR, backupName);
-            fs.copyFileSync(db.filePath, backupPath);
-        }
-
-        // Eski backuplarni o'chirish
-        const files = fs.readdirSync(BACKUP_DIR)
-            .filter(f => f.startsWith('backup-') && (f.endsWith('.sql') || f.endsWith('.db')))
-            .sort().reverse();
-        if (files.length > MAX_BACKUPS) {
-            files.slice(MAX_BACKUPS).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
-        }
-
-        const stat = fs.statSync(backupPath);
+        const result = await createConsistentBackup('manual', { includeUploads: true });
+        const user = (req as any).user;
+        await logAudit({ userId: user?.id, userName: user?.name || 'system', action: 'backup', resource: 'database', resourceId: result.name, metadata: { size: result.size, integrity: result.integrity, uploads: result.uploads?.name || null } });
         res.json({
             message: 'Backup muvaffaqiyatli yaratildi',
             backup: {
-                name: backupName,
-                size: stat.size,
-                sizeMB: (stat.size / 1024 / 1024).toFixed(2),
-                createdAt: new Date(),
+                name: result.name,
+                size: result.size,
+                sizeMB: (result.size / 1024 / 1024).toFixed(2),
+                createdAt: result.createdAt,
+                integrity: result.integrity,
+                uploads: result.uploads,
+                copiedTo: result.copiedTo ? 'offsite' : null,
             },
         });
     } catch (err: any) {
@@ -99,7 +67,6 @@ router.post('/create', requireAuth, requireMinRole('ADMIN'), async (_req, res) =
     }
 });
 
-// GET /api/backup/backups/:filename/download
 router.get('/backups/:filename/download', requireAuth, requireMinRole('ADMIN'), (req, res) => {
     try {
         const filename = req.params.filename.replace(/[/\\]/g, '');
