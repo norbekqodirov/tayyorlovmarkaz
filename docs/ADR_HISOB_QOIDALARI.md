@@ -82,6 +82,8 @@ Bu savollar L bo'limida alohida qo'yilmagan. Dataset'ni tuzishda javob kerak bo'
 
 ### 5.1. IP-17 amalga oshirishda aniqlashtirilgan tafsilotlar
 
+- **Guruhning o'zi oy o'rtasida boshlansa (yoki tugasa)** — foydalanuvchi qarori (2026-09-25, variant B): o'sha oy **qisman**, darslar bo'yicha (`P × min(R,N)/N`), o'quvchi guruhning birinchi darsidan qatnashsa ham. To'liq oy (`P`) — faqat guruh butun oy dars o'tganda va o'quvchi uning barcha darslarida a'zo bo'lganda. Misol: guruh 10-sentabrdan, 9 dars, 425 000 / 12 → 318 750.
+
 - **Qaytarish kassada manfiy "kirim"** ("To'lov qaytarish"), xarajat emas: shu bilan barcha tushum yig'indilari (dashboard, hisobotlar, maqsadlar) hech qanday o'zgartirishsiz sof tushumni beradi (QT-26), xarajatlar esa sun'iy oshmaydi. Kassa qoldig'i (kirim − chiqim) bir xil.
 - **Qarshi yozuv** asl yozuv bilan bir xil tur va kategoriyada, manfiy summa, bugungi sana, `sourceType = 'reversal'`. Asl yozuv `voidedAt` bilan belgilanadi; qarshi yozuvni bekor qilib yoki o'chirib bo'lmaydi.
 - **`Payment.status`:** to'liq qaytarilsa `refunded`; qisman qaytarilganda `paid` qoladi va qaytarilgan qism `Refund` qatorlaridan ayriladi (H.4 dagi `partially_refunded` hosila sifatida ko'rsatiladi). Sabab: mavjud "status = 'paid'" yig'indilari to'lovni butunlay yo'qotib qo'ymasligi uchun.

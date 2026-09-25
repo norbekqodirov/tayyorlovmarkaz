@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     isValidDate, addDays, isoWeekday, monthRange, scheduledDates, monthLessons, planVersionInsert, versionAt, daysBetween,
 } from '../../server/domain/lessonCalendar.ts';
+import { computeBase } from '../../server/domain/billingFormula.ts';
 
 test('sana yordamchilari', () => {
     assert.ok(isValidDate('2026-02-28'));
@@ -45,9 +46,18 @@ test('pauza (OQ-06) va chiqish oyni qisman qiladi; guruh oralig\'i hisobga olina
     assert.equal(p.fullMonth, false);
     const e = monthLessons({ month: '2026-09', days: [1, 3, 5], periodStart: '2026-08-01', periodEnd: '2026-09-09' });
     assert.equal(e.billable.length, 4);
+    // Foydalanuvchi qarori (2026-09-25): guruhning o'zi oy o'rtasida boshlansa — o'quvchi birinchi
+    // darsdan bo'lsa ham oy qisman, darslar bo'yicha
     const g = monthLessons({ month: '2026-09', days: [1, 3, 5], groupStart: '2026-09-14', periodStart: '2026-09-14' });
-    assert.equal(g.fullMonth, true); // guruh o'zi 14-dan boshlangan — o'quvchi birinchi darsdan
+    assert.equal(g.fullMonth, false);
     assert.equal(g.billable.length, 8);
+    // Production misoli: guruh 10-sentabrdan (payshanba), Du/Chor/Ju — 9 dars → 425 000 × 9/12
+    const prod = monthLessons({ month: '2026-09', days: [1, 3, 5], groupStart: '2026-09-10', periodStart: '2026-09-10' });
+    assert.equal(prod.billable.length, 9);
+    assert.equal(computeBase({ price: 425000, lessonsPerPackage: 12, billableLessons: prod.billable.length, fullMonth: prod.fullMonth }), 318750);
+    // Guruh oy o'rtasida tugasa ham — qisman; butun oy dars o'tsa — to'liq
+    assert.equal(monthLessons({ month: '2026-09', days: [1, 3, 5], groupEnd: '2026-09-15', periodStart: '2026-08-01' }).fullMonth, false);
+    assert.equal(monthLessons({ month: '2026-10', days: [1, 3, 5], groupStart: '2026-09-10', periodStart: '2026-09-10' }).fullMonth, true);
     assert.equal(monthLessons({ month: '2026-09', days: [], periodStart: '2026-09-01' }).fullMonth, false);
 });
 

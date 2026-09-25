@@ -83,7 +83,10 @@ export interface MonthLessons {
     groupLessons: string[];
     /** O'quvchining billable darslari — R. */
     billable: string[];
-    /** Davr guruhning oydagi BARCHA darslarini qoplaydimi (G.3: to'liq oy → P). */
+    /**
+     * To'liq oy (G.3: → P): guruh butun oy dars o'tadi VA davr uning barcha darslarini qoplaydi.
+     * Guruhning o'zi oy o'rtasida boshlansa yoki tugasa — o'sha oy qisman (darslar bo'yicha).
+     */
     fullMonth: boolean;
 }
 
@@ -102,7 +105,10 @@ export function monthLessons(i: MonthLessonsInput): MonthLessons {
     const billable = groupLessons.filter(d =>
         d >= i.periodStart && (i.periodEnd == null || d <= i.periodEnd) &&
         !(i.pauses || []).some(p => d >= p.from && d <= p.to));
-    return { groupLessons, billable, fullMonth: groupLessons.length > 0 && billable.length === groupLessons.length };
+    // Foydalanuvchi qarori (2026-09-25): guruh oy o'rtasida boshlansa (yoki tugasa) — o'sha oy
+    // darslar bo'yicha (P × min(R,N)/N), o'quvchi guruhning birinchi darsidan bo'lsa ham.
+    const groupWholeMonth = (!i.groupStart || i.groupStart <= first) && (!i.groupEnd || i.groupEnd >= last);
+    return { groupLessons, billable, fullMonth: groupWholeMonth && groupLessons.length > 0 && billable.length === groupLessons.length };
 }
 
 // ─── Versiyalangan tarix (tarif, ustoz, foiz) ────────────────────────────────

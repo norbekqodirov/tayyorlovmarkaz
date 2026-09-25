@@ -60,10 +60,10 @@ try {
   await api('POST', '/billing/2026-09/generate', manager.token, { groupId: G.id });
   r = await api('POST', '/billing/2026-09/post', manager.token, { groupId: G.id });
   const ch1 = await prisma.charge.findFirst({ where: { studentId: S1.id, groupId: G.id, month: '2026-09', type: 'tuition' } });
-  check('sentabr hisobi e\'lon qilindi (guruh 10-sentabrdan, o\'quvchi birinchi darsdan — to\'liq oy 600 000)', ch1?.status === 'posted' && ch1.net === 600000, ch1 && { net: ch1.net, calc: JSON.parse(ch1.calc).billableLessons });
+  check('sentabr hisobi e\'lon qilindi (guruh 10-sentabrdan — 9/12 dars → 450 000)', ch1?.status === 'posted' && ch1.net === 450000, ch1 && { net: ch1.net, calc: JSON.parse(ch1.calc).billableLessons });
   r = await api('POST', '/enrollments/periods/start-dates', manager.token, { groupId: G.id, items: [{ periodId: p1.id, startDate: '2026-09-21' }] });
   const adj = await prisma.charge.findFirst({ where: { reversesChargeId: ch1.id, status: 'posted' } });
-  check('boshlanish 21-sentabrga surildi — tuzatma −350 000 (5/12 dars → 250 000)', r.status === 200 && r.data.adjustments?.[0]?.delta === -350000 && adj?.net === -350000, { data: r.data, adj: adj?.net });
+  check('boshlanish 21-sentabrga surildi — tuzatma −200 000 (5/12 dars → 250 000)', r.status === 200 && r.data.adjustments?.[0]?.delta === -200000 && adj?.net === -200000, { data: r.data, adj: adj?.net });
   r = await api('POST', '/enrollments/periods/start-dates', manager.token, { groupId: G.id, items: [{ periodId: p1.id, startDate: '2026-09-21' }] });
   check('o\'zgarishsiz qayta yuborish — tuzatma takrorlanmaydi', r.status === 200 && r.data.changed === 0 && (await prisma.charge.count({ where: { reversesChargeId: ch1.id } })) === 1, r.data);
 
