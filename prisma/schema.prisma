@@ -389,8 +389,22 @@ model AttendanceRecord {
   checkOut  String?
   note      String?
   createdAt DateTime @default(now())
+  // IP-10 (TL-07): kim va qachon belgilagan; kechikkan tuzatish sababi; rejadagi dars
+  markedById String?
+  markedAt   DateTime?
+  editReason String?
+  sessionId  String?
 
   @@unique([studentId, groupId, date])
+}
+
+// IP-10 (OQ-03): markaz bayramlari — rejadagi darslar bu kunlarga yaratilmaydi
+model Holiday {
+  id          String   @id @default(uuid())
+  date        String   @unique // "YYYY-MM-DD"
+  name        String
+  createdById String?
+  createdAt   DateTime @default(now())
 }
 
 // EDU-06: guruh bir kunda bir necha marta o'tilishi mumkin (qo'shimcha/qoplash
@@ -410,8 +424,20 @@ model LessonSession {
   startTime String?  // "14:00" — bir nechta qo'shimcha dars bo'lsa ajratish uchun
   label     String?  // masalan "Qoplash darsi", "2-smena"
   createdAt DateTime @default(now())
+  // IP-10 (TL-09, OQ-03): dars rejasi. Eski yozuvlarda kind = null — ular qo'shimcha darslar.
+  kind              String?  // regular | extra | makeup | trial
+  status            String?  // planned | held | cancelled | moved
+  billable          Boolean? // pullik darsmi (R hisobiga kiradimi)
+  price             Int?     // pullik qo'shimcha dars narxi (extra_lesson qatori)
+  teacherId         String?  // darsni o'tadigan/o'tgan ustoz
+  replacesSessionId String?  // ko'chirilgan yoki qoplanayotgan dars
+  cancelReason      String?  // center | teacher | holiday | other
+  compensate        Boolean? // bekor qilingan va qoplanmagan dars uchun kredit (P/N)
+  createdById       String?
 
   attendance LessonAttendance[]
+
+  @@index([groupId, date])
 }
 
 model LessonAttendance {

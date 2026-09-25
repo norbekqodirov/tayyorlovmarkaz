@@ -62,8 +62,10 @@ router.post('/', async (req, res) => {
             return res.status(403).json({ message: 'Bu guruhga ruxsatingiz yo\'q' });
         }
 
+        // IP-10: bu yo'l — ustozning bepul qo'shimcha darsi (billable emas). Pullik
+        // qo'shimcha, qoplash va sinov darslari — /api/lesson-plan/sessions orqali.
         const session = await prisma.lessonSession.create({
-            data: { groupId, date, startTime: startTime || null, label: label || null },
+            data: { groupId, date, startTime: startTime || null, label: label || null, kind: 'extra', status: 'planned', billable: false, createdById: requester.id },
         });
         res.status(201).json(session);
     } catch (err: any) {

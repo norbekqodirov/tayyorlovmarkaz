@@ -1,13 +1,19 @@
-# IP-09: production'ga chiqarish tartibi
+# Bosqich 2: production'ga chiqarish tartibi
 
-**Paket:** a'zolik davrlari, tarif, ustoz va foiz tarixi, o'quvchi kodi. Branch: `feature/ip09-azolik-davrlari`.
-**Tartib:** avval sxema, keyin kod (reja J.6). Kod bazadan oldin yetib borsa, yangi Prisma client `Student.code` ustunini so'raydi va o'quvchi so'rovlari yiqiladi (2026-09-21 hodisasi kabi).
+**Paketlar:**
+- IP-09: a'zolik davrlari, tarif, ustoz va foiz tarixi, o'quvchi kodi.
+- IP-10: dars rejasi, bayramlar, yagona davomat xizmati.
+
+**Branch:** `feature/ip09-azolik-davrlari`. Ikkala paketning sxemasi bitta qadamda qo'llanadi (reja J.2, 3-qadam).
+
+**Tartib:** avval sxema, keyin kod (reja J.6). Kod bazadan oldin yetib borsa, yangi Prisma client yangi ustunlarni (`Student.code`, `AttendanceRecord.markedById` va boshqalar) so'raydi. Natijada o'quvchi va davomat so'rovlari yiqiladi (2026-09-21 hodisasi kabi).
 
 ## 1. Sxema o'zgarishi — faqat qo'shimcha
 
-SQLite uchun `prisma migrate diff` natijasi (lokal sinovda to'liq qo'llangan):
+SQLite uchun `prisma migrate diff` natijasi: 32 ta `ALTER` va `CREATE` operatsiyasi. Hammasi lokal sinovda to'liq qo'llangan.
 
 ```sql
+-- IP-09
 ALTER TABLE "Student" ADD COLUMN "code" TEXT;
 ALTER TABLE "Student" ADD COLUMN "phoneNorm" TEXT;
 CREATE TABLE "EnrollmentPeriod" (...);        -- a'zolik tarixi
@@ -15,12 +21,17 @@ CREATE TABLE "EnrollmentPause" (...);         -- pauzalar
 CREATE TABLE "TariffVersion" (...);           -- guruh narxi tarixi
 CREATE TABLE "GroupTeacherAssignment" (...);  -- guruh ustozi tarixi
 CREATE TABLE "TeacherRate" (...);             -- ustoz foizi tarixi
-CREATE INDEX ... (9 ta indeks)
+-- IP-10
+ALTER TABLE "AttendanceRecord" ADD COLUMN "markedById" / "markedAt" / "editReason" / "sessionId";
+ALTER TABLE "LessonSession" ADD COLUMN "kind" / "status" / "billable" / "price" / "teacherId" /
+                                       "replacesSessionId" / "cancelReason" / "compensate" / "createdById";
+CREATE TABLE "Holiday" (...);                 -- bayramlar (unique faqat shu YANGI jadvalda)
+CREATE INDEX ... (indekslar)
 ```
 
-- Mavjud jadval qayta qurilmaydi, ustun o'chirilmaydi yoki nomi o'zgarmaydi.
-- `Student.code` ataylab **unique emas**. Unique bo'lsa `db push` `--accept-data-loss` talab qilardi. Noyoblikni ilova ta'minlaydi.
-- Lokal tekshiruv: eski sxemali va ichida ma'lumoti bor SQLite bazaga yangi sxema `--accept-data-loss`siz qo'llandi. Ma'lumot joyida qoldi, `integrity_check: ok`.
+- Mavjud jadval qayta qurilmaydi, ustun o'chirilmaydi yoki nomi o'zgarmaydi. Yangi ustunlarning hammasi nullable.
+- Mavjud jadvallarga unique qo'shilmagan. `Student.code` ham ataylab unique emas, chunki unique bo'lsa `db push` `--accept-data-loss` talab qilardi. Noyoblikni ilova ta'minlaydi.
+- Lokal tekshiruv: eski (hozirgi production) sxemali SQLite bazaga o'quvchi, guruh, davomat va eski qo'shimcha dars yozuvlari kiritildi. So'ng yangi sxema `--accept-data-loss`siz qo'llandi. Barcha yozuvlar joyida qoldi, `integrity_check: ok`.
 
 ## 2. Siz bajaradigan buyruqlar (serverda, SSH)
 
@@ -67,9 +78,16 @@ Backfill'gacha tizim ishlayveradi:
 
 Tekshirish navbatidagi holatlar (ketgan-lekin-a'zo, yakunlangan guruhdagi a'zolik va boshqalar) guruh sahifasida to'g'ri sana bilan yakunlanadi.
 
+**Dars rejasi (IP-10).** Rejalar avtomatik yaratiladi: har oyning 25-sanasida keyingi oy uchun, 1-sanasida joriy oy uchun, barcha faol guruhlarga. Joriy oy rejasini darhol yaratish uchun guruh sahifasidagi Davomat tabida "Oy rejasini yaratish" tugmasi bor. Reja bo'lmagan oyda davomat avvalgidek jadval kunlari bo'yicha ishlaydi, faqat a'zolik va pauza tekshiruvlari qo'shiladi.
+
+**Bayramlar.** `POST /api/lesson-plan/holidays` orqali qo'shiladi. Bayram kuniga dars rejalashtirilmaydi.
+
 ## 5. Nima o'zgaradi (foydalanuvchi uchun)
 
 - **Guruh sahifasi.** O'quvchi qo'shishda boshlash sanasi so'raladi va birinchi oy hisobi ko'rsatiladi: darslar soni va summa (TQ-A). Hozirgi oylik hisob-kitob esa IP-11 gacha to'liq oy bo'yicha ishlayveradi.
 - **"Guruhdan chiqarish"** endi uch variantli: Ketdi, Bitirdi, Xato qo'shilgan. Tanlangan sana va sabab bilan yakunlanadi. Shu oynadan boshqa guruhga bir qadamda o'tkazish ham mumkin.
 - **Tarix.** Guruh narxi, guruh ustozi yoki ustoz foizi o'zgarsa, sana bilan tarixga yoziladi. Eski ustunlar joriy qiymatni ko'rsatishda davom etadi.
 - **O'quvchi kodi.** Yangi o'quvchilarga `S-000123` ko'rinishidagi kod beriladi. U to'lov qidiruvi (TQ-D) uchun kerak.
+- **Davomat — ustozlarni oldindan ogohlantiring.** Ustoz davomatni faqat oxirgi **3 kun** ichida belgilashi yoki tuzatishi mumkin (OQ-16). Eskiroq sanani administrator sabab yozib tuzatadi, sabab jurnalga tushadi. Kunlar soni `attendance_edit_window_days` sozlamasida o'zgartiriladi.
+- **Davomat qoidalari.** A'zolik boshlanishidan oldingi, pauzadagi va kelajakdagi sanaga davomat yozilmaydi. Bekor qilingan dars kuniga ham yozilmaydi. Telegram Mini App ham aynan shu qoidalar bilan ishlaydi. Har belgilashda kim va qachon belgilagani saqlanadi.
+- **Dars rejasi.** Davomat jadvali oy rejasi bo'yicha ko'rsatiladi. Menejer kun sarlavhasini bosib darsni bekor qila oladi: markaz yoki ustoz sababli, kompensatsiya bilan. Darsni boshqa kunga ko'chirish ham shu yerdan. Bekor qilingan kun kulrang va "bekor" belgisi bilan chiqadi.

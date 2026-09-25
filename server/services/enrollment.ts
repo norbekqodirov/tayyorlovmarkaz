@@ -17,6 +17,7 @@ import { addDays, daysBetween, firstOfMonth, isValidDate, monthLessons, monthOf,
 import { computeBase } from '../domain/billingFormula.js';
 import { getBillingSettings } from './billing.js';
 import { ensureStudentIdentitySafe } from './studentIdentity.js';
+import { billableLessonDates } from './lessonPlan.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -149,9 +150,11 @@ export async function previewEnrollment(db: Db, input: { studentId?: string; gro
     if (!base.tariff) warnings.push("Guruh va kursda narx yo'q — birinchi oy summasi hisoblanmaydi");
     else if (base.tariff.source === 'legacy') warnings.push("Tarif tarixi hali yo'q — joriy guruh narxi ishlatildi");
     const days = await groupScheduleDays(db, group.id);
-    if (!days.length) warnings.push("Guruh dars jadvali yo'q — darslar soni va birinchi oy summasi hisoblanmaydi");
+    // IP-10: oy rejasi (bayram, bekor/ko'chirilgan darslar bilan) bo'lsa — undan, aks holda jadvaldan
+    const planDates = await billableLessonDates(db, group.id, base.month);
+    if (!days.length && !planDates) warnings.push("Guruh dars jadvali yo'q — darslar soni va birinchi oy summasi hisoblanmaydi");
     else {
-        const ml = monthLessons({ month: base.month, days, groupStart: group.startDate, groupEnd: group.endDate, periodStart: startDate });
+        const ml = monthLessons({ month: base.month, days, groupStart: group.startDate, groupEnd: group.endDate, periodStart: startDate, lessonDates: planDates ?? undefined });
         base.groupLessonsInMonth = ml.groupLessons.length;
         base.billableLessons = ml.billable.length;
         base.firstBillableDate = ml.billable[0] ?? null;

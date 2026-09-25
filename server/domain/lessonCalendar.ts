@@ -74,6 +74,8 @@ export interface MonthLessonsInput {
     /** Faol pauzalar (OQ-06) — ichidagi darslar billable emas. */
     pauses?: DateRange[];
     holidays?: ReadonlySet<string>;
+    /** Dars rejasi (IP-10) bor bo'lsa — jadval o'rniga shu billable sanalar ishlatiladi. */
+    lessonDates?: string[];
 }
 
 export interface MonthLessons {
@@ -94,7 +96,9 @@ export function monthLessons(i: MonthLessonsInput): MonthLessons {
     const { first, last } = monthRange(i.month);
     const from = i.groupStart && i.groupStart > first ? i.groupStart : first;
     const to = i.groupEnd && i.groupEnd < last ? i.groupEnd : last;
-    const groupLessons = scheduledDates(i.days, from, to, i.holidays);
+    const groupLessons = i.lessonDates
+        ? [...new Set(i.lessonDates)].filter(d => d >= from && d <= to && !i.holidays?.has(d)).sort()
+        : scheduledDates(i.days, from, to, i.holidays);
     const billable = groupLessons.filter(d =>
         d >= i.periodStart && (i.periodEnd == null || d <= i.periodEnd) &&
         !(i.pauses || []).some(p => d >= p.from && d <= p.to));

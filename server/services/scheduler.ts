@@ -5,6 +5,7 @@ import { todayDateStr, addDaysDateStr, tashkentDayOfWeek, nowTimeStr, tashkentMi
 import { OPEN_STAGES } from '../constants/leads.js';
 import { createConsistentBackup } from './dbBackup.js';
 import { syncAllHistoryCaches } from './groupHistory.js';
+import { generateAllPlans } from './lessonPlan.js';
 
 // ─── Helper: Workflow logi saqlash ───────────────────────────────────────────
 async function logWorkflow(workflowId: string, status: 'success' | 'error' | 'skipped', output: any, duration: number) {
@@ -696,6 +697,23 @@ export async function startScheduler() {
         // Har kuni 03:30 — izchil baza + fayllar backup'i (IP-05)
         cron.schedule('30 3 * * *', () => {
             runDailyBackup();
+        }, { timezone: 'Asia/Tashkent' });
+
+        // IP-10: dars rejasi — har oyning 25-sanasida keyingi oy uchun (yozish
+        // preview'i reja bo'yicha ishlashi uchun), 1-sanasida joriy oy uchun
+        // (jadval o'zgargan bo'lsa moslash). Generatsiya idempotent.
+        cron.schedule('15 0 25 * *', () => {
+            const today = todayDateStr();
+            // Date.UTC oyni 0 dan sanaydi — joriy oy raqami aynan keyingi oyning indeksi
+            const next = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 1)).toISOString().slice(0, 7);
+            generateAllPlans(next)
+                .then(r => console.log(`[Scheduler] Keyingi oy dars rejasi: ${r.length} guruh`))
+                .catch(e => console.error('[Scheduler] Dars rejasi xatosi:', e?.message));
+        }, { timezone: 'Asia/Tashkent' });
+        cron.schedule('20 0 1 * *', () => {
+            generateAllPlans(todayDateStr().slice(0, 7))
+                .then(r => console.log(`[Scheduler] Joriy oy dars rejasi: ${r.length} guruh`))
+                .catch(e => console.error('[Scheduler] Dars rejasi xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
 
         // Har kuni 00:05 — kelajak sanali tarif/ustoz/foiz versiyalari kuchga
