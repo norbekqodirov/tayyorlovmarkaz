@@ -17,6 +17,7 @@ import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../service
 import { logAudit } from '../middleware/audit.js';
 import { payrollDeleteBlock, releaseAdvanceApplications, isMonthClosed } from '../services/moneyReversal.js';
 import { stampAccount, CashError } from '../services/cashAccounts.js';
+import { systemCategory } from '../services/categories.js';
 
 const router = express.Router();
 
@@ -408,7 +409,7 @@ router.post('/:id/pay', canManageMoney, idempotent('teacher_payroll_pay'), async
                 data: {
                     type: 'expense',
                     amount: numAmount,
-                    category: 'Oylik',
+                    ...(await systemCategory(tx, 'payroll')), // IP-23
                     description: `${payroll.teacher.name} — ${payroll.month} oyligi (${payroll.basis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'})`,
                     date: todayStr,
                     // IP-22: qaysi kassa/bank hisobidan to'landi

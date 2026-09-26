@@ -639,8 +639,13 @@ model Transaction {
   voidReason  String?
   // IP-22: qaysi kassa/bank hisobiga (CashAccount). null — eski yozuv, hisob `method` bo'yicha aniqlanadi.
   accountId   String?
+  // IP-23: kategoriya ID (TransactionCategory). `category` — nomning keshi (nom o'zgarsa yangilanadi);
+  // null — eski yoki erkin matnli yozuv, tur nom bo'yicha aniqlanadi.
+  categoryId  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([categoryId])
 }
 
 model Payment {
@@ -910,6 +915,9 @@ model TransactionCategory {
   // IP-12 (TQ-E): TUITION | OTHER_INCOME | PAYROLL_PAYOUT | STAFF_ADVANCE | OPERATING_EXPENSE | REFUND | TRANSFER
   kind      String?
   isSystem  Boolean?
+  // IP-23: tizim kategoriyasi kaliti (tuition, refund, payroll, advance, cash_diff_in, cash_diff_out, bank_fee) —
+  // kod kategoriyani nom emas, shu kalit bo'yicha topadi; nomini o'zgartirish mumkin, o'chirish/turini o'zgartirish yo'q
+  systemKey String?
 
   @@unique([name, type])
 }

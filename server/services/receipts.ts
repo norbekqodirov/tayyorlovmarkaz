@@ -20,6 +20,7 @@ import { isMonthClosed } from './moneyReversal.js';
 import { studentPosition as ledgerPosition } from './receivables.js';
 import { sendMessage } from './telegramService.js';
 import { stampAccount, CashError } from './cashAccounts.js';
+import { resolveCategory, systemCategory } from './categories.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -85,9 +86,11 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
                 month: input.month || null,
             },
         });
+        // IP-23: formada tanlangan kategoriya (nom → ID) yoki tizimdagi "kurs to'lovi" (nomi o'zgargan bo'lsa ham)
+        const cat = input.category ? await resolveCategory(tx, input.category, 'income') : await systemCategory(tx, 'tuition');
         const transaction = await tx.transaction.create({
             data: {
-                type: 'income', amount, category: input.category || "Kurs to'lovi", description: `${receiptNo} · ${input.note || `${student.name} — kurs to'lovi`}`,
+                type: 'income', amount, category: cat.category, categoryId: cat.categoryId, description: `${receiptNo} · ${input.note || `${student.name} — kurs to'lovi`}`,
                 date, method, accountId, studentId: student.id, studentName: student.name, sourceType: 'receipt', sourceId: payment.id,
             },
         });

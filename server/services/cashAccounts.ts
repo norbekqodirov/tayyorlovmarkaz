@@ -22,6 +22,7 @@ import { todayDateStr } from '../utils/timezone.js';
 import { isValidDate } from '../domain/lessonCalendar.js';
 import { isMonthClosed, reverseTransactionInTx } from './moneyReversal.js';
 import { methodKey, accountForMethod } from '../domain/cashAccount.js';
+import { systemCategory } from './categories.js';
 
 export { methodKey, accountForMethod };
 
@@ -258,7 +259,8 @@ export async function closeDay(input: { accountId: string; date: string; counted
         if (difference !== 0) {
             const adj = await tx.transaction.create({
                 data: {
-                    type: difference > 0 ? 'income' : 'expense', amount: Math.abs(difference), category: CASH_DIFF_CATEGORY,
+                    type: difference > 0 ? 'income' : 'expense', amount: Math.abs(difference),
+                    ...(await systemCategory(tx, difference > 0 ? 'cash_diff_in' : 'cash_diff_out')), // IP-23
                     description: `Kassa farqi · ${acc.name} · ${date} — ${note}`.slice(0, 1000),
                     date, method: acc.method, accountId: acc.id, sourceType: 'cash_session', sourceId: session.id,
                 },
@@ -318,7 +320,7 @@ export async function createTransfer(input: { fromAccountId: string; toAccountId
         if (fee > 0) {
             const feeTx = await tx.transaction.create({
                 data: {
-                    type: 'expense', amount: fee, category: TRANSFER_FEE_CATEGORY,
+                    type: 'expense', amount: fee, ...(await systemCategory(tx, 'bank_fee')), // IP-23
                     description: `O'tkazma komissiyasi · ${src.name} → ${dst.name}${note ? ` — ${note}` : ''}`.slice(0, 1000),
                     date, method: src.method, accountId: src.id, sourceType: 'cash_transfer', sourceId: t.id,
                 },

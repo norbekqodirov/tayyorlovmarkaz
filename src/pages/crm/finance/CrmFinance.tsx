@@ -138,15 +138,17 @@ function formatCompact(v: number): string {
 // kategoriyasi yaratilmagan bo'lsa ham, oylik/avans funksiyasi ishlashi
 // shart). Shuning uchun bular categoryOptions()'da har doim, alohida
 // ko'rsatiladi — TransactionCategory ro'yxatidan mustaqil.
-const RESERVED_EXPENSE_CATEGORIES: { name: string; label: string }[] = [
-  { name: 'Oylik', label: "Oylik maosh (xodim/o'qituvchi)" },
-  { name: 'Avans', label: "Avans (xodim/o'qituvchiga oldindan)" },
-];
-// TQ-D: kurs to'lovi har doim tanlanadi — markazda bunday nomli kategoriya bo'lmasa ham
-// (masalan production'da "O'quvchi kurs puli to'ladi" nomi bilan yaratilgan).
-const RESERVED_INCOME_CATEGORIES: { name: string; label: string }[] = [
-  { name: "Kurs to'lovi", label: "Kurs to'lovi (o'quvchi to'lovi)" },
-];
+// IP-23: nomlar tizim kategoriyasidan (systemKey) olinadi — "Oylik" "Ish haqi"ga o'zgartirilsa ham
+// forma ishlaydi; kategoriyalar yuklanmagan bo'lsa — standart nomlar.
+const SYSTEM_DEFAULTS = {
+  payroll: { name: 'Oylik', hint: "xodim/o'qituvchi maoshi" },
+  advance: { name: 'Avans', hint: "xodim/o'qituvchiga oldindan" },
+  // TQ-D: kurs to'lovi har doim tanlanadi — markazda boshqa nomli kurs to'lovi kategoriyasi bo'lsa ham
+  tuition: { name: "Kurs to'lovi", hint: "o'quvchi to'lovi" },
+} as const;
+// server/services/categories.ts guessCategoryKind bilan bir xil (tur tanlanmagan eski kategoriyalar uchun)
+const PAYROLL_NAME_RE = /^oylik|maosh|ish haqi/;
+const ADVANCE_NAME_RE = /^avans/;
 // server/services/categories.ts guessCategoryKind bilan bir xil lug'at (tur tanlanmagan kategoriyalar uchun)
 const TUITION_NAME_RE = /kurs to'lov|kurs tolov|kurs pul|o'qish to'lov|o'qish pul|tuition/;
 const normCategoryName = (name: string) => name.toLowerCase().replace(/[ʻʼ‘’`']/g, "'").replace(/\s+/g, ' ').trim();
@@ -159,7 +161,23 @@ export default function CrmFinance() {
   const { data: teachers = [] } = useFirestore<any>('teachers');
   const { showToast } = useToast();
   const { data: categories, loading: categoriesLoading, error: categoriesError, refetch: reloadCategories } = useFirestore<TransactionCategory>('transactionCategories');
-  const activeCategoryNames = (type: TransactionCategory['type']) => [...new Set(categories.filter(category => category.type === type && category.isActive).map(category => category.name))];
+  // Faqat tizim o'zi yozadigan kategoriyalar (qaytarish, kassa farqi, bank komissiyasi) qo'lda tanlanmaydi
+  const AUTO_ONLY_KEYS = new Set(['refund', 'cash_diff_in', 'cash_diff_out', 'bank_fee']);
+  const activeCategoryNames = (type: TransactionCategory['type']) => [...new Set(categories.filter(category => category.type === type && category.isActive && !AUTO_ONLY_KEYS.has(category.systemKey ?? '')).map(category => category.name))];
+  const systemName = (key: keyof typeof SYSTEM_DEFAULTS) => categories.find(c => c.systemKey === key)?.name ?? SYSTEM_DEFAULTS[key].name;
+  const RESERVED_EXPENSE_CATEGORIES = [
+    { name: systemName('payroll'), label: `${systemName('payroll')} (${SYSTEM_DEFAULTS.payroll.hint})` },
+    { name: systemName('advance'), label: `${systemName('advance')} (${SYSTEM_DEFAULTS.advance.hint})` },
+  ];
+  const RESERVED_INCOME_CATEGORIES = [{ name: systemName('tuition'), label: `${systemName('tuition')} (${SYSTEM_DEFAULTS.tuition.hint})` }];
+  // Chiqim kategoriyasi turi: tanlangan tur (kind), bo'lmasa nomdan
+  const expenseKind = (name?: string) => {
+    if (!name) return null;
+    const cat = categories.find(c => c.type === 'expense' && c.name === name);
+    if (cat?.kind) return cat.kind;
+    const n = normCategoryName(name);
+    return PAYROLL_NAME_RE.test(n) ? 'PAYROLL_PAYOUT' : ADVANCE_NAME_RE.test(n) ? 'STAFF_ADVANCE' : null;
+  };
   // TQ-D/TQ-E: kategoriya "kurs to'lovi" turidami — tanlangan tur, bo'lmasa nomdan (server bilan bir xil)
   const isTuitionCategory = (name?: string) => {
     if (!name) return false;
@@ -534,9 +552,12 @@ export default function CrmFinance() {
   // "Avans" kategoriyasi esa (davrga bog'liq emas) `POST /finance/advances`ga
   // yo'naltiriladi — ikkalasi ham xodim tanlanganda uning SO'NGGI hisoblangan
   // oyligi va qoplanmagan avans qoldig'ini ma'lumot sifatida ko'rsatadi.
-  const isOylikOrAvansForm = form.type === 'expense' && (form.category === 'Oylik' || form.category === 'Avans') && !!form.staffId;
-  const isOylikForm = isOylikOrAvansForm && form.category === 'Oylik';
-  const isAvansForm = isOylikOrAvansForm && form.category === 'Avans';
+  // IP-23: nom emas, kategoriya turi bo'yicha (nomi o'zgartirilgan bo'lsa ham)
+  const formExpenseKind = form.type === 'expense' ? expenseKind(form.category) : null;
+  const isPayrollCategory = formExpenseKind === 'PAYROLL_PAYOUT' || formExpenseKind === 'STAFF_ADVANCE';
+  const isOylikOrAvansForm = isPayrollCategory && !!form.staffId;
+  const isOylikForm = isOylikOrAvansForm && formExpenseKind === 'PAYROLL_PAYOUT';
+  const isAvansForm = isOylikOrAvansForm && formExpenseKind === 'STAFF_ADVANCE';
   const [personKind, setPersonKind] = useState<'teacher' | 'staff' | null>(null);
   const [personPayrollRows, setPersonPayrollRows] = useState<any[]>([]);
   const [personOutstandingAdvance, setPersonOutstandingAdvance] = useState(0);
@@ -1764,7 +1785,7 @@ export default function CrmFinance() {
                 onClick={() => printReceipt({ id: lastReceipt.receiptNo || '', receiptNo: lastReceipt.receiptNo, amount: lastReceipt.amount, method: lastReceipt.method, paidAt: lastReceipt.date, student: { name: lastReceipt.studentName }, group: lastReceipt.groupName ? { name: lastReceipt.groupName } : undefined, notes: "Kurs to'lovi" })}>
                 Chek chop etish
               </Button>
-              <Button variant="secondary" className="flex-1" onClick={() => { setLastReceipt(null); setTxKey(newIdempotencyKey()); setForm(f => ({ ...f, type: 'income', category: "Kurs to'lovi", amount: 0, description: '' })); }}>
+              <Button variant="secondary" className="flex-1" onClick={() => { setLastReceipt(null); setTxKey(newIdempotencyKey()); setForm(f => ({ ...f, type: 'income', category: systemName('tuition'), amount: 0, description: '' })); }}>
                 Yangi to'lov
               </Button>
               <Button className="flex-1" onClick={() => { setIsModalOpen(false); setLastReceipt(null); }}>Yopish</Button>
@@ -1854,13 +1875,13 @@ export default function CrmFinance() {
             </div>
           )}
 
-          {form.type === 'expense' && (form.category === 'Oylik' || form.category === 'Avans') && (
+          {isPayrollCategory && (
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Xodim / O'qituvchi</label>
               <select value={form.staffId} onChange={e => {
                 const all = [...staff, ...teachers];
                 const m = all.find(x => x.id.toString() === e.target.value);
-                setForm({ ...form, staffId: e.target.value, staffName: m?.name || '', description: m ? `${m.name} — ${form.category === 'Avans' ? 'avans' : 'ish haqi'}` : '' });
+                setForm({ ...form, staffId: e.target.value, staffName: m?.name || '', description: m ? `${m.name} — ${formExpenseKind === 'STAFF_ADVANCE' ? 'avans' : 'ish haqi'}` : '' });
               }} className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">Tanlang...</option>
                 <optgroup label="O'qituvchilar">{teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>
