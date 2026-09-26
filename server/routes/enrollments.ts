@@ -5,6 +5,7 @@
  * mos holda ishlayveradi (startDate berilmasa — bugun).
  */
 import express from 'express';
+import { projectStudentForTeacher } from '../domain/studentProjection.js';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requireAnyPermission } from '../middleware/authorize.js';
@@ -103,8 +104,8 @@ router.get('/group/:groupId', requireAuth, async (req, res) => {
             activePeriodsByStudent(req.params.groupId),
         ]);
         res.json(enrollments.map(e => {
-            const student: any = { ...e.student };
-            if (requester.role === 'TEACHER') { delete student.balance; delete student.paymentStatus; }
+            // IP-26 (OQ-13): o'qituvchiga telefon, manzil, balans va h.k. berilmaydi
+            const student: any = requester.role === 'TEACHER' ? projectStudentForTeacher(e.student) : { ...e.student };
             return { ...e, student, period: periods.get(e.studentId) ?? null };
         }));
     } catch (err) { sendError(res, err); }

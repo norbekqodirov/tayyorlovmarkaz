@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config/jwtSecret.js';
 import prisma from '../db.js';
@@ -22,28 +23,47 @@ export const ROLE_LEVEL: Record<string, number> = {
 // Yagona jarayon (`ecosystem.config.cjs`: instances:1) uchun xotiradagi
 // Map yetarli — klasterlangan bo'lganda bu boshqacha yechim talab qilardi.
 const ROLE_CACHE_TTL_MS = 60_000;
-interface CachedIdentity { role: string; isActive: boolean; expiresAt: number }
+interface CachedIdentity { role: string; isActive: boolean; pv: string; phone: string | null; name: string; expiresAt: number; dbError?: boolean }
 const roleCache = new Map<string, CachedIdentity>();
 
-async function verifyCurrentIdentity(userId: string, jwtRole: string): Promise<{ role: string; isActive: boolean } | null> {
+// ─── IP-26 (RX-08): sessiya ─────────────────────────────────────────────────
+// Token 7 kun (avval 30), faol foydalanuvchiga har kuni yangisi beriladi (X-Renewed-Token) —
+// ishlab turgan odam chiqib ketmaydi, tashlab ketilgan qurilmadagi token esa 7 kunda o'ladi.
+// `pv` — parol xeshining qisqa izi: parol o'zgarsa (o'zi yoki admin), eski tokenlar darhol yaroqsiz.
+export const SESSION_TTL = '7d';
+const RENEW_AFTER_S = 24 * 3600;
+export function passwordFingerprint(passwordHash: string) {
+    return crypto.createHash('sha256').update(passwordHash).digest('base64url').slice(0, 16);
+}
+export function signSession(user: { id: string; role: string; phone: string | null; name: string; password: string }) {
+    return jwt.sign({ id: user.id, role: user.role, phone: user.phone, name: user.name, pv: passwordFingerprint(user.password) }, JWT_SECRET, { expiresIn: SESSION_TTL });
+}
+/** Rol/holat/parol o'zgarganda keshni tozalash — keyingi so'rov bazadan o'qiydi. */
+export function invalidateIdentity(userId: string) { roleCache.delete(userId); }
+
+async function verifyCurrentIdentity(userId: string, jwtRole: string): Promise<CachedIdentity | null> {
     const cached = roleCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) {
         return cached;
     }
     try {
-        const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, isActive: true } });
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, isActive: true, password: true, phone: true, name: true } });
         if (!user) return null;
-        const fresh: CachedIdentity = { role: user.role, isActive: user.isActive !== false, expiresAt: Date.now() + ROLE_CACHE_TTL_MS };
+        const fresh: CachedIdentity = {
+            role: user.role, isActive: user.isActive !== false, pv: passwordFingerprint(user.password),
+            phone: user.phone, name: user.name, expiresAt: Date.now() + ROLE_CACHE_TTL_MS,
+        };
         roleCache.set(userId, fresh);
         return fresh;
     } catch (err) {
-        // Baza vaqtincha ishlamasa — butun tizimni to'xtatib qo'ymaslik uchun
-        // JWT'dagi eski rolga ishoniladi (avvalgi xatti-harakat), faqat
-        // shu holatda; xato konsolga chiqariladi, jim qoldirilmaydi.
-        console.error('[AUTH] verifyCurrentIdentity DB xatosi, JWT roliga ishoniladi:', (err as any)?.message);
-        return { role: jwtRole, isActive: true };
+        // Baza vaqtincha ishlamasa: o'qish so'rovlari JWT'dagi rol bilan davom etadi,
+        // yozish so'rovlari esa rad etiladi (RX-09, fail-closed) — requireAuth'da.
+        console.error('[AUTH] verifyCurrentIdentity DB xatosi:', (err as any)?.message);
+        return { role: jwtRole, isActive: true, pv: '', phone: null, name: '', expiresAt: 0, dbError: true };
     }
 }
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
@@ -57,8 +77,24 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
         if (!current) {
             return res.status(401).json({ message: "Foydalanuvchi topilmadi" });
         }
+        // RX-09: bazani tekshirib bo'lmasa — o'zgartiruvchi amal bajarilmaydi (bloklangan
+        // yoki roli pasaytirilgan foydalanuvchi eski token bilan yozib qolmasin)
+        if (current.dbError && !SAFE_METHODS.has(req.method)) {
+            return res.status(503).json({ message: "Tizim vaqtincha ishlamayapti — o'zgarish saqlanmadi, birozdan keyin qayta urinib ko'ring", code: 'AUTH_UNAVAILABLE' });
+        }
         if (!current.isActive) {
             return res.status(403).json({ message: "Hisobingiz bloklangan. Administrator bilan bog'laning." });
+        }
+        // RX-08: parol o'zgargandan keyin eski token ishlamaydi (pv — parol izi)
+        if (!current.dbError && payload.pv && payload.pv !== current.pv) {
+            return res.status(401).json({ message: "Parol o'zgartirilgan — qaytadan kiring", code: 'SESSION_REVOKED' });
+        }
+        // Sirpanuvchi sessiya: token 1 kundan eski bo'lsa — yangisi javob sarlavhasida
+        if (!current.dbError && payload.iat && Date.now() / 1000 - payload.iat > RENEW_AFTER_S) {
+            res.setHeader('X-Renewed-Token', jwt.sign(
+                { id: payload.id, role: current.role, phone: current.phone, name: current.name, pv: current.pv },
+                JWT_SECRET, { expiresIn: SESSION_TTL },
+            ));
         }
         // Token'dagi rol o'zgargan bo'lishi mumkin — so'rov davomida HAR DOIM
         // bazadagi joriy rol ishlatiladi, JWT payload'dagi eski qiymat emas.

@@ -1,5 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
+import { projectStudentForTeacher } from '../domain/studentProjection.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 
@@ -105,7 +106,7 @@ router.get('/:studentId', requireAuth, requirePermission('students'), async (req
         }
 
         res.json({
-            student,
+            student: teacherGroupIds ? projectStudentForTeacher(student) : student, // IP-26 (OQ-13)
             attendance: {
                 total: totalClasses,
                 present: presentCount,

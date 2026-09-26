@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import prisma from '../db.js';
-import { requireAuth, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
+import { requireAuth, requireMinRole, ROLE_LEVEL, signSession, invalidateIdentity, passwordFingerprint } from '../middleware/auth.js';
 import os from 'os';
 import { getDbConfig, createConsistentBackup } from '../services/dbBackup.js';
 import { JWT_SECRET } from '../config/jwtSecret.js';
@@ -120,11 +120,7 @@ router.post('/login', async (req, res) => {
 
         resetLoginRateLimit(normalizedPhone);
 
-        const token = jwt.sign(
-            { id: user.id, role: user.role, phone: user.phone, name: user.name },
-            JWT_SECRET,
-            { expiresIn: '30d' }
-        );
+        const token = signSession(user); // IP-26: 7 kun, parol izi bilan (RX-08)
 
         res.json({
             token,
@@ -156,6 +152,9 @@ router.get('/me', async (req, res) => {
             include: { roleRef: { select: { id: true, name: true, label: true } } },
         });
         if (!user) return res.status(404).json({ message: "Foydalanuvchi topilmadi" });
+        // IP-26: bloklangan yoki paroli o'zgargan (eski token) — sessiya yaroqsiz
+        if (user.isActive === false) return res.status(403).json({ message: "Hisobingiz bloklangan. Administrator bilan bog'laning." });
+        if (payload.pv && payload.pv !== passwordFingerprint(user.password)) return res.status(401).json({ message: "Parol o'zgartirilgan — qaytadan kiring", code: 'SESSION_REVOKED' });
 
         // RBAC qayta qurish — Bosqich 3: haqiqiy (Role + PermissionOverride
         // asosidagi) samarali ruxsatlar. Eski `permissions` maydoni ham
@@ -194,8 +193,10 @@ router.put('/change-password', requireAuth, async (req, res) => {
         if (!isValid) return res.status(401).json({ message: "Joriy parol noto'g'ri" });
 
         const hashedPassword = await bcrypt.hash(newPassword, 12);
-        await prisma.user.update({ where: { id: userId }, data: { password: hashedPassword } });
-        res.json({ message: "Parol muvaffaqiyatli o'zgartirildi" });
+        const updated = await prisma.user.update({ where: { id: userId }, data: { password: hashedPassword } });
+        // IP-26: boshqa qurilmalardagi eski sessiyalar yaroqsiz; shu qurilma uchun yangi token
+        invalidateIdentity(userId);
+        res.json({ message: "Parol muvaffaqiyatli o'zgartirildi", token: signSession(updated) });
     } catch {
         res.status(500).json({ message: "Server xatosi" });
     }
@@ -279,7 +280,9 @@ router.post('/users', requireAuth, async (req, res) => {
         const existing = await prisma.user.findUnique({ where: { phone: normalizedPhone } });
         if (existing) return res.status(409).json({ message: "Bu telefon raqam allaqachon mavjud" });
 
-        const hashedPassword = await bcrypt.hash(password || '123456', 12);
+        // IP-26 (RX-08): standart "123456" parol yo'q — parol majburiy
+        if (!password || String(password).length < 6) return res.status(400).json({ message: "Parol kamida 6 ta belgidan iborat bo'lishi kerak" });
+        const hashedPassword = await bcrypt.hash(password, 12);
         const user = await prisma.user.create({
             data: {
                 phone: normalizedPhone,
@@ -393,6 +396,8 @@ router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
         if (salaryPercent !== undefined) updateData.salaryPercent = salaryPercent;
 
         const user = await prisma.user.update({ where: { id: req.params.id }, data: updateData });
+        // IP-26: rol, holat yoki parol o'zgarsa — darhol kuchga kiradi (parol o'zgarsa eski sessiyalar yaroqsiz)
+        invalidateIdentity(user.id);
         // IP-09: foiz o'zgarsa — bugundan yangi TeacherRate versiyasi (tarix saqlanadi)
         if (salaryPercent !== undefined) {
             await safeHistory('teacher_rate', () => recordLegacyRateEdit(user.id, (target as any).salaryPercent ?? null, (user as any).salaryPercent ?? null, requester.id));
@@ -445,6 +450,7 @@ router.delete('/users/:id', requireAuth, async (req, res) => {
         }
 
         await prisma.user.delete({ where: { id: req.params.id } });
+        invalidateIdentity(req.params.id);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: String(error) });

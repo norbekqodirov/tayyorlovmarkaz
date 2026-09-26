@@ -97,7 +97,8 @@ app.use(cors({
         if (allowedOrigins.includes(origin)) return callback(null, true);
         callback(new Error('Not allowed by CORS'));
     },
-    credentials: true
+    credentials: true,
+    exposedHeaders: ['X-Renewed-Token'], // IP-26: sirpanuvchi sessiya
 }));
 
 app.use(express.json({ limit: '10mb' }));

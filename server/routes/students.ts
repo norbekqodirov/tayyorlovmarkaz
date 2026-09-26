@@ -13,6 +13,7 @@ import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 import { getLedgerMode } from '../services/ledgerMode.js';
 import { syncStudentBalance } from '../services/balanceCache.js';
 import { todayDateStr } from '../utils/timezone.js';
+import { projectStudentForTeacher } from '../domain/studentProjection.js';
 
 const router = express.Router();
 
@@ -91,9 +92,9 @@ router.get('/:id', requireAuth, requirePermission('students'), async (req, res) 
         if (requester.role === 'TEACHER') {
             const ownGroupIds = new Set(student.enrollments.filter((e: any) => e.group?.teacherId === requester.id).map((e: any) => e.groupId));
             if (!ownGroupIds.size) return res.status(403).json({ error: "Bu o'quvchiga tegishli emassiz" });
-            const { payments: _p, invoices: _i, balance: _b, paymentStatus: _ps, ...rest } = student as any;
+            const { payments: _p, invoices: _i, ...rest } = student as any;
             return res.json({
-                ...rest,
+                ...projectStudentForTeacher(rest), // IP-26 (OQ-13): telefon, manzil, balans va h.k. yo'q
                 enrollments: student.enrollments.filter((e: any) => ownGroupIds.has(e.groupId)),
                 attendanceRecords: student.attendanceRecords.filter((a: any) => ownGroupIds.has(a.groupId)),
                 assessments: student.assessments.filter((a: any) => a.groupId && ownGroupIds.has(a.groupId)),

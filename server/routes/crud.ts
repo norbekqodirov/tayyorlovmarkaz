@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../db.js';
+import { projectStudentForTeacher } from '../domain/studentProjection.js';
 import { requireAuth, requireRole, requireMinRole, ROLE_LEVEL } from '../middleware/auth.js';
 import { withAudit, logAudit } from '../middleware/audit.js';
 import { requirePermission } from '../middleware/authorize.js';
@@ -373,8 +374,11 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
         permissions = '[]';
         roleId = null;
     }
-    const hashed = await bcrypt.hash(rawPassword || '123456', 12);
-    return await prisma.user.create({
+    // IP-26 (RX-08): standart "123456" yo'q — parol berilmasa tasodifiy vaqtinchalik parol
+    // yaratiladi va javobda BIR MARTA qaytariladi (admin xodimga beradi).
+    const temporaryPassword = rawPassword ? null : generateTemporaryPassword();
+    const hashed = await bcrypt.hash(rawPassword || temporaryPassword!, 12);
+    const created = await prisma.user.create({
         data: {
             phone,
             name: staff.name || 'Xodim',
@@ -385,6 +389,13 @@ async function ensureStaffLoginAccount(staff: any, rawPassword?: string, request
             roleId,
         } as any,
     });
+    return Object.assign(created, { temporaryPassword });
+}
+
+/** O'qishga qulay tasodifiy parol (o/0, l/1 kabi chalkash belgilarsiz). */
+function generateTemporaryPassword() {
+    const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+    return Array.from({ length: 8 }, () => alphabet[crypto.randomInt(alphabet.length)]).join('');
 }
 
 // ─── Teachers (public directory) — haqiqiy manba User modeli (role=TEACHER) ──
@@ -507,16 +518,10 @@ function authForCollection(req: express.Request, res: express.Response, next: ex
 
 // RX-04: ustoz o'quvchi moliyasini (balans, to'lov holati) ko'rmaydi —
 // GET /students/:id proyeksiyasi (students.ts) bilan bir xil qoida ro'yxatlarda ham.
-const STUDENT_FINANCE_FIELDS = ['balance', 'paymentStatus'];
-function hideStudentFinance<T>(row: T): T {
-    if (!row || typeof row !== 'object') return row;
-    const copy: any = { ...row };
-    for (const f of STUDENT_FINANCE_FIELDS) delete copy[f];
-    return copy;
-}
+// IP-26 (OQ-13): moliya maydonlari bilan birga telefon, manzil, Telegram ID va izoh ham
 function projectRowForRequester(modelName: string, row: any, requester: any) {
     if (requester?.role !== 'TEACHER') return row;
-    if (modelName === 'student') return hideStudentFinance(row);
+    if (modelName === 'student') return projectStudentForTeacher(row);
     return row;
 }
 
@@ -766,6 +771,7 @@ router.post('/:collection', auditPositionsOnly, async (req, res) => {
                 if (loginUser) {
                     finalData.loginCreated = true;
                     finalData.loginRole = loginUser.role;
+                    if ((loginUser as any).temporaryPassword) finalData.temporaryPassword = (loginUser as any).temporaryPassword;
                 }
             } catch (e) {
                 console.error('[CRUD] Staff login account error:', e);

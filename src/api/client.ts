@@ -17,7 +17,12 @@ api.interceptors.request.use((config) => {
 });
 
 // Response interceptor to handle 401 Unauthorized
-api.interceptors.response.use((response) => response, (error) => {
+api.interceptors.response.use((response) => {
+    // IP-26: server faol sessiyani yangilaydi (token 7 kun, har kuni yangisi) — saqlab qo'yamiz
+    const renewed = response.headers?.['x-renewed-token'];
+    if (renewed) { try { localStorage.setItem('crm_token', renewed); } catch { /* saqlab bo'lmasa — keyingi so'rovda yana keladi */ } }
+    return response;
+}, (error) => {
     if (error.response && error.response.status === 401) {
         // Dispatch custom event for React Router to handle
         window.dispatchEvent(new Event('auth-unauthorized'));

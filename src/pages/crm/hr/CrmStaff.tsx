@@ -16,6 +16,14 @@ import { formatNumber } from '../../../utils/formatters';
 import type { Position } from '../../../types/position';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 
+/** O'qishga qulay tasodifiy parol (o/0, l/1 kabi chalkash belgilarsiz). */
+function generateTempPassword() {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = new Uint32Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+}
+
 interface StaffMember {
   id: string;
   name: string;
@@ -46,6 +54,8 @@ export default function CrmStaff() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
   const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
   const [loginPassword, setLoginPassword] = useState(''); // yangi xodim uchun login paroli
+  // IP-26 (RX-08): standart "123456" yo'q — parol kiritilmasa tasodifiy parol yaratilib, adminga ko'rsatiladi
+  const [createdLogin, setCreatedLogin] = useState<{ phone: string; password: string } | null>(null);
   const [formData, setFormData] = useState<Partial<StaffMember>>({
     name: '',
     role: '',
@@ -73,6 +83,7 @@ export default function CrmStaff() {
         await updateDocument(editingMember.id, formData);
         showToast('Xodim ma\'lumotlari yangilandi', 'success');
       } else {
+        const tempPassword = formData.phone && !loginPassword ? generateTempPassword() : null;
         await addDocument({
           salaryHistory: [],
           attendance: [],
@@ -81,7 +92,7 @@ export default function CrmStaff() {
           documents: [],
           ...formData,
           // Telefon + parol bilan login (User) hisobi ham yaratiladi
-          ...(formData.phone ? { password: loginPassword || undefined, createLogin: true } : {}),
+          ...(formData.phone ? { password: loginPassword || tempPassword || undefined, createLogin: true } : {}),
         } as any);
         showToast(
           formData.phone
@@ -89,6 +100,7 @@ export default function CrmStaff() {
             : 'Yangi xodim qo\'shildi',
           'success'
         );
+        if (formData.phone && tempPassword) setCreatedLogin({ phone: formData.phone, password: tempPassword });
       }
       closeModal();
     } catch (error) {
@@ -364,7 +376,7 @@ export default function CrmStaff() {
                   leftIcon={<ShieldCheck size={14} className="text-emerald-500" />}
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Bo'sh qoldirilsa: 123456"
+                  placeholder="Bo'sh qoldirilsa — tasodifiy parol yaratiladi va ko'rsatiladi"
                 />
                 <p className="text-[10px] text-zinc-400 leading-tight">
                   Telefon + parol bilan xodim botga (Mini App) kira oladi. Ruxsatlar lavozimiga qarab beriladi.
@@ -419,6 +431,20 @@ export default function CrmStaff() {
             <Button onClick={handleSave}>Saqlash</Button>
           </div>
         </div>
+      </Modal>
+      {/* IP-26 (RX-08): tasodifiy vaqtinchalik parol — faqat shu yerda bir marta ko'rsatiladi */}
+      <Modal isOpen={!!createdLogin} onClose={() => setCreatedLogin(null)} title="Login yaratildi" width="sm">
+        {createdLogin && (
+          <div className="space-y-3 text-sm">
+            <p className="text-zinc-600 dark:text-zinc-300">Xodim tizimga va botga shu ma'lumot bilan kiradi. Parolni hozir xodimga bering — u qayta ko'rsatilmaydi.</p>
+            <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 p-3 space-y-1">
+              <div>Telefon: <b className="font-mono">{createdLogin.phone}</b></div>
+              <div>Vaqtinchalik parol: <b className="font-mono tracking-wider">{createdLogin.password}</b></div>
+            </div>
+            <p className="text-xs text-zinc-500">Xodim kirgach, Sozlamalar → Xavfsizlik bo'limida parolini o'zgartirishi tavsiya etiladi.</p>
+            <div className="flex justify-end"><Button onClick={() => setCreatedLogin(null)}>Tushunarli</Button></div>
+          </div>
+        )}
       </Modal>
     </div>
   );

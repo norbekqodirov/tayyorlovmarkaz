@@ -161,11 +161,13 @@ export default function CrmSettings() {
           return;
         }
         try {
-          await api.put('/auth/change-password', {
+          const res = await api.put('/auth/change-password', {
             currentPassword: securityData.currentPassword,
             newPassword: securityData.newPassword
           });
-          showToast("Parol muvaffaqiyatli o'zgartirildi!", 'success');
+          // IP-26: eski sessiyalar (boshqa qurilmalar) yaroqsiz — shu qurilma uchun yangi token
+          if (res.data?.token) { try { localStorage.setItem('crm_token', res.data.token); } catch { /* keyingi kirishda */ } }
+          showToast("Parol o'zgartirildi. Boshqa qurilmalardagi kirishlar bekor qilindi.", 'success');
           setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '' });
         } catch (err: any) {
           showToast(err.response?.data?.message || "Parolni o'zgartirishda xatolik yuz berdi!", 'error');
