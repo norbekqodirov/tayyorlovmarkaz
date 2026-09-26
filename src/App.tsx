@@ -36,6 +36,7 @@ const CrmCategories = React.lazy(() => import('./pages/crm/finance/CrmCategories
 const CrmFinance    = React.lazy(() => import('./pages/crm/finance/CrmFinance'));
 const CrmTeacherPayroll = React.lazy(() => import('./pages/crm/finance/CrmTeacherPayroll'));
 const CrmBilling = React.lazy(() => import('./pages/crm/finance/CrmBilling'));
+const CrmCash = React.lazy(() => import('./pages/crm/finance/CrmCash'));
 const CrmGroups     = React.lazy(() => import('./pages/crm/education/CrmGroups'));
 const CrmGroupDetail= React.lazy(() => import('./pages/crm/education/CrmGroupDetail'));
 const CrmJournal    = React.lazy(() => import('./pages/crm/education/CrmJournal'));
@@ -164,6 +165,7 @@ export default function App() {
               {/* ─── Moliya ─── */}
               <Route path="finance"   element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmFinance /></ProtectedRoute>} />
               <Route path="billing" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmBilling /></ProtectedRoute>} />
+              <Route path="cash" element={<ProtectedRoute requiredPermission="finance" allowedRoles={['ADMIN','MANAGER']}><CrmCash /></ProtectedRoute>} />
               <Route path="teacher-payroll" element={<ProtectedRoute requiredPermission={['finance', 'payroll_review']} allowedRoles={['ADMIN','MANAGER']}><CrmTeacherPayroll /></ProtectedRoute>} />
               <Route path="transaction-categories" element={<ProtectedRoute requiredPermission="transaction_categories" allowedRoles={['ADMIN','MANAGER']}><CrmCategories /></ProtectedRoute>} />
               <Route path="discounts" element={<ProtectedRoute requiredPermission="discounts" allowedRoles={['ADMIN','MANAGER']}><CrmDiscounts /></ProtectedRoute>} />

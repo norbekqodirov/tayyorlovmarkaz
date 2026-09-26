@@ -10,6 +10,7 @@ import { Button } from '../ui/Button';
 import { MoneyInput } from '../ui/MoneyInput';
 import { formatMoney } from '../../utils/formatters';
 import { apiError } from './ReasonModal';
+import { AccountSelect } from './AccountSelect';
 
 const inputCls = 'w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:border-blue-500';
 const labelCls = 'text-sm font-bold text-slate-700 dark:text-zinc-300';
@@ -24,13 +25,14 @@ export function RefundModal({ isOpen, onClose, studentId, studentName, available
 }) {
   const [amount, setAmount] = useState(0);
   const [method, setMethod] = useState('Naqd');
+  const [accountId, setAccountId] = useState('');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   // Bitta oyna ochilishi = bitta pul komandasi: takror bosish ikki marta qaytarmaydi
   const key = useMemo(() => newIdempotencyKey(), [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (isOpen) { setAmount(available); setMethod('Naqd'); setReason(''); setError(''); } }, [isOpen, available]);
+  useEffect(() => { if (isOpen) { setAmount(available); setReason(''); setError(''); } }, [isOpen, available]);
 
   const submit = async () => {
     if (saving) return;
@@ -40,7 +42,7 @@ export function RefundModal({ isOpen, onClose, studentId, studentName, available
     setSaving(true);
     setError('');
     try {
-      await api.post('/receipts/refunds', { studentId, amount, method, reason: reason.trim() }, idempotencyHeaders(key));
+      await api.post('/receipts/refunds', { studentId, amount, method, accountId: accountId || undefined, reason: reason.trim() }, idempotencyHeaders(key));
       onDone();
     } catch (e: any) {
       setError(apiError(e, "Qaytarishni yozib bo'lmadi"));
@@ -57,14 +59,7 @@ export function RefundModal({ isOpen, onClose, studentId, studentName, available
           Hisoblarga biriktirilgan pul qaytarilmaydi — avval hisob tuzatmasi yoki a'zolikni yakunlash kerak.
         </div>
         <MoneyInput label="Summa" value={amount} onChange={setAmount} required />
-        <label className="block space-y-1.5">
-          <span className={labelCls}>Usul</span>
-          <select className={inputCls} value={method} onChange={e => setMethod(e.target.value)}>
-            <option value="Naqd">Naqd</option>
-            <option value="Karta">Karta</option>
-            <option value="Bank">Bank</option>
-          </select>
-        </label>
+        <AccountSelect label="Qaysi hisobdan qaytariladi" value={accountId} method={method} onChange={(id, m) => { setAccountId(id); setMethod(m); }} />
         <label className="block space-y-1.5">
           <span className={labelCls}>Sabab</span>
           <textarea className={`${inputCls} min-h-[72px] resize-y`} value={reason} onChange={e => setReason(e.target.value)}

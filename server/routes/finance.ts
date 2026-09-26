@@ -15,6 +15,7 @@ import { todayDateStr } from '../utils/timezone.js';
 import { getBillingSettings, calculateStudentMonthlyDue, calculateTeacherMonthlyRevenue } from '../services/billing.js';
 import { logAudit } from '../middleware/audit.js';
 import { voidTransaction, ReversalError, isMonthClosed } from '../services/moneyReversal.js';
+import { stampAccount, accountIdOf, assertDayOpen, CashError } from '../services/cashAccounts.js';
 
 const router = express.Router();
 
@@ -278,12 +279,13 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                 if (!invoice || count === 0) return { invoice, applied: false, cancelled: invoice?.status === 'cancelled' };
 
                 const netAmount = computeInvoiceNetAmount(invoice);
+                const acct = await stampAccount(tx, { method: invoice.method || 'Naqd', date: todayStr });
 
                 const invPayment = await tx.payment.create({
                     data: {
                         studentId: invoice.studentId,
                         amount: netAmount,
-                        method: invoice.method || 'Naqd',
+                        method: acct.method, accountId: acct.accountId,
                         date: todayStr,
                         status: 'paid',
                         notes: `Invoice ${invoice.number} to'landi`,
@@ -296,7 +298,7 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                         category: "Kurs to'lovi",
                         description: `Invoice ${invoice.number} to'lovi`,
                         date: todayStr,
-                        method: invoice.method || 'Naqd',
+                        method: acct.method, accountId: acct.accountId,
                         studentId: invoice.studentId,
                         studentName: invoice.student.name,
                         sourceType: 'invoice',
@@ -373,6 +375,7 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
         }
         res.json(invoice);
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ error: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });
@@ -446,7 +449,7 @@ router.get('/invoices/:id/payment-links', requireAuth, requirePermission('financ
 // bog'langan), mustaqil ikki yozuv emas.
 router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), idempotent('finance_transaction'), async (req, res) => {
     try {
-        const { type, amount, category, description, date, method, studentId, studentName, staffId, staffName, groupId, month } = req.body;
+        const { type, amount, category, description, date, method, accountId, studentId, studentName, staffId, staffName, groupId, month } = req.body;
         if (!type || !category || !date) {
             return res.status(400).json({ error: 'type, category va date majburiy' });
         }
@@ -475,7 +478,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
             try {
                 const requester = (req as any).user;
                 const r = await createReceipt({
-                    studentId, amount: Math.round(numAmount), method, date, note: description, category, source: 'finance_form',
+                    studentId, amount: Math.round(numAmount), method, accountId: accountId || null, date, note: description, category, source: 'finance_form',
                     groupId: groupId || null, month: month || null,
                 }, { id: requester?.id, name: requester?.name });
                 return res.json({ ...r.transaction, receiptNo: r.payment.receiptNo, paymentId: r.payment.id, allocations: r.allocations.map(a => ({ chargeId: a.chargeId, amount: a.amount })), unallocated: r.unallocated });
@@ -488,6 +491,8 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
             return res.status(400).json({ error: "Bu kirim turi o'quvchi qarziga ta'sir qilmaydi — o'quvchini olib tashlang yoki \"Kurs to'lovi\" kategoriyasini tanlang" });
         }
 
+        // IP-22: kassa/bank hisobi (yopilgan kunga yozilmaydi)
+        const acct = await stampAccount(prisma, { accountId: accountId || null, method, date: String(date) });
         const result = await prisma.$transaction(async (tx) => {
             let payment: { id: string } | null = null;
             // Faqat kirim + studentId bo'lsa balansga ta'sir qiladi va Payment
@@ -496,7 +501,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
             if (type === 'income' && studentId) {
                 payment = await tx.payment.create({
                     data: {
-                        studentId, amount: numAmount, method: method || 'Naqd', date,
+                        studentId, amount: numAmount, method: acct.method, accountId: acct.accountId, date,
                         status: 'paid',
                         notes: description || "Qo'lda kiritilgan to'lov (Moliya)",
                     },
@@ -506,7 +511,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
 
             const transaction = await tx.transaction.create({
                 data: {
-                    type, amount: numAmount, category, description, date, method,
+                    type, amount: numAmount, category, description, date, method: acct.method, accountId: acct.accountId,
                     studentId: studentId || null, studentName: studentName || null,
                     staffId: staffId || null, staffName: staffName || null,
                     ...(payment ? { sourceType: 'manual_payment', sourceId: payment.id } : {}),
@@ -529,6 +534,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
 
         res.json(result);
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ error: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });
@@ -579,7 +585,7 @@ router.get('/expenses', requireAuth, requirePermission('finance'), async (req, r
 // ham izchil saqlaydi (pastga q.).
 router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermission('finance'), async (req, res) => {
     try {
-        const { category, amount, description, date, receipt } = req.body;
+        const { category, amount, description, date, receipt, accountId, method } = req.body;
         if (!category || !amount || !date) {
             return res.status(400).json({ error: 'category, amount va date majburiy' });
         }
@@ -589,6 +595,8 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
             return res.status(400).json({ error: "Summa musbat son bo'lishi kerak" });
         }
 
+        // IP-22 (ML-16): xarajat qaysi hisobdan to'langan — endi har doim "Naqd" emas
+        const acct = await stampAccount(prisma, { accountId: accountId || null, method: method || 'Naqd', date: String(date) });
         const expense = await prisma.$transaction(async (tx) => {
             const created = await tx.expense.create({
                 data: {
@@ -600,7 +608,7 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
                 data: {
                     type: 'expense', amount: numAmount,
                     category, description: description || category,
-                    date, method: 'Naqd',
+                    date, method: acct.method, accountId: acct.accountId,
                     sourceType: 'expense', sourceId: created.id,
                 },
             });
@@ -609,6 +617,7 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
 
         res.status(201).json(expense);
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ error: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });
@@ -643,6 +652,17 @@ router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePer
         if (date !== undefined) data.date = date;
         if (receipt !== undefined) data.receipt = receipt;
 
+        // IP-22: kassa kuni yopilgan bo'lsa — tahrir yo'q (eski va yangi sana, eski va yangi hisob)
+        const linkedBefore = await prisma.transaction.findFirst({ where: { sourceType: 'expense', sourceId: req.params.id } });
+        let acct: { accountId: string | null; method: string } | null = null;
+        if (linkedBefore) {
+            await assertDayOpen(prisma, await accountIdOf(prisma, linkedBefore), linkedBefore.date);
+            const wantsAccount = req.body.accountId !== undefined || req.body.method !== undefined;
+            acct = wantsAccount
+                ? await stampAccount(prisma, { accountId: req.body.accountId || null, method: req.body.method || linkedBefore.method, date: String(date ?? linkedBefore.date) })
+                : { accountId: await accountIdOf(prisma, linkedBefore), method: linkedBefore.method };
+            await assertDayOpen(prisma, acct.accountId, String(date ?? linkedBefore.date));
+        }
         const result = await prisma.$transaction(async (tx) => {
             const expense = await tx.expense.update({ where: { id: req.params.id }, data });
             const linkedTx = await tx.transaction.findFirst({ where: { sourceType: 'expense', sourceId: expense.id } });
@@ -654,6 +674,7 @@ router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                         category: expense.category,
                         description: expense.description || expense.category,
                         date: expense.date,
+                        ...(acct ? { accountId: acct.accountId, method: acct.method } : {}),
                     },
                 });
             }
@@ -662,6 +683,7 @@ router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePer
 
         res.json({ ...result.expense, transactionSynced: result.transactionSynced });
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ error: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });
@@ -680,6 +702,11 @@ router.delete('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePe
         }
         if (await prisma.transaction.count({ where: { sourceType: 'expense', sourceId: req.params.id, voidedAt: { not: null } } })) {
             return res.status(409).json({ error: "Bu xarajat kassada bekor qilingan — o'chirilmaydi (tarix)", code: 'ALREADY_VOID' });
+        }
+        const linked = await prisma.transaction.findFirst({ where: { sourceType: 'expense', sourceId: req.params.id } });
+        if (linked) {
+            try { await assertDayOpen(prisma, await accountIdOf(prisma, linked), linked.date); }
+            catch (e) { if (e instanceof CashError) return res.status(409).json({ error: `${e.message}. Xarajatni Tranzaksiyalar'da «Bekor qilish» orqali qaytaring`, code: 'VOID_REQUIRED' }); throw e; }
         }
         await prisma.$transaction(async (tx) => {
             await tx.transaction.deleteMany({ where: { sourceType: 'expense', sourceId: req.params.id } });

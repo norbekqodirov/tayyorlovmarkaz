@@ -22,6 +22,7 @@ import api from '../../../api/client';
 import { useToast } from '../../../components/Toast';
 import { Button } from '../../../components/ui/Button';
 import { MoneyInput } from '../../../components/ui/MoneyInput';
+import { AccountSelect } from '../../../components/finance/AccountSelect';
 import { Modal } from '../../../components/ui/Modal';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import { formatNumber } from '../../../utils/formatters';
@@ -134,14 +135,15 @@ export default function CrmTeacherPayroll() {
 
   const [busy, setBusy] = useState(false);
   const [payAmount, setPayAmount] = useState(0);
-  const [payMethod, setPayMethod] = useState('Bank');
+  // IP-22: oylik qaysi kassa/bank hisobidan to'lanadi (standart — bank)
+  const [payAccountId, setPayAccountId] = useState('');
 
   // Payroll-avans (2026-09-17) — tanlangan shaxsning (o'qituvchi YOKI xodim)
   // hali qoplanmagan avansi va uni berish oynasi. Ikkala bo'lim uchun umumiy.
   const canManageMoney = hasAnyPermission('finance');
   const [outstandingAdvance, setOutstandingAdvance] = useState(0);
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
-  const [advanceForm, setAdvanceForm] = useState({ amount: 0, method: 'Naqd', date: toTashkentDate(), notes: '' });
+  const [advanceForm, setAdvanceForm] = useState({ amount: 0, method: 'Naqd', accountId: '', date: toTashkentDate(), notes: '' });
   const [deleteRecordConfirm, setDeleteRecordConfirm] = useState(false);
 
   const loadOutstandingAdvance = useCallback(async (personType: 'teacher' | 'staff', personId: string) => {
@@ -162,7 +164,7 @@ export default function CrmTeacherPayroll() {
       await api.post('/finance/advances', { personType, personId, ...advanceForm });
       showToast('Avans berildi', 'success');
       setAdvanceModalOpen(false);
-      setAdvanceForm({ amount: 0, method: 'Naqd', date: toTashkentDate(), notes: '' });
+      setAdvanceForm(f => ({ amount: 0, method: f.method, accountId: f.accountId, date: toTashkentDate(), notes: '' }));
       void loadOutstandingAdvance(personType, personId);
       if (personType === 'teacher') void loadTeacherDetail(); else void loadStaffDetail();
     } catch (e: any) {
@@ -309,7 +311,7 @@ export default function CrmTeacherPayroll() {
     if (!payroll || payAmount <= 0) return;
     setBusy(true);
     try {
-      const res = await api.post(`/finance/teacher-payroll/${payroll.id}/pay`, { amount: payAmount, method: payMethod });
+      const res = await api.post(`/finance/teacher-payroll/${payroll.id}/pay`, { amount: payAmount, accountId: payAccountId || undefined, method: payAccountId ? undefined : 'Bank' });
       setPayroll(res.data);
       showToast("To'lov qayd etildi", 'success');
       void loadTeacherDetail();
@@ -448,7 +450,7 @@ export default function CrmTeacherPayroll() {
   }, []);
 
   const [payStaffAmount, setPayStaffAmount] = useState(0);
-  const [payStaffMethod, setPayStaffMethod] = useState('Bank');
+  const [payStaffAccountId, setPayStaffAccountId] = useState('');
   const staffRemaining = selectedStaffSalary
     ? (selectedStaffSalary.remaining ?? Math.max(0, selectedStaffSalary.total - selectedStaffSalary.paidAmount - selectedStaffSalary.advanceApplied))
     : 0;
@@ -487,7 +489,7 @@ export default function CrmTeacherPayroll() {
     if (!sal || payStaffAmount <= 0 || staffFormDirty) return;
     setBusy(true);
     try {
-      const res = await api.put(`/salary/${sal.id}/pay`, { amount: payStaffAmount, method: payStaffMethod });
+      const res = await api.put(`/salary/${sal.id}/pay`, { amount: payStaffAmount, accountId: payStaffAccountId || undefined, method: payStaffAccountId ? undefined : 'Bank' });
       setStaffSalaries(prev => prev.map(s => s.id === res.data.id ? res.data : s));
       showToast("To'lov qayd etildi", 'success');
     } catch (e: any) {
@@ -564,7 +566,7 @@ export default function CrmTeacherPayroll() {
             loading={detailLoading} busy={busy}
             expandedGroupId={expandedGroupId} setExpandedGroupId={setExpandedGroupId}
             payAmount={payAmount} setPayAmount={setPayAmount}
-            payMethod={payMethod} setPayMethod={setPayMethod}
+            payAccountId={payAccountId} setPayAccountId={setPayAccountId}
             outstandingAdvance={outstandingAdvance} onGiveAdvance={() => setAdvanceModalOpen(true)}
             canManageMoney={canManageMoney}
             onBack={() => setSelectedTeacherId(null)}
@@ -592,7 +594,7 @@ export default function CrmTeacherPayroll() {
             loading={staffDetailLoading} busy={busy}
             remaining={staffRemaining}
             payAmount={payStaffAmount} setPayAmount={setPayStaffAmount}
-            payMethod={payStaffMethod} setPayMethod={setPayStaffMethod}
+            payAccountId={payStaffAccountId} setPayAccountId={setPayStaffAccountId}
             outstandingAdvance={outstandingAdvance} onGiveAdvance={() => setAdvanceModalOpen(true)}
             canManageMoney={canManageMoney}
             onBack={() => setSelectedStaffId(null)}
@@ -834,7 +836,7 @@ function TeacherDetail(props: {
   loading: boolean; busy: boolean;
   expandedGroupId: string | null; setExpandedGroupId: (id: string | null) => void;
   payAmount: number; setPayAmount: (n: number) => void;
-  payMethod: string; setPayMethod: (m: string) => void;
+  payAccountId: string; setPayAccountId: (m: string) => void;
   outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
   onBack: () => void; onCreateDraft: () => void; onApprove: () => void; onPay: () => void;
   onRequestDelete: () => void; onRequestReopen: () => void;
@@ -843,7 +845,7 @@ function TeacherDetail(props: {
     teacherName, month, year, basis, setBasis, accrualPreview, cashPreview, activePreview,
     isFrozen, liveDiffersFromFrozen,
     payroll, history, payoutEvents, remaining, accrualCashDelta, staffAtt, loading, busy,
-    expandedGroupId, setExpandedGroupId, payAmount, setPayAmount, payMethod, setPayMethod,
+    expandedGroupId, setExpandedGroupId, payAmount, setPayAmount, payAccountId, setPayAccountId,
     outstandingAdvance, onGiveAdvance, canManageMoney,
     onBack, onCreateDraft, onApprove, onPay, onRequestDelete, onRequestReopen,
   } = props;
@@ -1008,15 +1010,7 @@ function TeacherDetail(props: {
                           <div className="flex-1">
                             <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
                           </div>
-                          <select
-                            value={payMethod}
-                            onChange={e => setPayMethod(e.target.value)}
-                            className="px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
-                          >
-                            <option value="Bank">Bank</option>
-                            <option value="Naqd">Naqd</option>
-                            <option value="Karta">Karta</option>
-                          </select>
+                          <AccountSelect label="" className="w-48 shrink-0" value={payAccountId} method="Bank" onChange={id => setPayAccountId(id)} />
                           <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs shrink-0">
                             To'lov qayd etish
                           </Button>
@@ -1161,7 +1155,7 @@ function StaffList({ staff, salaryFor, onSelect }: { staff: StaffPerson[]; salar
 
 function StaffDetail({
   staff, salary, attendance, payoutEvents, monthLabel, form, setForm, dirty, loading, busy,
-  remaining, payAmount, setPayAmount, payMethod, setPayMethod,
+  remaining, payAmount, setPayAmount, payAccountId, setPayAccountId,
   outstandingAdvance, onGiveAdvance, canManageMoney,
   onBack, onSave, onPay, onRequestDelete,
 }: {
@@ -1171,7 +1165,7 @@ function StaffDetail({
   dirty: boolean;
   loading: boolean; busy: boolean;
   remaining: number; payAmount: number; setPayAmount: (n: number) => void;
-  payMethod: string; setPayMethod: (m: string) => void;
+  payAccountId: string; setPayAccountId: (m: string) => void;
   outstandingAdvance: number; onGiveAdvance: () => void; canManageMoney: boolean;
   onBack: () => void; onSave: () => void; onPay: () => void; onRequestDelete: () => void;
 }) {
@@ -1263,15 +1257,7 @@ function StaffDetail({
                         <div className="flex-1">
                           <MoneyInput label="To'lov summasi" value={payAmount} onChange={setPayAmount} />
                         </div>
-                        <select
-                          value={payMethod}
-                          onChange={e => setPayMethod(e.target.value)}
-                          className="px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
-                        >
-                          <option value="Bank">Bank</option>
-                          <option value="Naqd">Naqd</option>
-                          <option value="Karta">Karta</option>
-                        </select>
+                        <AccountSelect label="" className="w-48 shrink-0" value={payAccountId} method="Bank" onChange={id => setPayAccountId(id)} />
                         <Button onClick={onPay} disabled={busy || payAmount <= 0 || payAmount > remaining} className="text-xs shrink-0">
                           To'lov qayd etish
                         </Button>
@@ -1372,26 +1358,15 @@ function PayoutTimeline({ events }: { events: PayoutEvent[] }) {
 // berish oynasi — TeacherDetail va StaffDetail ikkalasi uchun umumiy.
 function AdvanceModal({ isOpen, onClose, personName, form, setForm, busy, onSubmit }: {
   isOpen: boolean; onClose: () => void; personName: string;
-  form: { amount: number; method: string; date: string; notes: string };
-  setForm: (f: { amount: number; method: string; date: string; notes: string }) => void;
+  form: { amount: number; method: string; accountId: string; date: string; notes: string };
+  setForm: (f: { amount: number; method: string; accountId: string; date: string; notes: string }) => void;
   busy: boolean; onSubmit: () => void;
 }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Avans berish" description={personName ? `${personName} uchun oldindan to'lov` : undefined} width="sm">
       <div className="space-y-3">
         <MoneyInput label="Summa" value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
-        <div>
-          <label className="block text-xs font-bold text-zinc-500 mb-1">Usul</label>
-          <select
-            value={form.method}
-            onChange={e => setForm({ ...form, method: e.target.value })}
-            className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm font-bold"
-          >
-            <option value="Naqd">Naqd</option>
-            <option value="Bank">Bank</option>
-            <option value="Karta">Karta</option>
-          </select>
-        </div>
+        <AccountSelect label="Qaysi hisobdan" value={form.accountId} method={form.method} onChange={(accountId, method) => setForm({ ...form, accountId, method })} />
         <div>
           <label className="block text-xs font-bold text-zinc-500 mb-1">Sana</label>
           <input

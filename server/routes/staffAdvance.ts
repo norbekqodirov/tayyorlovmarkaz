@@ -13,6 +13,7 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { idempotent } from '../middleware/idempotency.js';
 import { getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
+import { stampAccount, CashError } from '../services/cashAccounts.js';
 import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
@@ -83,11 +84,13 @@ router.post('/', idempotent('staff_advance'), async (req, res) => {
             personName = staff.name;
         }
 
+        // IP-22: qaysi kassa/bank hisobidan berildi (yopilgan kunga yozilmaydi)
+        const acct = await stampAccount(prisma, { accountId: (req.body as any).accountId || null, method: method || 'Naqd', date });
         const result = await prisma.$transaction(async (tx) => {
             const advance = await tx.staffAdvance.create({
                 data: {
                     personType, personId, amount: numAmount, remaining: numAmount,
-                    date, method: method || 'Naqd', notes,
+                    date, method: acct.method, notes,
                     createdById: (req as any).user?.id || null,
                 },
             });
@@ -98,7 +101,7 @@ router.post('/', idempotent('staff_advance'), async (req, res) => {
                     category: 'Avans',
                     description: `${personName} — oldindan avans`,
                     date,
-                    method: method || 'Naqd',
+                    method: acct.method, accountId: acct.accountId,
                     staffId: personId,
                     staffName: personName,
                     sourceType: 'staff_advance',
@@ -118,6 +121,7 @@ router.post('/', idempotent('staff_advance'), async (req, res) => {
 
         res.status(201).json(result);
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ message: err.message, code: err.code });
         res.status(500).json({ message: err.message });
     }
 });

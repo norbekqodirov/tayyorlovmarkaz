@@ -637,6 +637,8 @@ model Transaction {
   voidedAt    DateTime?
   voidedById  String?
   voidReason  String?
+  // IP-22: qaysi kassa/bank hisobiga (CashAccount). null — eski yozuv, hisob `method` bo'yicha aniqlanadi.
+  accountId   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -671,6 +673,8 @@ model Payment {
   voidedAt   DateTime?
   voidedById String?
   voidReason String?
+  // IP-22: pul qaysi kassa/bank hisobiga tushgani (CashAccount)
+  accountId  String?
 
   allocations PaymentAllocation[]
 }
@@ -1978,4 +1982,70 @@ model Answer {
   feedback     String?
 
   @@unique([submissionId, questionId])
+}
+
+// ─── IP-22: kassa/bank hisoblari va solishtirish ─────────────────────────────
+// Pul turgan joy: naqd kassa, terminal (karta), bank hisobi, Payme, Click.
+// Qoldiq = boshlang'ich qoldiq + kirim − chiqim ± ichki o'tkazmalar (Transaction.accountId,
+// null bo'lsa `method` bo'yicha). Ichki o'tkazma daromad/xarajat emas.
+model CashAccount {
+  id             String   @id @default(uuid())
+  name           String
+  type           String   // cash | card | bank | online
+  method         String   // Transaction.method'ga yoziladigan yorliq: Naqd, Karta, Bank, Payme, Click
+  openingBalance Float    @default(0)
+  openingDate    String?  // YYYY-MM-DD — qoldiq shu kundan boshlab hisoblanadi (null — boshidan)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// Hisoblar orasida o'tkazma (kassadan bankka topshirish, Payme'dan bankka yechish).
+// Manbadan `amount` chiqadi; `fee` (komissiya) manba hisobidan xarajat Transaction'i
+// sifatida yoziladi; manzilga `amount − fee` kiradi.
+model CashTransfer {
+  id               String    @id @default(uuid())
+  fromAccountId    String
+  toAccountId      String
+  amount           Float
+  fee              Float     @default(0)
+  date             String
+  note             String?
+  feeTransactionId String?
+  createdById      String?
+  createdByName    String?
+  voidedAt         DateTime?
+  voidedById       String?
+  voidReason       String?
+  createdAt        DateTime  @default(now())
+
+  @@index([date])
+}
+
+// Kunni yopish: boshlanish + kirim − chiqim ± o'tkazma = kutilgan; sanalgan bilan farq
+// sababi bilan yoziladi va "Kassa farqi" yozuvi bilan tenglashtiriladi.
+model CashSession {
+  id                      String    @id @default(uuid())
+  accountId               String
+  date                    String
+  opening                 Float
+  income                  Float
+  expense                 Float
+  transfersIn             Float
+  transfersOut            Float
+  expected                Float
+  counted                 Float
+  difference              Float
+  note                    String?
+  adjustmentTransactionId String?
+  status                  String    @default("closed") // closed | reopened
+  closedById              String?
+  closedByName            String?
+  closedAt                DateTime  @default(now())
+  reopenedById            String?
+  reopenedAt              DateTime?
+  reopenReason            String?
+
+  @@index([accountId, date])
 }

@@ -19,6 +19,7 @@ import { syncStudentBalance } from './balanceCache.js';
 import { isMonthClosed } from './moneyReversal.js';
 import { studentPosition as ledgerPosition } from './receivables.js';
 import { sendMessage } from './telegramService.js';
+import { stampAccount, CashError } from './cashAccounts.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -45,7 +46,7 @@ async function reserveReceiptNo(tx: Tx, date: string): Promise<string> {
 }
 
 export interface ReceiptInput {
-    studentId: string; amount: number; method?: string; date?: string; note?: string | null; groupId?: string | null;
+    studentId: string; amount: number; method?: string; accountId?: string | null; date?: string; note?: string | null; groupId?: string | null;
     allocations?: AllocationInput[]; auto?: boolean; category?: string; source?: string;
     /** TQ-D: qaysi oy uchun (YYYY-MM) — hujjat uchun; taqsimot baribir e'lon qilingan hisoblar bo'yicha */
     month?: string | null;
@@ -72,10 +73,13 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
                 ?? await tx.enrollmentPeriod.findFirst({ where: { studentId: student.id, groupId: input.groupId }, select: { id: true } });
             if (!member) throw new ReceiptError(400, "O'quvchi bu guruhda o'qimaydi", 'BAD_GROUP');
         }
+        // IP-22: pul qaysi kassa/bank hisobiga tushdi (yopilgan kunga yozilmaydi)
+        const { accountId, method } = await stampAccount(tx, { accountId: input.accountId, method: input.method || 'Naqd', date })
+            .catch(e => { if (e instanceof CashError) throw new ReceiptError(e.status, e.message, e.code); throw e; });
         const receiptNo = await reserveReceiptNo(tx, date);
         const payment = await tx.payment.create({
             data: {
-                studentId: student.id, amount, method: input.method || 'Naqd', date, status: 'paid',
+                studentId: student.id, amount, method, accountId, date, status: 'paid',
                 notes: input.note || `Kurs to'lovi — ${student.name}`, receiptNo, allocationMode,
                 receivedById: actor.id ?? null, groupId: input.groupId ?? null, sourceType: input.source ?? 'receipt',
                 month: input.month || null,
@@ -84,7 +88,7 @@ export async function createReceipt(input: ReceiptInput, actor: { id?: string | 
         const transaction = await tx.transaction.create({
             data: {
                 type: 'income', amount, category: input.category || "Kurs to'lovi", description: `${receiptNo} · ${input.note || `${student.name} — kurs to'lovi`}`,
-                date, method: input.method || 'Naqd', studentId: student.id, studentName: student.name, sourceType: 'receipt', sourceId: payment.id,
+                date, method, accountId, studentId: student.id, studentName: student.name, sourceType: 'receipt', sourceId: payment.id,
             },
         });
         const allocations = wantsAllocation
