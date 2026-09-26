@@ -825,6 +825,7 @@ export default function CrmUsers() {
                                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                                             <input
                                                 type="email"
+                                                autoComplete="off"
                                                 value={form.email}
                                                 onChange={e => setForm({ ...form, email: e.target.value })}
                                                 placeholder="email@example.com"
@@ -841,6 +842,7 @@ export default function CrmUsers() {
                                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                                             <input
                                                 type={showPassword ? 'text' : 'password'}
+                                                autoComplete="new-password"
                                                 value={form.password}
                                                 onChange={e => setForm({ ...form, password: e.target.value })}
                                                 placeholder={editingUser ? "O'zgartirmaslik uchun bo'sh qoldiring" : "Kamida 6 ta belgi..."}

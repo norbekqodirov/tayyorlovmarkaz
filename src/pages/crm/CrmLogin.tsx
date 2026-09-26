@@ -68,6 +68,7 @@ export default function CrmLogin() {
               value={phone}
               onChange={setPhone}
               required
+              autoComplete="username"
             />
 
             {/* Password */}
@@ -81,6 +82,7 @@ export default function CrmLogin() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   className="w-full pl-11 pr-12 py-3.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
                   placeholder="••••••••"
                   required

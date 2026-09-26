@@ -6,6 +6,8 @@ interface Props {
   required?: boolean;
   disabled?: boolean;
   className?: string;
+  /** Faqat kirish sahifasida "username"; qolgan joylarda brauzer o'z raqamingizni qo'yib yubormasin */
+  autoComplete?: string;
 }
 
 const PREFIX = '+998';
@@ -17,7 +19,7 @@ function extractDigits(v: string): string {
   return digits.slice(0, 9);
 }
 
-export function PhoneInput({ label, value, onChange, placeholder = '90 123 45 67', required, disabled }: Props) {
+export function PhoneInput({ label, value, onChange, placeholder = '90 123 45 67', required, disabled, autoComplete = 'off' }: Props) {
   const digits = extractDigits(value);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -43,6 +45,7 @@ export function PhoneInput({ label, value, onChange, placeholder = '90 123 45 67
           placeholder={placeholder}
           maxLength={9}
           disabled={disabled}
+          autoComplete={autoComplete}
           className="flex-1 min-w-0 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-r-xl px-3 py-2.5 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50"
         />
       </div>

@@ -862,6 +862,7 @@ export default function CrmStudents() {
                 </div>
                 <Input
                   type="email"
+                  autoComplete="off"
                   label="Email"
                   value={formData.email || ''}
                   onChange={(e) => {

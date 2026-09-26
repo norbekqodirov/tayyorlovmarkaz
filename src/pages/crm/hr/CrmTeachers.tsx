@@ -585,6 +585,7 @@ export default function CrmTeachers() {
              <div className="grid grid-cols-2 gap-4">
                <Input
                  type="email"
+                 autoComplete="off"
                  label="Email (ixtiyoriy)"
                  value={formData.email || ''}
                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -592,6 +593,7 @@ export default function CrmTeachers() {
                />
                <Input
                  type="password"
+                 autoComplete="new-password"
                  label={formData.id ? "Yangi parol yozing" : "Parol kiriting *"}
                  value={formData.password || ''}
                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}

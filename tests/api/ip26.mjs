@@ -28,6 +28,26 @@ try {
   check('xodim logini: tasodifiy vaqtinchalik parol javobda (8 belgi)', r.status < 300 && typeof temp === 'string' && temp.length === 8 && !!loginUser, { status: r.status, temp });
   check('"123456" bilan kirib bo\'lmaydi', (await login(staffPhone, '123456')).status === 401);
   check('vaqtinchalik parol bilan kiriladi', !!(await login(staffPhone, temp)).data?.token);
+  const authLogs = await prisma.auditLog.findMany({ where: { resource: 'auth', resourceId: loginUser?.id } });
+  check("kirish jurnali: muvaffaqiyatli va noto'g'ri urinish yozildi (IP bilan)", authLogs.some(l => l.action === 'login' && l.ipAddress) && authLogs.some(l => l.action === 'login_failed'), authLogs.map(l => l.action));
+  await prisma.auditLog.deleteMany({ where: { resource: 'auth', resourceId: loginUser?.id } }).catch(() => {});
+
+  // ── Autofill himoyasi: email maydoniga telefon tushib qolsa saqlanmaydi; yaratish audit'ga yoziladi
+  r = await api('POST', '/auth/users', admin.token, { name: `${TAG} Autofill`, phone: '+998901119903', email: '+998901119909', password: 'Test12345!', role: 'TEACHER' });
+  check('email o\'rniga telefon — 400, foydalanuvchi yaratilmaydi', r.status === 400 && !(await prisma.user.findUnique({ where: { phone: '+998901119903' } })), r);
+  r = await api('POST', '/auth/users', admin.token, { name: `${TAG} Emailli`, phone: '+998901119904', email: ' Ustoz@Markaz.UZ ', password: 'Test12345!', role: 'TEACHER' });
+  const emailUser = r.data?.id; if (emailUser) track('user', emailUser);
+  check('to\'g\'ri email saqlanadi (kichik harf, bo\'shliqsiz)', r.status === 200 && r.data.email === 'ustoz@markaz.uz', r.data);
+  const created = await prisma.auditLog.findFirst({ where: { resource: 'user', action: 'create', resourceId: emailUser } });
+  check('yaratish audit jurnalida — kim yaratgani bor, parol yo\'q', !!created && created.userId === admin.user.id && !String(created.after).includes('Test12345'), created);
+  r = await api('PUT', `/auth/users/${emailUser}`, admin.token, { password: 'Boshqa12345' });
+  const afterPut = await prisma.user.findUnique({ where: { id: emailUser } });
+  check('faqat parol tahriri emailni o\'chirmaydi', r.status === 200 && afterPut?.email === 'ustoz@markaz.uz', { status: r.status, email: afterPut?.email });
+  r = await api('PUT', `/auth/users/${emailUser}`, admin.token, { password: '123' });
+  check('tahrirda ham qisqa parol rad etiladi', r.status === 400, r.status);
+  r = await api('PUT', `/auth/users/${emailUser}`, admin.token, { email: '901119909' });
+  check('tahrirda noto\'g\'ri email rad etiladi', r.status === 400, r.status);
+  await prisma.auditLog.deleteMany({ where: { resource: 'user', resourceId: emailUser } }).catch(() => {});
 
   // ── Parol o'zgarsa eski sessiyalar yaroqsiz
   const u = await makeUser('MANAGER', ['dashboard']);
@@ -80,7 +100,7 @@ try {
 } catch (e) { console.error(e); check('xatosiz', false, e.message); }
 finally {
   await prisma.staffMember.deleteMany({ where: { id: { in: staffIds.filter(Boolean) } } }).catch(() => {});
-  await prisma.user.deleteMany({ where: { phone: { in: ['+998901119902'] } } }).catch(() => {});
+  await prisma.user.deleteMany({ where: { phone: { in: ['+998901119902', '+998901119903', '+998901119904'] } } }).catch(() => {});
   void bcrypt;
   const ok = summary(); await cleanup(); process.exit(ok ? 0 : 1);
 }

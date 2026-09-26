@@ -383,9 +383,9 @@ export default function CrmSettings() {
               <>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Xavfsizlik</h2>
                 <div className="space-y-5">
-                  <Input type="password" label="Joriy parol" value={securityData.currentPassword} onChange={(e) => setSecurityData({ ...securityData, currentPassword: e.target.value })} />
-                  <Input type="password" label="Yangi parol" value={securityData.newPassword} onChange={(e) => setSecurityData({ ...securityData, newPassword: e.target.value })} />
-                  <Input type="password" label="Yangi parolni tasdiqlang" value={securityData.confirmPassword} onChange={(e) => setSecurityData({ ...securityData, confirmPassword: e.target.value })} />
+                  <Input type="password" autoComplete="current-password" label="Joriy parol" value={securityData.currentPassword} onChange={(e) => setSecurityData({ ...securityData, currentPassword: e.target.value })} />
+                  <Input type="password" autoComplete="new-password" label="Yangi parol" value={securityData.newPassword} onChange={(e) => setSecurityData({ ...securityData, newPassword: e.target.value })} />
+                  <Input type="password" autoComplete="new-password" label="Yangi parolni tasdiqlang" value={securityData.confirmPassword} onChange={(e) => setSecurityData({ ...securityData, confirmPassword: e.target.value })} />
                 </div>
               </>
             )}

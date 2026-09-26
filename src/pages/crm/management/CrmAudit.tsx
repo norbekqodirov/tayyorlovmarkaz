@@ -33,6 +33,7 @@ const RESOURCE_LABEL: Record<string, string> = {
   payment: 'To\'lov',
   transaction: 'Tranzaksiya',
   user: 'Foydalanuvchi',
+  auth: 'Tizimga kirish',
   staffMember: 'Xodim',
   inventoryItem: 'Inventar',
   test: 'Test',
@@ -45,6 +46,7 @@ const ACTION_LABEL: Record<string, string> = {
   delete: 'O\'chirildi',
   restore: 'Tiklandi',
   login: 'Kirdi',
+  login_failed: 'Noto\'g\'ri parol',
   logout: 'Chiqdi',
 };
 
@@ -118,12 +120,14 @@ export default function CrmAudit() {
       if (log.action === 'update') return 'update';
       if (log.action === 'delete') return 'delete';
       if (log.action === 'restore') return 'restore';
-      if (log.action === 'login') return 'login';
+      if (log.action === 'login' || log.action === 'login_failed') return 'login';
       if (log.action === 'logout') return 'logout';
       return 'event';
     })(),
     title: `${ACTION_LABEL[log.action] || log.action}: ${RESOURCE_LABEL[log.resource] || log.resource}`,
-    description: log.before?.name || log.before?.title || log.after?.name || log.after?.title || log.resourceId || '—',
+    description: log.resource === 'auth'
+      ? [log.userName, log.ipAddress && `IP ${log.ipAddress}`].filter(Boolean).join(' · ')
+      : log.before?.name || log.before?.title || log.after?.name || log.after?.title || log.resourceId || '—',
     timestamp: log.createdAt || new Date().toISOString(),
     user: { name: log.userName || 'Tizim', avatar: log.user?.avatar },
     expandable: (
@@ -208,6 +212,8 @@ export default function CrmAudit() {
                 { value: 'update', label: 'Yangilash' },
                 { value: 'delete', label: 'O\'chirish' },
                 { value: 'restore', label: 'Tiklash' },
+                { value: 'login', label: 'Kirish' },
+                { value: 'login_failed', label: 'Noto\'g\'ri parol' },
               ],
             },
             { type: 'dateRange', key: 'dateRange', label: 'Sana' },

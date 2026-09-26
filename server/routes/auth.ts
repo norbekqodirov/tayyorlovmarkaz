@@ -22,7 +22,7 @@ const isSuperAdmin = (role: string) => role === 'SUPER_ADMIN';
 const isAdminOrAbove = (role: string) => (ROLE_LEVEL[role] || 0) >= 3;
 
 // SEC-07 tuzatish: birinchi-ishga-tushirish SUPER_ADMIN yaratish uchun
-// qattiq kodlangan (`+998937525592`/`nn1122`, repository'da hammaga ma'lum)
+// qattiq kodlangan (repository'da hammaga ma'lum bo'lgan)
 // hisob ma'lumotlari o'rniga muhit o'zgaruvchisi. O'rnatilmagan bo'lsa
 // bootstrap butunlay o'chiq (xavfsiz standart) — faqat ataylab .env'ga
 // qo'shilganda ishlaydi, va faqat baza haqiqatan bo'sh bo'lsa ishlatiladi.
@@ -48,6 +48,15 @@ function checkLoginRateLimit(key: string): boolean {
     rec.count++;
     return true;
 }
+/** Kirish jurnali: kim, qachon, qaysi IP/brauzerdan (parol yozilmaydi). */
+async function logLogin(req: express.Request, user: { id: string; name: string | null }, action: 'login' | 'login_failed') {
+    await logAudit({
+        userId: user.id, userName: user.name || 'unknown', action, resource: 'auth', resourceId: user.id,
+        ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || null,
+        userAgent: req.headers['user-agent'] || null,
+    });
+}
+
 function resetLoginRateLimit(key: string) {
     loginAttempts.delete(key);
 }
@@ -115,10 +124,12 @@ router.post('/login', async (req, res) => {
 
         const isValid = await bcrypt.compare(password, user.password);
         if (!isValid) {
+            await logLogin(req, user, 'login_failed');
             return res.status(401).json({ message: "Telefon raqam yoki parol noto'g'ri" });
         }
 
         resetLoginRateLimit(normalizedPhone);
+        await logLogin(req, user, 'login');
 
         const token = signSession(user); // IP-26: 7 kun, parol izi bilan (RX-08)
 
@@ -258,6 +269,9 @@ router.post('/users', requireAuth, async (req, res) => {
 
         if (!phone) return res.status(400).json({ message: "Telefon raqam kiritilishi shart" });
         if (!name)  return res.status(400).json({ message: "Ism kiritilishi shart" });
+        // Brauzer avtomatik to'ldirishi email maydoniga telefon/login yozib yuborishi mumkin — faqat haqiqiy email qabul qilinadi
+        const cleanEmail = normalizeEmail(email);
+        if (cleanEmail === false) return res.status(400).json({ message: EMAIL_ERROR });
 
         // roleId berilgan bo'lsa — Role o'zi manba: uning baseRoleLevel'i
         // User.role bo'ladi, RolePermission to'plami esa User.permissions'ga
@@ -286,7 +300,7 @@ router.post('/users', requireAuth, async (req, res) => {
         const user = await prisma.user.create({
             data: {
                 phone: normalizedPhone,
-                email: email || null,
+                email: cleanEmail,
                 password: hashedPassword,
                 name,
                 role: targetRole,
@@ -298,6 +312,14 @@ router.post('/users', requireAuth, async (req, res) => {
                 experience: experience || null,
                 bio: bio || null,
             } as any,
+        });
+
+        // Kim, qachon, qaysi rol bilan yaratgani — keyin savol tug'ilsa javob shu yerda (parol yozilmaydi)
+        await logAudit({
+            userId: requester.id, userName: requester.name || 'system', action: 'create', resource: 'user', resourceId: user.id,
+            after: { name: user.name, phone: user.phone, email: user.email, role: user.role, roleId: roleId || null },
+            ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || null,
+            userAgent: req.headers['user-agent'] || null,
         });
 
         res.json({
@@ -319,6 +341,14 @@ router.post('/users', requireAuth, async (req, res) => {
         res.status(500).json({ message: String(error) });
     }
 });
+
+const EMAIL_ERROR = "Email noto'g'ri. Bo'sh qoldiring yoki to'g'ri email yozing (masalan, ism@markaz.uz)";
+/** Bo'sh → null, to'g'ri email → kichik harfda, aks holda false. */
+function normalizeEmail(raw: unknown): string | null | false {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!v) return null;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v.toLowerCase() : false;
+}
 
 // PUT update user
 router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
@@ -376,7 +406,15 @@ router.put('/users/:id', requireAuth, withAudit('user'), async (req, res) => {
             }
         }
 
-        const updateData: any = { name, role: targetRole, email: email || null };
+        const updateData: any = { name, role: targetRole };
+        // Email faqat yuborilganda o'zgaradi (ilgari qisman tahrir — masalan, faqat parol — emailni o'chirib yuborardi).
+        // Eski noto'g'ri qiymat o'zgarmasdan qaytsa — tahrir to'silmaydi.
+        if (email !== undefined) {
+            const cleanEmail = normalizeEmail(email);
+            if (cleanEmail === false && String(email).trim() !== (target.email || '')) return res.status(400).json({ message: EMAIL_ERROR });
+            if (cleanEmail !== false) updateData.email = cleanEmail;
+        }
+        if (password && String(password).length < 6) return res.status(400).json({ message: "Parol kamida 6 ta belgidan iborat bo'lishi kerak" });
         // SEC-03 qo'shimcha bug: ilgari isActive yuborilmasa ham `true`
         // o'rnatilardi — oddiy (isActive'ga tegishli bo'lmagan) tahrir
         // bloklangan hisobni jimgina qayta faollashtirardi. Endi faqat

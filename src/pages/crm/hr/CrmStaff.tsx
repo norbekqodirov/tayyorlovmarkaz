@@ -373,6 +373,7 @@ export default function CrmStaff() {
               <div className="space-y-2">
                 <Input
                   label="Login paroli"
+                  autoComplete="new-password"
                   leftIcon={<ShieldCheck size={14} className="text-emerald-500" />}
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
@@ -383,7 +384,7 @@ export default function CrmStaff() {
                 </p>
               </div>
             )}
-            <Input type="email" label="Email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="example@mail.com" />
+            <Input type="email" autoComplete="off" label="Email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="example@mail.com" />
             <MoneyInput label="Maosh (UZS)" value={formData.salary} onChange={(salary) => setFormData({ ...formData, salary })} />
             <div className="space-y-2">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Bo'lim</label>
