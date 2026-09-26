@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { TrendingUp, Users, DollarSign, Target, Award, FileDown, RefreshCw } from 'lucide-react';
 import api from '../../../api/client';
+import { MetricsDictionary } from '../../../components/analytics/MetricsDictionary';
 
 export default function CrmExecutiveReport() {
   const [data, setData] = useState<any>(null);
@@ -105,15 +106,16 @@ export default function CrmExecutiveReport() {
       <div id="executive-report" className="space-y-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-          <KpiCard label="Jami O'quvchi" value={data.students?.total || 0} icon={Users} color="blue" />
-          <KpiCard label="Faol O'quvchi" value={data.students?.active || 0} icon={Users} color="emerald" />
-          <KpiCard label="Bu oy daromad" value={`${((data.revenue?.thisMonth || 0) / 1000000).toFixed(1)}M`} icon={DollarSign} color="green"
+          {/* IP-24: kartalar metrikalar lug'atidan — BI, KPI va hisobotlar bilan bir xil */}
+          <KpiCard label="Jami O'quvchi" value={data.students?.total || 0} icon={Users} color="blue" sub={<span className="text-zinc-500">ro'yxatda</span>} />
+          <KpiCard label="Guruhda o'qiydi" value={data.students?.active || 0} icon={Users} color="emerald" sub={<span className="text-zinc-500">{data.students?.new || 0} yangi (bu oy)</span>} />
+          <KpiCard label="Kassa kirimi (bu oy)" value={`${((data.revenue?.thisMonth || 0) / 1000000).toFixed(1)}M`} icon={DollarSign} color="green"
             sub={<span className={growthPositive ? 'text-emerald-600' : 'text-rose-600'}>
-              {growthPositive ? '▲' : '▼'} {Math.abs(data.revenue?.growthPct || 0)}%
+              {growthPositive ? '▲' : '▼'} {Math.abs(data.revenue?.growthPct || 0)}% o'tgan oyga
             </span>} />
-          <KpiCard label="Yil davomida" value={`${((data.revenue?.yearToDate || 0) / 1000000).toFixed(1)}M`} icon={TrendingUp} color="indigo" />
-          <KpiCard label="Lead conversion" value={`${data.leads?.conversionRate || 0}%`} icon={Target} color="violet" />
-          <KpiCard label="Muddati o'tgan" value={data.overduePayments || 0} icon={Award} color="rose" sub="to'lov" />
+          <KpiCard label="Hisoblangan (bu oy)" value={`${((data.revenue?.accrual || 0) / 1000000).toFixed(1)}M`} icon={TrendingUp} color="indigo" sub={<span className="text-zinc-500">o'quvchi hisoblari</span>} />
+          <KpiCard label="Lid konversiyasi" value={`${data.leads?.conversionRate || 0}%`} icon={Target} color="violet" sub={<span className="text-zinc-500">bu oy lidlari</span>} />
+          <KpiCard label="Muddati o'tgan qarz" value={`${((data.debt?.overdue || 0) / 1000000).toFixed(1)}M`} icon={Award} color="rose" sub={<span className="text-zinc-500">{data.overduePayments || 0} qarzdor o'quvchi</span>} />
         </div>
 
         {/* Revenue section */}
@@ -122,8 +124,16 @@ export default function CrmExecutiveReport() {
             <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">Daromad tahlili</h2>
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2 justify-between items-center">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Bu oy</span>
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Bu oy kassa kirimi</span>
                 <span className="font-black text-slate-900 dark:text-white">{(data.revenue?.thisMonth || 0).toLocaleString()} so'm</span>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-between items-center text-xs text-zinc-500">
+                <span>shundan kurs to'lovi / boshqa kirim</span>
+                <span className="tabular-nums">{(data.revenue?.tuitionCash || 0).toLocaleString()} / {(data.revenue?.otherIncome || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-between items-center">
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Bu oy hisoblangan (o'quvchi hisoblari)</span>
+                <span className="font-black text-slate-900 dark:text-white">{(data.revenue?.accrual || 0).toLocaleString()} so'm</span>
               </div>
               <div className="flex flex-wrap gap-2 justify-between items-center">
                 <span className="text-sm text-zinc-600 dark:text-zinc-400">O'tgan oy</span>
@@ -144,19 +154,19 @@ export default function CrmExecutiveReport() {
           </div>
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5">
-            <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">Lead Funnel</h2>
+            <h2 className="font-black text-sm text-slate-900 dark:text-white mb-4">Lidlar (bu oy)</h2>
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Jami lidlar</span>
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Bu oy kelgan lidlar</span>
                 <span className="font-black text-slate-900 dark:text-white">{data.leads?.total || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Muvaffaqiyatli (won)</span>
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">O'quvchiga aylangan</span>
                 <span className="font-black text-emerald-600">{data.leads?.won || 0}</span>
               </div>
               <div className="h-px bg-zinc-100 dark:bg-zinc-800" />
               <div className="flex justify-between">
-                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">Conversion rate</span>
+                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">Konversiya</span>
                 <span className="font-black text-violet-600 text-lg">{data.leads?.conversionRate || 0}%</span>
               </div>
 
@@ -172,6 +182,8 @@ export default function CrmExecutiveReport() {
             </div>
           </div>
         </div>
+
+        <MetricsDictionary />
 
         {/* Top Courses */}
         {data.topCourses?.length > 0 && (

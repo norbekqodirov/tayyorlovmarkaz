@@ -110,8 +110,8 @@ export default function CrmPredictions() {
             <Brain className="w-6 h-6 text-indigo-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">AI Bashoratlar</h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">Ma'lumotlarga asoslanib tahlil va bashorat</p>
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Bashoratlar (qoidaviy baho)</h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">Oldindan belgilangan qoidalar bo'yicha taxminiy baho (sun'iy intellekt modeli emas) — qaror uchun yagona asos emas</p>
           </div>
         </div>
         <button onClick={() => fetchData(activeTab)} disabled={loading}
@@ -138,7 +138,7 @@ export default function CrmPredictions() {
         <div className="flex items-center justify-center py-20">
           <div className="text-center space-y-3">
             <Brain className="w-10 h-10 text-indigo-300 animate-pulse mx-auto" />
-            <p className="text-sm text-zinc-400">AI tahlil qilmoqda...</p>
+            <p className="text-sm text-zinc-400">Hisoblanmoqda...</p>
           </div>
         </div>
       ) : error ? (

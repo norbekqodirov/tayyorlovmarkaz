@@ -1,5 +1,6 @@
 import express from 'express';
 import prisma from '../db.js';
+import { computeMetrics, financeSeries, cashFlows } from '../services/metrics.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { JOBS } from '../services/scheduler.js';
@@ -38,10 +39,14 @@ router.get('/summary', requireAuth, requireMinRole('MANAGER'), requirePermission
             prisma.lead.count({ where: { stage: 'won', updatedAt: { gte: new Date(fromDate), lte: new Date(toDate + 'T23:59:59') } } }),
         ]);
 
-        const income = transactions.filter(t => t.type === 'income').reduce((a, t) => a + t.amount, 0);
-        const expense = transactions.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
-        const presentCount = attendance.filter(r => r.status === 'present').length;
-        const attendanceRate = attendance.length > 0 ? Math.round((presentCount / attendance.length) * 100) : 0;
+        // IP-24: kirim = kurs to'lovi + boshqa kirim, chiqim = operatsion + oylik + avans (tur bo'yicha,
+        // ichki o'tkazma kirmaydi); davomat = (keldi + kechikdi) / (keldi + kechikdi + kelmadi)
+        const flows = (await cashFlows(prisma, fromDate, toDate)).total;
+        const income = flows.tuitionCash + flows.otherIncome;
+        const expense = flows.operatingExpense + flows.payrollCash + flows.advancesCash;
+        const presentCount = attendance.filter(r => r.status === 'present' || r.status === 'late').length;
+        const ratedCount = attendance.filter(r => r.status === 'present' || r.status === 'late' || r.status === 'absent').length;
+        const attendanceRate = ratedCount > 0 ? Math.round((presentCount / ratedCount) * 100) : 0;
 
         // Kategoriya bo'yicha daromad
         const incomeByCategory: Record<string, number> = {};
@@ -68,6 +73,7 @@ router.get('/summary', requireAuth, requireMinRole('MANAGER'), requirePermission
                 income,
                 expense,
                 profit: income - expense,
+                breakdown: flows,
                 incomeByCategory,
                 expenseByCategory,
             },
@@ -324,27 +330,23 @@ router.get('/executive', requireAuth, requireMinRole('ADMIN'), requirePermission
         const curKey = todayStr.slice(0, 7);
         const prevKey = monthRangeStr(-1).start.slice(0, 7);
 
-        const [students, transactions, leads, groups] = await Promise.all([
-            prisma.student.findMany({ where: { deletedAt: null }, select: { status: true, balance: true, paymentStatus: true } }),
-            prisma.transaction.findMany({ where: { type: 'income' }, select: { amount: true, date: true } }),
-            prisma.lead.findMany({ where: { deletedAt: null }, select: { stage: true } }),
+        // IP-24 (HB-05): raqamlar metrikalar lug'atidan — BI, KPI va hisobotlar bilan bir xil
+        const [students, groups, cur, series] = await Promise.all([
+            prisma.student.findMany({ where: { deletedAt: null }, select: { status: true, balance: true } }),
             prisma.group.findMany({
                 where: { status: 'active' },
                 select: { course: { select: { name: true } } },
             }),
+            computeMetrics(curKey),
+            financeSeries(String(currentYear)),
         ]);
-
-        const activeStudents = students.filter(s => s.status === 'Faol' || s.status === 'active');
         const overduePayments = students.filter(s => (Number(s.balance) || 0) < 0).length;
-
-        const sumIncome = (rows: typeof transactions) => rows.reduce((a, t) => a + (Number(t.amount) || 0), 0);
-        const thisMonthIncome = sumIncome(transactions.filter(t => t.date?.startsWith(curKey)));
-        const prevMonthIncome = sumIncome(transactions.filter(t => t.date?.startsWith(prevKey)));
-        const yearToDateIncome = sumIncome(transactions.filter(t => t.date?.startsWith(String(currentYear))));
+        const incomeOf = (m: string) => { const r = series.find(x => x.month === m); return r ? r.income : 0; };
+        const thisMonthIncome = cur.values.tuitionCash + cur.values.otherIncome;
+        const prevMonthIncome = prevKey.startsWith(String(currentYear)) ? incomeOf(prevKey)
+            : (await computeMetrics(prevKey).then(p => p.values.tuitionCash + p.values.otherIncome));
+        const yearToDateIncome = series.reduce((a, r) => a + r.income, 0);
         const growthPct = prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : (thisMonthIncome > 0 ? 100 : 0);
-
-        const totalLeads = leads.length;
-        const wonLeads = leads.filter(l => l.stage === 'won').length;
 
         const courseGroupCounts: Record<string, number> = {};
         groups.forEach(g => {
@@ -360,10 +362,17 @@ router.get('/executive', requireAuth, requireMinRole('ADMIN'), requirePermission
 
         res.json({
             period: { month: MONTH_NAMES[currentMonth], year: currentYear },
-            students: { total: students.length, active: activeStudents.length },
-            revenue: { thisMonth: thisMonthIncome, prevMonth: prevMonthIncome, growthPct, yearToDate: yearToDateIncome },
-            leads: { total: totalLeads, won: wonLeads, conversionRate: totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0 },
+            students: { total: students.length, active: cur.values.activeStudents, new: cur.values.newStudents },
+            revenue: {
+                thisMonth: thisMonthIncome, prevMonth: prevMonthIncome, growthPct, yearToDate: yearToDateIncome,
+                accrual: cur.values.accrualRevenue, tuitionCash: cur.values.tuitionCash, otherIncome: cur.values.otherIncome,
+                netCashFlow: cur.values.netCashFlow,
+            },
+            debt: { receivables: cur.values.receivables, overdue: cur.values.overdueDebt, buckets: cur.details.overdueBuckets },
+            leads: { total: cur.details.leads.created, won: cur.details.leads.converted, conversionRate: cur.values.leadConversion },
+            attendanceRate: cur.values.attendanceRate,
             overduePayments,
+            metrics: cur,
             topCourses,
         });
     } catch (err: any) {

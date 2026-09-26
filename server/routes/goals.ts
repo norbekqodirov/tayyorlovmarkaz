@@ -11,6 +11,7 @@
 
 import express from 'express';
 import prisma from '../db.js';
+import { computeMetrics } from '../services/metrics.js';
 import { monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
@@ -110,19 +111,13 @@ router.post('/auto-sync', async (req, res) => {
     const nextMonthStart = monthRangeStr(1).start;
 
     try {
-        // 1. Daromad
-        const revenue = await prisma.transaction.aggregate({
-            _sum: { amount: true },
-            where: { type: 'income', date: { gte: monthStart, lte: monthEnd } }
-        });
-
-        // 2. Yangi o'quvchilar
-        const newStudents = await prisma.student.count({
-            where: { createdAt: { gte: tashkentMidnightInstant(monthStart), lt: tashkentMidnightInstant(nextMonthStart) } }
-        });
-
-        // 3. Jami faol o'quvchilar
-        const activeStudents = await prisma.student.count({ where: { status: 'active' } });
+        // IP-24 (HB-05): ko'rsatkichlar metrikalar lug'atidan — ijroiya hisobot va BI bilan bir xil.
+        // Daromad = kassa kirimi (kurs to'lovi + boshqa kirim), bekor qilinganlar va ichki o'tkazmalar kirmaydi.
+        const m = await computeMetrics(monthStart.slice(0, 7));
+        const revenue = { _sum: { amount: m.values.tuitionCash + m.values.otherIncome } };
+        const newStudents = m.values.newStudents;
+        const activeStudents = m.values.activeStudents;
+        void nextMonthStart;
 
         // 4. Yangi lidlar
         const newLeads = await prisma.lead.count({
@@ -132,10 +127,7 @@ router.post('/auto-sync', async (req, res) => {
         // 5. Konversiya — shu oy yaratilgan lidlarning necha foizi "won" bosqichida
         // (avval BARCHA vaqt lidlari solishtirilardi, oylik maqsad hech qachon
         // o'zgarmasdi, chunki bu nisbat deyarli statik qoladi).
-        const monthLeadsWhere = { createdAt: { gte: tashkentMidnightInstant(monthStart), lt: tashkentMidnightInstant(nextMonthStart) } };
-        const totalLeads = await prisma.lead.count({ where: monthLeadsWhere });
-        const wonLeads = await prisma.lead.count({ where: { ...monthLeadsWhere, stage: 'won' } });
-        const conversion = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
+        const conversion = Math.round(m.values.leadConversion);
 
         const metrics = {
             revenue: revenue._sum.amount ?? 0,
@@ -157,7 +149,7 @@ router.post('/auto-sync', async (req, res) => {
             else if (goal.type === 'students') current = metrics.newStudents;
             else if (goal.type === 'leads') current = metrics.newLeads;
             else if (goal.type === 'conversion') current = metrics.conversion;
-            else if (goal.type === 'attendance') continue; // Attendance alohida hisoblanadi
+            else if (goal.type === 'attendance') current = Math.round(m.values.attendanceRate);
 
             if (current !== goal.current) {
                 await prisma.goal.update({

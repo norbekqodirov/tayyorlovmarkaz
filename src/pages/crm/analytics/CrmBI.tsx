@@ -266,14 +266,17 @@ export default function CrmAdvancedBI() {
 
   // ── KPI aggregates ───────────────────────────────────────────────────
   const ad = analyticsData;
-  const totalIncome = safeNum(ad?.revenue?.total_income) || transactions.filter((t: any) => t.type === 'income').reduce((a: number, t: any) => a + safeNum(t.amount), 0);
-  const totalExpense = safeNum(ad?.revenue?.total_expense) || transactions.filter((t: any) => t.type === 'expense').reduce((a: number, t: any) => a + safeNum(t.amount), 0);
-  const thisMonthIncome = safeNum(ad?.revenue?.this_month) || transactions.filter((t: any) => t.type === 'income' && t.date && new Date(t.date).getMonth() === currentMonth).reduce((a: number, t: any) => a + safeNum(t.amount), 0);
-  const debtorCount = safeNum(ad?.students?.debtors) || students.filter((s: any) => safeNum(s.balance) < 0).length;
-  const totalStudentsCount = safeNum(ad?.students?.total) || students.length;
-  const activeStudents = safeNum(ad?.students?.active) || students.filter((s: any) => studentStatusToUi(s.status) === 'Faol').length;
-  const wonLeads = safeNum(ad?.leads?.won) || leads.filter((l: any) => l.stage === 'won').length;
-  const totalLeads = safeNum(ad?.leads?.total) || leads.length;
+  // IP-24: server javobi bo'lsa — faqat u (metrikalar lug'ati); 0 ham haqiqiy qiymat. Ilgari `||`
+  // tufayli server 0 qaytarsa brauzerdagi boshqa formula (status, oy raqami) ishlab ketardi.
+  const fromServer = (v: unknown, fallback: () => number) => (ad && v != null ? safeNum(v) : fallback());
+  const totalIncome = fromServer(ad?.revenue?.total_income, () => transactions.filter((t: any) => t.type === 'income').reduce((a: number, t: any) => a + safeNum(t.amount), 0));
+  const totalExpense = fromServer(ad?.revenue?.total_expense, () => transactions.filter((t: any) => t.type === 'expense').reduce((a: number, t: any) => a + safeNum(t.amount), 0));
+  const thisMonthIncome = fromServer(ad?.revenue?.this_month, () => transactions.filter((t: any) => t.type === 'income' && typeof t.date === 'string' && t.date.slice(0, 7) === toTashkentDate().slice(0, 7)).reduce((a: number, t: any) => a + safeNum(t.amount), 0));
+  const debtorCount = fromServer(ad?.students?.debtors, () => students.filter((s: any) => safeNum(s.balance) < 0).length);
+  const totalStudentsCount = fromServer(ad?.students?.total, () => students.length);
+  const activeStudents = fromServer(ad?.students?.active, () => students.filter((s: any) => studentStatusToUi(s.status) === 'Faol').length);
+  const wonLeads = fromServer(ad?.leads?.won, () => leads.filter((l: any) => l.stage === 'won').length);
+  const totalLeads = fromServer(ad?.leads?.total, () => leads.length);
   const convRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
 
   const totalPayingStudents = students.filter((s: any) => transactions.some((t: any) => t.studentId === s.id)).length || Math.max(1, activeStudents);

@@ -154,7 +154,7 @@ export const MODULES: NavModule[] = [
       {
         links: [
           { name: 'BI Analitika',     path: '/crmtayyorlovmarkaz/bi',               icon: BarChart2,     permission: 'bi'      },
-          { name: 'AI Bashoratlar',  path: '/crmtayyorlovmarkaz/predictions',      icon: Brain,         permission: 'predictions'      },
+          { name: 'Bashoratlar',  path: '/crmtayyorlovmarkaz/predictions',      icon: Brain,         permission: 'predictions'      },
           { name: 'KPI & Maqsadlar', path: '/crmtayyorlovmarkaz/goals',            icon: Target,        permission: 'goals'      },
           { name: 'Ijroiya Hisobot', path: '/crmtayyorlovmarkaz/executive-report', icon: FileBarChart2, permission: undefined  },
         ],

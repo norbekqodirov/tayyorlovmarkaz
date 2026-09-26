@@ -25,7 +25,7 @@ export function StatCard({ id, data }: { id: string; data: any }) {
       up: true,
     },
     stat_revenue: {
-      label: 'Oylik Daromad',
+      label: 'Bu oy kassa kirimi',
       value: formatCompact(data.monthRevenue),
       sub: `${data.monthRevenueGrowth > 0 ? '+' : ''}${data.monthRevenueGrowth}% o'tgan oyga nisbatan`,
       icon: Wallet,

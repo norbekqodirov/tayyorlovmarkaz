@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import api from '../../../api/client';
 import { toTashkentDate } from '../../../utils/tashkentDate';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -69,31 +70,42 @@ export default function CrmDashboard() {
   const resetWidgets = () => saveWidgets(getDefaultWidgets(userRole));
 
   // ── Computed analytics ───────────────────────────────────────────────
-  const currentMonth = new Date().getMonth();
-  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
   const today = toTashkentDate();
 
-  const revenueData = useMemo(() => {
-    return Array.from({ length: 6 }, (_, i) => {
-      const mi = (currentMonth - 5 + i + 12) % 12;
-      const inc = transactions.filter((t: any) => t.type === 'income' && t.date && new Date(t.date).getMonth() === mi).reduce((a: number, t: any) => a + (t.amount || 0), 0);
-      const exp = transactions.filter((t: any) => t.type === 'expense' && t.date && new Date(t.date).getMonth() === mi).reduce((a: number, t: any) => a + (t.amount || 0), 0);
-      return { name: MONTHS[mi], income: inc || 0, expense: exp || 0 };
-    });
-  }, [transactions, currentMonth]);
+  // IP-24: kirim/chiqim metrikalar lug'atidan (server): kategoriya turi bo'yicha, bekor qilinganlar
+  // va ichki o'tkazmalar kirmaydi, oy YYYY-MM bo'yicha (ilgari yil hisobga olinmasdi).
+  // Ruxsat bo'lmasa (403) — tranzaksiyalardan YYYY-MM bo'yicha zaxira hisob.
+  const monthKeys = useMemo(() => Array.from({ length: 6 }, (_, i) => {
+    const [y, m] = today.slice(0, 7).split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 - (5 - i), 1));
+    return d.toISOString().slice(0, 7);
+  }), [today]);
+  const [series, setSeries] = useState<Record<string, { income: number; expense: number }> | null>(null);
+  useEffect(() => {
+    const years = [...new Set(monthKeys.map(k => k.slice(0, 4)))];
+    Promise.all(years.map(y => api.get('/analytics/metrics/series', { params: { year: y } }).then(r => r.data as any[])))
+      .then(parts => setSeries(Object.fromEntries(parts.flat().map(r => [r.month, { income: r.income, expense: r.expense }]))))
+      .catch(() => setSeries(null));
+  }, [monthKeys]);
+  const monthTotals = useCallback((key: string) => {
+    if (series) return series[key] ?? { income: 0, expense: 0 };
+    const inMonth = (t: any) => typeof t.date === 'string' && t.date.slice(0, 7) === key;
+    return {
+      income: transactions.filter((t: any) => t.type === 'income' && inMonth(t)).reduce((a: number, t: any) => a + (t.amount || 0), 0),
+      expense: transactions.filter((t: any) => t.type === 'expense' && inMonth(t)).reduce((a: number, t: any) => a + (t.amount || 0), 0),
+    };
+  }, [series, transactions]);
 
+  const revenueData = useMemo(() => monthKeys.map(k => ({ name: MONTHS[Number(k.slice(5, 7)) - 1], ...monthTotals(k) })), [monthKeys, monthTotals]);
+
+  const joinedIn = useCallback((s: any, key: string) => typeof s.joinedDate === 'string' && s.joinedDate.slice(0, 7) === key, []);
   const studentGrowthData = useMemo(() => {
     let cum = 0;
-    return Array.from({ length: 6 }, (_, i) => {
-      const mi = (currentMonth - 5 + i + 12) % 12;
-      const n = students.filter((s: any) => {
-        if (!s.joinedDate) return false;
-        return new Date(s.joinedDate).getMonth() === mi;
-      }).length;
-      cum += n;
-      return { name: MONTHS[mi], students: cum };
+    return monthKeys.map(k => {
+      cum += students.filter((s: any) => joinedIn(s, k)).length;
+      return { name: MONTHS[Number(k.slice(5, 7)) - 1], students: cum };
     });
-  }, [students, currentMonth]);
+  }, [students, monthKeys, joinedIn]);
 
   const leadSourceData = useMemo(() => {
     const sources: Record<string, number> = {};
@@ -105,28 +117,22 @@ export default function CrmDashboard() {
   }, [leads]);
 
   const aggrData = useMemo(() => {
-    const thisMonthIncome = transactions.filter((t: any) => t.type === 'income' && t.date && new Date(t.date).getMonth() === currentMonth).reduce((a: number, t: any) => a + (t.amount || 0), 0);
-    const prevMonthIncome = transactions.filter((t: any) => t.type === 'income' && t.date && new Date(t.date).getMonth() === prevMonth).reduce((a: number, t: any) => a + (t.amount || 0), 0);
-    const monthRevenueGrowth = prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : 0;
+    const thisMonthIncome = monthTotals(monthKeys[5]).income;
+    const prevMonthIncome = monthTotals(monthKeys[4]).income;
+    const monthRevenueGrowth = prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : (thisMonthIncome > 0 ? 100 : 0); // ijroiya hisobot bilan bir xil qoida
 
     const activeStudents = students.filter((s: any) => studentStatusToUi(s.status) === 'Faol');
-    const prevMonthStudents = students.filter((s: any) => {
-      if (!s.joinedDate) return false;
-      return new Date(s.joinedDate).getMonth() === prevMonth;
-    }).length;
-    const thisMonthStudents = students.filter((s: any) => {
-      if (!s.joinedDate) return false;
-      return new Date(s.joinedDate).getMonth() === currentMonth;
-    }).length;
+    const prevMonthStudents = students.filter((s: any) => joinedIn(s, monthKeys[4])).length;
+    const thisMonthStudents = students.filter((s: any) => joinedIn(s, monthKeys[5])).length;
     const studentsGrowth = prevMonthStudents > 0 ? Math.round(((thisMonthStudents - prevMonthStudents) / prevMonthStudents) * 100) : 0;
 
     // Today's attendance — endi haqiqiy AttendanceRecord'dan, butun markaz
     // bo'yicha (eski kod faqat BITTA guruhning yozuvini topardi, .find()
     // birinchi mosini olgani uchun; endi barcha guruhlar to'g'ri jamlanadi).
     const todayRecords = attendanceRecords.filter((r: any) => r.date === today);
-    const todayPresent = todayRecords.filter((r: any) => r.status === 'present').length;
+    const todayPresent = todayRecords.filter((r: any) => r.status === 'present' || r.status === 'late').length;
     const todayAbsent = todayRecords.filter((r: any) => r.status === 'absent').length;
-    const todayTotal = todayRecords.length;
+    const todayTotal = todayPresent + todayAbsent; // sababli (excused) foizga kirmaydi
     const todayAttendanceRate = todayTotal > 0 ? Math.round((todayPresent / todayTotal) * 100) : 0;
 
     // IP-04 (ML-02 oraliq): qarzdor — faqat manfiy balans (Moliya sahifasi va
@@ -136,8 +142,7 @@ export default function CrmDashboard() {
 
     const monthLeads = leads.filter((l: any) => {
       if (!l.createdAt && !l.date) return false;
-      const d = new Date(l.createdAt || l.date);
-      return d.getMonth() === currentMonth;
+      return toTashkentDate(new Date(l.createdAt || l.date)).slice(0, 7) === monthKeys[5];
     }).length;
 
     const wonLeads = leads.filter((l: any) => l.stage === 'won').length;
@@ -162,7 +167,7 @@ export default function CrmDashboard() {
       todayAbsent,
       todayAttendanceRate,
     };
-  }, [students, groups, leads, transactions, teachers, attendanceRecords, currentMonth, prevMonth, today]);
+  }, [students, groups, leads, teachers, attendanceRecords, today, monthKeys, monthTotals, joinedIn]);
 
   const renderWidget = (id: string) => {
     switch (id) {

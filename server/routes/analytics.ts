@@ -1,7 +1,8 @@
 import express from 'express';
 import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/authorize.js';
+import { requirePermission, requireAnyPermission } from '../middleware/authorize.js';
+import { computeMetrics, financeSeries, cashFlows } from '../services/metrics.js';
 
 // IP-03 (RX-01): bu fayldagi barcha hisobotlar markaz miqyosidagi moliya va
 // shaxsiy ma'lumot (qarzdorlar telefonlari, tushum, xarajat) qaytaradi. Ilgari
@@ -11,6 +12,8 @@ import { requirePermission } from '../middleware/authorize.js';
 // hammasi MANAGER+ (ADMIN/SUPER_ADMIN har doim o'tadi).
 const biAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('bi')];
 const reportsAccess = [requireAuth, requireMinRole('MANAGER'), requirePermission('reports')];
+// IP-24: metrikalar lug'ati — BI, hisobotlar va moliya (Dashboard daromad vidjeti) bir xil manbadan
+const metricsAccess = [requireAuth, requireMinRole('MANAGER'), requireAnyPermission(['bi', 'reports', 'finance'])];
 import { todayDateStr, monthRangeStr, tashkentMidnightInstant } from '../utils/timezone.js';
 import { getBillingSettings, calculateStudentMonthlyDue } from '../services/billing.js';
 import { getLedgerMode } from '../services/ledgerMode.js';
@@ -42,28 +45,41 @@ function studentJoinMonth(s: { joinedDate?: string | null; createdAt: Date }): s
     return monthKeyOfDateStr(s.joinedDate) ?? monthKeyOfInstant(s.createdAt);
 }
 
+// ─── IP-24: metrikalar lug'ati (H.9) ─────────────────────────────────────────
+// GET /api/analytics/metrics?month=YYYY-MM — barcha metrikalar ta'rifi bilan (ekran = eksport = API)
+router.get('/metrics', ...metricsAccess, async (req, res) => {
+    try { res.json(await computeMetrics(typeof req.query.month === 'string' && req.query.month ? req.query.month : todayDateStr().slice(0, 7))); }
+    catch (err: any) { res.status(err.status || 500).json({ error: err.message, message: err.message }); }
+});
+// GET /api/analytics/metrics/series?year=YYYY — oylar bo'yicha hisoblangan tushum va kassa metrikalari
+router.get('/metrics/series', ...metricsAccess, async (req, res) => {
+    try { res.json(await financeSeries(typeof req.query.year === 'string' && req.query.year ? req.query.year : todayDateStr().slice(0, 4))); }
+    catch (err: any) { res.status(err.status || 500).json({ error: err.message, message: err.message }); }
+});
+
 // GET /api/analytics/dashboard — aggregated dashboard stats
 router.get('/dashboard', ...biAccess, async (_req, res) => {
     try {
         const today = todayDateStr();
         const curKey = today.slice(0, 7);
         const prevKey = monthRangeStr(-1).start.slice(0, 7);
-        const [students, leads, transactions, groups, teachers, todayAttendance] = await Promise.all([
+        const [students, leads, groups, teachers, todayAttendance, cur, prev, allTime] = await Promise.all([
             prisma.student.findMany({ where: { deletedAt: null } }),
             prisma.lead.findMany({ where: { deletedAt: null } }),
-            prisma.transaction.findMany({ select: { type: true, amount: true, date: true } }),
             prisma.group.findMany({ where: { deletedAt: null } }),
             prisma.user.count({ where: { role: 'TEACHER', isActive: true } }),
             prisma.attendanceRecord.findMany({ where: { date: today }, select: { status: true } }),
+            computeMetrics(curKey),
+            cashFlows(prisma, `${prevKey}-01`, `${prevKey}-31`),
+            cashFlows(prisma, '0000-01-01', today),
         ]);
 
-        const sum = (rows: { amount: number }[]) => rows.reduce((a, t) => a + (Number(t.amount) || 0), 0);
-        const thisMonthIncome = sum(transactions.filter(t => t.type === 'income' && monthKeyOfDateStr(t.date) === curKey));
-        const prevMonthIncome = sum(transactions.filter(t => t.type === 'income' && monthKeyOfDateStr(t.date) === prevKey));
-        const totalIncome = sum(transactions.filter(t => t.type === 'income'));
-        const totalExpense = sum(transactions.filter(t => t.type === 'expense'));
-
-        const activeStudents = students.filter(s => s.status === 'active' || s.status === 'Faol');
+        // IP-24: daromad — kassa kirimi (kurs to'lovi + boshqa kirim), kategoriya turi bo'yicha;
+        // chiqim — operatsion + oylik + avans (ichki o'tkazma kirmaydi)
+        const thisMonthIncome = cur.values.tuitionCash + cur.values.otherIncome;
+        const prevMonthIncome = prev.total.tuitionCash + prev.total.otherIncome;
+        const totalIncome = allTime.total.tuitionCash + allTime.total.otherIncome;
+        const totalExpense = allTime.total.operatingExpense + allTime.total.payrollCash + allTime.total.advancesCash;
         const debtors = students.filter(s => (Number(s.balance) || 0) < 0);
         const totalDebt = debtors.reduce((a, s) => a + Math.abs(Number(s.balance) || 0), 0);
 
@@ -76,15 +92,18 @@ router.get('/dashboard', ...biAccess, async (_req, res) => {
         res.json({
             students: {
                 total: students.length,
-                active: activeStudents.length,
-                new_this_month: students.filter(s => studentJoinMonth(s) === curKey).length,
+                // IP-24: faol — guruhda a'zoligi bor (lug'at bo'yicha), yangi — birinchi a'zoligi shu oyda
+                active: cur.values.activeStudents,
+                new_this_month: cur.values.newStudents,
                 debtors: debtors.length,
                 total_debt: totalDebt,
             },
             revenue: {
                 this_month: thisMonthIncome,
+                accrual_this_month: cur.values.accrualRevenue,
+                tuition_cash_this_month: cur.values.tuitionCash,
                 prev_month: prevMonthIncome,
-                growth_pct: prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : 0,
+                growth_pct: prevMonthIncome > 0 ? Math.round(((thisMonthIncome - prevMonthIncome) / prevMonthIncome) * 100) : (thisMonthIncome > 0 ? 100 : 0),
                 total_income: totalIncome,
                 total_expense: totalExpense,
                 net_profit: totalIncome - totalExpense,
@@ -123,18 +142,20 @@ router.get('/dashboard', ...biAccess, async (_req, res) => {
 router.get('/monthly', ...biAccess, async (_req, res) => {
     try {
         const year = todayDateStr().slice(0, 4);
-        const [students, transactions, leads] = await Promise.all([
+        const [students, series, leads] = await Promise.all([
             prisma.student.findMany({ where: { deletedAt: null }, select: { joinedDate: true, createdAt: true } }),
-            prisma.transaction.findMany({ where: { date: { startsWith: year } }, select: { type: true, amount: true, date: true } }),
+            financeSeries(year), // IP-24: kirim/chiqim kategoriya turi bo'yicha (metrikalar lug'ati)
             prisma.lead.findMany({ where: { deletedAt: null }, select: { createdAt: true } }),
         ]);
 
         const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
         const monthly = Array.from({ length: 12 }, (_, mi) => {
             const key = `${year}-${String(mi + 1).padStart(2, '0')}`;
-            const income = transactions.filter(t => t.type === 'income' && monthKeyOfDateStr(t.date) === key).reduce((a, t) => a + (Number(t.amount) || 0), 0);
-            const expense = transactions.filter(t => t.type === 'expense' && monthKeyOfDateStr(t.date) === key).reduce((a, t) => a + (Number(t.amount) || 0), 0);
+            const s = series[mi];
+            const income = s.income;
+            const expense = s.expense;
             return {
+                accrual: s.accrualRevenue,
                 month: MONTHS[mi],
                 month_index: mi,
                 income,
