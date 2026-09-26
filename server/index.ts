@@ -13,6 +13,7 @@ import lessonPlanRoutes from './routes/lessonPlan.js';
 import billingRoutes from './routes/billing.js';
 import receiptsRoutes from './routes/receipts.js';
 import cashRoutes from './routes/cash.js';
+import transactionCategoryRoutes from './routes/transactionCategories.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
 import telegramRoutes from './routes/telegram.js';
@@ -55,6 +56,8 @@ import staffAdvanceRoutes from './routes/staffAdvance.js';
 import { startScheduler } from './services/scheduler.js';
 import { startOutboxWorker } from './services/outbox.js';
 import { initRealtime } from './services/realtime.js';
+import { ensureSystemCategories } from './services/categories.js';
+import prisma from './db.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -190,6 +193,7 @@ app.use('/api/lesson-plan', lessonPlanRoutes); // IP-10
 app.use('/api/billing', billingRoutes); // IP-11
 app.use('/api/receipts', receiptsRoutes); // IP-12
 app.use('/api/cash', cashRoutes); // IP-22 — kassa/bank hisoblari
+app.use('/api/transactionCategories', transactionCategoryRoutes); // IP-23 — tahrir/o'chirish qoidalari (ro'yxat va yaratish — crud)
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────
@@ -253,6 +257,8 @@ const server = app.listen(PORT, () => {
     console.log(`[Server]: http://localhost:${PORT}`);
     startScheduler();
     startOutboxWorker(); // IP-29: xabarlar navbati
+    // IP-23: tizim kategoriyalari (kurs to'lovi, oylik, avans, qaytarish, kassa farqi, bank komissiyasi)
+    ensureSystemCategories(prisma).catch(e => console.error('[categories] tizim kategoriyalari:', e?.message));
 });
 
 // IP-29 (AL-05): jonli bildirishnomalar (lid biriktirildi, xabar, maosh) — JWT bilan,

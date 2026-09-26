@@ -8,6 +8,7 @@ import prisma from '../db.js';
 import { createReceipt, ReceiptError, AllocationError } from '../services/receipts.js';
 import { afterExternalPayment } from '../services/balanceCache.js';
 import { categoryKind } from '../services/categories.js';
+import { resolveCategory, systemCategory } from '../services/categories.js';
 import { idempotent } from '../middleware/idempotency.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
@@ -295,7 +296,7 @@ router.patch('/invoices/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                     data: {
                         type: 'income',
                         amount: netAmount,
-                        category: "Kurs to'lovi",
+                        ...(await systemCategory(tx, 'tuition')), // IP-23
                         description: `Invoice ${invoice.number} to'lovi`,
                         date: todayStr,
                         method: acct.method, accountId: acct.accountId,
@@ -493,6 +494,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
 
         // IP-22: kassa/bank hisobi (yopilgan kunga yozilmaydi)
         const acct = await stampAccount(prisma, { accountId: accountId || null, method, date: String(date) });
+        const cat = await resolveCategory(prisma, category, type); // IP-23: nom → kategoriya ID
         const result = await prisma.$transaction(async (tx) => {
             let payment: { id: string } | null = null;
             // Faqat kirim + studentId bo'lsa balansga ta'sir qiladi va Payment
@@ -511,7 +513,7 @@ router.post('/transactions', requireAuth, requireMinRole('MANAGER'), requirePerm
 
             const transaction = await tx.transaction.create({
                 data: {
-                    type, amount: numAmount, category, description, date, method: acct.method, accountId: acct.accountId,
+                    type, amount: numAmount, category: cat.category, categoryId: cat.categoryId, description, date, method: acct.method, accountId: acct.accountId,
                     studentId: studentId || null, studentName: studentName || null,
                     staffId: staffId || null, staffName: staffName || null,
                     ...(payment ? { sourceType: 'manual_payment', sourceId: payment.id } : {}),
@@ -597,6 +599,7 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
 
         // IP-22 (ML-16): xarajat qaysi hisobdan to'langan — endi har doim "Naqd" emas
         const acct = await stampAccount(prisma, { accountId: accountId || null, method: method || 'Naqd', date: String(date) });
+        const cat = await resolveCategory(prisma, category, 'expense'); // IP-23
         const expense = await prisma.$transaction(async (tx) => {
             const created = await tx.expense.create({
                 data: {
@@ -607,7 +610,7 @@ router.post('/expenses', requireAuth, requireMinRole('MANAGER'), requirePermissi
             await tx.transaction.create({
                 data: {
                     type: 'expense', amount: numAmount,
-                    category, description: description || category,
+                    category: cat.category, categoryId: cat.categoryId, description: description || category,
                     date, method: acct.method, accountId: acct.accountId,
                     sourceType: 'expense', sourceId: created.id,
                 },
@@ -671,7 +674,7 @@ router.patch('/expenses/:id', requireAuth, requireMinRole('MANAGER'), requirePer
                     where: { id: linkedTx.id },
                     data: {
                         amount: expense.amount,
-                        category: expense.category,
+                        ...(category !== undefined ? await resolveCategory(tx, expense.category, 'expense') : { category: expense.category }),
                         description: expense.description || expense.category,
                         date: expense.date,
                         ...(acct ? { accountId: acct.accountId, method: acct.method } : {}),

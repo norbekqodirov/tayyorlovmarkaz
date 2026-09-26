@@ -68,23 +68,26 @@ const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
 const round = (n: number) => Math.round(n);
 
-/** Kategoriya nomi+turi → tur (TransactionCategory.kind, bo'lmasa nom bo'yicha taxmin). */
+/** Kategoriya → tur: avval kategoriya ID bo'yicha (IP-23, nom o'zgarsa ham), keyin nom+tur, oxiri nom lug'ati. */
 async function kindResolver(db: Db) {
-    const rows = await db.transactionCategory.findMany({ select: { name: true, type: true, kind: true } });
-    const map = new Map(rows.filter(r => r.kind && (CATEGORY_KINDS as readonly string[]).includes(r.kind)).map(r => [`${r.type}|${r.name}`, r.kind as CategoryKind]));
-    return (name: string, type: string): CategoryKind => map.get(`${type}|${name}`) ?? guessCategoryKind(name, type);
+    const rows = await db.transactionCategory.findMany({ select: { id: true, name: true, type: true, kind: true } });
+    const valid = rows.filter(r => r.kind && (CATEGORY_KINDS as readonly string[]).includes(r.kind));
+    const byId = new Map(valid.map(r => [r.id, r.kind as CategoryKind]));
+    const byName = new Map(valid.map(r => [`${r.type}|${r.name}`, r.kind as CategoryKind]));
+    return (name: string, type: string, categoryId?: string | null): CategoryKind =>
+        (categoryId ? byId.get(categoryId) : undefined) ?? byName.get(`${type}|${name}`) ?? guessCategoryKind(name, type);
 }
 
 /** Kassa metrikalari [from, to] oralig'i uchun (tur bo'yicha). byMonth — 'YYYY-MM' bo'yicha ham. */
 export async function cashFlows(db: Db, from: string, to: string) {
-    const rows = await db.transaction.groupBy({ by: ['type', 'category', 'date'], where: { date: { gte: from, lte: to } }, _sum: { amount: true } });
+    const rows = await db.transaction.groupBy({ by: ['type', 'category', 'categoryId', 'date'], where: { date: { gte: from, lte: to } }, _sum: { amount: true } });
     const kindOf = await kindResolver(db);
     const empty = () => ({ tuitionCash: 0, otherIncome: 0, operatingExpense: 0, payrollCash: 0, advancesCash: 0, netCashFlow: 0 });
     const total = empty();
     const byMonth = new Map<string, ReturnType<typeof empty>>();
     for (const r of rows) {
         const amt = r._sum.amount ?? 0;
-        const kind = kindOf(r.category, r.type);
+        const kind = kindOf(r.category, r.type, r.categoryId);
         const key = r.type === 'income'
             ? (kind === 'TUITION' || kind === 'REFUND' ? 'tuitionCash' : kind === 'TRANSFER' ? null : 'otherIncome')
             : (kind === 'PAYROLL_PAYOUT' ? 'payrollCash' : kind === 'STAFF_ADVANCE' ? 'advancesCash' : kind === 'TRANSFER' ? null

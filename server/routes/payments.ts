@@ -8,7 +8,7 @@ import express from 'express';
 import crypto from 'crypto';
 import prisma from '../db.js';
 import { afterExternalPayment, afterPaymentVoided } from '../services/balanceCache.js';
-import { REFUND_CATEGORY } from '../services/moneyReversal.js';
+import { systemCategory } from '../services/categories.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
@@ -313,7 +313,7 @@ router.post('/payme', async (req, res) => {
                                 data: {
                                     type: 'income',
                                     amount: tx.amount,
-                                    category: "Kurs to'lovi",
+                                    ...(await systemCategory(txClient, 'tuition')), // IP-23: nom emas, tizim kategoriyasi
                                     description: `Payme orqali to'lov (ID: ${txId})`,
                                     date: todayStr,
                                     method: 'Bank',
@@ -445,7 +445,7 @@ router.post('/payme', async (req, res) => {
                                 data: {
                                     type: 'income',
                                     amount: -tx.amount,
-                                    category: REFUND_CATEGORY,
+                                    ...(await systemCategory(txClient, 'refund')),
                                     description: `Payme to'lovi bekor qilindi (ID: ${txId})`,
                                     date: todayStr,
                                     method: 'Bank',
@@ -814,7 +814,7 @@ router.post('/click', async (req, res) => {
                         data: {
                             type: 'income',
                             amount: amountUZS,
-                            category: "Kurs to'lovi",
+                            ...(await systemCategory(txClient, 'tuition')), // IP-23: nom emas, tizim kategoriyasi
                             description: `Click orqali to'lov (ID: ${click_trans_id})`,
                             date: todayStr,
                             method: 'Bank',
@@ -922,7 +922,7 @@ router.post('/click', async (req, res) => {
                     data: {
                         type: 'income',
                         amount: amountUZS,
-                        category: "Kurs to'lovi",
+                        ...(await systemCategory(txClient, 'tuition')), // IP-23: nom emas, tizim kategoriyasi
                         description: `Click orqali to'lov (ID: ${click_trans_id})`,
                         date: todayStr,
                         method: 'Bank',

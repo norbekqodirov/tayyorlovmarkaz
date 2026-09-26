@@ -14,6 +14,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { idempotent } from '../middleware/idempotency.js';
 import { getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { stampAccount, CashError } from '../services/cashAccounts.js';
+import { systemCategory } from '../services/categories.js';
 import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
@@ -98,7 +99,7 @@ router.post('/', idempotent('staff_advance'), async (req, res) => {
                 data: {
                     type: 'expense',
                     amount: numAmount,
-                    category: 'Avans',
+                    ...(await systemCategory(tx, 'advance')), // IP-23
                     description: `${personName} — oldindan avans`,
                     date,
                     method: acct.method, accountId: acct.accountId,

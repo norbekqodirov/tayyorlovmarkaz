@@ -10,6 +10,7 @@ import { todayDateStr } from '../utils/timezone.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { payrollDeleteBlock, releaseAdvanceApplications, isMonthClosed } from '../services/moneyReversal.js';
 import { stampAccount, CashError } from '../services/cashAccounts.js';
+import { systemCategory } from '../services/categories.js';
 
 const router = express.Router();
 
@@ -222,7 +223,7 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, i
                     data: {
                         type: 'expense',
                         amount: requestedAmount,
-                        category: 'Oylik',
+                        ...(await systemCategory(tx, 'payroll')), // IP-23
                         description: `${salary.staff.name} - ${salary.month} oyligi`,
                         date: todayStr,
                         // IP-22: qaysi kassa/bank hisobidan to'landi

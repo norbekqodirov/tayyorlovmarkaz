@@ -29,6 +29,7 @@ import { NEW_PAYMENT_MODES } from './receivables.js';
 import { reversePaymentAllocations } from './allocation.js';
 import { syncStudentBalance } from './balanceCache.js';
 import { accountIdOf, assertDayOpen, lastClosedDate, stampAccount, CashError } from './cashAccounts.js';
+import { systemCategory } from './categories.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Tx = Prisma.TransactionClient;
@@ -82,7 +83,7 @@ export async function reverseTransactionInTx(tx: Tx, id: string, reason: string,
     await cashGuard(() => assertDayOpen(tx, accountId, date));
     return tx.transaction.create({
         data: {
-            type: o.type, amount: -o.amount, category: o.category, date, method: o.method, accountId,
+            type: o.type, amount: -o.amount, category: o.category, categoryId: o.categoryId, date, method: o.method, accountId,
             description: `Bekor qilindi: ${o.description || o.category} — ${reason}`.slice(0, 1000),
             studentId: o.studentId, studentName: o.studentName, staffId: o.staffId, staffName: o.staffName,
             sourceType: 'reversal', sourceId: o.id,
@@ -239,7 +240,7 @@ export async function createRefund(input: RefundInput, actor: Actor) {
 
         const cash = await tx.transaction.create({
             data: {
-                type: 'income', amount: -amount, category: REFUND_CATEGORY, date, method, accountId,
+                type: 'income', amount: -amount, ...(await systemCategory(tx, 'refund')), date, method, accountId,
                 description: `Qaytarish · ${student.name} — ${reason}`.slice(0, 1000),
                 studentId: student.id, studentName: student.name, sourceType: 'refund',
             },
