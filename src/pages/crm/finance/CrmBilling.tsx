@@ -28,6 +28,8 @@ const STATUS_BADGE: Record<string, { label: string; color: 'amber' | 'emerald' |
 const dm = (d?: string | null) => (d ? `${d.slice(8, 10)}.${d.slice(5, 7)}` : '');
 const todayStr = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
 function payState(r: { amount: number; paid: number; debt: number; dueDate?: string | null }) {
+  // Summasi 0 (bekor qilingan yoki 0 ga tuzatilgan) — "to'langan" emas, to'lanadigan narsa yo'q
+  if (r.amount <= 0 && r.paid <= 0) return { label: 'Hisob 0', color: 'slate' as const };
   if (r.debt <= 0) return { label: "To'langan", color: 'emerald' as const };
   if (r.dueDate && todayStr() > r.dueDate) return { label: "Muddati o'tgan", color: 'rose' as const };
   if (r.paid > 0) return { label: 'Qisman', color: 'amber' as const };

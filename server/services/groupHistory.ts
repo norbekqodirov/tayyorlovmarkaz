@@ -155,17 +155,27 @@ export async function recordLegacyGroupEdit(
     before: { id: string; price: number | null; teacherId: string | null; startDate: string | null; courseId: string | null; createdAt: Date },
     after: { price: number | null; teacherId: string | null },
     actorId?: string | null,
-) {
+): Promise<{ tariffFrom: string | null }> {
     const today = todayDateStr();
     const since = initialDate(before.startDate, before.createdAt);
+    let tariffFrom: string | null = null;
     if (after.price !== before.price && after.price != null) {
-        await prisma.$transaction(async tx => {
+        tariffFrom = await prisma.$transaction(async tx => {
             const has = await tx.tariffVersion.count({ where: { groupId: before.id } });
             if (!has) {
                 const prevPrice = before.price ?? (before.courseId ? (await tx.course.findUnique({ where: { id: before.courseId }, select: { price: true } }))?.price : null);
                 if (prevPrice != null && since < today) await setGroupTariff(tx, before.id, { monthlyPrice: prevPrice, effectiveFrom: since, source: 'legacy_edit' }, actorId);
             }
-            await setGroupTariff(tx, before.id, { monthlyPrice: after.price!, effectiveFrom: today, source: 'legacy_edit' }, actorId);
+            // 2026-09-26 hodisasi: narx kiritilmagan (0) yoki guruh shu kuni yaratilib narx tuzatilyapti —
+            // bu narx O'ZGARISHI emas, boshlang'ich narx: guruh boshidan (joriy oy doirasida) qo'llanadi.
+            // Aks holda narx "bugundan" yozilib, oy boshidagi hisoblar eski (0) narx bilan qolardi.
+            const versions = await tx.tariffVersion.findMany({ where: { groupId: before.id }, orderBy: { effectiveFrom: 'asc' } });
+            const cur = versionAt(versions, today) ?? versions.find(v => v.effectiveFrom > today);
+            const initial = !!cur && (cur.monthlyPrice === 0 || (cur.source === 'group_create' && todayDateStr(cur.createdAt) === today));
+            const monthStart = firstOfMonth(today);
+            const from = initial ? (cur!.effectiveFrom < monthStart ? monthStart : cur!.effectiveFrom) : today;
+            await setGroupTariff(tx, before.id, { monthlyPrice: after.price!, effectiveFrom: from, source: 'legacy_edit' }, actorId);
+            return from;
         });
     }
     if (after.teacherId !== before.teacherId) {
@@ -177,6 +187,7 @@ export async function recordLegacyGroupEdit(
             await assignGroupTeacher(tx, before.id, { teacherId: after.teacherId, fromDate: today, source: 'legacy_edit' }, actorId);
         });
     }
+    return { tariffFrom };
 }
 
 /** Yangi guruh: boshlang'ich tarif va ustoz tayinlash (guruh boshlanish sanasidan). */

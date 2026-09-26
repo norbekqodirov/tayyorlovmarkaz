@@ -9,6 +9,7 @@ import { generateAllPlans } from './lessonPlan.js';
 import { dailyRefresh } from './chargeEngine.js';
 import { pruneIdempotencyRecords } from '../middleware/idempotency.js';
 import { reconcileBalances } from './balanceCache.js';
+import { repairZeroTariffs } from './tariffRepair.js';
 import { getLedgerMode } from './ledgerMode.js';
 import { chargeBalances } from './receivables.js';
 
@@ -799,6 +800,14 @@ export async function startScheduler() {
                 .then(r => { if (r && (r.differences || r.statusFixed)) console.log(`[Scheduler] Balans solishtiruvi (${r.mode}): ${r.differences} farq, ${r.fixed} tuzatildi, ${r.statusFixed} holat`); })
                 .catch(e => console.error('[Scheduler] Balans solishtiruvi xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
+
+        // 0 so'm bilan chiqqan hisoblar (guruh narxi keyin kiritilgan) — avtomatik tuzatish:
+        // server ishga tushganda (20 s) va har kecha 01:20, hisoblardan oldin
+        const runTariffRepair = () => repairZeroTariffs({ name: 'tizim' })
+            .then(r => { if (r.length) console.log(`[Scheduler] Tarif tuzatildi: ${r.map(x => `${x.groupId} ${x.price} so'm ${x.from} dan, ${x.adjustments} tuzatma`).join('; ')}`); })
+            .catch(e => console.error('[Scheduler] Tarif tuzatish xatosi:', e?.message));
+        setTimeout(runTariffRepair, 20_000);
+        cron.schedule('20 1 * * *', runTariffRepair, { timezone: 'Asia/Tashkent' });
 
         // Server ishga tushganda bir marta (live): kesh va to'lov holatini formula bo'yicha
         // tekshirish — holat qoidasi o'zgargan deploy'dan keyin ertalabgacha kutmaslik uchun.

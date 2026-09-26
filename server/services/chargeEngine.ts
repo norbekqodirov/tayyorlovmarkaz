@@ -675,4 +675,28 @@ export async function studentsWithoutMembership() {
     return students.filter(s => !members.has(s.id));
 }
 
+// ─── Tarif tuzatilganda guruh hisoblarini qayta hisoblash (2026-09-26 hodisasi) ─────────
+
+/**
+ * Guruhning [fromDate .. bugun] oralig'iga tegadigan barcha a'zoliklari bo'yicha hisoblarni qayta
+ * hisoblaydi: e'lon qilingan hisobga farq tuzatma bo'lib yoziladi (hisob o'zgarmaydi).
+ */
+export async function refreshGroupCharges(groupId: string, fromDate: string, reason: string, actorId?: string | null) {
+    const today = todayDateStr();
+    const months = monthsBetween(fromDate.slice(0, 7), today.slice(0, 7));
+    const periods = await prisma.enrollmentPeriod.findMany({
+        where: { groupId, startDate: { lte: today }, OR: [{ endDate: null }, { endDate: { gte: fromDate } }] },
+        select: { studentId: true },
+    });
+    const students = [...new Set(periods.map(p => p.studentId))];
+    let adjustments = 0, delta = 0;
+    for (const studentId of students) {
+        const r = await refreshMembershipCharges({ studentId, groupId, months, reason }, actorId);
+        adjustments += r.adjustments.length;
+        delta += r.adjustments.reduce((s, a) => s + a.delta, 0);
+    }
+    if (students.length) await syncStudents(prisma, students);
+    return { students: students.length, adjustments, delta };
+}
+
 export { nextMonth, addDays };

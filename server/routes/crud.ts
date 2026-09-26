@@ -14,7 +14,8 @@ import { ensureStudentIdentitySafe } from '../services/studentIdentity.js';
 import { deleteTransaction, ReversalError } from '../services/moneyReversal.js';
 import { CATEGORY_KINDS_BY_TYPE } from '../services/categories.js';
 import { planGroupStartChange, applyGroupStartChange } from '../services/enrollment.js';
-import { refreshMembershipCharges, monthsBetween } from '../services/chargeEngine.js';
+import { refreshMembershipCharges, refreshGroupCharges, monthsBetween } from '../services/chargeEngine.js';
+import { todayDateStr } from '../utils/timezone.js';
 
 const router = express.Router();
 
@@ -863,7 +864,15 @@ router.put('/:collection/:id', auditPositionsOnly, async (req, res) => {
         }
         // @ts-ignore
         const data = await prisma[modelName].update({ where: { id: req.params.id }, data: req.body, ...(include && { include }) });
-        if (groupBefore) await safeHistory('legacy_group_edit', () => recordLegacyGroupEdit(groupBefore, { price: (data as any).price ?? null, teacherId: (data as any).teacherId ?? null }, requester?.id));
+        if (groupBefore) {
+            await safeHistory('legacy_group_edit', async () => {
+                const r = await recordLegacyGroupEdit(groupBefore, { price: (data as any).price ?? null, teacherId: (data as any).teacherId ?? null }, requester?.id);
+                // Narx o'tgan sanadan (guruh boshidan) qo'llansa — e'lon qilingan hisoblarga farq tuzatma bo'lib yoziladi
+                if (r.tariffFrom && r.tariffFrom < todayDateStr()) {
+                    await refreshGroupCharges(req.params.id, r.tariffFrom, `Guruh narxi ${(data as any).price} so'm — guruh boshidan`, requester?.id);
+                }
+            });
+        }
         if (groupStartPlan) {
             const gsp = groupStartPlan;
             await safeHistory('group_start_change', async () => {

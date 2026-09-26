@@ -730,7 +730,7 @@ function PaymentsTab({ payments, balance, studentId, studentName, onChanged }: a
           ) : (
             <div className="divide-y divide-zinc-50 dark:divide-white/[0.03]">
               {ledger.charges.map((c: any) => {
-                const st = c.debt <= 0 ? { t: "To'langan", cls: 'text-emerald-600' } : c.overdue ? { t: "Muddati o'tgan", cls: 'text-rose-600' } : c.paid > 0 ? { t: 'Qisman', cls: 'text-amber-600' } : { t: 'Qarz', cls: 'text-amber-600' };
+                const st = c.amount <= 0 && c.paid <= 0 ? { t: 'Hisob 0', cls: 'text-zinc-400' } : c.debt <= 0 ? { t: "To'langan", cls: 'text-emerald-600' } : c.overdue ? { t: "Muddati o'tgan", cls: 'text-rose-600' } : c.paid > 0 ? { t: 'Qisman', cls: 'text-amber-600' } : { t: 'Qarz', cls: 'text-amber-600' };
                 return (
                   <div key={c.chargeId} role="button" tabIndex={0} onClick={() => setDetailId(c.chargeId)} onKeyDown={e => { if (e.key === 'Enter') setDetailId(c.chargeId); }}
                     title="Qanday hisoblangan — batafsil" className="flex items-center justify-between gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-50 dark:hover:bg-white/[0.02]">

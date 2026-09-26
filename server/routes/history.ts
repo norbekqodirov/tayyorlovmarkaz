@@ -4,6 +4,8 @@
  */
 import express from 'express';
 import prisma from '../db.js';
+import { todayDateStr } from '../utils/timezone.js';
+import { refreshGroupCharges } from '../services/chargeEngine.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requireAnyPermission, requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
@@ -38,7 +40,9 @@ router.post('/groups/:groupId/tariff', ...canManageGroups, requirePermission('fi
         const { monthlyPrice, lessonsPerPackage, effectiveFrom } = req.body || {};
         const a = actor(req);
         const v = await prisma.$transaction(tx => setGroupTariff(tx, req.params.groupId, { monthlyPrice, lessonsPerPackage, effectiveFrom }, a.id));
-        await logAudit({ userId: a.id, userName: a.name, action: 'tariff_set', resource: 'tariffVersion', resourceId: v.id, after: v });
+        // O'tgan sanadan o'rnatilsa — e'lon qilingan hisoblarga farq tuzatma bo'lib yoziladi
+        const refreshed = v.effectiveFrom < todayDateStr() ? await refreshGroupCharges(req.params.groupId, v.effectiveFrom, `Tarif ${v.monthlyPrice} so'm ${v.effectiveFrom} dan`, a.id) : null;
+        await logAudit({ userId: a.id, userName: a.name, action: 'tariff_set', resource: 'tariffVersion', resourceId: v.id, after: { ...v, refreshed } });
         res.status(201).json(v);
     } catch (err) { sendError(res, err); }
 });

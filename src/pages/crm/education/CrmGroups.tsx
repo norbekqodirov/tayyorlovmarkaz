@@ -179,6 +179,8 @@ export default function CrmGroups() {
     if (!formData.startDate) errors.startDate = 'Boshlanish sanasini kiriting';
     if (formData.endDate && formData.startDate && formData.endDate < formData.startDate) errors.endDate = 'Tugash sanasi boshlanish sanasidan oldin bo‘lmasligi kerak';
     if (formData.price != null && (!Number.isFinite(formData.price) || formData.price < 0)) errors.price = 'Narx manfiy bo‘lmagan son bo‘lishi kerak';
+    // 2026-09-26: narxsiz (0) saqlangan guruh o'quvchilariga 0 so'mlik hisob chiqqan edi — narx majburiy
+    else if (!formData.price) errors.price = "Guruhning oylik narxini kiriting";
     if (hasScheduleConflict) errors.time = 'Bu xona tanlangan kun va vaqtda band. Boshqa xona yoki vaqtni tanlang';
     if (!scheduleForm.room) errors.room = "Xona tanlanishi shart";
     if (scheduleForm.days.length === 0) errors.days = "Kamida bitta dars kuni tanlanishi shart";
@@ -672,7 +674,9 @@ export default function CrmGroups() {
                   setFormData({
                     ...formData,
                     courseId: e.target.value,
-                    price: selected?.price ?? formData.price,
+                    // Kiritilgan narx o'chmasin: kurs narxi faqat narx hali bo'sh bo'lsa va kursda narx bo'lsa qo'yiladi
+                    // (ilgari kurs narxi 0 bo'lsa, yozilgan narx 0 ga almashib qolardi)
+                    price: formData.price ? formData.price : (selected?.price || formData.price),
                   });
                 }}
                 className={`w-full bg-zinc-50 dark:bg-zinc-800/50 border ${formErrors.courseId ? 'border-rose-400' : 'border-zinc-200 dark:border-zinc-700'} text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 transition-all outline-none focus:ring-2 focus:ring-blue-500`}

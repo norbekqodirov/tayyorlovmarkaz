@@ -684,7 +684,8 @@ export default function TelegramPortal() {
                                                         <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Oylik hisoblar</h2>
                                                         <div className="space-y-2">
                                                             {payments.ledger.charges.map(c => {
-                                                                const st = c.debt <= 0 ? { t: "To'langan", cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }
+                                                                const st = c.amount <= 0 && c.paid <= 0 ? { t: "To'lov yo'q", cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' }
+                                                                    : c.debt <= 0 ? { t: "To'langan", cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' }
                                                                     : c.overdue ? { t: "Muddati o'tdi", cls: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' }
                                                                     : c.paid > 0 ? { t: 'Qisman', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' }
                                                                     : { t: 'Kutilmoqda', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' };
