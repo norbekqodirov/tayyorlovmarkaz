@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import prisma from '../db.js';
+import { enqueueMessage, enqueueBatch, type EnqueueInput } from './outbox.js';
 
 // ─── Core helpers ─────────────────────────────────────────────────────────────
 
@@ -78,9 +79,33 @@ export async function validateInitData(initData: string): Promise<{
     }
 }
 
-// ─── sendMessage (updated signature) ─────────────────────────────────────────
+// ─── sendMessage ──────────────────────────────────────────────────────────────
 
+type QueueOpts = Pick<EnqueueInput, 'kind' | 'dedupeKey' | 'batchId' | 'refType' | 'refId' | 'createdById' | 'urgent'>;
+
+/**
+ * IP-29: xabar navbatga qo'yiladi (MessageOutbox) — ishchi yuboradi, qayta urinadi, 429'da kutadi.
+ * `true` — navbatga qo'yildi (yoki shu dedupeKey bilan allaqachon bor). Darhol natija kerak
+ * bo'lsa (masalan "Test xabar") — `sendMessageNow`.
+ */
 export async function sendMessage(
+    chatId: string,
+    text: string,
+    parseMode: 'HTML' | 'Markdown' = 'HTML',
+    replyMarkup?: any,
+    opts: QueueOpts = {},
+): Promise<boolean> {
+    try {
+        const r = await enqueueMessage({ chatId, text, parseMode, replyMarkup, ...opts });
+        return !!r.id;
+    } catch (err: any) {
+        console.error("[Telegram] navbatga qo'yib bo'lmadi:", err.message);
+        return false;
+    }
+}
+
+/** Darhol yuborish (navbatsiz) — faqat foydalanuvchi natijani kutayotgan joyda (test xabar). */
+export async function sendMessageNow(
     chatId: string,
     text: string,
     parseMode: 'HTML' | 'Markdown' = 'HTML',
@@ -132,24 +157,12 @@ export async function setMenuButton(miniAppUrl: string): Promise<boolean> {
     return result.ok === true;
 }
 
-export async function sendBroadcast(chatIds: string[], text: string, type: string = 'broadcast'): Promise<{ sent: number; failed: number }> {
-    const token = await getBotToken();
-    if (!token) return { sent: 0, failed: chatIds.length };
-
-    let sent = 0;
-    let failed = 0;
-
-    for (const chatId of chatIds) {
-        if (!chatId || chatId.trim() === '') continue;
-        const ok = await sendMessage(chatId, text);
-        if (ok) sent++;
-        else failed++;
-
-        // Spam oldini olish uchun kichik kechikish
-        await new Promise(r => setTimeout(r, 50));
-    }
-
-    return { sent, failed };
+/**
+ * IP-29: ommaviy xabar navbatga — so'rov darhol qaytadi, har chatga bitta xabar (dublikatsiz).
+ * Yetkazish holati: `batchId` bo'yicha MessageOutbox (Telegram → Navbat).
+ */
+export async function sendBroadcast(chatIds: string[], text: string, type: string = 'broadcast', opts: { batchId?: string; createdById?: string | null } = {}) {
+    return enqueueBatch({ batchId: opts.batchId || `${type}:${crypto.randomUUID()}`, chatIds, text, kind: type, createdById: opts.createdById });
 }
 
 // ─── Staff Bot helpers ────────────────────────────────────────────────────────
@@ -263,32 +276,16 @@ export async function getStaffWebhookInfo(): Promise<any> {
 }
 
 // Davomat bildirishnomasi — ota-onaga
-export async function sendAttendanceAlert(studentName: string, groupName: string, parentTelegramId: string): Promise<boolean> {
+export async function sendAttendanceAlert(studentName: string, groupName: string, parentTelegramId: string, opts: QueueOpts = {}): Promise<boolean> {
     const text = `📚 <b>Davomat Xabari</b>\n\n` +
         `Hurmatli ota-ona, <b>${studentName}</b> bugun <b>${groupName}</b> darsiga kelmadi.\n\n` +
         `Iltimos, sababini ma'lum qiling. Savollar uchun markaz bilan bog'laning. 📞`;
 
-    // Log turi saqlash uchun to'g'ri type bilan chaqiramiz
-    const token = await getBotToken();
-    if (!token) return false;
-
-    try {
-        const url = `https://api.telegram.org/bot${token}/sendMessage`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: parentTelegramId, text, parse_mode: 'HTML' }),
-        });
-        const result = await response.json() as any;
-        await prisma.telegramMessage.create({
-            data: { chatId: parentTelegramId, type: 'attendance', message: text.substring(0, 500), status: result.ok ? 'sent' : 'failed', error: result.ok ? null : result.description },
-        }).catch(() => {});
-        return result.ok;
-    } catch { return false; }
+    return sendMessage(parentTelegramId, text, 'HTML', undefined, { kind: 'attendance', ...opts });
 }
 
 // To'lov eslatmasi
-export async function sendPaymentReminder(studentName: string, amount: number, dueDate: string, chatId: string, overdue = false): Promise<boolean> {
+export async function sendPaymentReminder(studentName: string, amount: number, dueDate: string, chatId: string, overdue = false, opts: QueueOpts = {}): Promise<boolean> {
     const emoji = overdue ? '🔴' : '⚠️';
     const text = overdue
         ? `${emoji} <b>To'lov Muddati O'tdi!</b>\n\n` +
@@ -298,22 +295,7 @@ export async function sendPaymentReminder(studentName: string, amount: number, d
           `<b>${studentName}</b> uchun <b>${amount.toLocaleString('uz-UZ')} so'm</b> to'lov muddati: <b>${dueDate}</b>\n\n` +
           `O'z vaqtida to'lash uchun rahmat! 🙏`;
 
-    const token = await getBotToken();
-    if (!token) return false;
-
-    try {
-        const url = `https://api.telegram.org/bot${token}/sendMessage`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-        });
-        const result = await response.json() as any;
-        await prisma.telegramMessage.create({
-            data: { chatId, type: 'payment', message: text.substring(0, 500), status: result.ok ? 'sent' : 'failed', error: result.ok ? null : result.description },
-        }).catch(() => {});
-        return result.ok;
-    } catch { return false; }
+    return sendMessage(chatId, text, 'HTML', undefined, { kind: 'payment_reminder', ...opts });
 }
 
 // To'lov tasdiqlash xabari
@@ -337,7 +319,7 @@ export async function sendNewLeadAlert(leadName: string, phone: string, course: 
         `Manba: ${source || 'Noma\'lum'}\n\n` +
         `⏰ Tezda bog'laning!`;
 
-    return sendMessage(adminChatId, text);
+    return sendMessage(adminChatId, text, 'HTML', undefined, { kind: 'lead_alert', urgent: true });
 }
 
 // Bot ma'lumotlarini tekshirish

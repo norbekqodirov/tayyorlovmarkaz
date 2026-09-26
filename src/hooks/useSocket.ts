@@ -13,7 +13,8 @@ export function getSocket(): Socket {
         const baseUrl = (import.meta as any).env?.VITE_API_URL || window.location.origin.replace(':3000', ':3001');
         socketInstance = io(baseUrl, {
             auth: { token },
-            transports: ['websocket', 'polling'],
+            // Avval polling (har qanday proksi orqali ishlaydi), imkon bo'lsa websocket'ga o'tadi
+            transports: ['polling', 'websocket'],
             reconnectionAttempts: 5,
             reconnectionDelay: 2000,
             timeout: 20000,

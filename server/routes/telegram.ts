@@ -24,8 +24,9 @@ import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
 import {
-    sendMessage, sendBroadcast, getBotInfo, setMenuButton,
+    sendMessage, sendMessageNow, sendBroadcast, getBotInfo, setMenuButton,
 } from '../services/telegramService.js';
+import { outboxCounts, retryMessage, cancelMessage, retryFailed, OutboxError } from '../services/outbox.js';
 
 const router = express.Router();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
@@ -246,7 +247,8 @@ router.post('/test', requireAuth, requirePermission('communication'), async (req
         const { chatId, message } = req.body;
         if (!chatId) return res.status(400).json({ message: 'Chat ID kiritilishi shart' });
         const text = message || `✅ <b>Test Xabari</b>\n\nTabriklaymiz! Telegram bot muvaffaqiyatli sozlandi. 🎉\n\n<i>Tayyorlov Markaz CRM</i>`;
-        const ok = await sendMessage(chatId, text);
+        // Test — natija darhol kerak (bot sozlanganini tekshirish), navbatsiz
+        const ok = await sendMessageNow(chatId, text);
         res.json({ ok, message: ok ? 'Xabar yuborildi!' : 'Xabar yuborishda xatolik' });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -259,7 +261,7 @@ router.post('/send', requireAuth, requirePermission('communication'), async (req
     try {
         const { chatId, message } = req.body;
         if (!chatId || !message) return res.status(400).json({ message: 'chatId va message kiritilishi shart' });
-        const ok = await sendMessage(chatId, message);
+        const ok = await sendMessageNow(chatId, message);
         res.json({ ok });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -314,11 +316,44 @@ router.post('/broadcast', requireAuth, requirePermission('communication'), async
             return res.json({ ok: false, message: "Telegram ID mavjud o'quvchi/ota-ona topilmadi", sent: 0, failed: 0 });
         }
 
-        const result = await sendBroadcast(chatIds, message, 'broadcast');
-        res.json({ ok: true, ...result, total: chatIds.length });
+        // IP-29: navbatga — darhol qaytadi; yetkazish holati "Navbat" bo'limida
+        const result = await sendBroadcast(chatIds, message, 'broadcast', { createdById: (req as any).user?.id });
+        res.json({ ok: result.queued > 0, queued: result.queued, duplicates: result.duplicates, batchId: result.batchId, total: chatIds.length });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// ─── IP-29: xabarlar navbati (yetkazish holati) ───────────────────────────────
+
+// GET /api/telegram/outbox?status&kind&batchId&page — navbat yozuvlari va holatlar bo'yicha sonlar
+router.get('/outbox', requireAuth, requirePermission('communication'), async (req, res) => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.min(100, Number(req.query.limit) || 30);
+        const where: any = {};
+        for (const k of ['status', 'kind', 'batchId'] as const) if (typeof req.query[k] === 'string' && req.query[k]) where[k] = req.query[k];
+        where.channel = { in: ['telegram', 'staff'] };
+        const [total, rows, counts] = await Promise.all([
+            prisma.messageOutbox.count({ where }),
+            prisma.messageOutbox.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+            outboxCounts({ channel: { in: ['telegram', 'staff'] }, ...(where.batchId ? { batchId: where.batchId } : {}) }),
+        ]);
+        res.json({ data: rows, total, page, limit, counts });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/telegram/outbox/:id/retry | /cancel ; POST /api/telegram/outbox/retry-failed { batchId? }
+router.post('/outbox/retry-failed', requireAuth, requireMinRole('MANAGER'), requirePermission('communication'), async (req, res) => {
+    try { res.json({ requeued: await retryFailed(req.body?.batchId || null) }); } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+router.post('/outbox/:id/retry', requireAuth, requireMinRole('MANAGER'), requirePermission('communication'), async (req, res) => {
+    try { res.json(await retryMessage(req.params.id)); }
+    catch (e: any) { if (e instanceof OutboxError) return res.status(e.status).json({ error: e.message, message: e.message, code: e.code }); res.status(500).json({ error: e.message }); }
+});
+router.post('/outbox/:id/cancel', requireAuth, requireMinRole('MANAGER'), requirePermission('communication'), async (req, res) => {
+    try { res.json(await cancelMessage(req.params.id)); }
+    catch (e: any) { if (e instanceof OutboxError) return res.status(e.status).json({ error: e.message, message: e.message, code: e.code }); res.status(500).json({ error: e.message }); }
 });
 
 // ─── O'quvchini to'g'ridan Telegram ga ulash ─────────────────────────────────

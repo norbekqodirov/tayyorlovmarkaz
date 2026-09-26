@@ -58,24 +58,40 @@ export async function runLedgerPaymentReminders(opts: { dryRun?: boolean } = {})
     });
     const since = new Date(Date.now() - 3 * 24 * 3600e3);
     let sent = 0, skipped = 0, noChat = 0;
+    // IP-29 (QT-91): bir chatga (ota-onaga) bitta xabar — farzandlari ro'yxati bilan
+    const byChat = new Map<string, Array<{ name: string; debt: number; due: string; overdue: boolean }>>();
     for (const st of students) {
         const info = byStudent.get(st.id)!;
         const chatId = st.parentTelegramId || st.telegramChatId;
         if (!chatId) { noChat++; continue; }
-        const recent = await prisma.telegramMessage.count({ where: { chatId, type: 'payment', createdAt: { gte: since } } });
-        if (recent) { skipped++; continue; }
+        if (!byChat.has(chatId)) byChat.set(chatId, []);
+        byChat.get(chatId)!.push({ name: st.name, ...info });
+    }
+    const fmt = (n: number) => Math.round(n).toLocaleString('ru-RU').replace(/\u00A0/g, ' ');
+    const dmy = (d: string) => d.split('-').reverse().join('.');
+    for (const [chatId, kids] of byChat) {
+        // 3 kunda bir martadan ko'p emas (navbatdagi va yuborilganlar hisobga olinadi)
+        const recent = await prisma.messageOutbox.count({ where: { chatId, kind: 'payment_reminder', status: { in: ['pending', 'sending', 'sent'] }, createdAt: { gte: since } } });
+        if (recent) { skipped += kids.length; continue; }
         if (opts.dryRun) { sent++; continue; }
-        if (await sendPaymentReminder(st.name, info.debt, info.due, chatId, info.overdue)) sent++;
+        const ok = kids.length === 1
+            ? await sendPaymentReminder(kids[0].name, kids[0].debt, dmy(kids[0].due), chatId, kids[0].overdue, { dedupeKey: `payrem:${chatId}:${today}` })
+            : await sendMessage(chatId,
+                `${kids.some(k => k.overdue) ? '🔴' : '⚠️'} <b>To'lov eslatmasi</b>\n\n`
+                + kids.map(k => `• <b>${k.name}</b>: ${fmt(k.debt)} so'm — ${k.overdue ? `muddati o'tgan (${dmy(k.due)})` : `muddat ${dmy(k.due)}`}`).join('\n')
+                + `\n\nJami: <b>${fmt(kids.reduce((a, k) => a + k.debt, 0))} so'm</b>. Savollar bo'lsa, markaz bilan bog'laning. 📞`,
+                'HTML', undefined, { kind: 'payment_reminder', dedupeKey: `payrem:${chatId}:${today}` });
+        if (ok) sent++;
     }
     const overdue = [...byStudent.entries()].filter(([id, v]) => v.overdue && students.some(x => x.id === id));
     if (overdue.length && !opts.dryRun) {
         const adminChatId = await getSetting('telegram_admin_chat_id');
         if (adminChatId) {
             const total = overdue.reduce((a, [, v]) => a + v.debt, 0);
-            await sendMessage(adminChatId, `🔴 <b>Muddati o'tgan to'lovlar</b>\n${overdue.length} ta o'quvchi, jami <b>${total.toLocaleString('uz-UZ')} so'm</b>.\nBatafsil: CRM → Moliya → Oylik hisoblar.`);
+            await sendMessage(adminChatId, `🔴 <b>Muddati o'tgan to'lovlar</b>\n${overdue.length} ta o'quvchi, jami <b>${total.toLocaleString('uz-UZ')} so'm</b>.\nBatafsil: CRM → Moliya → Qarzdorlar.`, 'HTML', undefined, { kind: 'admin_alert', dedupeKey: `overdue-summary:${today}` });
         }
     }
-    return { students: byStudent.size, overdue: overdue.length, sent, skipped, noChat };
+    return { students: byStudent.size, overdue: overdue.length, chats: byChat.size, sent, skipped, noChat };
 }
 
 async function runPaymentReminders() {
