@@ -31,7 +31,8 @@ export function initRealtime(httpServer: HttpServer) {
             },
             credentials: true,
         },
-        path: '/socket.io',
+        // Production'da nginx Node'ga faqat /api/* ni uzatadi — shuning uchun realtime ham /api ostida
+        path: '/api/socket.io',
         pingInterval: 25000,
         pingTimeout: 60000,
     });
