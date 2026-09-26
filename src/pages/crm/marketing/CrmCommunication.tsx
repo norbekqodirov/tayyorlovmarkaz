@@ -27,6 +27,8 @@ interface BulkMessage {
   sentCount: number;
   status: string;
   createdAt: string;
+  /** IP-29: navbatdagi yetkazish holati (xabarlar soni holat bo'yicha) */
+  delivery?: { pending: number; sending: number; sent: number; failed: number; cancelled: number } | null;
 }
 
 interface Notification {
@@ -254,12 +256,14 @@ export default function CrmCommunication() {
         ...bulkForm,
         content,
       });
-      const { sentCount, failedCount, noTelegramCount, totalRecipients } = res.data || {};
-      if (sentCount > 0) {
-        const extra = (failedCount > 0 || noTelegramCount > 0)
-          ? ` (${totalRecipients - sentCount} ta yetib bormadi — Telegram ulanmagan yoki xatolik)`
-          : '';
-        showToast(`${sentCount} ta qabul qiluvchiga yuborildi${extra}`, 'success');
+      // IP-29: xabar navbatga qo'yiladi (so'rov yuborishni kutmaydi); yetkazish holati ro'yxatda
+      const { queuedCount, duplicateCount, noTelegramCount, totalRecipients } = res.data || {};
+      if (queuedCount > 0) {
+        const extra = [
+          duplicateCount > 0 ? `${duplicateCount} ta bir xil ota-ona birlashtirildi` : '',
+          noTelegramCount > 0 ? `${noTelegramCount} tasida Telegram ulanmagan` : '',
+        ].filter(Boolean).join(', ');
+        showToast(`${queuedCount} ta xabar navbatga qo'yildi${extra ? ` (${extra})` : ''}`, 'success');
       } else if (totalRecipients > 0) {
         showToast("Hech kimga yetib bormadi — qabul qiluvchilarning Telegram'i ulanmagan", 'error');
       } else {
@@ -471,17 +475,28 @@ export default function CrmCommunication() {
                   <div key={msg.id} className="p-4">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                          msg.status === 'sent' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
-                          : msg.status === 'partial' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
-                          : msg.status === 'failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
-                          : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                        }`}>
-                          {msg.status === 'sent' ? 'Yuborildi' : msg.status === 'partial' ? 'Qisman yuborildi' : msg.status === 'failed' ? 'Xatolik' : 'Qoralama'}
-                        </span>
+                        {(() => {
+                          const d = msg.delivery;
+                          // IP-29: holat navbatdan — yuborilmoqda / yuborildi / qisman / xato
+                          const st = d
+                            ? ((d.pending + d.sending) > 0 ? 'queued' : d.failed > 0 ? (d.sent > 0 ? 'partial' : 'failed') : 'sent')
+                            : msg.status;
+                          return (
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                              st === 'sent' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                              : st === 'partial' || st === 'queued' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                              : st === 'failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
+                              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                            }`}>
+                              {st === 'sent' ? 'Yuborildi' : st === 'partial' ? 'Qisman yuborildi' : st === 'queued' ? 'Yuborilmoqda' : st === 'failed' ? 'Xatolik' : 'Qoralama'}
+                            </span>
+                          );
+                        })()}
                         <span className="text-[10px] text-zinc-400">
                           {TARGET_TYPES.find(t => t.value === msg.targetType)?.label || msg.targetType}
-                          {` • ${msg.sentCount} ta yetkazildi`}
+                          {msg.delivery
+                            ? ` • ${msg.delivery.sent} ta yetkazildi${msg.delivery.pending + msg.delivery.sending ? `, ${msg.delivery.pending + msg.delivery.sending} ta navbatda` : ''}${msg.delivery.failed ? `, ${msg.delivery.failed} ta xato` : ''}`
+                            : ` • ${msg.sentCount} ta yetkazildi`}
                         </span>
                       </div>
                       <span className="text-[10px] text-zinc-400">{msg.sentAt ? new Date(msg.sentAt).toLocaleDateString('uz-UZ') : new Date(msg.createdAt).toLocaleDateString('uz-UZ')}</span>

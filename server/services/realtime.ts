@@ -80,15 +80,8 @@ export function initRealtime(httpServer: HttpServer) {
         // Heartbeat & manual ping
         socket.on('ping', () => socket.emit('pong'));
 
-        // Subscribe/unsubscribe to channels
-        socket.on('subscribe', (channel: string) => {
-            if (typeof channel === 'string' && /^[a-zA-Z0-9:_-]+$/.test(channel)) {
-                socket.join(channel);
-            }
-        });
-        socket.on('unsubscribe', (channel: string) => {
-            socket.leave(channel);
-        });
+        // Ixtiyoriy kanalga obuna yo'q (IP-29, AL-05): avval istalgan foydalanuvchi "admins"
+        // yoki boshqaning "user:<id>" xonasiga qo'shila olardi. Xonalar faqat serverda beriladi.
 
         socket.on('disconnect', () => {
             const set = onlineUsers.get(user.id);

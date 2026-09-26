@@ -2049,3 +2049,34 @@ model CashSession {
 
   @@index([accountId, date])
 }
+
+// ─── IP-29: xabarlar navbati (outbox) ────────────────────────────────────────
+// Tashqi xabar avval shu jadvalga yoziladi, alohida ishchi (har 10 s) yuboradi:
+// tezlik cheklovi, 429'da `retry_after` kutish, qayta urinish (5 martagacha),
+// restart'da yo'qolmaydi. `dedupeKey` — bir voqea uchun bitta xabar (masalan
+// ommaviy xabarda bir ota-onaga ikki farzand uchun bitta xabar).
+model MessageOutbox {
+  id            String    @id @default(uuid())
+  channel       String    @default("telegram") // telegram | staff
+  chatId        String
+  text          String    @db.Text
+  parseMode     String?   // HTML | Markdown
+  replyMarkup   String?   @db.Text // JSON
+  kind          String    // manual | broadcast | payment_reminder | receipt | attendance | lead_alert | admin_alert
+  dedupeKey     String?   @unique
+  batchId       String?   // BulkMessage.id yoki ommaviy yuborish guruhi
+  refType       String?
+  refId         String?
+  status        String    @default("pending") // pending | sending | sent | failed | cancelled
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastError     String?
+  sentAt        DateTime?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([batchId])
+  @@index([chatId, kind, createdAt])
+}

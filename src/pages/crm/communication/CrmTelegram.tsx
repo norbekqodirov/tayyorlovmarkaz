@@ -10,6 +10,8 @@ import {
 import { useToast } from '../../../components/Toast';
 import api from '../../../api/client';
 import { ErrorState } from '../../../components/States';
+import { OutboxPanel } from '../../../components/telegram/OutboxPanel';
+import { Inbox } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +56,7 @@ const TYPE_COLORS: Record<string, string> = {
     manual: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
 };
 
-type ActiveTab = 'overview' | 'broadcast' | 'miniapp' | 'settings' | 'history' | 'staffbot';
+type ActiveTab = 'overview' | 'broadcast' | 'miniapp' | 'settings' | 'queue' | 'history' | 'staffbot';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -242,7 +244,8 @@ export default function CrmTelegram() {
         try {
             const res = await api.post('/telegram/broadcast', { message: broadcastMessage.trim(), targetGroup: broadcastTarget });
             if (res.data.ok) {
-                showToast(`${res.data.sent} kishiga xabar yuborildi!`, 'success');
+                // IP-29: xabar navbatga qo'yildi — yetkazish holati "Navbat" tabida
+                showToast(`${res.data.queued} kishiga navbatga qo'yildi${res.data.duplicates ? ` (${res.data.duplicates} ta takror chat birlashtirildi)` : ''}. Holat — "Navbat" tabida`, 'success');
                 setBroadcastMessage('');
                 loadData();
             } else {
@@ -347,6 +350,7 @@ export default function CrmTelegram() {
         { id: 'broadcast', label: 'Yuborish', icon: Send },
         { id: 'miniapp', label: 'Mini App', icon: Smartphone },
         { id: 'settings', label: 'Sozlama', icon: Settings },
+        { id: 'queue', label: 'Navbat', icon: Inbox },
         { id: 'history', label: 'Tarix', icon: MessageSquare },
         { id: 'staffbot', label: 'Staff Bot', icon: Radio },
     ];
@@ -756,6 +760,12 @@ export default function CrmTelegram() {
             )}
 
             {/* HISTORY */}
+            {activeTab === 'queue' && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                    <OutboxPanel />
+                </motion.div>
+            )}
+
             {activeTab === 'history' && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
                     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">

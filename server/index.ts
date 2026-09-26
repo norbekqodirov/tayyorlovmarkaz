@@ -53,6 +53,8 @@ import lessonSessionsRoutes from './routes/lessonSessions.js';
 import teacherPayrollRoutes from './routes/teacherPayroll.js';
 import staffAdvanceRoutes from './routes/staffAdvance.js';
 import { startScheduler } from './services/scheduler.js';
+import { startOutboxWorker } from './services/outbox.js';
+import { initRealtime } from './services/realtime.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -246,8 +248,13 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     res.status(status).json({ error: message, message });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`[Server]: Running in ${IS_PROD ? 'PRODUCTION' : 'development'} mode`);
     console.log(`[Server]: http://localhost:${PORT}`);
     startScheduler();
+    startOutboxWorker(); // IP-29: xabarlar navbati
 });
+
+// IP-29 (AL-05): jonli bildirishnomalar (lid biriktirildi, xabar, maosh) — JWT bilan,
+// har foydalanuvchi faqat o'z xonasi, roli va (menejer/admin) "admins" xonasiga qo'shiladi.
+initRealtime(server);

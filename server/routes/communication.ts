@@ -8,6 +8,7 @@ import prisma from '../db.js';
 import { requireAuth, requireMinRole } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { sendBroadcast } from '../services/telegramService.js';
+import { batchCounts } from '../services/outbox.js';
 
 const router = express.Router();
 
@@ -62,7 +63,9 @@ router.delete('/templates/:id', requireAuth, requireMinRole('MANAGER'), requireP
 router.get('/bulk-messages', requireAuth, requirePermission('communication'), async (_req, res) => {
     try {
         const messages = await prisma.bulkMessage.findMany({ orderBy: { createdAt: 'desc' } });
-        res.json(messages);
+        // IP-29: har ommaviy xabarning yetkazish holati (navbatdan)
+        const counts = await batchCounts(messages.map(m => m.id));
+        res.json(messages.map(m => ({ ...m, delivery: counts.get(m.id) ?? null })));
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -102,36 +105,33 @@ router.post('/bulk-messages/send', requireAuth, requireMinRole('MANAGER'), requi
             recipients = enrollments.map(e => ({ name: e.student.name, chatId: e.student.parentTelegramId || e.student.telegramChatId || null }));
         }
 
-        // Faqat Telegram ulangan (chatId bor) qabul qiluvchilarga haqiqatan
-        // yuboriladi — qolganlari "yetkazilmadi" sifatida hisoblanadi. Avval
-        // bu yerda hech qanday yuborish sodir bo'lmasdan, to'g'ridan-to'g'ri
-        // status:'sent' deb yozib qo'yilardi (CrmCommunication.tsx buni
-        // "Yuborildi" deb ko'rsatardi, garchi hech kimga yetib bormagan bo'lsa ham).
+        // IP-29 (AL-03, QT-91): xabar navbatga qo'yiladi — so'rov darhol qaytadi, ishchi
+        // tezlik cheklovi va qayta urinish bilan yuboradi. Bir chatga (bir ota-onaga ikki
+        // farzand) bitta xabar. Telegram ulanmaganlar — "Telegram yo'q" deb sanaladi.
         const chatIds = recipients.map(r => r.chatId).filter((id): id is string => !!id);
-        const { sent, failed } = chatIds.length > 0 ? await sendBroadcast(chatIds, content) : { sent: 0, failed: 0 };
         const noTelegramCount = recipients.length - chatIds.length;
-
-        const status = sent === 0 ? 'failed' : (failed > 0 || noTelegramCount > 0) ? 'partial' : 'sent';
-
         const bulkMsg = await prisma.bulkMessage.create({
             data: {
                 templateId: templateId || null,
                 content,
                 targetType,
                 targetId: targetId || null,
-                status,
+                status: chatIds.length ? 'queued' : 'failed',
                 sentAt: new Date(),
-                sentCount: sent,
+                sentCount: 0,
             },
         });
+        const q = chatIds.length
+            ? await sendBroadcast(chatIds, content, 'broadcast', { batchId: bulkMsg.id, createdById: (req as any).user?.id })
+            : { queued: 0, duplicates: 0, recipients: 0 };
 
         res.json({
-            success: sent > 0,
-            sentCount: sent,
-            failedCount: failed,
+            success: q.queued > 0,
+            queuedCount: q.queued,
+            duplicateCount: q.duplicates,
             noTelegramCount,
             totalRecipients: recipients.length,
-            message: bulkMsg,
+            message: { ...bulkMsg, delivery: { pending: q.queued, sending: 0, sent: 0, failed: 0, cancelled: 0 } },
         });
     } catch (err: any) {
         res.status(500).json({ error: err.message });

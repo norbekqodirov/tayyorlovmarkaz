@@ -122,7 +122,7 @@ export async function notifyReceipt(paymentId: string) {
         text += pos.debt > 0 ? `\nQolgan qarz: <b>${fmt(pos.debt)} so'm</b>` : `\nQarz yo'q ✅`;
         if (pos.credit > 0) text += `\nAvans (keyingi oylarga): ${fmt(pos.credit)} so'm`;
     }
-    return sendMessage(chatId, text);
+    return sendMessage(chatId, text, 'HTML', undefined, { kind: 'receipt', dedupeKey: `receipt:${p.id}`, refType: 'payment', refId: p.id });
 }
 
 /** Mavjud (yangi rejimdagi) to'lovning taqsimlanmagan qismini hisoblarga biriktirish. */
