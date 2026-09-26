@@ -733,12 +733,28 @@ export default function CrmFinance() {
   // KREDITINI qarz sifatida ko'rsatardi. Endi yagona, izchil qoida: qarz =
   // FAQAT manfiy balans (ochiq majburiyat qoldig'i); musbat balans — avans,
   // qarz emas.
-  const debtors = useMemo(() =>
-    students
+  // Live rejimda qarzdorlar hisoblardan ("Oylik hisoblar" bilan bir manba): o'quvchi bo'yicha
+  // jami va har guruh alohida, guruh nomi a'zolikdan (eski `Student.group` matni emas).
+  const [ledgerDebtors, setLedgerDebtors] = useState<any[] | null>(null);
+  useEffect(() => {
+    api.get('/billing/debtors')
+      .then(r => setLedgerDebtors(r.data?.mode === 'live' ? (r.data.debtors || []) : null))
+      .catch(() => setLedgerDebtors(null));
+  }, [students]);
+  const debtors = useMemo(() => {
+    if (ledgerDebtors) {
+      return ledgerDebtors.map((d: any) => ({
+        id: d.student.id, name: d.student.name, phone: d.student.phone || d.student.parentPhone || '',
+        balance: -d.debt, overdueDebt: d.overdueDebt as number, dueDate: d.dueDate as string | null,
+        items: d.items as Array<{ chargeId: string; month: string; groupName: string | null; debt: number; overdue: boolean; dueDate: string | null }>,
+        group: (d.items || []).map((i: any) => i.groupName).filter(Boolean).join(', '), course: '',
+      }));
+    }
+    return students
       .filter(s => (s.balance || 0) < 0)
-      .sort((a, b) => (a.balance || 0) - (b.balance || 0)),
-    [students]
-  );
+      .sort((a, b) => (a.balance || 0) - (b.balance || 0))
+      .map(s => ({ ...s, overdueDebt: 0, dueDate: null as string | null, items: null as any }));
+  }, [students, ledgerDebtors]);
   const totalDebt = debtors.reduce((a, s) => a + Math.abs(s.balance || 0), 0);
 
   const filteredTransactions = useMemo(() => {
@@ -1508,15 +1524,16 @@ export default function CrmFinance() {
               </div>
               <div>
                 <p className="text-sm font-black text-slate-900 dark:text-white">Qarzdorlar Ro'yxati</p>
-                <p className="text-[10px] text-zinc-400">{debtors.length} ta o'quvchi, jami {formatCompact(totalDebt)} so'm qarz</p>
+                <p className="text-[10px] text-zinc-400">{debtors.length} ta o'quvchi, jami {formatCompact(totalDebt)} so'm qarz{ledgerDebtors ? " · oylik hisoblar bo'yicha" : ''}</p>
               </div>
             </div>
             <button onClick={() => {
-              exportToExcel(debtors, [
+              exportToExcel(debtors.map(d => ({ ...d, debt: Math.abs(d.balance || 0) })), [
                 { header: 'Ism', key: 'name', width: 25 },
                 { header: 'Telefon', key: 'phone', width: 15 },
-                { header: 'Guruh', key: 'group', width: 15 },
-                { header: 'Balans', key: 'balance', width: 15 },
+                { header: 'Guruh', key: 'group', width: 30 },
+                { header: 'Qarz', key: 'debt', width: 15 },
+                ...(ledgerDebtors ? [{ header: "Muddati o'tgan", key: 'overdueDebt', width: 15 }, { header: 'Muddat', key: 'dueDate', width: 12 }] : []),
               ], 'Qarzdorlar');
               showToast('Excel yuklab olindi', 'success');
             }} className="flex items-center gap-2 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl text-xs font-bold hover:bg-zinc-200 transition-colors">
@@ -1554,10 +1571,22 @@ export default function CrmFinance() {
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">{s.group || '—'}</p>
-                          <p className="text-[10px] text-zinc-400">{s.course || ''}</p>
-                        </div>
+                        {s.items ? (
+                          <div className="space-y-0.5">
+                            {s.items.map(i => (
+                              <p key={i.chargeId} className="text-xs text-slate-900 dark:text-white">
+                                <span className="font-bold">{i.groupName || "Boshqa to'lov"}</span>
+                                <span className="text-zinc-400"> · {i.month.slice(5)}-oy · </span>
+                                <span className={`tabular-nums font-bold ${i.overdue ? 'text-rose-600' : ''}`}>{formatNumber(i.debt)}</span>
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">{s.group || '—'}</p>
+                            <p className="text-[10px] text-zinc-400">{s.course || ''}</p>
+                          </div>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="text-sm text-zinc-600 dark:text-zinc-300">{s.phone || '—'}</span>
@@ -1568,9 +1597,15 @@ export default function CrmFinance() {
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-right">
-                        <span className="px-2.5 py-1 bg-rose-100 dark:bg-rose-500/20 text-rose-600 rounded-full text-[10px] font-black">
-                          Qarzdor
-                        </span>
+                        {s.items && !s.overdueDebt && s.dueDate ? (
+                          <span className="px-2.5 py-1 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-full text-[10px] font-black whitespace-nowrap">
+                            Muddat {s.dueDate.slice(8, 10)}.{s.dueDate.slice(5, 7)}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 bg-rose-100 dark:bg-rose-500/20 text-rose-600 rounded-full text-[10px] font-black">
+                            {s.items ? "Muddati o'tgan" : 'Qarzdor'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <button

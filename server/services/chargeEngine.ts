@@ -640,4 +640,39 @@ export async function studentLedger(studentId: string, opts: { limit?: number } 
     };
 }
 
+/**
+ * Qarzdorlar ro'yxati (live) — hisoblardan, "Oylik hisoblar" bilan bir xil manba.
+ * O'quvchi bo'yicha jami qarz va har guruh (hisob) alohida — "Oylik hisoblar"da guruh
+ * qatorlari, bu yerda ularning o'quvchi bo'yicha yig'indisi.
+ */
+export async function debtorsList() {
+    const rows = (await chargeBalances(prisma, {})).filter(r => r.debt > 0);
+    const described = await describeCharges(rows);
+    const contacts = new Map((await prisma.student.findMany({
+        where: { id: { in: [...new Set(rows.map(r => r.studentId))] } }, select: { id: true, phone: true, parentPhone: true },
+    })).map(s => [s.id, s]));
+    const by = new Map<string, any>();
+    for (const c of described) {
+        const ct = contacts.get(c.student.id);
+        const cur = by.get(c.student.id) ?? { student: { ...c.student, phone: ct?.phone ?? null, parentPhone: ct?.parentPhone ?? null }, debt: 0, overdueDebt: 0, dueDate: null as string | null, items: [] as any[] };
+        cur.debt += c.debt;
+        if (c.overdue) cur.overdueDebt += c.debt;
+        if (c.dueDate && (!cur.dueDate || c.dueDate < cur.dueDate)) cur.dueDate = c.dueDate;
+        cur.items.push({ chargeId: c.chargeId, month: c.month, groupName: c.groupName, type: c.type, amount: c.amount, paid: c.paid, debt: c.debt, dueDate: c.dueDate, overdue: c.overdue, explain: c.explain });
+        by.set(c.student.id, cur);
+    }
+    return [...by.values()].sort((a, b) => b.debt - a.debt);
+}
+
+/** Faol, lekin hech qaysi guruhda a'zoligi yo'q o'quvchilar — ularga hisob chiqmaydi. */
+export async function studentsWithoutMembership() {
+    const members = new Set((await prisma.enrollmentPeriod.findMany({ where: { status: 'active' }, select: { studentId: true } })).map(p => p.studentId));
+    const students = await prisma.student.findMany({
+        where: { deletedAt: null, status: { in: ['active', 'Faol'] } },
+        select: { id: true, name: true, code: true, phone: true, createdAt: true },
+        orderBy: { name: 'asc' },
+    });
+    return students.filter(s => !members.has(s.id));
+}
+
 export { nextMonth, addDays };

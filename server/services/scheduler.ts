@@ -780,9 +780,17 @@ export async function startScheduler() {
         // IP-14: har kuni 02:00 — balans keshi va formula solishtiruvi (live — tuzatiladi, shadow — hisobot)
         cron.schedule('0 2 * * *', () => {
             getLedgerMode().then(mode => mode === 'legacy' ? null : reconcileBalances({ fix: mode === 'live' }))
-                .then(r => { if (r && r.differences) console.log(`[Scheduler] Balans solishtiruvi (${r.mode}): ${r.differences} farq, ${r.fixed} tuzatildi`); })
+                .then(r => { if (r && (r.differences || r.statusFixed)) console.log(`[Scheduler] Balans solishtiruvi (${r.mode}): ${r.differences} farq, ${r.fixed} tuzatildi, ${r.statusFixed} holat`); })
                 .catch(e => console.error('[Scheduler] Balans solishtiruvi xatosi:', e?.message));
         }, { timezone: 'Asia/Tashkent' });
+
+        // Server ishga tushganda bir marta (live): kesh va to'lov holatini formula bo'yicha
+        // tekshirish — holat qoidasi o'zgargan deploy'dan keyin ertalabgacha kutmaslik uchun.
+        setTimeout(() => {
+            getLedgerMode().then(mode => mode === 'live' ? reconcileBalances({ fix: true }) : null)
+                .then(r => { if (r && (r.fixed || r.statusFixed)) console.log(`[Scheduler] Startup solishtiruvi: ${r.fixed} balans, ${r.statusFixed} holat tuzatildi`); })
+                .catch(e => console.error('[Scheduler] Startup solishtiruvi xatosi:', e?.message));
+        }, 30_000);
 
         // IP-12: 30 kundan eski idempotency yozuvlari (har kuni 04:10)
         cron.schedule('10 4 * * *', () => {

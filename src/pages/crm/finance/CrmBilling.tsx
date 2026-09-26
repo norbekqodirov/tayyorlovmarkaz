@@ -55,6 +55,9 @@ export default function CrmBilling() {
   const [summary, setSummary] = useState<any[]>([]);
   // IP-21: o'tgan oy — yopish checklist'i / yopilgan holat
   const [closeInfo, setCloseInfo] = useState<any | null>(null);
+  // Guruhga yozilmagan faol o'quvchilar — ularga hisob chiqmaydi (o'quvchilar soni bilan farqni tushuntiradi)
+  const [withoutGroup, setWithoutGroup] = useState<Array<{ id: string; name: string; code: string | null; phone: string | null }>>([]);
+  const [showWithoutGroup, setShowWithoutGroup] = useState(false);
   const [closeModal, setCloseModal] = useState<null | 'force' | 'reopen'>(null);
   const [showMissing, setShowMissing] = useState(false);
   const isSuper = getCurrentRoleLevel() >= ROLE_LEVEL.SUPER_ADMIN;
@@ -70,6 +73,9 @@ export default function CrmBilling() {
       setCloseInfo(null);
       if (m.data.mode === 'live' && month < tashkentMonth()) {
         api.get(`/billing/${month}/close-check`).then(r => setCloseInfo(r.data)).catch(() => setCloseInfo(null));
+      }
+      if (m.data.mode === 'live') {
+        api.get('/billing/without-group').then(r => setWithoutGroup(Array.isArray(r.data) ? r.data : [])).catch(() => setWithoutGroup([]));
       }
     } catch (e: any) {
       showToast(e?.response?.data?.message || "Hisoblarni yuklab bo'lmadi", 'error');
@@ -289,6 +295,27 @@ export default function CrmBilling() {
         <StatCard label="To'langan" value={formatNumber(liveStats.paid)} sub="so'm" variant="minimal" color="emerald" />
         <StatCard label="Qarz" value={formatNumber(liveStats.debt)} sub="so'm" variant="minimal" color="rose" />
       </div>
+      <p className="text-[11px] text-zinc-500 -mt-2">
+        Hisob o'quvchi × guruh bo'yicha: ikki guruhda o'qiydigan o'quvchining ikkita hisobi bor. "Qarzdorlar" ro'yxatida esa o'quvchi bo'yicha jami ko'rsatiladi.
+      </p>
+      {withoutGroup.length > 0 && (
+        <div role="note" className="rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200/70 dark:border-amber-500/20 text-xs text-amber-800 dark:text-amber-200">
+          <div className="p-3 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              <b>{withoutGroup.length} ta faol o'quvchi hech qaysi guruhga yozilmagan</b> — ularga hisob chiqmaydi va qarz ham, to'lov ham ko'rinmaydi.
+              Guruhga qo'shilganda (boshlash sanasi bilan) hisob avtomatik chiqadi.
+            </span>
+            <button type="button" onClick={() => setShowWithoutGroup(v => !v)} className="font-bold hover:underline">{showWithoutGroup ? 'Yashirish' : "Ro'yxat"}</button>
+          </div>
+          {showWithoutGroup && (
+            <div className="px-3 pb-3 flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
+              {withoutGroup.map(st => (
+                <a key={st.id} href={`/crmtayyorlovmarkaz/students/${st.id}`} className="px-2 py-1 rounded-lg bg-white/70 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 font-bold">{st.name}</a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between gap-2 p-3 border-b border-zinc-200 dark:border-zinc-800 flex-wrap">
           <p className="text-xs font-black text-slate-900 dark:text-white">{month} hisoblari</p>

@@ -20,9 +20,10 @@ export function TopStudents({ students }: { students: any[] }) {
               <p className="text-[9px] text-zinc-400 truncate">{s.course} {s.group ? `• ${s.group}` : ''}</p>
             </div>
             <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0 ${
-              s.paymentStatus === 'Tolov qilingan' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' : 'bg-rose-50 text-rose-600 dark:bg-rose-500/10'
+              s.paymentStatus === 'Tolov qilingan' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10'
+                : s.paymentStatus === 'Hisobsiz' ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800' : 'bg-rose-50 text-rose-600 dark:bg-rose-500/10'
             }`}>
-              {s.paymentStatus === 'Tolov qilingan' ? '✓' : '!'}
+              {s.paymentStatus === 'Tolov qilingan' ? '✓' : s.paymentStatus === 'Hisobsiz' ? '—' : '!'}
             </span>
           </div>
         ))}

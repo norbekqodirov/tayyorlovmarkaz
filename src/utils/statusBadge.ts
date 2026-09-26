@@ -35,6 +35,8 @@ export function paymentStatusBadge(status: string | undefined): StatusBadgeInfo 
   switch (status) {
     case 'Tolov qilingan': return { label: "To'lov qilingan", color: 'emerald' };
     case 'Qarzdorlik': return { label: 'Qarzdorlik', color: 'rose' };
+    // Hisob chiqmagan (guruhga yozilmagan) — to'lov qilingan EMAS
+    case 'Hisobsiz': return { label: "Hisob yo'q", color: 'slate' };
     default: return { label: status || 'Kutilmoqda', color: 'amber' };
   }
 }

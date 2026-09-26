@@ -41,7 +41,7 @@ interface Student {
   parentPhone: string;
   course: string;
   group: string;
-  paymentStatus: 'Tolov qilingan' | 'Qarzdorlik' | 'Kutilmoqda';
+  paymentStatus: 'Tolov qilingan' | 'Qarzdorlik' | 'Kutilmoqda' | 'Hisobsiz';
   balance: number;
   status: 'Faol' | 'Muzlatilgan' | 'Tark etgan' | 'Bitiruvchi';
   joinedDate: string;
@@ -499,6 +499,7 @@ export default function CrmStudents() {
                 <option value="Tolov qilingan">To'lov qilingan</option>
                 <option value="Qarzdorlik">Qarzdorlik</option>
                 <option value="Kutilmoqda">Kutilmoqda</option>
+                <option value="Hisobsiz">Hisob yo'q (guruhsiz)</option>
               </select>}
               {canManage && selectedIds.size > 0 && (
                 <button

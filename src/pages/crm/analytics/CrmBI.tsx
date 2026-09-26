@@ -646,7 +646,7 @@ export default function CrmAdvancedBI() {
             <h3 className="text-sm font-black text-slate-900 dark:text-white mb-4">O'quvchilar Holati</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <StatCard variant="minimal" color="emerald" label="Faol" value={`${students.filter((s: any) => studentStatusToUi(s.status) === 'Faol').length} ta`} sub="O'qishni davom ettirmoqda" icon={<GraduationCap size={18} />} size="sm" />
-              <StatCard variant="minimal" color="blue" label="To'lov qilgan" value={`${students.filter((s: any) => s.paymentStatus === 'Tolov qilingan' || safeNum(s.balance) >= 0).length} ta`} sub="Balans to'liq" icon={<CheckCircle2 size={18} />} size="sm" />
+              <StatCard variant="minimal" color="blue" label="To'lov qilgan" value={`${students.filter((s: any) => s.paymentStatus !== 'Hisobsiz' && safeNum(s.balance) >= 0).length} ta`} sub="Hisobi bor, qarzi yo'q" icon={<CheckCircle2 size={18} />} size="sm" />
               <StatCard variant="minimal" color="rose" label="Qarzdor" value={`${students.filter((s: any) => safeNum(s.balance) < 0).length} ta`} sub="Qarzdorlik mavjud" icon={<AlertTriangle size={18} />} size="sm" />
               <StatCard variant="minimal" color="amber" label="Muzlatilgan" value={`${students.filter((s: any) => studentStatusToUi(s.status) === 'Muzlatilgan').length} ta`} sub="Vaqtincha to'xtatilgan" icon={<Activity size={18} />} size="sm" />
             </div>

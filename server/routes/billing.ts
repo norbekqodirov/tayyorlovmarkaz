@@ -9,7 +9,7 @@ import { requirePermission } from '../middleware/authorize.js';
 import { logAudit } from '../middleware/audit.js';
 import {
     BillingError, getLedgerMode, setLedgerMode, generateMonth, postMonth, settleMonth, adjustCharge, voidDraft,
-    studentAccount, shadowReport, refreshMonth, monthSummary, studentLedger,
+    studentAccount, shadowReport, refreshMonth, monthSummary, studentLedger, debtorsList, studentsWithoutMembership,
 } from '../services/chargeEngine.js';
 import { LedgerModeError } from '../services/ledgerMode.js';
 import { PeriodError, closeChecklist, closeMonth, reopenMonth } from '../services/periodClose.js';
@@ -54,6 +54,19 @@ router.post('/reconcile/fix', requireAuth, requireMinRole('ADMIN'), requirePermi
         await logAudit({ userId: a.id, userName: a.name, action: 'balance_reconcile', resource: 'student', metadata: { mode: r.mode, differences: r.differences, fixed: r.fixed } });
         res.json({ ...r, rows: r.rows.slice(0, 200) });
     } catch (err) { sendError(res, err); }
+});
+
+// GET /api/billing/debtors — qarzdorlar (live: hisoblardan, o'quvchi bo'yicha, guruhlar alohida)
+router.get('/debtors', ...canView, async (_req, res) => {
+    try {
+        const mode = await getLedgerMode();
+        res.json({ mode, debtors: mode === 'live' ? await debtorsList() : [] });
+    } catch (err) { sendError(res, err); }
+});
+
+// GET /api/billing/without-group — faol, lekin guruhga yozilmagan o'quvchilar (hisob chiqmaydi)
+router.get('/without-group', ...canView, async (_req, res) => {
+    try { res.json(await studentsWithoutMembership()); } catch (err) { sendError(res, err); }
 });
 
 router.get('/periods', ...canView, async (_req, res) => {
