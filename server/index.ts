@@ -12,6 +12,7 @@ import historyRoutes from './routes/history.js';
 import lessonPlanRoutes from './routes/lessonPlan.js';
 import billingRoutes from './routes/billing.js';
 import receiptsRoutes from './routes/receipts.js';
+import cashRoutes from './routes/cash.js';
 import uploadRoutes from './routes/upload.js';
 import analyticsRoutes from './routes/analytics.js';
 import telegramRoutes from './routes/telegram.js';
@@ -186,6 +187,7 @@ app.use('/api/history', historyRoutes);
 app.use('/api/lesson-plan', lessonPlanRoutes); // IP-10
 app.use('/api/billing', billingRoutes); // IP-11
 app.use('/api/receipts', receiptsRoutes); // IP-12
+app.use('/api/cash', cashRoutes); // IP-22 — kassa/bank hisoblari
 app.use('/api', crudRoutes);
 
 // ── Production: serve Vite build & SPA fallback ─────────────────────────

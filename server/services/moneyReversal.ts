@@ -28,6 +28,7 @@ import { getLedgerMode } from './ledgerMode.js';
 import { NEW_PAYMENT_MODES } from './receivables.js';
 import { reversePaymentAllocations } from './allocation.js';
 import { syncStudentBalance } from './balanceCache.js';
+import { accountIdOf, assertDayOpen, lastClosedDate, stampAccount, CashError } from './cashAccounts.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Tx = Prisma.TransactionClient;
@@ -44,6 +45,12 @@ const PAYROLL_SOURCES = ['salary', 'teacher_payroll', 'staff_advance'];
 
 const isElevated = (a: Actor) => (ROLE_LEVEL[a.role || ''] || 0) >= ROLE_LEVEL.ADMIN;
 const statusOf = (balance: number) => (balance >= 0 ? 'Tolov qilingan' : 'Qarzdorlik');
+
+/** IP-22: kassa kuni yopilgan bo'lsa — ReversalError (marshrutlar shu xatoni biladi). */
+async function cashGuard<T>(fn: () => Promise<T>): Promise<T> {
+    try { return await fn(); }
+    catch (e) { if (e instanceof CashError) throw new ReversalError(e.status, e.message, e.code); throw e; }
+}
 
 function cleanReason(reason: unknown) {
     const r = String(reason ?? '').trim();
@@ -70,9 +77,12 @@ export async function reverseTransactionInTx(tx: Tx, id: string, reason: string,
     });
     if (claimed.count !== 1) throw new ReversalError(409, 'Yozuv allaqachon bekor qilingan', 'ALREADY_VOID');
     const o = await tx.transaction.findUniqueOrThrow({ where: { id } });
+    // IP-22: qarshi yozuv asl yozuv hisobiga tushadi; shu hisobning shu kuni yopilgan bo'lsa — yo'q
+    const accountId = await accountIdOf(tx, o);
+    await cashGuard(() => assertDayOpen(tx, accountId, date));
     return tx.transaction.create({
         data: {
-            type: o.type, amount: -o.amount, category: o.category, date, method: o.method,
+            type: o.type, amount: -o.amount, category: o.category, date, method: o.method, accountId,
             description: `Bekor qilindi: ${o.description || o.category} — ${reason}`.slice(0, 1000),
             studentId: o.studentId, studentName: o.studentName, staffId: o.staffId, staffName: o.staffName,
             sourceType: 'reversal', sourceId: o.id,
@@ -185,7 +195,7 @@ export async function refundAvailability(db: Db, studentId: string) {
     return { mode, available: payments.reduce((s, p) => s + p.available, 0), payments };
 }
 
-export interface RefundInput { studentId: string; amount: number; method?: string; date?: string; reason: string; paymentId?: string | null }
+export interface RefundInput { studentId: string; amount: number; method?: string; accountId?: string | null; date?: string; reason: string; paymentId?: string | null }
 
 export async function createRefund(input: RefundInput, actor: Actor) {
     if (!(await canRefund(actor))) throw new ReversalError(403, `Pul qaytarish uchun ${await refundMinRole()} huquqi kerak`, 'ROLE');
@@ -196,12 +206,13 @@ export async function createRefund(input: RefundInput, actor: Actor) {
     if (!isValidDate(date)) throw new ReversalError(400, "Sana YYYY-MM-DD formatida bo'lishi kerak", 'BAD_DATE');
     if (date > todayDateStr()) throw new ReversalError(400, 'Kelajak sanasi bilan qaytarish yozilmaydi', 'FUTURE');
     if (await isMonthClosed(prisma, date)) throw new ReversalError(409, `${date.slice(0, 7)} oyi yopilgan — bugungi sana bilan yozing`, 'PERIOD_CLOSED');
-    const method = input.method || 'Naqd';
     const mode = await getLedgerMode();
 
     return prisma.$transaction(async tx => {
         const student = await tx.student.findUnique({ where: { id: input.studentId }, select: { id: true, name: true } });
         if (!student) throw new ReversalError(404, "O'quvchi topilmadi", 'NO_STUDENT');
+        // IP-22: pul qaysi kassadan chiqdi (yopilgan kunga yozilmaydi)
+        const { accountId, method } = await cashGuard(() => stampAccount(tx, { accountId: input.accountId, method: input.method || 'Naqd', date }));
         // o'quvchi qatori qulfi — bir o'quvchiga parallel ikki qaytarish avansni ikki marta ishlatmaydi
         const locked = await tx.student.update({ where: { id: student.id }, data: { balance: { increment: 0 } }, select: { balance: true } });
 
@@ -228,7 +239,7 @@ export async function createRefund(input: RefundInput, actor: Actor) {
 
         const cash = await tx.transaction.create({
             data: {
-                type: 'income', amount: -amount, category: REFUND_CATEGORY, date, method,
+                type: 'income', amount: -amount, category: REFUND_CATEGORY, date, method, accountId,
                 description: `Qaytarish · ${student.name} — ${reason}`.slice(0, 1000),
                 studentId: student.id, studentName: student.name, sourceType: 'refund',
             },
@@ -284,20 +295,25 @@ export async function voidRefund(refundId: string, reasonRaw: unknown, actor: Ac
 
 export type TxDecision =
     | { action: 'delete' }
-    | { action: 'void'; code: 'LINKED' | 'PERIOD_CLOSED'; message: string }
+    | { action: 'void'; code: 'LINKED' | 'PERIOD_CLOSED' | 'DAY_CLOSED'; message: string }
     | { action: 'blocked'; status: number; code: string; message: string };
 
-type TxRow = { id: string; type: string; date: string; studentId: string | null; sourceType: string | null; sourceId: string | null; voidedAt: Date | null };
+type TxRow = { id: string; type: string; date: string; studentId: string | null; sourceType: string | null; sourceId: string | null; voidedAt: Date | null; accountId?: string | null; method?: string | null };
 
 export async function transactionDeletePolicy(db: Db, t: TxRow): Promise<TxDecision> {
     const st = t.sourceType || '';
     if (t.voidedAt) return { action: 'blocked', status: 409, code: 'ALREADY_VOID', message: 'Yozuv allaqachon bekor qilingan' };
     if (st === 'reversal') return { action: 'blocked', status: 400, code: 'REVERSAL', message: "Qarshi yozuvni o'chirib yoki bekor qilib bo'lmaydi" };
+    if (st === 'cash_session' || st === 'cash_transfer') return { action: 'blocked', status: 400, code: 'CASH_SYSTEM', message: "Bu yozuv kassa kunini yopish yoki o'tkazma komissiyasi — «Kassa va hisoblar» sahifasidan boshqariladi" };
     if (st === 'invoice') return { action: 'blocked', status: 400, code: 'INVOICE', message: "To'langan invoice to'lovi — o'quvchi profilidagi «Pul qaytarish» orqali tuzatiladi" };
     if (st.startsWith('online_transaction')) return { action: 'blocked', status: 400, code: 'PROVIDER', message: "Payme/Click to'lovi faqat to'lov tizimi orqali bekor qilinadi" };
     const linked = PAYMENT_SOURCES.includes(st) || PAYROLL_SOURCES.includes(st) || st === 'refund' || (t.type === 'income' && !!t.studentId && !st);
     if (linked) return { action: 'void', code: 'LINKED', message: "Bu yozuv to'lov/maosh/avans bilan bog'liq — o'chirilmaydi, sabab bilan bekor qilinadi (kassa tarixida qoladi)" };
     if (await isMonthClosed(db, t.date)) return { action: 'void', code: 'PERIOD_CLOSED', message: `${t.date.slice(0, 7)} oyi yopilgan — yozuv o'chirilmaydi, bugungi sana bilan qarshi yozuv qilinadi` };
+    // IP-22: kassa kuni yopilgan — o'chirish yopilgan qoldiqni o'zgartiradi
+    const accountId = await accountIdOf(db, t);
+    const closed = accountId ? await lastClosedDate(db, accountId) : null;
+    if (closed && t.date <= closed) return { action: 'void', code: 'DAY_CLOSED', message: `Kassa ${closed.split('-').reverse().join('.')} gacha yopilgan — yozuv o'chirilmaydi, bugungi sana bilan qarshi yozuv qilinadi` };
     return { action: 'delete' };
 }
 

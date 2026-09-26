@@ -16,6 +16,7 @@ import { calculateTeacherPayroll, calculateTeacherAccrual, calculateTeacherLedge
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { logAudit } from '../middleware/audit.js';
 import { payrollDeleteBlock, releaseAdvanceApplications, isMonthClosed } from '../services/moneyReversal.js';
+import { stampAccount, CashError } from '../services/cashAccounts.js';
 
 const router = express.Router();
 
@@ -360,6 +361,7 @@ router.post('/:id/approve', canManageMoney, async (req, res) => {
 
         res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ message: err.message, code: err.code });
         res.status(500).json({ message: err.message });
     }
 });
@@ -409,7 +411,8 @@ router.post('/:id/pay', canManageMoney, idempotent('teacher_payroll_pay'), async
                     category: 'Oylik',
                     description: `${payroll.teacher.name} — ${payroll.month} oyligi (${payroll.basis === 'cash' ? "tushgan to'lovdan" : 'hisoblangan'})`,
                     date: todayStr,
-                    method: method || 'Bank',
+                    // IP-22: qaysi kassa/bank hisobidan to'landi
+                    ...(await stampAccount(tx, { accountId: req.body.accountId || null, method: method || 'Bank', date: todayStr })),
                     staffId: payroll.teacherId,
                     staffName: payroll.teacher.name,
                     sourceType: 'teacher_payroll',
@@ -435,6 +438,7 @@ router.post('/:id/pay', canManageMoney, idempotent('teacher_payroll_pay'), async
 
         res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ message: err.message, code: err.code });
         res.status(500).json({ message: err.message });
     }
 });

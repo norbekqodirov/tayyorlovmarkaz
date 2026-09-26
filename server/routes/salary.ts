@@ -9,6 +9,7 @@ import { logAudit } from '../middleware/audit.js';
 import { todayDateStr } from '../utils/timezone.js';
 import { applyOutstandingAdvances, getOutstandingAdvanceTotal } from '../services/staffAdvance.js';
 import { payrollDeleteBlock, releaseAdvanceApplications, isMonthClosed } from '../services/moneyReversal.js';
+import { stampAccount, CashError } from '../services/cashAccounts.js';
 
 const router = express.Router();
 
@@ -224,7 +225,8 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, i
                         category: 'Oylik',
                         description: `${salary.staff.name} - ${salary.month} oyligi`,
                         date: todayStr,
-                        method: req.body.method || 'Bank',
+                        // IP-22: qaysi kassa/bank hisobidan to'landi
+                        ...(await stampAccount(tx, { accountId: req.body.accountId || null, method: req.body.method || 'Bank', date: todayStr })),
                         staffId: salary.staffId,
                         staffName: salary.staff.name,
                         sourceType: 'salary',
@@ -254,6 +256,7 @@ router.put('/:id/pay', requireAuth, requireMinRole('MANAGER'), canManageMoney, i
 
         res.json({ ...result.updated, remaining: remainingOf(result.updated!) });
     } catch (err: any) {
+        if (err instanceof CashError) return res.status(err.status).json({ error: err.message, code: err.code });
         res.status(500).json({ error: err.message });
     }
 });

@@ -28,6 +28,7 @@ import { formatNumber } from '../../../utils/formatters';
 import { getCurrentRoleLevel, ROLE_LEVEL } from '../../../utils/roles';
 import { ReasonModal, apiError } from '../../../components/finance/ReasonModal';
 import { StudentSearchSelect, type FoundStudent } from '../../../components/finance/StudentSearchSelect';
+import { AccountSelect } from '../../../components/finance/AccountSelect';
 
 interface Invoice {
   id: string;
@@ -53,7 +54,9 @@ interface Transaction {
   category: string;
   description: string;
   date: string;
-  method: 'Karta' | 'Naqd' | 'Bank';
+  method: string;
+  // IP-22: qaysi kassa/bank hisobi
+  accountId?: string | null;
   studentId?: string;
   studentName?: string;
   staffId?: string;
@@ -105,7 +108,7 @@ interface BudgetEntry {
   usedPercent?: number;
 }
 const tashkentToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
-const emptyExpense = () => ({ category: '' as ExpenseCategory, amount: 0, date: tashkentToday(), description: '', receipt: '' });
+const emptyExpense = () => ({ category: '' as ExpenseCategory, amount: 0, date: tashkentToday(), description: '', receipt: '', accountId: '', method: '' });
 const MONTHS = ['Yan', 'Feb', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
 
 const TOOLTIP_STYLE = {
@@ -269,7 +272,9 @@ export default function CrmFinance() {
     }
     setExpenseSaving(true);
     try {
-      const payload = { ...expenseForm, description: expenseForm.description.trim(), receipt: expenseForm.receipt.trim() || null };
+      // IP-22: hisob faqat yangi xarajatda tanlanadi (tahrirda kassa yozuvining hisobi o'zgarmaydi)
+      const { accountId: expAccountId, method: expMethod, ...rest } = expenseForm;
+      const payload = { ...rest, description: expenseForm.description.trim(), receipt: expenseForm.receipt.trim() || null, ...(editingExpenseId ? {} : { accountId: expAccountId || null, method: expMethod || undefined }) };
       if (editingExpenseId) await api.patch(`/finance/expenses/${editingExpenseId}`, payload);
       else await api.post('/finance/expenses', payload);
       showToast(editingExpenseId ? 'Xarajat yangilandi' : "Xarajat qo'shildi", 'success');
@@ -474,7 +479,7 @@ export default function CrmFinance() {
     category: '',
     description: '',
     date: toTashkentDate(),
-    method: 'Karta',
+    method: 'Naqd',
     studentId: '',
     studentName: '',
     staffId: '',
@@ -622,16 +627,16 @@ export default function CrmFinance() {
         // qoplash/audit logikasi bor) payroll endpoint chaqiriladi — natijada
         // yaratiladigan Transaction shu yerdan avtomatik bog'langan holda keladi.
         if (opt.kind === 'teacher_payroll') {
-          await api.post(`/finance/teacher-payroll/${opt.id}/pay`, { amount: Number(form.amount), method: form.method }, idempotencyHeaders(txKey));
+          await api.post(`/finance/teacher-payroll/${opt.id}/pay`, { amount: Number(form.amount), method: form.method, accountId: form.accountId || undefined }, idempotencyHeaders(txKey));
         } else {
-          await api.put(`/salary/${opt.id}/pay`, { amount: Number(form.amount), method: form.method }, idempotencyHeaders(txKey));
+          await api.put(`/salary/${opt.id}/pay`, { amount: Number(form.amount), method: form.method, accountId: form.accountId || undefined }, idempotencyHeaders(txKey));
         }
       } else if (isAvansForm) {
         // Avans davrga bog'lanmaydi — mavjud staffAdvance.ts yo'li orqali
         // (FIFO qoplash keyingi oylik tasdiqlash/to'lov paytida avtomatik).
         await api.post('/finance/advances', {
           personType: personKind, personId: form.staffId, amount: Number(form.amount),
-          method: form.method, date: form.date, notes: form.description || undefined,
+          method: form.method, accountId: form.accountId || undefined, date: form.date, notes: form.description || undefined,
         }, idempotencyHeaders(txKey));
       } else {
         const newTransaction = {
@@ -656,11 +661,12 @@ export default function CrmFinance() {
       await Promise.all([refetchTransactions(), refetchStudents()]);
       showToast(isOylikForm ? "Oylik to'lovi qayd etildi" : isAvansForm ? 'Avans berildi' : "Tranzaksiya qo'shildi", 'success');
       if (!isTuitionForm) setIsModalOpen(false);
-      setForm({
+      // IP-22: tanlangan hisob keyingi yozuv uchun saqlanadi (kassir odatda bitta kassada ishlaydi)
+      setForm(f => ({
         type: 'income', amount: 0, category: '',
         description: '', date: toTashkentDate(),
-        method: 'Karta', studentId: '', studentName: '', staffId: '', staffName: ''
-      });
+        method: f.method || 'Naqd', accountId: f.accountId, studentId: '', studentName: '', staffId: '', staffName: ''
+      }));
       setSelectedPayrollId('');
       pickTuitionStudent(null);
       setTxKey(newIdempotencyKey());
@@ -1007,7 +1013,7 @@ export default function CrmFinance() {
                       <td className="px-5 py-3.5">{canManage && <div className="flex gap-2">
                         <Button size="sm" variant="secondary" onClick={() => {
                           setEditingExpenseId(expense.id);
-                          setExpenseForm({ category: expense.category, amount: expense.amount, date: expense.date.slice(0, 10), description: expense.description || '', receipt: expense.receipt || '' });
+                          setExpenseForm({ category: expense.category, amount: expense.amount, date: expense.date.slice(0, 10), description: expense.description || '', receipt: expense.receipt || '', accountId: '', method: '' });
                           setExpenseModalOpen(true);
                         }}>Tahrirlash</Button>
                         <Button size="sm" variant="danger" onClick={() => setExpenseToDelete(expense)} leftIcon={<Trash2 size={14} />}>O'chirish</Button>
@@ -1089,6 +1095,10 @@ export default function CrmFinance() {
             </div>
             <Input id="expense-date" type="date" label="Sana" required value={expenseForm.date}
               onChange={e => setExpenseForm(value => ({ ...value, date: e.target.value }))} />
+            {!editingExpenseId && (
+              <AccountSelect label="Qaysi hisobdan to'landi" value={expenseForm.accountId} method="Naqd"
+                onChange={(accountId, method) => setExpenseForm(value => ({ ...value, accountId, method }))} />
+            )}
             <Input id="expense-description" label="Izoh" value={expenseForm.description}
               onChange={e => setExpenseForm(value => ({ ...value, description: e.target.value }))} />
             <Input id="expense-receipt" label="Chek havolasi (ixtiyoriy)" value={expenseForm.receipt}
@@ -1885,15 +1895,8 @@ export default function CrmFinance() {
 
           <div className="grid grid-cols-2 gap-3">
             <Input type="date" label="Sana" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">To'lov usuli</label>
-              <select value={form.method} onChange={e => setForm({ ...form, method: e.target.value as any })}
-                className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="Karta">💳 Karta</option>
-                <option value="Naqd">💵 Naqd</option>
-                <option value="Bank">🏦 Bank</option>
-              </select>
-            </div>
+            <AccountSelect label={form.type === 'expense' ? 'Qaysi hisobdan' : 'Qaysi hisobga'} value={form.accountId} method={form.method}
+              onChange={(accountId, method) => setForm(f => ({ ...f, accountId, method }))} />
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
